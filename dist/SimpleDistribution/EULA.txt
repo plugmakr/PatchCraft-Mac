@@ -1,0 +1,36 @@
+PatchCraft Studio End User License Agreement v1.0.0
+============================================================
+
+IMPORTANT NOTICE: This software is for beta testing purposes only.
+
+LICENSE TERMS:
+
+1. LICENSE GRANT
+   AudiCode grants you a non-exclusive, non-transferable license to use
+   PatchCraft Studio for beta testing purposes.
+
+2. RESTRICTIONS
+   - You may not redistribute, sell, or commercialize this beta software
+   - You may not reverse engineer, decompile, or modify software
+   - All copyright notices must remain intact
+
+3. BETA TESTING
+   - This software may contain bugs and unfinished features
+   - No warranty is provided for beta software
+   - Use at your own risk
+   - AudiCode is not liable for any damages
+
+4. TERM
+   This beta license terminates upon release of commercial version
+   or at AudiCode's discretion.
+
+5. CONTACT
+   For support: support@patchcraft.com
+   For licensing: licensing@patchcraft.com
+
+By installing this software, you agree to these terms.
+
+COMPANY INFORMATION:
+AudiCode
+Professional Audio Software Development
+https://patchcraft.com

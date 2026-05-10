@@ -1,0 +1,8 @@
+{
+  "frames": 32,
+  "stripVertical": true,
+  "style": {
+    "frames": 32,
+    "outputMode": "vertical"
+  }
+}

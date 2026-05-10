@@ -1,0 +1,16 @@
+{
+  "zones": [
+    { "sample": "samples/Pad_A.wav", "rootNote": 36, "lowNote": 24, "highNote": 47,
+      "lowVelocity": 1, "highVelocity": 127, "gainDb": 0.0, "pan": 0.0,
+      "loopEnabled": false, "loopStart": 0, "loopEnd": 0 },
+    { "sample": "samples/Pad_B.wav", "rootNote": 60, "lowNote": 48, "highNote": 71,
+      "lowVelocity": 1, "highVelocity": 127, "gainDb": 0.0, "pan": 0.0,
+      "loopEnabled": false, "loopStart": 0, "loopEnd": 0 },
+    { "sample": "samples/Pad_C.wav", "rootNote": 72, "lowNote": 72, "highNote": 95,
+      "lowVelocity": 1, "highVelocity": 127, "gainDb": 0.0, "pan": 0.0,
+      "loopEnabled": false, "loopStart": 0, "loopEnd": 0 },
+    { "sample": "samples/Pad_D.wav", "rootNote": 96, "lowNote": 96, "highNote": 108,
+      "lowVelocity": 1, "highVelocity": 127, "gainDb": 0.0, "pan": 0.0,
+      "loopEnabled": false, "loopStart": 0, "loopEnd": 0 }
+  ]
+}

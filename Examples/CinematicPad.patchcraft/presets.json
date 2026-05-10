@@ -1,0 +1,15 @@
+{
+  "presets": [
+    { "name": "Deep Horizon",       "isDefault": true,
+      "values": { "attack": 1.00, "decay": 2.50, "sustain": 0.70, "release": 3.20,
+                  "filterCutoff": 4200.0, "reverbMix": 0.45, "delayMix": 0.25,
+                  "vibratoDepth": 0.35, "volume": 1.0, "pan": 0.0 } },
+    { "name": "Warm Motion" },
+    { "name": "Shimmering Clouds" },
+    { "name": "Ethereal Rise" },
+    { "name": "Vast Beauty" },
+    { "name": "Nightfall" },
+    { "name": "Floating Memories" },
+    { "name": "Infinite Space" }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "parameters": [
+    { "id": "attack",          "name": "Attack",     "type": "float", "min": 0.001, "max": 5.0,    "default": 1.00,   "unit": "s" },
+    { "id": "decay",           "name": "Decay",      "type": "float", "min": 0.001, "max": 5.0,    "default": 2.50,   "unit": "s" },
+    { "id": "sustain",         "name": "Sustain",    "type": "float", "min": 0.0,   "max": 1.0,    "default": 0.70,   "unit": "" },
+    { "id": "release",         "name": "Release",    "type": "float", "min": 0.01,  "max": 10.0,   "default": 3.20,   "unit": "s" },
+    { "id": "filterCutoff",    "name": "Cutoff",     "type": "float", "min": 20.0,  "max": 20000.0,"default": 4200.0, "unit": "Hz" },
+    { "id": "filterResonance", "name": "Resonance",  "type": "float", "min": 0.0,   "max": 1.0,    "default": 0.20,   "unit": "" },
+    { "id": "reverbMix",       "name": "Reverb",     "type": "float", "min": 0.0,   "max": 1.0,    "default": 0.45,   "unit": "%" },
+    { "id": "delayTime",       "name": "Delay Time", "type": "float", "min": 0.0,   "max": 2.0,    "default": 0.30,   "unit": "s" },
+    { "id": "delayFeedback",   "name": "Delay FB",   "type": "float", "min": 0.0,   "max": 0.95,   "default": 0.40,   "unit": "" },
+    { "id": "delayMix",        "name": "Delay Mix",  "type": "float", "min": 0.0,   "max": 1.0,    "default": 0.25,   "unit": "%" },
+    { "id": "vibratoDepth",    "name": "Vib Depth",  "type": "float", "min": 0.0,   "max": 1.0,    "default": 0.35,   "unit": "%" },
+    { "id": "vibratoRate",     "name": "Vib Rate",   "type": "float", "min": 0.1,   "max": 12.0,   "default": 5.00,   "unit": "Hz" },
+    { "id": "volume",          "name": "Volume",     "type": "float", "min": 0.0,   "max": 1.5,    "default": 1.00,   "unit": "" },
+    { "id": "pan",             "name": "Pan",        "type": "float", "min": -1.0,  "max": 1.0,    "default": 0.00,   "unit": "" }
+  ]
+}

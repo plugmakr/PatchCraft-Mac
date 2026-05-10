@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>10 — Glossary · PatchCraft Tutorial</title>
+    <link rel="stylesheet" href="assets/css/main.css"/>
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo.svg"/>
+</head>
+<body>
+<header class="topbar">
+    <div class="topbar-logo"><img src="assets/img/logo.svg" alt="" class="hex"/>PATCHCRAFT</div>
+    <span class="topbar-tagline">Instrument Builder Tutorial</span>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-actions">
+        <a href="index.html">Home</a>
+        <a href="10-glossary.html">Glossary</a>
+        <a class="cta" href="PatchCraftTutorial.zip">Download</a>
+    </div>
+</header>
+
+<div class="shell">
+    <nav class="sidebar">
+        <div class="sidebar-section"><h5>Tutorial</h5>
+            <ul>
+                <li><a href="index.html">Overview</a></li>
+                <li><a href="01-overview.html">1 — What is PatchCraft</a></li>
+                <li><a href="02-getting-started.html">2 — Getting started</a></li>
+                <li><a href="03-design.html">3 — Design canvas</a></li>
+                <li><a href="04-sample-mapper.html">4 — Sample mapper</a></li>
+                <li><a href="05-midi-playground.html">5 — MIDI playground</a></li>
+                <li><a href="06-dsp-builder.html">6 — DSP builder</a></li>
+                <li><a href="07-brand-lab.html">7 — Brand Lab</a></li>
+                <li><a href="08-presets-expansions.html">8 — Presets &amp; expansions</a></li>
+                <li><a href="09-export-distribute.html">9 — Export &amp; ship</a></li>
+                <li><a href="10-glossary.html">10 — Glossary</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="content">
+        <h1>10 — Glossary</h1>
+        <p class="lede" style="color:var(--text-mid);font-size:1.1rem;">Quick reference for every term used in PatchCraft.</p>
+
+        <h3 id="brand-lab">Brand Lab</h3>
+        <p>The Studio tab that hosts the live Player preview plus the branding form. White-labeling lives here.</p>
+
+        <h3 id="canvas">Canvas</h3>
+        <p>The fixed-size virtual surface (default 1280×800) on the Design tab where elements are arranged. The end-user sees this exact layout in the Player.</p>
+
+        <h3 id="choke-group">Choke Group</h3>
+        <p>An integer ID on a sample zone. Voices in the same choke group cut each other off — used so a closed hi-hat silences an open hi-hat.</p>
+
+        <h3 id="dsp-block">DSP Block</h3>
+        <p>A unit of audio processing in the DSP graph: oscillator, filter, amp envelope, LFO, EQ, drive, delay, reverb, advanced FX. Blocks connect via audio edges and modulation routes.</p>
+
+        <h3 id="dsp-graph">DSP Graph</h3>
+        <p>The full network of DSP blocks, audio edges, and modulation routes that defines a patch. Each engine has a default graph; users can author custom graphs in the DSP Builder tab.</p>
+
+        <h3 id="element">Element</h3>
+        <p>A single visual control on the canvas: knob, slider, button, drum pad, label, image, etc. Each carries layout (x/y/w/h), styling, and an optional parameter binding.</p>
+
+        <h3 id="engine">Engine</h3>
+        <p>The audio engine type: Sampler, Synth, Drum Machine, FX. Determines what parameters exist and how notes are rendered.</p>
+
+        <h3 id="expansion">Expansion (or Expansion Pack)</h3>
+        <p>A grouping of patches and presets shipped together as add-on content for an existing Player. Has metadata (name, brand, artwork, version) and a list of included assets.</p>
+
+        <h3 id="filmstrip">Filmstrip</h3>
+        <p>A vertical (or horizontal) PNG with N stacked frames, used to render a custom knob/slider/meter as if it were animating through frames. The Library tab manages these.</p>
+
+        <h3 id="glitch-kit">Glitch Kit</h3>
+        <p>A Sample Mapper preset that slices one long sample into many small zones (transient-detected or grid-aligned), assigning each slice to a pad or chromatic key.</p>
+
+        <h3 id="layout">Layout</h3>
+        <p>The full set of canvas elements that make up the GUI. Persisted as <code>layout.json</code> in the pack.</p>
+
+        <h3 id="manifest">Manifest</h3>
+        <p>The pack's identity card: instrument name, creator, engine, version, branding fields (player display name, tagline, logo, colours). Persisted as <code>manifest.json</code>.</p>
+
+        <h3 id="parameter">Parameter</h3>
+        <p>A named, ranged value the engine reads. Each has an id (<code>filterCutoff</code>), a min / max / default / step, a category (Filter / Amp / Mod / FX / …), and a unit. Knobs and sliders bind to parameters.</p>
+
+        <h3 id="patch">Patch</h3>
+        <p>The full instrument state captured under a name: engine, DSP graph, sample zones, MIDI mappings, parameter values. Heavier than a preset.</p>
+
+        <h3 id="pack">Pack (.patchcraft)</h3>
+        <p>The exported folder shipped to end users. Contains manifest, layout, parameters, presets, mappings, samples, assets, expansion metadata.</p>
+
+        <h3 id="player">Player</h3>
+        <p>The runtime VST3 / standalone plugin that loads a pack and renders its layout for end-users in their DAW.</p>
+
+        <h3 id="preset">Preset</h3>
+        <p>A snapshot of parameter values keyed by id. Lighter than a patch — meant for fast browsing in the Player. Each preset can optionally link to a patch for full state restoration.</p>
+
+        <h3 id="round-robin">Round Robin</h3>
+        <p>A grouping where multiple sample zones at the same pitch alternate on each note-on, simulating the variation of repeated takes on a real instrument.</p>
+
+        <h3 id="sample-zone">Sample Zone</h3>
+        <p>One mapped sample with key range, velocity range, root note, loop points, fades, gain, choke group, pad index, etc. The Sample Mapper edits these.</p>
+
+        <h3 id="studio">Studio</h3>
+        <p>The desktop authoring app. Where instruments are designed, branded and packaged.</p>
+
+        <h3 id="tab-panel">TabPanel</h3>
+        <p>A canvas element that switches between named groups of elements. Tab labels generate a group ID; child elements with that group ID become visible only when that tab is active.</p>
+
+        <h3 id="velocity-layer">Velocity Layer</h3>
+        <p>A sample zone whose Low/High Velocity range is narrower than 1-127, so only certain incoming velocities trigger it. Multiple zones at the same pitch with different layers create dynamics.</p>
+
+        <h3 id="wavetable">Wavetable</h3>
+        <p>A multi-frame oscillator shape. The Synth engine carries 9 built-in tables plus a custom 4-frame editor. Position, morph, warp, fold, bend, sync are real-time parameters.</p>
+
+        <h3 id="zero-crossing">Zero Crossing</h3>
+        <p>A sample where the audio waveform crosses zero amplitude. Setting trim / loop bounds at zero crossings prevents audible clicks. The Sample Editor snaps to the nearest one on mouse-up.</p>
+
+        <div class="section-nav">
+            <a href="09-export-distribute.html"><strong>Back</strong><span>9 — Export &amp; ship</span></a>
+            <a class="next" href="index.html"><strong>End of tutorial</strong><span>Home</span></a>
+        </div>
+    </main>
+</div>
+
+<footer class="footer">PatchCraft · Tutorial bundle</footer>
+<script src="assets/js/nav.js"></script>
+</body>
+</html>

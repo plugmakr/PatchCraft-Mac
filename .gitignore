@@ -1,0 +1,15 @@
+# Build files
+build/
+*.xcodeproj/
+*.xcworkspace/
+
+# IDE files
+.vscode/
+.idea/
+
+# macOS
+*.dSYM/
+.DS_Store
+
+# JUCE
+JUCE/

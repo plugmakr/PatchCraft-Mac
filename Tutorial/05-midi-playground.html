@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>5 — MIDI playground · PatchCraft Tutorial</title>
+    <link rel="stylesheet" href="assets/css/main.css"/>
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo.svg"/>
+</head>
+<body>
+<header class="topbar">
+    <div class="topbar-logo"><img src="assets/img/logo.svg" alt="" class="hex"/>PATCHCRAFT</div>
+    <span class="topbar-tagline">Instrument Builder Tutorial</span>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-actions">
+        <a href="index.html">Home</a>
+        <a href="10-glossary.html">Glossary</a>
+        <a class="cta" href="PatchCraftTutorial.zip">Download</a>
+    </div>
+</header>
+
+<div class="shell">
+    <nav class="sidebar">
+        <div class="sidebar-section"><h5>Tutorial</h5>
+            <ul>
+                <li><a href="index.html">Overview</a></li>
+                <li><a href="01-overview.html">1 — What is PatchCraft</a></li>
+                <li><a href="02-getting-started.html">2 — Getting started</a></li>
+                <li><a href="03-design.html">3 — Design canvas</a></li>
+                <li><a href="04-sample-mapper.html">4 — Sample mapper</a></li>
+                <li><a href="05-midi-playground.html">5 — MIDI playground</a></li>
+                <li><a href="06-dsp-builder.html">6 — DSP builder</a></li>
+                <li><a href="07-brand-lab.html">7 — Brand Lab</a></li>
+                <li><a href="08-presets-expansions.html">8 — Presets &amp; expansions</a></li>
+                <li><a href="09-export-distribute.html">9 — Export &amp; ship</a></li>
+                <li><a href="10-glossary.html">10 — Glossary</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="content">
+        <h1>5 — MIDI playground</h1>
+        <p class="lede" style="color:var(--text-mid);font-size:1.1rem;">Build phrases, arpeggios, drum patterns, and chord progressions that the instrument can play on its own. Deterministic — no random generation.</p>
+
+        <h2>What's on the page</h2>
+        <p>The MIDI Playground page hosts three editor views, switchable via the <em>Editor View</em> dropdown:</p>
+        <ul>
+            <li><strong>Output Lane</strong> — step-based editing of note / velocity / gate / probability lanes (the original view)</li>
+            <li><strong>Piano Roll</strong> — 6-octave roll with real piano keys, beat markers, hover highlight, note labels</li>
+            <li><strong>Drum Pattern Grid</strong> — multi-track step grid for drum-machine blocks</li>
+        </ul>
+
+        <h2>Status strip + global controls</h2>
+        <p>Above the editor, a status strip shows the current scale, step count, and edit mode. Below it sit the controls for:</p>
+        <ul>
+            <li><strong>Scale &amp; root</strong> — sets the diatonic scale used by chord operators / scale-quantize</li>
+            <li><strong>Steps / Rate / Gate / Swing / Probability / Humanize / Velocity Curve</strong> — per-pattern playback parameters</li>
+            <li><strong>Chord size / spread / strum / flam</strong> — chord-mode voicing controls</li>
+            <li><strong>Mutation / Ratchet</strong> — variation parameters (deterministic — pattern stays stable across plays)</li>
+        </ul>
+
+        <h2>Operators (deterministic transforms)</h2>
+        <p>Click the <strong>Operators</strong> button. A categorized popup appears:</p>
+
+        <table>
+            <thead><tr><th>Group</th><th>Operator</th><th>What it does</th></tr></thead>
+            <tbody>
+                <tr><td rowspan="6">Transpose</td><td>Up 1 octave (+12)</td><td>Shifts every step's note offset by +12 semitones</td></tr>
+                <tr><td>Down 1 octave (-12)</td><td>−12 semitones</td></tr>
+                <tr><td>Up a 5th (+7)</td><td>+7</td></tr>
+                <tr><td>Down a 5th (-7)</td><td>−7</td></tr>
+                <tr><td>Up / down a semitone</td><td>±1</td></tr>
+                <tr><td colspan="2">— all bounded to ±24 semitones —</td></tr>
+                <tr><td rowspan="4">Reshape</td><td>Invert</td><td>Mirror around root: note becomes −note</td></tr>
+                <tr><td>Retrograde</td><td>Reverse the step order in time</td></tr>
+                <tr><td>Scale-quantize</td><td>Snap each step's note to the nearest tone in the current scale</td></tr>
+                <tr><td>Compress to one octave</td><td>Modulo 12 while keeping direction</td></tr>
+                <tr><td rowspan="3">Steps</td><td>Activate every step</td><td>Turn on all 16</td></tr>
+                <tr><td>Activate every other step</td><td>1/3/5/… on, 2/4/6/… off</td></tr>
+                <tr><td>Clear all steps</td><td>Disable everything</td></tr>
+            </tbody>
+        </table>
+
+        <p>All operators are <em>deterministic</em>: same input + same operator = same output. Combine them to build phrases without ever rolling a dice.</p>
+
+        <h2>Phrase library</h2>
+        <p>Click <strong>Phrases</strong>. A categorized list of 20 hand-authored 16-step phrases pops up:</p>
+
+        <ul>
+            <li><strong>Trance / Electronic</strong> — Driving 8th-note root, Off-beat octave bounce, Trance arp climb (1-3-5-1), Goa pulse, Acid bassline (1-5-3-7), Pluck riff (descending 5ths), Roll-up (chromatic), Anjuna lead (4-5-1-2), 16th hat, Triplet feel</li>
+            <li><strong>Bass / Lead</strong> — Two-octave run, Skipping 5ths, Power-fifth stab, Sub-octave drop, Walking bass</li>
+            <li><strong>Atmospheric / Pad</strong> — Sustained root, Slow octave alternate, Suspended 4th swell, Whole-note progression frame, Sparse melodic skeleton</li>
+            <li><strong>Clear pattern</strong> at the bottom of the menu</li>
+        </ul>
+
+        <h2>Chord progression composer</h2>
+        <p>Pick a progression from the <em>Progression</em> dropdown (I-V-vi-IV / ii-V-I / vi-IV-I-V / etc.), pick a root + scale, and click <strong>Apply Prog</strong>. The composer fills the steps with the chord notes for the chosen progression.</p>
+
+        <h2>Piano Roll editor</h2>
+        <p>Switch <em>Editor View</em> to <strong>Piano Roll</strong>. The view:</p>
+        <ul>
+            <li>Spans 6 octaves (-36 to +36 semitones from root) with a real piano-keyboard column on the left</li>
+            <li>Beat lines emphasised every 4 steps; bar headers at the top</li>
+            <li>Hover the cursor to see a target cell highlight in accent colour</li>
+            <li><strong>Click</strong> to draw a note · <kbd>Ctrl/⌘</kbd>-click to toggle · <strong>Right-click</strong> to clear</li>
+            <li><strong>Shift-drag</strong> horizontally edits gate length within the step</li>
+        </ul>
+
+        <h2>Drum Pattern Grid</h2>
+        <p>For Drum Machine instruments. Multi-track grid (one row per pad), 16-64 step columns. Click a cell to toggle, drag for ranges. Vertical strokes inside a cell scale velocity by Y. Tracks support pattern banks (8 patterns per kit), per-step velocity, gate and probability.</p>
+
+        <h2>Export the pattern</h2>
+        <p>Click <strong>Export MIDI</strong> to write the active pattern as a standard <code>.mid</code> file you can drop into any DAW.</p>
+
+        <div class="callout tip">
+            <strong>Tip</strong>
+            Build phrases by stacking operators. Start with <em>Phrase: Trance arp climb</em>, apply <em>Transpose +7</em>, then <em>Scale-quantize</em>. The result is reproducible, musical, and yours.
+        </div>
+
+        <div class="section-nav">
+            <a href="04-sample-mapper.html"><strong>Back</strong><span>4 — Sample mapper</span></a>
+            <a class="next" href="06-dsp-builder.html"><strong>Up next</strong><span>6 — DSP builder</span></a>
+        </div>
+    </main>
+</div>
+
+<footer class="footer">PatchCraft · Tutorial bundle</footer>
+<script src="assets/js/nav.js"></script>
+</body>
+</html>

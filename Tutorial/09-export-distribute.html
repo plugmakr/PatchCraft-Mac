@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>9 — Export &amp; ship · PatchCraft Tutorial</title>
+    <link rel="stylesheet" href="assets/css/main.css"/>
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo.svg"/>
+</head>
+<body>
+<header class="topbar">
+    <div class="topbar-logo"><img src="assets/img/logo.svg" alt="" class="hex"/>PATCHCRAFT</div>
+    <span class="topbar-tagline">Instrument Builder Tutorial</span>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-actions">
+        <a href="index.html">Home</a>
+        <a href="10-glossary.html">Glossary</a>
+        <a class="cta" href="PatchCraftTutorial.zip">Download</a>
+    </div>
+</header>
+
+<div class="shell">
+    <nav class="sidebar">
+        <div class="sidebar-section"><h5>Tutorial</h5>
+            <ul>
+                <li><a href="index.html">Overview</a></li>
+                <li><a href="01-overview.html">1 — What is PatchCraft</a></li>
+                <li><a href="02-getting-started.html">2 — Getting started</a></li>
+                <li><a href="03-design.html">3 — Design canvas</a></li>
+                <li><a href="04-sample-mapper.html">4 — Sample mapper</a></li>
+                <li><a href="05-midi-playground.html">5 — MIDI playground</a></li>
+                <li><a href="06-dsp-builder.html">6 — DSP builder</a></li>
+                <li><a href="07-brand-lab.html">7 — Brand Lab</a></li>
+                <li><a href="08-presets-expansions.html">8 — Presets &amp; expansions</a></li>
+                <li><a href="09-export-distribute.html">9 — Export &amp; ship</a></li>
+                <li><a href="10-glossary.html">10 — Glossary</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="content">
+        <h1>9 — Export &amp; ship</h1>
+        <p class="lede" style="color:var(--text-mid);font-size:1.1rem;">Turn your project into a playable, sellable plugin in one click.</p>
+
+        <h2>Pre-flight</h2>
+        <p>Before exporting, make sure:</p>
+        <ul>
+            <li>You've saved the project (<kbd>Ctrl/⌘+S</kbd>)</li>
+            <li>The Brand Lab fields are complete (display name, creator, version)</li>
+            <li>Every sample zone resolves to an existing audio file</li>
+            <li>Every layout knob/slider is bound to a real parameter</li>
+            <li>The default preset sounds the way you want it to (it's the first thing users hear)</li>
+        </ul>
+
+        <p>Studio will warn if any of these are missing during export. Sample-export validation in particular blocks export if zones reference files that don't exist.</p>
+
+        <h2>Exporting</h2>
+        <ol class="steps">
+            <li><h3>Top toolbar → Export Pack → Export Pack...</h3><p>A folder picker opens, defaulting to <code>~/Documents/&lt;instrument&gt;.patchcraft</code>.</p></li>
+            <li><h3>Pick a destination folder</h3><p>The Studio writes the entire pack into that folder.</p></li>
+            <li><h3>Confirmation dialog</h3><p>If anything triggered a warning during export (missing samples, missing artwork, etc.), the dialog lists them. The pack is still usable; warnings are advisory.</p></li>
+        </ol>
+
+        <h2>What the exported folder contains</h2>
+        <pre><code>MyInstrument.patchcraft/
+├── manifest.json        ← branding + engine + version
+├── layout.json          ← GUI element list
+├── parameters.json      ← parameter palette + defaults
+├── presets.json         ← preset bank
+├── mappings.json        ← sample zones (key/velocity/pad)
+├── expansion.json       ← expansion metadata (which patches/presets belong)
+├── assets/
+│   ├── background.png   ← canvas background (auto-generated if missing)
+│   ├── thumbnail.png    ← library tile artwork
+│   ├── logo.png         ← player logo (if branded)
+│   └── knobs/ sliders/ meters/ images/    ← custom filmstrips & artwork
+├── samples/
+│   └── *.wav            ← copied audio files referenced by zones
+└── patches/
+    └── *.json           ← per-patch full instrument state</code></pre>
+
+        <p>If the project's background image is missing on disk, the writer renders a default 1280×800 hero image so the exported pack is always self-contained.</p>
+
+        <h2>Sending to an existing expansion</h2>
+        <p>If you've already shipped a Player and now want to add an expansion to it:</p>
+        <ol class="steps">
+            <li><h3>Top toolbar → Export Pack → Send to Expansion Pack...</h3><p>Choose the existing pack folder. The current project's patches/presets append to that pack's expansion.json.</p></li>
+            <li><h3>Validation</h3><p>The writer checks that the engine matches and asset dependencies are satisfied; warns on conflicts.</p></li>
+            <li><h3>Distribution</h3><p>Ship just the updated <code>expansion.json</code> + new <code>samples/</code> + <code>patches/</code> as a small delta, or the full updated pack folder.</p></li>
+        </ol>
+
+        <h2>Two delivery models</h2>
+
+        <h3>A. Bundle the Player + your pack</h3>
+        <p>Ship two things together:</p>
+        <ul>
+            <li><code>PatchCraft Player.vst3</code> — the runtime (or your renamed/branded build of it)</li>
+            <li><code>MyInstrument.patchcraft/</code> — your exported pack folder</li>
+        </ul>
+        <p>Customers drop both into their VST3 plugin folder. The Player auto-discovers nearby packs and loads yours on first run. The branded chrome (display name, logo, accent colour) renders so the plugin appears in their DAW with your identity.</p>
+
+        <h3>B. Sell expansion packs for an existing branded Player</h3>
+        <p>If you've already shipped a branded Player to a customer base, additional packs are smaller deliverables:</p>
+        <ul>
+            <li>Just ship the new <code>.patchcraft</code> folder — they drop it next to their existing Player</li>
+            <li>The Library Browser inside the Player picks it up automatically</li>
+            <li>Smaller download, faster turn-around for new content</li>
+        </ul>
+
+        <h2>End-user experience</h2>
+        <ol class="steps">
+            <li><h3>Open DAW, instantiate Player VST3</h3><p>The plugin window appears with your branding (display name, tagline, logo, accent colour).</p></li>
+            <li><h3>Pick a preset</h3><p>From the Player's preset dropdown — your bank of named presets is right there.</p></li>
+            <li><h3>Play notes</h3><p>From a MIDI controller or DAW track. The instrument responds.</p></li>
+            <li><h3>Tweak knobs / sliders / pads</h3><p>All visible controls are real plug-in parameters — they show up in the DAW's automation list.</p></li>
+            <li><h3>MIDI Learn</h3><p>Right-click any knob → MIDI Learn → wiggle a hardware knob → it's bound. Learn settings save with the project.</p></li>
+            <li><h3>Browse expansions</h3><p>If you've shipped multiple packs, the user can switch between them from the Player's library browser.</p></li>
+        </ol>
+
+        <h2>Versioning &amp; updates</h2>
+        <p>Each pack has a <code>version</code> field in its manifest. Bump it before shipping a new build (1.0 → 1.1, etc.) so users can see they have an update available. Your delivery channel (your store, plugin.club, direct download) is responsible for getting them the new files.</p>
+
+        <div class="callout info">
+            <strong>Roadmap</strong>
+            Pack signing, license activation, automatic update notifications, and plugin.club integration are on the roadmap. Today the export → distribute loop is manual.
+        </div>
+
+        <h2>Final checklist</h2>
+        <ol class="steps">
+            <li><h3>Test in a DAW</h3><p>Load the Player VST3 in Reaper / Live / FL Studio with your pack. Play notes. Try every knob. Verify host automation works.</p></li>
+            <li><h3>Test on a clean machine</h3><p>If possible, copy the bundle to a fresh user account or another machine — catches missing-asset bugs.</p></li>
+            <li><h3>License + readme</h3><p>Drop a <code>README.txt</code> and a <code>LICENSE.txt</code> next to the pack folder. Describe install steps and your terms.</p></li>
+            <li><h3>Ship it</h3><p>Zip the bundle, upload, get paid.</p></li>
+        </ol>
+
+        <div class="section-nav">
+            <a href="08-presets-expansions.html"><strong>Back</strong><span>8 — Presets &amp; expansions</span></a>
+            <a class="next" href="10-glossary.html"><strong>Up next</strong><span>10 — Glossary</span></a>
+        </div>
+    </main>
+</div>
+
+<footer class="footer">PatchCraft · Tutorial bundle</footer>
+<script src="assets/js/nav.js"></script>
+</body>
+</html>

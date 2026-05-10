@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PatchCraft - Professional Sample Instrument Platform</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .hero {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 60px 40px;
+            text-align: center;
+            margin-bottom: 40px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+        
+        .hero h1 {
+            font-size: 3.5em;
+            font-weight: 800;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 20px;
+        }
+        
+        .hero p {
+            font-size: 1.3em;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        .cta-buttons {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 50px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn-secondary {
+            background: white;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+        
+        .btn-secondary:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+        
+        .feature-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .feature-card h3 {
+            font-size: 1.5em;
+            margin-bottom: 15px;
+            color: #667eea;
+        }
+        
+        .feature-card ul {
+            list-style: none;
+        }
+        
+        .feature-card li {
+            padding: 8px 0;
+            padding-left: 25px;
+            position: relative;
+        }
+        
+        .feature-card li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #667eea;
+            font-weight: bold;
+        }
+        
+        .comparison {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 40px;
+            margin-bottom: 40px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .comparison h2 {
+            text-align: center;
+            font-size: 2em;
+            margin-bottom: 30px;
+            color: #667eea;
+        }
+        
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+        
+        .comparison-table th,
+        .comparison-table td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .comparison-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #667eea;
+        }
+        
+        .comparison-table .patchcraft {
+            background: #e8f0ff;
+            font-weight: 600;
+        }
+        
+        .specs {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 40px;
+            backdrop-filter: blur(10px);
+            margin-bottom: 40px;
+        }
+        
+        .specs h2 {
+            text-align: center;
+            font-size: 2em;
+            margin-bottom: 30px;
+            color: #667eea;
+        }
+        
+        .specs-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        
+        .spec-item {
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        
+        .spec-item h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .pricing {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 40px;
+            backdrop-filter: blur(10px);
+            text-align: center;
+        }
+        
+        .pricing h2 {
+            font-size: 2em;
+            margin-bottom: 30px;
+            color: #667eea;
+        }
+        
+        .pricing-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .pricing-card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+        
+        .pricing-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .pricing-card.featured {
+            border: 3px solid #667eea;
+            transform: scale(1.05);
+        }
+        
+        .pricing-card h3 {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+            color: #667eea;
+        }
+        
+        .pricing-card .price {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        
+        .pricing-card ul {
+            list-style: none;
+            text-align: left;
+            margin-bottom: 30px;
+        }
+        
+        .pricing-card li {
+            padding: 8px 0;
+            padding-left: 25px;
+            position: relative;
+        }
+        
+        .pricing-card li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #667eea;
+            font-weight: bold;
+        }
+        
+        .toggle-specs {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 1em;
+            margin: 20px auto;
+            display: block;
+        }
+        
+        .toggle-specs:hover {
+            background: #764ba2;
+        }
+        
+        .detailed-specs {
+            display: none;
+            margin-top: 30px;
+        }
+        
+        .detailed-specs.show {
+            display: block;
+        }
+        
+        @media (max-width: 768px) {
+            .hero {
+                padding: 40px 20px;
+            }
+            
+            .hero h1 {
+                font-size: 2.5em;
+            }
+            
+            .features {
+                grid-template-columns: 1fr;
+            }
+            
+            .cta-buttons {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .comparison-table {
+                font-size: 0.9em;
+            }
+            
+            .pricing-cards {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Hero Section -->
+        <div class="hero">
+            <h1>PatchCraft</h1>
+            <p>Professional Sample Instrument Platform - Design, Create, and Sell Custom Instruments</p>
+            <div class="cta-buttons">
+                <a href="#pricing" class="btn btn-primary">Get Started</a>
+                <button class="btn btn-secondary" onclick="toggleSpecs()">View Full Specs</button>
+            </div>
+        </div>
+
+        <!-- Core Features -->
+        <div class="features">
+            <div class="feature-card">
+                <h3>🎨 Visual Designer</h3>
+                <ul>
+                    <li>Drag-and-drop canvas interface</li>
+                    <li>Rich component library</li>
+                    <li>Real-time preview</li>
+                    <li>Professional knob builder</li>
+                    <li>Layer management system</li>
+                </ul>
+            </div>
+            
+            <div class="feature-card">
+                <h3>🎹 Universal Player</h3>
+                <ul>
+                    <li>One plugin, infinite instruments</li>
+                    <li>Runtime UI rendering</li>
+                    <li>Full DAW integration</li>
+                    <li>High-performance audio engine</li>
+                    <li>VST3 compatible</li>
+                </ul>
+            </div>
+            
+            <div class="feature-card">
+                <h3>🛡️ Real-Time Safe</h3>
+                <ul>
+                    <li>Zero audio thread allocations</li>
+                    <li>Pre-allocated buffers</li>
+                    <li>Optimized voice management</li>
+                    <li>Lock-free processing</li>
+                    <li>No crashes or dropouts</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Competitive Comparison -->
+        <div class="comparison">
+            <h2>Competitive Advantages</h2>
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Feature</th>
+                        <th>PatchCraft</th>
+                        <th>Kontakt</th>
+                        <th>Serum</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Visual Designer</td>
+                        <td class="patchcraft">✓ Native</td>
+                        <td>✗ Scripting Only</td>
+                        <td>✗ Limited</td>
+                    </tr>
+                    <tr>
+                        <td>Universal Player</td>
+                        <td class="patchcraft">✓ One Plugin</td>
+                        <td>✗ Per Instrument</td>
+                        <td>✗ Per Instrument</td>
+                    </tr>
+                    <tr>
+                        <td>Real-Time Safety</td>
+                        <td class="patchcraft">✓ Guaranteed</td>
+                        <td>✗ Issues Reported</td>
+                        <td>✓ Good</td>
+                    </tr>
+                    <tr>
+                        <td>SFZ Import</td>
+                        <td class="patchcraft">✓ Full Support</td>
+                        <td>✓ Limited</td>
+                        <td>✗ None</td>
+                    </tr>
+                    <tr>
+                        <td>Creator Pricing</td>
+                        <td class="patchcraft">✓ Affordable</td>
+                        <td>✗ Enterprise</td>
+                        <td>✓ Fair</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Detailed Specifications -->
+        <div class="specs">
+            <h2>Technical Specifications</h2>
+            <button class="toggle-specs" onclick="toggleSpecs()">Toggle Detailed Specs</button>
+            
+            <div id="detailedSpecs" class="detailed-specs">
+                <div class="specs-grid">
+                    <div class="spec-item">
+                        <h4>🖥️ System Requirements</h4>
+                        <p>Windows 10+ (64-bit)<br>
+                        macOS 10.15+ (Intel/Apple Silicon)<br>
+                        4GB RAM minimum (8GB+ recommended)<br>
+                        VST3 compatible DAW</p>
+                    </div>
+                    
+                    <div class="spec-item">
+                        <h4>🎛️ Audio Specifications</h4>
+                        <p>Sample Rate: 44.1kHz - 192kHz<br>
+                        Bit Depth: 16/24/32-bit<br>
+                        Channels: Mono/Stereo<br>
+                        Voices: Up to 64 polyphonic<br>
+                        Latency: < 2ms at 44.1kHz</p>
+                    </div>
+                    
+                    <div class="spec-item">
+                        <h4>📁 File Formats</h4>
+                        <p>Input: WAV, AIFF, SFZ, FLAC<br>
+                        Output: VST3, .patchcraft packs<br>
+                        Samples: Unlimited size, any format<br>
+                        Graphics: PNG, JPG, SVG support</p>
+                    </div>
+                    
+                    <div class="spec-item">
+                        <h4>🎯 Performance</h4>
+                        <p>Real-time safe processing<br>
+                        Zero audio thread allocations<br>
+                        Intelligent voice stealing<br>
+                        Multi-output support<br>
+                        Low CPU usage</p>
+                    </div>
+                    
+                    <div class="spec-item">
+                        <h4>🔒 Security Features</h4>
+                        <p>License validation system<br>
+                        Trial mode with watermarks<br>
+                        Hardware fingerprinting<br>
+                        Online activation (optional)<br>
+                        Commercial protection</p>
+                    </div>
+                    
+                    <div class="spec-item">
+                        <h4>🎨 Design Tools</h4>
+                        <p>12+ UI component types<br>
+                        Visual knob builder<br>
+                        Layer management<br>
+                        Asset organization<br>
+                        Export options</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pricing -->
+        <div class="pricing" id="pricing">
+            <h2>Pricing & Licensing</h2>
+            <div class="pricing-cards">
+                <div class="pricing-card">
+                    <h3>🎹 Player</h3>
+                    <div class="price">Free</div>
+                    <ul>
+                        <li>Load any .patchcraft instrument</li>
+                        <li>VST3 plugin</li>
+                        <li>Trial mode available</li>
+                        <li>Basic support</li>
+                    </ul>
+                    <a href="#" class="btn btn-secondary">Download</a>
+                </div>
+                
+                <div class="pricing-card featured">
+                    <h3>🎨 Studio</h3>
+                    <div class="price">$299</div>
+                    <ul>
+                        <li>Full visual designer</li>
+                        <li>Commercial use rights</li>
+                        <li>Priority support</li>
+                        <li>Free updates</li>
+                        <li>Export tools</li>
+                    </ul>
+                    <a href="#" class="btn btn-primary">Buy Now</a>
+                </div>
+                
+                <div class="pricing-card">
+                    <h3>🏢 Enterprise</h3>
+                    <div class="price">$999</div>
+                    <ul>
+                        <li>Source code access</li>
+                        <li>OEM licensing</li>
+                        <li>Priority development</li>
+                        <li>Direct support</li>
+                        <li>Custom builds</li>
+                    </ul>
+                    <a href="#" class="btn btn-secondary">Contact Sales</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function toggleSpecs() {
+            const specs = document.getElementById('detailedSpecs');
+            const button = document.querySelector('.toggle-specs');
+            
+            if (specs.classList.contains('show')) {
+                specs.classList.remove('show');
+                button.textContent = 'View Full Specs';
+            } else {
+                specs.classList.add('show');
+                button.textContent = 'Hide Detailed Specs';
+            }
+        }
+    </script>
+</body>
+</html>

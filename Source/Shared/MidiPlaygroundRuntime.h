@@ -1,0 +1,148 @@
+#pragma once
+
+#include "IInstrumentEngine.h"
+#include "PatchCraftTypes.h"
+#include "RenderContext.h"
+
+#include <array>
+#include <cstdint>
+#include <vector>
+
+namespace patchcraft
+{
+    class MidiPlaygroundRuntime
+    {
+    public:
+        void bind (const DspGraph&);
+        bool isEnabled() const noexcept { return enabled; }
+
+        void reset();
+        void allNotesOff (IInstrumentEngine&);
+
+        bool handleNoteOn (IInstrumentEngine&, int midiNote, float velocity);
+        bool handleNoteOff (IInstrumentEngine&, int midiNote);
+        void process (IInstrumentEngine&, const RenderContext&);
+
+    private:
+        static constexpr int kMaxSteps = 16;
+        static constexpr int kMaxChordNotes = 16;
+        static constexpr int kMaxPhraseBanks = 4;
+        static constexpr int kMaxDrumPatterns = 8;
+        static constexpr int kMaxDrumTracks = 16;
+        static constexpr int kMaxDrumSteps = 64;
+
+        struct Settings
+        {
+            bool drumMachine = false;
+            float rate = 1.0f;
+            bool sync = true;
+            int steps = 8;
+            int activeBank = 0;
+            int pattern = 0;
+            int polymeterSteps = 0;
+            float gate = 0.55f;
+            int octaves = 2;
+            float swing = 0.0f;
+            float probability = 1.0f;
+            float humanize = 0.0f;
+            float mutation = 0.0f;
+            float velocityCurve = 0.0f;
+            bool octaveFold = false;
+            int ratchet = 1;
+            float strum = 0.0f;
+            float flam = 0.0f;
+            int echoRepeats = 0;
+            float echoDelay = 0.18f;
+            float echoDecay = 0.55f;
+            float patternMorph = 0.0f;
+            int euclideanPulses = 0;
+            int euclideanRotate = 0;
+            bool keySwitchEnabled = false;
+            int keySwitchBase = 24;
+            int scaleRoot = 0;
+            int scaleType = 0;
+            int chordMode = 0;
+            int chordSize = 1;
+            float chordSpread = 0.0f;
+            bool latch = false;
+            bool sampleControl = false;
+            int sampleSliceCount = 1;
+            float sampleStart = 0.0f;
+            float sampleLength = 1.0f;
+            float samplePitch = 0.0f;
+            uint32_t seed = 0x50434d49u;
+            std::array<float, kMaxSteps> notes {};
+            std::array<float, kMaxSteps> velocities {};
+            std::array<float, kMaxSteps> gates {};
+            std::array<float, kMaxSteps> active {};
+            std::array<float, kMaxSteps> probabilities {};
+            std::array<float, kMaxSteps> sampleSlices {};
+            std::array<float, kMaxPhraseBanks> bankHasData {};
+            std::array<float, kMaxPhraseBanks * kMaxSteps> bankNotes {};
+            std::array<float, kMaxPhraseBanks * kMaxSteps> bankVelocities {};
+            std::array<float, kMaxPhraseBanks * kMaxSteps> bankGates {};
+            std::array<float, kMaxPhraseBanks * kMaxSteps> bankActive {};
+            std::array<float, kMaxPhraseBanks * kMaxSteps> bankProbabilities {};
+            std::array<float, kMaxPhraseBanks * kMaxSteps> bankSampleSlices {};
+            int drumTracks = 8;
+            int drumSteps = 16;
+            int drumPattern = 0;
+            bool drumTransport = true;
+            bool drumSongMode = false;
+            int drumChainLength = 1;
+            std::array<int, kMaxDrumPatterns> drumChain {};
+            std::array<int, kMaxDrumTracks> drumNotes {};
+            std::array<float, kMaxDrumPatterns * kMaxDrumTracks * kMaxDrumSteps> drumActive {};
+            std::array<float, kMaxDrumPatterns * kMaxDrumTracks * kMaxDrumSteps> drumVelocities {};
+            std::array<float, kMaxDrumPatterns * kMaxDrumTracks * kMaxDrumSteps> drumGates {};
+            std::array<float, kMaxDrumPatterns * kMaxDrumTracks * kMaxDrumSteps> drumProbabilities {};
+        };
+
+        bool enabled = false;
+        Settings settings;
+        std::vector<int> heldNotes;
+        std::array<float, 128> heldVelocities {};
+        std::array<int, kMaxChordNotes> activeNotes {};
+        int activeNoteCount = 0;
+        float activeVelocity = 0.0f;
+        double phase = 0.0;
+        int currentStep = -1;
+        int currentRatchetSlot = -1;
+        bool gateOpen = false;
+        uint32_t cycleCounter = 0;
+        std::array<int, kMaxChordNotes> pendingNotes {};
+        std::array<double, kMaxChordNotes> pendingPhases {};
+        std::array<float, kMaxChordNotes> pendingVelocities {};
+        int pendingNoteCount = 0;
+        int pendingNoteIndex = 0;
+        int pendingStep = -1;
+        std::array<int, kMaxDrumTracks> activeDrumNotes {};
+        std::array<double, kMaxDrumTracks> activeDrumGateEnds {};
+
+        static bool isMidiPlaygroundBlock (const DspBlock&);
+        static float valueForKey (const DspBlock&, const juce::String&, float fallback);
+        static uint32_t hash (uint32_t);
+        static int drumIndex (int track, int step);
+        static int drumPatternIndex (int pattern, int track, int step);
+        static int bankStepIndex (int bank, int step);
+
+        void loadRuntimeBank (int bank);
+        int activeStepCount() const;
+        int activeDrumPattern() const;
+        int sequenceIndexForStep (int step) const;
+        int baseNoteForSequenceIndex (int index) const;
+        int quantizeToScale (int midiNote) const;
+        int scaleDegreeToSemitone (int degree) const;
+        bool stepIsEnabled (int step) const;
+        bool stepPassesEuclideanMask (int step) const;
+        bool stepPassesProbability (int step) const;
+        float velocityForStep (int step) const;
+        void buildStepNotes (int step, std::array<int, kMaxChordNotes>& notes, int& count) const;
+        void applySampleControl (IInstrumentEngine&, int step) const;
+        void triggerPendingNotes (IInstrumentEngine&, int step, double stepPhase);
+        void stopActive (IInstrumentEngine&);
+        void stopActiveDrums (IInstrumentEngine&);
+        void processDrumMachine (IInstrumentEngine&, const RenderContext&);
+        void startStep (IInstrumentEngine&, int step, double stepPhase, double swingDelay, double stepGate);
+    };
+}

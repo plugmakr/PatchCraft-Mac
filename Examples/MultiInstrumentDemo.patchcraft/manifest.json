@@ -1,0 +1,28 @@
+{
+  "formatVersion": 1,
+  "instrumentName": "Multi-Instrument Demo",
+  "creator": "PatchCraft Demo",
+  "description": "Demonstration of multi-instrument layering capabilities",
+  "category": "Sample Instrument",
+  "engine": "multi",
+  "backgroundImage": "assets/background.png",
+  "defaultPreset": "Main",
+  "createdWith": "PatchCraft Studio",
+  "multiInstrumentMode": true,
+  "instrumentIds": [
+    "guitar",
+    "piano"
+  ],
+  "instrumentNames": [
+    "Guitar Layer",
+    "Piano Layer"
+  ],
+  "libraryThumbnail": "assets/thumbnail.png",
+  "tags": [
+    "demo",
+    "multi-instrument",
+    "layering"
+  ],
+  "version": "1.0.0",
+  "website": "https://patchcraft.com"
+}

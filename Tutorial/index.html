@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>PatchCraft — Build, brand and ship instruments. The complete walkthrough.</title>
+    <meta name="description" content="A full start-to-finish tutorial for PatchCraft Studio: design custom synth and sampler instruments, brand the Player, sell expansion packs."/>
+    <link rel="stylesheet" href="assets/css/main.css"/>
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo.svg"/>
+</head>
+<body>
+<header class="topbar">
+    <div class="topbar-logo"><img src="assets/img/logo.svg" alt="" class="hex"/>PATCHCRAFT</div>
+    <span class="topbar-tagline">Instrument Builder Tutorial</span>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-actions">
+        <a href="01-overview.html">Get started</a>
+        <a href="10-glossary.html">Glossary</a>
+        <a class="cta" href="PatchCraftTutorial.zip">Download</a>
+    </div>
+</header>
+
+<div class="shell">
+    <nav class="sidebar">
+        <div class="sidebar-section">
+            <h5>Tutorial</h5>
+            <ul>
+                <li><a href="index.html">Overview</a></li>
+                <li><a href="01-overview.html">1 — What is PatchCraft</a></li>
+                <li><a href="02-getting-started.html">2 — Getting started</a></li>
+                <li><a href="03-design.html">3 — Design canvas</a></li>
+                <li><a href="04-sample-mapper.html">4 — Sample mapper</a></li>
+                <li><a href="05-midi-playground.html">5 — MIDI playground</a></li>
+                <li><a href="06-dsp-builder.html">6 — DSP builder</a></li>
+                <li><a href="07-brand-lab.html">7 — Brand Lab</a></li>
+                <li><a href="08-presets-expansions.html">8 — Presets &amp; expansions</a></li>
+                <li><a href="09-export-distribute.html">9 — Export &amp; ship</a></li>
+                <li><a href="10-glossary.html">10 — Glossary</a></li>
+            </ul>
+        </div>
+        <div class="sidebar-section">
+            <h5>Resources</h5>
+            <ul>
+                <li><a href="PatchCraftTutorial.zip">Download tutorial bundle</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="content">
+        <section class="hero">
+            <div class="pill-row">
+                <span class="pill lead">Lead</span>
+                <span class="pill bass">Bass</span>
+                <span class="pill pad">Pad</span>
+                <span class="pill arp">Arp</span>
+                <span class="pill fx">FX</span>
+            </div>
+            <h1>Build a real instrument.<br/>Brand it. Ship it.</h1>
+            <p class="lede">PatchCraft is two apps in one: a Studio where you author synth and sampler instruments,
+                and a Player VST3 your customers run inside their DAW. This tutorial walks the
+                whole loop — from blank canvas to a sellable, branded plugin with expansion packs.</p>
+            <div class="actions">
+                <a class="btn primary" href="01-overview.html">Start the tutorial →</a>
+                <a class="btn secondary" href="02-getting-started.html">Jump to install</a>
+            </div>
+        </section>
+
+        <img src="assets/img/hero-mock.svg" alt="PatchCraft Studio interface" style="width:100%;max-width:920px;margin:1em 0;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,0.5);"/>
+
+        <h2>What you'll build</h2>
+        <p>By the end of this tutorial you'll have a complete, branded VST3 instrument
+            ready to distribute. We'll cover every workspace in the Studio, every flow,
+            and every step from authoring to packaging.</p>
+
+        <div class="feature-grid">
+            <div class="feature">
+                <div class="icon">◆</div>
+                <h3>Visual GUI design</h3>
+                <p>Drag knobs, sliders, drum pads and meters onto a canvas, bind each one to a real DSP parameter.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">♪</div>
+                <h3>Sample, synth, drum, FX</h3>
+                <p>Four engines with a shared parameter system. 50 trance / electronic presets ship out of the box.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">◇</div>
+                <h3>White-label Player</h3>
+                <p>The Brand Lab lets you replace the Player's name, logo and skin so your instrument carries your identity in every DAW.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">⊞</div>
+                <h3>Expansion packs</h3>
+                <p>Build a Player once, then sell expansion packs that drop in with new sounds. The library browser shows them as cards.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">▦</div>
+                <h3>Sample mapping that doesn't suck</h3>
+                <p>Drag-drop folders. Auto-pad-mapping. Trim with snap-to-zero-crossing. Glitch Kit slices in one click.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">⌘</div>
+                <h3>MIDI tools, no random</h3>
+                <p>Authored phrases, deterministic operators, chord progressions, real piano roll. Predictable, musical.</p>
+            </div>
+        </div>
+
+        <h2>The path you'll follow</h2>
+        <ol class="steps">
+            <li><h3>Pick an engine</h3><p>Sampler, Synth, Drum Machine or FX. Each loads a starter layout and a default sound.</p></li>
+            <li><h3>Shape the sound</h3><p>Tweak parameters on the Design tab; bring in samples on the Sample Mapper; chain DSP blocks on the DSP Builder.</p></li>
+            <li><h3>Design the GUI</h3><p>Drop knobs, pads, displays on the canvas. Bind every visible control to a parameter.</p></li>
+            <li><h3>Brand the Player</h3><p>Open the Brand Lab. Set display name, tagline, logo, accent colour. The live preview shows what end users see in their DAW.</p></li>
+            <li><h3>Bank presets &amp; build expansions</h3><p>Save patches, organise them into expansion packs that ship as add-ons.</p></li>
+            <li><h3>Export &amp; ship</h3><p>One click writes a <code>.patchcraft</code> pack folder. Bundle it with the Player VST3 or sell as an expansion.</p></li>
+        </ol>
+
+        <div class="callout tip">
+            <strong>Tip</strong>
+            Read the tutorial in order the first time — each section builds on the previous one.
+            Once you know the app, the <a href="10-glossary.html">glossary</a> is a fast reference.
+        </div>
+
+        <div class="section-nav">
+            <span></span>
+            <a class="next" href="01-overview.html"><strong>Up next</strong><span>1 — What is PatchCraft</span></a>
+        </div>
+    </main>
+</div>
+
+<footer class="footer">
+    PatchCraft · Tutorial bundle · Built to teach the entire instrument-design loop · <a href="https://patchcraft.example">patchcraft.example</a>
+</footer>
+
+<script src="assets/js/nav.js"></script>
+</body>
+</html>

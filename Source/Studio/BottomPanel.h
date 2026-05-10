@@ -1,0 +1,98 @@
+#pragma once
+
+#include <juce_gui_extra/juce_gui_extra.h>
+#include <juce_audio_devices/juce_audio_devices.h>
+
+namespace patchcraft
+{
+    class StudioMainComponent;
+    class SampleMapEditor;
+    class KeyzonesComponent;
+    class VelocityMapViewer;
+    class ParametersComponent;
+    class ControlBuilderComponent;
+    class PresetsComponent;
+    class InstrumentPreviewComponent;
+    class StudioInstrumentRenderer;
+    class DspPage;
+    class MidiPlaygroundPage;
+    class IInstrumentEngine;
+    class TestPage;
+    class BrandingLabPage;
+    struct SampleZoneDef;
+
+    /**
+        Bottom workspace - tabbed via the section tabs in the canvas toolbar.
+        One Page is visible at a time:
+            Design       - Parameters list + Presets browser side-by-side.
+            SampleMapper - Mapper / Keyzones / Velocity sub-tabs.
+            MidiPlayground - Musical MIDI generation and sample-control tools.
+            Test         - Embedded MIDI keyboard + preview engine.
+            Build        - Unified Knob / Slider / Meter builder.
+    */
+    class BottomPanel : public juce::Component
+    {
+    public:
+        enum class Page { Design = 0, SampleMapper = 1, MidiPlayground = 2, Test = 3, DSP = 4, Build = 5, Branding = 6 };
+
+        explicit BottomPanel (StudioMainComponent& owner);
+        ~BottomPanel() override;
+
+        void paint (juce::Graphics&) override;
+        void resized() override;
+
+        void setPage (Page);
+        Page getPage() const                              { return currentPage; }
+
+        // Test page: start/stop the embedded preview audio.
+        void setPreviewActive (bool active);
+        bool isPreviewActive() const;
+        const SampleZoneDef* getSelectedSampleZone() const;
+        juce::String getDspPatchSectionId() const;
+        juce::String getDspPatchSectionLabel() const;
+        void showDspBuilderTutorial();
+
+        void refresh();
+
+    private:
+        StudioMainComponent& owner;
+        Page currentPage = Page::Design;
+
+        // ---- Design page ---------------------------------------------------
+        juce::Label                          designDspHeader;
+        juce::Label                          designPresetsHeader;
+        std::unique_ptr<ParametersComponent> parameters;
+        std::unique_ptr<PresetsComponent>    presets;
+        std::unique_ptr<DspPage>             designDspPage;
+
+        // ---- Sample Mapper page -------------------------------------------
+        juce::TextButton btnMapperMain    { "Sample Mapper" };
+        juce::TextButton btnMapperKeyzones { "Keyzones" };
+        juce::TextButton btnMapperVelocity { "Velocity" };
+        std::unique_ptr<SampleMapEditor> sampleMapper;
+        std::unique_ptr<KeyzonesComponent>     keyzones;
+        std::unique_ptr<VelocityMapViewer>     velocityMap;
+        int activeMapperSubTab = 0;
+        void rebuildMapperSubVisibility();
+
+        // ---- MIDI Playground page ------------------------------------------
+        std::unique_ptr<MidiPlaygroundPage> midiPlayground;
+
+        // ---- Test page -----------------------------------------------------
+        std::unique_ptr<TestPage> testPage;
+
+        // ---- DSP page -------------------------------------------------------
+        std::unique_ptr<DspPage> dspPage;
+
+        // ---- Build page (unified Knob/Slider/Meter builder) ---------------
+        std::unique_ptr<ControlBuilderComponent> builder;
+
+        // ---- Branding Lab -------------------------------------------------
+        std::unique_ptr<BrandingLabPage> brandingLab;
+
+        void rebuildPageVisibility();
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BottomPanel)
+    };
+
+} // namespace patchcraft

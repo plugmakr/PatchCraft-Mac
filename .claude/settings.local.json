@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmake --version)",
+      "Bash(cmake -B build -G \"Visual Studio 17 2022\" -A x64 -DPATCHCRAFT_JUCE_PATH=../JUCE)",
+      "Bash(cmake --build /m/AudiCode/PCraft/build --config Release --target PatchCraftCore)",
+      "Bash(cmake --build /m/AudiCode/PCraft/build --config Release --target PatchCraftStudio)",
+      "Bash(cmake --build /m/AudiCode/PCraft/build --config Release --target PatchCraftPlayer_VST3)",
+      "Bash(cmake -B /m/AudiCode/PCraft/build)",
+      "Bash(cmake --build /m/AudiCode/PCraft/build --config Release --target PatchCraftStudio PatchCraftPlayer_VST3 PatchCraftPlayerFX_VST3)",
+      "Bash(cmake --build /m/AudiCode/PCraft/build --config Release --target PatchCraftPlayer_VST3 PatchCraftPlayerFX_VST3)",
+      "Bash(cmake --build /m/AudiCode/PCraft/build --config Release --target PatchCraftPlayer_Standalone PatchCraftPlayerFX_Standalone)",
+      "PowerShell($ErrorActionPreference=\"Continue\"; & \"M:\\\\AudiCode\\\\PCraft\\\\build\\\\PatchCraftPlayer_artefacts\\\\Release\\\\Standalone\\\\PatchCraft Player.exe\" 2>&1 | Out-Host; \"exitcode: $LASTEXITCODE\")"
+    ]
+  }
+}

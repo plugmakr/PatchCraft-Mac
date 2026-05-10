@@ -1,0 +1,48 @@
+{
+  "zones": [
+    {
+      "samplePath": "samples/guitar_C3.wav",
+      "rootNote": 48,
+      "lowNote": 48,
+      "highNote": 52,
+      "lowVelocity": 1,
+      "highVelocity": 127,
+      "gainDb": 0.0,
+      "pan": -0.5,
+      "loopEnabled": false
+    },
+    {
+      "samplePath": "samples/guitar_D3.wav",
+      "rootNote": 50,
+      "lowNote": 50,
+      "highNote": 52,
+      "lowVelocity": 1,
+      "highVelocity": 127,
+      "gainDb": 0.0,
+      "pan": 0.0,
+      "loopEnabled": false
+    },
+    {
+      "samplePath": "samples/guitar_E3.wav",
+      "rootNote": 52,
+      "lowNote": 52,
+      "highNote": 54,
+      "lowVelocity": 1,
+      "highVelocity": 127,
+      "gainDb": 0.0,
+      "pan": 0.5,
+      "loopEnabled": false
+    },
+    {
+      "samplePath": "samples/guitar_G3.wav",
+      "rootNote": 55,
+      "lowNote": 55,
+      "highNote": 57,
+      "lowVelocity": 1,
+      "highVelocity": 127,
+      "gainDb": 0.0,
+      "pan": 0.5,
+      "loopEnabled": false
+    }
+  ]
+}
