@@ -1,0 +1,11 @@
+{
+  "format": "PatchCraft Meter",
+  "frames": 31,
+  "stripVertical": true,
+  "style": {
+    "name": "Blue Led Meter",
+    "frames": 31,
+    "outputMode": "vertical",
+    "category": "factory"
+  }
+}

@@ -1,4 +1,5 @@
 #include "InstrumentTemplates.h"
+#include "PresetGenerator.h"
 
 namespace patchcraft
 {
@@ -10,7 +11,7 @@ namespace patchcraft
                                        const juce::String& parameterId,
                                        int x, int y,
                                        const juce::String& groupId,
-                                       int w = 90, int h = 100)
+                                       int w = 82, int h = 90)
         {
             LayoutElement k;
             k.type = ElementType::Knob;
@@ -27,13 +28,34 @@ namespace patchcraft
                                 const juce::String& groupId,
                                 std::initializer_list<std::pair<juce::String, juce::String>> knobs)
         {
+            LayoutElement panel;
+            panel.type = ElementType::Shape;
+            panel.id = "panel_" + groupId;
+            panel.x = 136; panel.y = 520; panel.width = 936; panel.height = 174;
+            panel.groupId = groupId;
+            panel.shapeKind = "roundedRect";
+            panel.cornerRadius = 14.0f;
+            panel.backgroundColour = juce::Colour (0x33141822);
+            panel.borderColour = juce::Colour (0x8858f0c8);
+            panel.strokeWidth = 1.0f;
+            layout.add (panel);
+
+            LayoutElement heading;
+            heading.type = ElementType::Label;
+            heading.id = "label_" + groupId;
+            heading.x = 160; heading.y = 530; heading.width = 330; heading.height = 22;
+            heading.groupId = groupId;
+            heading.label = groupId.toUpperCase() + " CONTROLS";
+            heading.textColour = juce::Colour (0xfff7f7ff);
+            layout.add (heading);
+
             int i = 0;
             for (auto& kv : knobs)
             {
                 if (i >= 8) break;
-                const int x = 180 + i * 110;
+                const int x = 168 + i * 112;
                 layout.add (makeKnob ("knob_" + groupId + "_" + kv.second,
-                                      kv.first, kv.second, x, 530, groupId));
+                                      kv.first, kv.second, x, 574, groupId));
                 ++i;
             }
         }
@@ -47,72 +69,67 @@ namespace patchcraft
               e.x = 0; e.y = 0; e.width = canvas.width; e.height = canvas.height;
               e.locked = true; layout.add (e); }
 
-            // Title
-            { LayoutElement e; e.type = ElementType::Label; e.id = "title";
-              e.x = 40; e.y = 20; e.width = 500; e.height = 50;
-              juce::String name = "Cinematic Evolve Pad";
-              if (engine == "synth") name = "PatchCraft Synth";
-              if (engine == "fx")    name = "PatchCraft FX";
-              if (engine == "drum")  name = "PatchCraft Drums";
-              e.label = name; layout.add (e); }
-
-            // Preset dropdown (right of title)
-            { LayoutElement e; e.type = ElementType::Dropdown; e.id = "presets";
-              e.x = 600; e.y = 25; e.width = 320; e.height = 36;
-              e.label = "Preset"; layout.add (e); }
-
-            // Hero artwork window - now an Image so the Asset field can replace it
-            { LayoutElement e; e.type = ElementType::Image; e.id = "hero";
-              e.x = 40; e.y = 90; e.width = 1200; e.height = 360;
-              e.asset = "assets/hero.png";  // Will be generated at runtime if missing
-              e.label = "Artwork"; layout.add (e); }
+            // Hero artwork window. This is a styled well instead of a second
+            // image layer so generated templates do not cover the designed
+            // background wells or add placeholder "Artwork" text.
+            { LayoutElement e; e.type = ElementType::Shape; e.id = "hero_frame";
+              e.x = 40; e.y = 92; e.width = 1200; e.height = 348;
+              e.shapeKind = "roundedRect";
+              e.cornerRadius = 18.0f;
+              e.backgroundColour = juce::Colour (0x22141822);
+              e.borderColour = juce::Colour (0x8858f0c8);
+              e.strokeWidth = 1.0f;
+              layout.add (e); }
 
             // Tab strip
             { LayoutElement e; e.type = ElementType::TabPanel; e.id = "tabs";
-              e.x = 380; e.y = 470; e.width = 540; e.height = 32;
+              e.x = 370; e.y = 470; e.width = 540; e.height = 34;
               if (engine == "fx")
                   e.tabs = { "Main", "Filter", "Delay", "Reverb" };
               else if (engine == "drum")
-                  e.tabs = { "Pads", "Amp", "Filter", "FX" };
+                  e.tabs = { "Pads", "Pattern", "Amp", "Filter", "FX" };
               else
-                  e.tabs = { "Main", "Amp", "Filter", "Mod", "FX", "Space", "Arp" };
+                  // Each tab owns a distinct slice of the signal path so no
+                  // two tabs show the same controls. Arp lives in its own
+                  // workspace once the DSP graph adds an arp block.
+                  e.tabs = { "Main", "Amp", "Filter", "Mod", "FX", "Space" };
               layout.add (e); }
 
             // Master section (always visible)
             if (engine != "fx")
             {
                 LayoutElement vol; vol.type = ElementType::Knob; vol.id = "masterVol";
-                vol.x = 1100; vol.y = 480; vol.width = 70; vol.height = 70;
+                vol.x = 1090; vol.y = 478; vol.width = 72; vol.height = 78;
                 vol.label = "Volume"; vol.parameterId = "volume";
                 layout.add (vol);
 
                 LayoutElement pan; pan.type = ElementType::Knob; pan.id = "masterPan";
-                pan.x = 1180; pan.y = 480; pan.width = 70; pan.height = 70;
+                pan.x = 1170; pan.y = 478; pan.width = 72; pan.height = 78;
                 pan.label = "Pan"; pan.parameterId = "pan";
                 layout.add (pan);
             }
 
             { LayoutElement e; e.type = ElementType::Meter; e.id = "outMeter";
-              e.x = 1100; e.y = 560; e.width = 150; e.height = 24;
+              e.x = 1090; e.y = 568; e.width = 150; e.height = 24;
               e.label = "Output"; layout.add (e); }
 
             // Performance sliders (left side)
             if (engine != "fx" && engine != "drum")
             {
-                LayoutElement exp; exp.type = ElementType::Slider; exp.id = "expression";
-                exp.x = 40; exp.y = 470; exp.width = 24; exp.height = 220;
-                exp.label = "Expr"; layout.add (exp);
+                LayoutElement pitch; pitch.type = ElementType::Slider; pitch.id = "pitchwheel";
+                pitch.x = 40; pitch.y = 485; pitch.width = 34; pitch.height = 205;
+                pitch.label = "Pitch"; pitch.parameterId = "pitchWheel"; layout.add (pitch);
 
                 LayoutElement mod; mod.type = ElementType::Slider; mod.id = "modwheel";
-                mod.x = 75; mod.y = 470; mod.width = 24; mod.height = 220;
-                mod.label = "Mod"; layout.add (mod);
+                mod.x = 82; mod.y = 485; mod.width = 34; mod.height = 205;
+                mod.label = "Mod"; mod.parameterId = "modWheel"; layout.add (mod);
             }
 
             // Bottom keyboard
             if (keyboardVisible)
             {
                 LayoutElement kb; kb.type = ElementType::Keyboard; kb.id = "keyboard";
-                kb.x = 40; kb.y = 720; kb.width = 1200; kb.height = 60;
+                kb.x = 40; kb.y = 718; kb.width = 1200; kb.height = 62;
                 layout.add (kb);
             }
         }
@@ -129,20 +146,25 @@ namespace patchcraft
 
         if (engine == "synth")
         {
-            // -------- Synth demo: full instrument with knobs in every tab.
-            // Main tab: top-level macros
+            // -------- Synth demo. Each tab owns a distinct slice of the
+            // signal path: oscillator, amp, filter, modulation, distortion,
+            // spatial FX, arpeggiator. No parameter appears in two tabs -
+            // duplicating controls makes them feel identical and obscures
+            // what each section actually shapes.
+            //
+            // Main: oscillators and pitch (sound source)
             addKnobRow (layout, "main", {
-                { "Wave",    "oscType" },
-                { "Octave",  "octave" },
-                { "Detune",  "detune" },
-                { "Attack",  "attack" },
-                { "Decay",   "decay" },
-                { "Sustain", "sustain" },
-                { "Release", "release" },
-                { "Cutoff",  "filterCutoff" }
+                { "Wave",       "oscType" },
+                { "Wave 2",     "osc2Type" },
+                { "Blend",      "oscBlend" },
+                { "Octave",     "octave" },
+                { "Detune",     "detune" },
+                { "Sub",        "subBlend" },
+                { "Noise",      "noiseBlend" },
+                { "Osc2 Det.",  "osc2Detune" }
             });
 
-            // Amp tab: ADSR + master out
+            // Amp: amplitude envelope + master out
             addKnobRow (layout, "amp", {
                 { "Attack",  "attack" },
                 { "Decay",   "decay" },
@@ -152,45 +174,37 @@ namespace patchcraft
                 { "Pan",     "pan" }
             });
 
-            // Filter tab: cutoff + reso + LFO modulation amount
+            // Filter: cutoff + resonance + (in-section) filter shape
             addKnobRow (layout, "filter", {
                 { "Cutoff",  "filterCutoff" },
-                { "Reso",    "filterResonance" },
-                { "LFO Amt", "lfoAmount" },
-                { "LFO Rate","lfoRate" }
+                { "Reso",    "filterResonance" }
             });
 
-            // Mod tab: LFO + detune + octave
+            // Mod: LFO and vibrato dedicated to modulation
             addKnobRow (layout, "mod", {
-                { "LFO Rate","lfoRate" },
-                { "LFO Amt", "lfoAmount" },
-                { "Detune",  "detune" },
-                { "Octave",  "octave" }
+                { "LFO Rate",   "lfoRate" },
+                { "LFO Amt",    "lfoAmount" },
+                { "Vib Rate",   "vibratoRate" },
+                { "Vib Depth",  "vibratoDepth" }
             });
 
-            // FX tab: filter + delay + reverb chain
+            // FX: output-bus shaping (the synth engine doesn't have a drive
+            // stage, so this tab is dedicated to the things its palette
+            // actually exposes: stereo and output gain).
             addKnobRow (layout, "fx", {
-                { "Cutoff",  "filterCutoff" },
-                { "Reso",    "filterResonance" },
-                { "Delay",   "delayMix" },
-                { "Reverb",  "reverbMix" }
+                { "Width",  "stereoWidth" },
+                { "Mono",   "monoMaker" },
+                { "Out dB", "outputGainDb" }
             });
 
-            // Space tab: reverb + delay detail
+            // Space: time-based effects only
             addKnobRow (layout, "space", {
-                { "Reverb",  "reverbMix" },
-                { "Dly Time","delayTime" },
-                { "Dly Fb",  "delayFeedback" },
-                { "Dly Mix", "delayMix" }
+                { "Reverb",   "reverbMix" },
+                { "Dly Time", "delayTime" },
+                { "Dly Fb",   "delayFeedback" },
+                { "Dly Mix",  "delayMix" }
             });
 
-            // Arp tab: ADSR-as-arp-envelope until a real arpeggiator engine ships
-            addKnobRow (layout, "arp", {
-                { "Attack",  "attack" },
-                { "Decay",   "decay" },
-                { "LFO Rate","lfoRate" },
-                { "LFO Amt", "lfoAmount" }
-            });
         }
         else if (engine == "drum")
         {
@@ -205,19 +219,28 @@ namespace patchcraft
               grid.cornerRadius = 8.0f;
               layout.add (grid); }
 
+            { LayoutElement pattern; pattern.type = ElementType::DrumGrid;
+              pattern.id = "drumPatternGrid";
+              pattern.x = 180; pattern.y = 520; pattern.width = 860; pattern.height = 170;
+              pattern.groupId = "pattern";
+              pattern.label = "Pattern Sequencer";
+              pattern.drumTracks = 8; pattern.drumSteps = 16; pattern.drumPattern = 0;
+              pattern.cornerRadius = 8.0f;
+              pattern.backgroundColour = juce::Colour (0x33141822);
+              layout.add (pattern); }
+
             // Macro knob row beneath the pad grid (groupId == "pads" tab).
+            // Each drum tab owns a distinct slice of the chain.
+            // Pads: per-hit macros (level, character, sample shape)
             addKnobRow (layout, "pads", {
-                { "Volume",  "volume" },
-                { "Pan",     "pan" },
-                { "Cutoff",  "filterCutoff" },
-                { "Reso",    "filterResonance" },
-                { "Attack",  "attack" },
-                { "Release", "release" },
-                { "Reverb",  "reverbMix" },
-                { "Drive",   "drive" }
+                { "Pitch",  "samplePitch" },
+                { "Start",  "sampleStart" },
+                { "Length", "sampleLength" },
+                { "Slice",  "sampleSlice" },
+                { "Glitch", "sampleGlitch" }
             });
 
-            // Amp tab: ADSR + master out
+            // Amp: amplitude envelope + master out
             addKnobRow (layout, "amp", {
                 { "Attack",  "attack" },
                 { "Decay",   "decay" },
@@ -227,53 +250,41 @@ namespace patchcraft
                 { "Pan",     "pan" }
             });
 
-            // Filter tab: cutoff + resonance + envelope shaping
+            // Filter: just the filter section
             addKnobRow (layout, "filter", {
                 { "Cutoff",  "filterCutoff" },
-                { "Reso",    "filterResonance" },
-                { "Attack",  "attack" },
-                { "Decay",   "decay" }
+                { "Reso",    "filterResonance" }
             });
 
-            // FX tab: drive + delay + reverb
+            // FX: delay + reverb (sampler palette has no drive stage).
             addKnobRow (layout, "fx", {
-                { "Drive",   "drive" },
-                { "Dly Mix", "delayMix" },
-                { "Dly Time","delayTime" },
-                { "Dly Fb",  "delayFeedback" },
-                { "Reverb",  "reverbMix" }
+                { "Dly Mix",  "delayMix" },
+                { "Dly Time", "delayTime" },
+                { "Dly Fb",   "delayFeedback" },
+                { "Reverb",   "reverbMix" }
             });
         }
         else if (engine == "fx")
         {
-            // FX engine has tabs: Main, Filter, Delay, Reverb. Each is filled.
+            // FX engine tabs - Main, Filter, Delay, Reverb. Each tab owns a
+            // distinct part of the chain so no two tabs show the same knob.
             addKnobRow (layout, "main", {
-                { "Drive",   "drive" },
-                { "Mix",     "mix" },
-                { "Cutoff",  "filterCutoff" },
-                { "Res",     "filterResonance" },
-                { "Delay",   "delayMix" },
-                { "Reverb",  "reverbMix" },
-                { "Vol",     "volume" },
-                { "Pan",     "pan" }
+                { "Drive", "drive" },
+                { "Mix",   "mix" },
+                { "Vol",   "volume" },
+                { "Pan",   "pan" }
             });
             addKnobRow (layout, "filter", {
-                { "Cutoff",  "filterCutoff" },
-                { "Res",     "filterResonance" },
-                { "Drive",   "drive" },
-                { "Mix",     "mix" }
+                { "Cutoff", "filterCutoff" },
+                { "Res",    "filterResonance" }
             });
             addKnobRow (layout, "delay", {
-                { "Time",    "delayTime" },
-                { "Feedback","delayFeedback" },
-                { "Mix",     "delayMix" },
-                { "Drive",   "drive" }
+                { "Time",     "delayTime" },
+                { "Feedback", "delayFeedback" },
+                { "Mix",      "delayMix" }
             });
             addKnobRow (layout, "reverb", {
-                { "Mix",     "reverbMix" },
-                { "Drive",   "drive" },
-                { "Vol",     "volume" },
-                { "Pan",     "pan" }
+                { "Mix", "reverbMix" }
             });
         }
         else
@@ -285,19 +296,18 @@ namespace patchcraft
             // delayFeedback, delayMix, vibratoDepth, vibratoRate, volume, pan.
             // We bind the knobs on each tab to the parameters that fit.
 
-            // Main tab: macro overview
+            // Sampler demo - tabs are dedicated to disjoint slices of the
+            // signal path. Sampler-specific controls live in Main; the
+            // remaining tabs follow the same Amp/Filter/Mod/FX/Space split
+            // as the synth.
             addKnobRow (layout, "main", {
-                { "Attack",  "attack" },
-                { "Decay",   "decay" },
-                { "Sustain", "sustain" },
-                { "Release", "release" },
-                { "Cutoff",  "filterCutoff" },
-                { "Reverb",  "reverbMix" },
-                { "Delay",   "delayMix" },
-                { "Vibrato", "vibratoDepth" }
+                { "Start",   "sampleStart" },
+                { "Length",  "sampleLength" },
+                { "Pitch",   "samplePitch" },
+                { "Slice",   "sampleSlice" },
+                { "Reverse", "sampleReverse" }
             });
 
-            // Amp tab: ADSR + global volume + pan
             addKnobRow (layout, "amp", {
                 { "Attack",  "attack" },
                 { "Decay",   "decay" },
@@ -307,45 +317,29 @@ namespace patchcraft
                 { "Pan",     "pan" }
             });
 
-            // Filter tab: cutoff + resonance + envelope shaping
             addKnobRow (layout, "filter", {
                 { "Cutoff",  "filterCutoff" },
-                { "Reso",    "filterResonance" },
-                { "Attack",  "attack" },
-                { "Decay",   "decay" },
-                { "Sustain", "sustain" },
-                { "Release", "release" }
+                { "Reso",    "filterResonance" }
             });
 
-            // Mod tab: vibrato controls
             addKnobRow (layout, "mod", {
-                { "Vib Dep", "vibratoDepth" },
-                { "Vib Rate","vibratoRate" }
+                { "Vib Rate", "vibratoRate" },
+                { "Vib Dep",  "vibratoDepth" }
             });
 
-            // FX tab: distortion-ish (we only have filter+delay+reverb)
+            // Sampler palette has no drive stage either - same output bus
+            // approach as the synth tab.
             addKnobRow (layout, "fx", {
-                { "Cutoff",  "filterCutoff" },
-                { "Reso",    "filterResonance" },
-                { "Delay",   "delayMix" },
-                { "Reverb",  "reverbMix" }
+                { "Width",  "stereoWidth" },
+                { "Mono",   "monoMaker" },
+                { "Out dB", "outputGainDb" }
             });
 
-            // Space tab: reverb + delay detail
             addKnobRow (layout, "space", {
-                { "Reverb",  "reverbMix" },
-                { "Dly Time","delayTime" },
-                { "Dly Fb",  "delayFeedback" },
-                { "Dly Mix", "delayMix" }
-            });
-
-            // Arp tab: re-uses ADSR + vibrato as a faux arp envelope panel.
-            // (A real arpeggiator engine is Phase C work.)
-            addKnobRow (layout, "arp", {
-                { "Attack",  "attack" },
-                { "Decay",   "decay" },
-                { "Vib Rate","vibratoRate" },
-                { "Vib Dep", "vibratoDepth" }
+                { "Reverb",   "reverbMix" },
+                { "Dly Time", "delayTime" },
+                { "Dly Fb",   "delayFeedback" },
+                { "Dly Mix",  "delayMix" }
             });
         }
     }
@@ -878,6 +872,28 @@ namespace patchcraft
         return out;
     }
 
+    static juce::String inferSynthPresetTheme (const juce::String& name)
+    {
+        const auto lower = name.toLowerCase();
+        if (lower.contains ("arp") || lower.contains ("sequence") || lower.contains ("gate"))
+            return "Arps";
+        if (lower.contains ("bass") || lower.contains ("reese") || lower.contains ("sub") || lower.contains ("acid"))
+            return "Bass";
+        if (lower.contains ("pluck") || lower.contains ("stab") || lower.contains ("bell"))
+            return "Plucks";
+        if (lower.contains ("choir") || lower.contains ("vocal") || lower.contains ("string"))
+            return "Strings";
+        if (lower.contains ("wt") || lower.contains ("wavetable") || lower.contains ("glass"))
+            return "Wavetables";
+        if (lower.contains ("pad") || lower.contains ("bloom") || lower.contains ("ambient") || lower.contains ("sweep") || lower.contains ("drone"))
+            return "Pads";
+        if (lower.contains ("lfo") || lower.contains ("mod") || lower.contains ("motion") || lower.contains ("stutter") || lower.contains ("texture"))
+            return "Motion";
+        if (lower.contains ("fx") || lower.contains ("riser") || lower.contains ("roll"))
+            return "FX";
+        return "Leads";
+    }
+
     static void applyTranceSynthPreset (int presetIndex,
                                          std::map<juce::String, float>& values)
     {
@@ -988,32 +1004,88 @@ namespace patchcraft
         buildDemoLayout (pack.layout, pack.canvasSize, engine);
         pack.dspGraph.resetForEngine (engine);
 
-        // Named factory presets. The synth engine ships 20 trance / psytrance
-        // / electronic presets covering leads, arps, basses, mod-textures and
-        // pads. Other engines retain their original 8 cinematic presets.
-        juce::StringArray names;
         if (engine == "synth")
         {
-            names = tranceSynthPresetNames();
+            const auto& curated = tranceSynthPresets();
+            for (int i = 0; i < (int) curated.size(); ++i)
+            {
+                Preset preset;
+                preset.name = curated[(size_t) i].name;
+                preset.theme = inferSynthPresetTheme (preset.name);
+                preset.tags = { preset.theme, "synth", "factory", "curated" };
+                preset.generated = false;
+                preset.isDefault = pack.presets.empty();
+                preset.description = "Curated PatchCraft synth preset. The name is backed by a full parameter recipe and patch state, not a random rename.";
+                for (const auto& def : pack.parameters.getAll())
+                    preset.values[def.id] = def.defaultValue;
+                applyTranceSynthPreset (i, preset.values);
+                pack.presets.push_back (std::move (preset));
+            }
+
+            LiveValueStore anchorValues;
+            for (const auto& def : pack.parameters.getAll())
+                anchorValues.setValue (def.id, def.defaultValue);
+
+            int presetOffset = 0;
+            for (const auto& theme : PresetGenerator::themes())
+            {
+                PresetGenerationOptions options;
+                options.theme = theme;
+                options.count = theme.equalsIgnoreCase ("Wavetables") ? 10 : 12;
+                options.seed = (juce::uint32) (0x5eed1200u + (juce::uint32) presetOffset * 131u);
+                options.includeCurrentAsAnchor = true;
+                auto generated = PresetGenerator::generate (pack.parameters, anchorValues, engine, options);
+                for (auto& preset : generated)
+                {
+                    preset.isDefault = false;
+                    preset.generated = false;
+                    preset.tags.addIfNotAlreadyThere ("factory");
+                    preset.description = "Factory patch preset for " + theme
+                        + ". Designed to apply musically to PatchCraft synth instruments.";
+                    pack.presets.push_back (std::move (preset));
+                    if ((int) pack.presets.size() >= 120)
+                        break;
+                }
+                if ((int) pack.presets.size() >= 120)
+                    break;
+                presetOffset += options.count;
+            }
+
+            while ((int) pack.presets.size() < 120)
+            {
+                PresetGenerationOptions options;
+                options.theme = "Motion";
+                options.count = 1;
+                options.seed = (juce::uint32) (0x5eed2000u + (juce::uint32) pack.presets.size() * 97u);
+                options.includeCurrentAsAnchor = true;
+                auto generated = PresetGenerator::generate (pack.parameters, anchorValues, engine, options);
+                if (! generated.empty())
+                {
+                    auto preset = std::move (generated.front());
+                    preset.name = "Factory Motion " + juce::String ((int) pack.presets.size() + 1);
+                    preset.generated = false;
+                    preset.tags.addIfNotAlreadyThere ("factory");
+                    pack.presets.push_back (std::move (preset));
+                }
+            }
         }
         else
         {
-            names = juce::StringArray { "Deep Horizon", "Warm Motion", "Shimmering Clouds",
-                                        "Ethereal Rise", "Vast Beauty", "Nightfall",
-                                        "Floating Memories", "Infinite Space" };
+            const juce::StringArray names { "Deep Horizon", "Warm Motion", "Shimmering Clouds",
+                                            "Ethereal Rise", "Vast Beauty", "Nightfall",
+                                            "Floating Memories", "Infinite Space" };
+            for (int i = 0; i < names.size(); ++i)
+            {
+                Preset p;
+                p.name = names[i];
+                p.isDefault = (i == 0);
+                for (auto& def : pack.parameters.getAll())
+                    p.values[def.id] = def.defaultValue;
+                applyPresetVariation (engine, i, p.values);
+                pack.presets.push_back (p);
+            }
         }
-        for (int i = 0; i < names.size(); ++i)
-        {
-            Preset p;
-            p.name = names[i];
-            p.isDefault = (i == 0);
-            for (auto& def : pack.parameters.getAll())
-                p.values[def.id] = def.defaultValue;
-            applyPresetVariation (engine, i, p.values);
-            if (engine == "synth")
-                p.tags = { "trance", "electronic" };
-            pack.presets.push_back (p);
-        }
+        ensurePresetBackedPatches (pack, true);
         pack.manifest.defaultPreset = pack.presets[0].name;
         return pack;
     }

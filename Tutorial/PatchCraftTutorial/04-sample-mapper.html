@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>4 — Sample mapper · PatchCraft Tutorial</title>
+    <link rel="stylesheet" href="assets/css/main.css"/>
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo.svg"/>
+</head>
+<body>
+<header class="topbar">
+    <div class="topbar-logo"><img src="assets/img/logo.svg" alt="" class="hex"/>PATCHCRAFT</div>
+    <span class="topbar-tagline">Instrument Builder Tutorial</span>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-actions">
+        <a href="index.html">Home</a>
+        <a href="10-glossary.html">Glossary</a>
+        <a class="cta" href="PatchCraftTutorial.zip">Download</a>
+    </div>
+</header>
+
+<div class="shell">
+    <nav class="sidebar">
+        <div class="sidebar-section"><h5>Tutorial</h5>
+            <ul>
+                <li><a href="index.html">Overview</a></li>
+                <li><a href="01-overview.html">1 — What is PatchCraft</a></li>
+                <li><a href="02-getting-started.html">2 — Getting started</a></li>
+                <li><a href="03-design.html">3 — Design canvas</a></li>
+                <li><a href="04-sample-mapper.html">4 — Sample mapper</a></li>
+                <li><a href="05-midi-playground.html">5 — MIDI playground</a></li>
+                <li><a href="06-dsp-builder.html">6 — DSP builder</a></li>
+                <li><a href="07-brand-lab.html">7 — Brand Lab</a></li>
+                <li><a href="08-presets-expansions.html">8 — Presets &amp; expansions</a></li>
+                <li><a href="09-export-distribute.html">9 — Export &amp; ship</a></li>
+                <li><a href="10-glossary.html">10 — Glossary</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="content">
+        <h1>4 — Sample mapper</h1>
+        <p class="lede" style="color:var(--text-mid);font-size:1.1rem;">Map sample files to MIDI keys / pads / velocity layers, edit the waveform, and turn one sample into 16 chops.</p>
+
+        <h2>Importing samples</h2>
+        <p>Three ways to bring audio into a project:</p>
+        <ol class="steps">
+            <li><h3>Top toolbar → Import Samples</h3><p>Pick one or many audio files. PatchCraft infers root notes from filenames (e.g. <code>Pad_C3_127.wav</code> sets root=C3, velocity=127), and audio analysis fills in the rest.</p></li>
+            <li><h3>Drag-drop a folder onto the Sample Mapper</h3><p>The mapper recurses one level deep, picks up every WAV / AIFF / FLAC and maps them in one go. The fastest way to import a kit.</p></li>
+            <li><h3>Sample Mapper toolbar → Import button</h3><p>Same as the top-toolbar option, scoped to the mapper view.</p></li>
+        </ol>
+
+        <h2>Mapping presets — the dropdown</h2>
+        <p>The <strong>Apply Preset...</strong> dropdown in the Sample Mapper toolbar bundles common mapping moves into one click:</p>
+
+        <table>
+            <thead><tr><th>Group</th><th>Preset</th><th>What it does</th></tr></thead>
+            <tbody>
+                <tr><td rowspan="3">Pad Map</td><td>16 pads from C1 (one-shot)</td><td>Distribute imported samples to MIDI 36-51, set <code>oneShot</code>, infer choke groups by filename</td></tr>
+                <tr><td>16 pads from C2 (one-shot)</td><td>Same, starting at C2</td></tr>
+                <tr><td>8 pads from C1 (one-shot)</td><td>Half-size kit</td></tr>
+                <tr><td rowspan="5">Slice (Glitch Kit)</td><td>16 slices (transient)</td><td>Detect onsets in the selected sample, slice into 16 zones aligned with peaks</td></tr>
+                <tr><td>8 slices (transient)</td><td>Coarser transient slicing</td></tr>
+                <tr><td>16 slices (equal grid)</td><td>Fixed-grid time slicing</td></tr>
+                <tr><td>8 / 32 slices (equal grid)</td><td>Adjust grid count</td></tr>
+                <tr><td rowspan="2">Build Patch</td><td>Build Drum Kit (auto)</td><td>16 pads + drum-tuned defaults</td></tr>
+                <tr><td>Build Multi-Sample Patch</td><td>Spread imported zones across the keyboard by detected root note</td></tr>
+                <tr><td>Levels</td><td>Normalize selected to 0 dB</td><td>Per-zone gain so peak = 0 dBFS without rewriting source files</td></tr>
+            </tbody>
+        </table>
+
+        <h2>The waveform editor</h2>
+        <p>Click any zone in the mapper to open it in the waveform editor below. You can:</p>
+        <ul>
+            <li><strong>Trim</strong> — drag the purple sample-start / sample-end handles. Releasing snaps to the nearest zero-crossing (hold <kbd>Shift</kbd> to bypass).</li>
+            <li><strong>Loop</strong> — toggle the Loop button, then drag the green loop-start / loop-end handles in the waveform.</li>
+            <li><strong>Fade in / out</strong> — click <em>+ Fade In</em> / <em>+ Fade Out</em> to add fade regions, then drag the blue / orange handles.</li>
+            <li><strong>Reverse</strong> — toggle the Reverse button. The waveform mirrors so you see what the engine plays.</li>
+            <li><strong>Zoom</strong> — <kbd>Ctrl/⌘</kbd>+wheel zooms (cursor anchored). Plain wheel scrolls. Bottom scrollbar pans long samples.</li>
+            <li><strong>Time ruler</strong> at the top shows seconds with auto tick spacing.</li>
+        </ul>
+
+        <h2>Per-zone parameters (Inspector)</h2>
+        <p>With a zone selected, the inspector exposes everything the engine reads:</p>
+        <ul>
+            <li><strong>Root / Low / High Note</strong> — pitched playback range</li>
+            <li><strong>Low / High Velocity</strong> — velocity layer split</li>
+            <li><strong>Round Robin Group / Index</strong> — multiple zones at the same root rotate</li>
+            <li><strong>Pad Index / Pad Label / Choke Group / One Shot / Trigger Probability</strong> — drum-pad authoring fields</li>
+            <li><strong>Gain dB / Pan / Pitch Offset / Reverse / Priority</strong> — per-zone playback edits</li>
+            <li><strong>Sample Start / End / Loop Start / End / Fade In/Out</strong> — bounds (matched to waveform handles)</li>
+        </ul>
+
+        <h2>Building a drum kit, end to end</h2>
+        <ol class="steps">
+            <li><h3>Switch to the Drum Machine engine</h3><p>Canvas toolbar → Engine → <strong>Drum Machine</strong>. The canvas reloads with a 4×4 PadGrid + drum-tuned macros.</p></li>
+            <li><h3>Drag a folder of one-shots onto the Sample Mapper</h3><p>Kicks, snares, hats, percs — any organisation works.</p></li>
+            <li><h3>Apply Preset → 16 pads from C1 (one-shot)</h3><p>Samples land on MIDI 36-51. The engine plays them as one-shots; hats auto-share choke group 1 so closed-hat cuts off open-hat.</p></li>
+            <li><h3>Refine zone-by-zone</h3><p>Click a pad to load it into the waveform editor. Trim, set gain, tweak choke group as needed.</p></li>
+            <li><h3>Test in the Brand Lab</h3><p>Switch to the Brand Lab tab. Click pads or hit MIDI notes 36-51 — you hear the kit.</p></li>
+        </ol>
+
+        <h2>Multi-sample patch (key-mapped)</h2>
+        <ol class="steps">
+            <li><h3>Switch to Sampler engine</h3><p>Reload starter layout for keyboard playing.</p></li>
+            <li><h3>Import a folder of pitch-labelled samples</h3><p>Filenames with notes (<code>Pad_C2.wav</code>, <code>Pad_E2.wav</code>) auto-detect root notes.</p></li>
+            <li><h3>Apply Preset → Build Multi-Sample Patch</h3><p>The mapper distributes zones across the keyboard so each note interpolates from the nearest sample.</p></li>
+            <li><h3>(Optional) add velocity layers</h3><p>For instruments with multiple dynamic levels, set Low/High Velocity per zone so the engine picks the right layer per note.</p></li>
+        </ol>
+
+        <div class="callout tip">
+            <strong>Tip</strong>
+            For round-robin (multiple takes of the same note), the Apply Preset dropdown auto-detects same-root duplicates and assigns them to a round-robin group. You can also set this manually per zone.
+        </div>
+
+        <div class="section-nav">
+            <a href="03-design.html"><strong>Back</strong><span>3 — Design canvas</span></a>
+            <a class="next" href="05-midi-playground.html"><strong>Up next</strong><span>5 — MIDI playground</span></a>
+        </div>
+    </main>
+</div>
+
+<footer class="footer">PatchCraft · Tutorial bundle</footer>
+<script src="assets/js/nav.js"></script>
+</body>
+</html>

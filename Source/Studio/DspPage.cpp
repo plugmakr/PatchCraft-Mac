@@ -553,12 +553,91 @@ namespace patchcraft
             else block.values["noiseBlend"] = value;
         }
 
+        static juce::String sectionDisplayName (const juce::String& section)
+        {
+            if (section == "source") return "SOURCE";
+            if (section == "filter") return "FILTER";
+            if (section == "amp")    return "AMP";
+            if (section == "mod")    return "MOD";
+            if (section == "fx")     return "FX";
+            if (section == "out")    return "OUT";
+            return section.toUpperCase();
+        }
+
+        static juce::String formatFormulaMixerValue (const DspBlock& block, int column)
+        {
+            auto get = [&] (const juce::String& key, float fallback)
+            {
+                return valueForBlockKey (block, key, fallback);
+            };
+
+            if (column == 4)
+                return block.enabled ? "ON" : "OFF";
+
+            if (block.section == "filter")
+            {
+                if (block.type.containsIgnoreCase ("eq"))
+                {
+                    if (column == 0) return formatEqFrequency (get ("eqFreq", 1000.0f));
+                    if (column == 1) return juce::String (get ("eqGainDb", 0.0f), 1) + " dB";
+                    if (column == 2) return "Q " + juce::String (get ("eqQ", 1.0f), 2);
+                    return juce::String (juce::roundToInt (get ("eqMix", 1.0f) * 100.0f)) + "%";
+                }
+
+                if (column == 0) return juce::String (juce::roundToInt (get ("cutoff", 0.5f) * 100.0f)) + "%";
+                if (column == 1) return juce::String (juce::roundToInt (get ("resonance", 0.2f) * 100.0f)) + "%";
+                if (column == 2) return juce::String (juce::roundToInt (get ("lfoAmount", 0.0f) * 100.0f)) + "%";
+                return juce::String (get ("rate", 1.0f), 2);
+            }
+
+            if (block.section == "amp")
+            {
+                const juce::String keys[] { "attack", "decay", "sustain", "release" };
+                return juce::String (juce::roundToInt (get (keys[column], column == 2 ? 0.8f : 0.2f) * 100.0f)) + "%";
+            }
+
+            if (block.section == "mod")
+            {
+                if (column == 0) return juce::String (juce::roundToInt (get ("amount", 0.2f) * 100.0f)) + "%";
+                if (column == 1) return juce::String (get ("rate", 1.0f), 2);
+                if (column == 2) return get ("sync", 0.0f) >= 0.5f ? "SYNC" : "FREE";
+                return juce::String (juce::roundToInt (get ("value", 0.5f) * 100.0f)) + "%";
+            }
+
+            if (block.section == "fx")
+            {
+                if (column == 0) return juce::String (juce::roundToInt (blockMixerValue (block, column) * 100.0f)) + "%";
+                if (column == 1) return juce::String (get ("rate", get ("delayTime", 0.25f)), 2);
+                if (column == 2) return juce::String (juce::roundToInt (get ("delayFeedback", 0.35f) * 100.0f)) + "%";
+                return juce::String (juce::roundToInt (blockMixerValue (block, column) * 100.0f)) + "%";
+            }
+
+            if (block.section == "out")
+            {
+                if (column == 0) return juce::String (juce::roundToInt (get ("volume", 0.75f) * 100.0f)) + "%";
+                if (column == 1) return juce::String (juce::roundToInt (get ("pan", 0.5f) * 100.0f)) + "%";
+                if (column == 2) return get ("bpmSync", 1.0f) >= 0.5f ? "SYNC" : "FREE";
+                return get ("retrigger", 1.0f) >= 0.5f ? "ON" : "OFF";
+            }
+
+            if (block.section == "source" && block.type.containsIgnoreCase ("wavetable"))
+            {
+                if (column == 0) return juce::String (juce::roundToInt (get ("wtPosition", 0.0f) * 100.0f)) + "%";
+                if (column == 1) return juce::String (juce::roundToInt (get ("wtMorph", 0.0f) * 100.0f)) + "%";
+                if (column == 2) return juce::String (juce::roundToInt (get ("wtWarp", 0.0f) * 100.0f)) + "%";
+                return juce::String (juce::roundToInt (get ("wtLevel", 1.0f) * 100.0f)) + "%";
+            }
+
+            return juce::String (juce::roundToInt (blockMixerValue (block, column) * 100.0f)) + "%";
+        }
+
         struct NodeMapBlockSummary
         {
             juce::String name;
             juce::String type;
             juce::String target;
             juce::StringArray values;
+            int graphIndex = -1;
             bool enabled = true;
         };
 
@@ -567,6 +646,8 @@ namespace patchcraft
             juce::String label;
             juce::String detail;
             float amount = 0.0f;
+            int kind = 0;
+            int index = -1;
             bool enabled = true;
         };
 
@@ -575,13 +656,20 @@ namespace patchcraft
         public:
             DspNodeMapView (juce::String sectionNameToUse, int bankToUse,
                             std::vector<NodeMapBlockSummary> blockSummaries,
-                            std::vector<NodeMapRouteSummary> routeSummaries)
+                            std::vector<NodeMapRouteSummary> routeSummaries,
+                            std::function<void (int)> blockSelectedIn,
+                            std::function<void (int)> blockEditIn,
+                            std::function<void (int, int)> routeSelectedIn)
                 : sectionName (std::move (sectionNameToUse)),
                   bank (bankToUse),
                   blocks (std::move (blockSummaries)),
-                  routes (std::move (routeSummaries))
+                  routes (std::move (routeSummaries)),
+                  blockSelected (std::move (blockSelectedIn)),
+                  blockEdit (std::move (blockEditIn)),
+                  routeSelectedCallback (std::move (routeSelectedIn))
             {
                 setSize (920, 560);
+                setMouseCursor (juce::MouseCursor::PointingHandCursor);
             }
 
             void paint (juce::Graphics& g) override
@@ -596,7 +684,7 @@ namespace patchcraft
 
                 g.setColour (PatchCraftLookAndFeel::textDim());
                 g.setFont (juce::FontOptions (12.0f));
-                g.drawText ("Visual flow for this bank. Use the Graph Inspector to edit exact values; use the mixer below the blocks for fast balancing.",
+                g.drawText ("Click blocks/routes to select them in Graph Inspector. Double-click a block for the larger Sound Formula editor.",
                             bounds.removeFromTop (22), juce::Justification::centredLeft);
                 bounds.removeFromTop (8);
 
@@ -606,11 +694,67 @@ namespace patchcraft
                 drawRoutes (g, side);
             }
 
+            void mouseDown (const juce::MouseEvent& e) override
+            {
+                for (int i = 0; i < (int) blockHitRects.size(); ++i)
+                {
+                    if (blockHitRects[(size_t) i].contains (e.getPosition()))
+                    {
+                        selectedBlock = i;
+                        selectedRoute = -1;
+                        if (blockSelected && blocks[(size_t) i].graphIndex >= 0)
+                            blockSelected (blocks[(size_t) i].graphIndex);
+                        repaint();
+                        return;
+                    }
+                }
+
+                for (int i = 0; i < (int) routeHitRects.size(); ++i)
+                {
+                    if (routeHitRects[(size_t) i].contains (e.getPosition()))
+                    {
+                        selectedRoute = i;
+                        selectedBlock = -1;
+                        if (routeSelectedCallback)
+                            routeSelectedCallback (routes[(size_t) i].kind, routes[(size_t) i].index);
+                        repaint();
+                        return;
+                    }
+                }
+
+                selectedBlock = -1;
+                selectedRoute = -1;
+                repaint();
+            }
+
+            void mouseDoubleClick (const juce::MouseEvent& e) override
+            {
+                for (int i = 0; i < (int) blockHitRects.size(); ++i)
+                {
+                    if (blockHitRects[(size_t) i].contains (e.getPosition()))
+                    {
+                        selectedBlock = i;
+                        selectedRoute = -1;
+                        if (blockEdit && blocks[(size_t) i].graphIndex >= 0)
+                            blockEdit (blocks[(size_t) i].graphIndex);
+                        repaint();
+                        return;
+                    }
+                }
+            }
+
         private:
             juce::String sectionName;
             int bank = 0;
             std::vector<NodeMapBlockSummary> blocks;
             std::vector<NodeMapRouteSummary> routes;
+            mutable std::vector<juce::Rectangle<int>> blockHitRects;
+            mutable std::vector<juce::Rectangle<int>> routeHitRects;
+            std::function<void (int)> blockSelected;
+            std::function<void (int)> blockEdit;
+            std::function<void (int, int)> routeSelectedCallback;
+            int selectedBlock = -1;
+            int selectedRoute = -1;
 
             void drawPanel (juce::Graphics& g, juce::Rectangle<int> area, juce::String title) const
             {
@@ -625,14 +769,16 @@ namespace patchcraft
 
             void drawNode (juce::Graphics& g, juce::Rectangle<int> area,
                            const juce::String& title, const juce::String& subtitle,
-                           bool enabled, juce::StringArray valueLines) const
+                           bool enabled, juce::StringArray valueLines,
+                           bool selected = false) const
             {
                 g.setColour (enabled ? PatchCraftLookAndFeel::accent().withAlpha (0.18f)
                                      : PatchCraftLookAndFeel::panel().brighter (0.06f));
                 g.fillRoundedRectangle (area.toFloat(), 9.0f);
-                g.setColour (enabled ? PatchCraftLookAndFeel::accent()
+                g.setColour (selected ? juce::Colour (0xff20d6ff)
+                                      : enabled ? PatchCraftLookAndFeel::accent()
                                      : PatchCraftLookAndFeel::border());
-                g.drawRoundedRectangle (area.toFloat(), 9.0f, enabled ? 1.4f : 1.0f);
+                g.drawRoundedRectangle (area.toFloat(), 9.0f, selected ? 2.2f : (enabled ? 1.4f : 1.0f));
 
                 auto text = area.reduced (10, 7);
                 g.setColour (enabled ? PatchCraftLookAndFeel::textBright()
@@ -675,6 +821,7 @@ namespace patchcraft
 
             void drawFlow (juce::Graphics& g, juce::Rectangle<int> area) const
             {
+                blockHitRects.clear();
                 drawPanel (g, area, "COMPOSITION FLOW");
                 auto flow = area.reduced (16, 38);
                 auto lane = flow.removeFromTop (juce::jmax (170, flow.getHeight() - 110));
@@ -712,8 +859,10 @@ namespace patchcraft
                         drawConnector (g, rightCentre (previous), leftCentre (node),
                                        blocks[(size_t) i].enabled ? PatchCraftLookAndFeel::accent().withAlpha (0.75f)
                                                                   : PatchCraftLookAndFeel::border());
+                        blockHitRects.push_back (node);
                         drawNode (g, node, blocks[(size_t) i].name, blocks[(size_t) i].type + " -> " + blocks[(size_t) i].target,
-                                  blocks[(size_t) i].enabled, blocks[(size_t) i].values);
+                                  blocks[(size_t) i].enabled, blocks[(size_t) i].values,
+                                  selectedBlock == i);
                         previous = node;
                     }
 
@@ -737,8 +886,41 @@ namespace patchcraft
 
             void drawRoutes (juce::Graphics& g, juce::Rectangle<int> area) const
             {
+                routeHitRects.clear();
                 drawPanel (g, area, "MACROS / MOD / AUTOMATION");
                 auto list = area.reduced (12, 36);
+
+                auto inspector = list.removeFromTop (116).reduced (0, 3);
+                g.setColour (PatchCraftLookAndFeel::bg().withAlpha (0.50f));
+                g.fillRoundedRectangle (inspector.toFloat(), 8.0f);
+                g.setColour (PatchCraftLookAndFeel::borderSoft());
+                g.drawRoundedRectangle (inspector.toFloat(), 8.0f, 1.0f);
+                auto text = inspector.reduced (10, 8);
+                g.setColour (PatchCraftLookAndFeel::accent());
+                g.setFont (juce::FontOptions (11.5f).withStyle ("Bold"));
+                g.drawText ("INSPECTOR", text.removeFromTop (16), juce::Justification::centredLeft);
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (juce::FontOptions (10.0f));
+                if (selectedBlock >= 0 && selectedBlock < (int) blocks.size())
+                {
+                    const auto& block = blocks[(size_t) selectedBlock];
+                    g.drawFittedText (block.name + "\n" + block.type + " -> " + block.target + "\n"
+                                      + (block.enabled ? "Enabled" : "Bypassed"),
+                                      text, juce::Justification::topLeft, 4);
+                }
+                else if (selectedRoute >= 0 && selectedRoute < (int) routes.size())
+                {
+                    const auto& route = routes[(size_t) selectedRoute];
+                    g.drawFittedText (route.label + "\n" + route.detail + "\nAmount "
+                                      + juce::String (juce::roundToInt (std::abs (route.amount) * 100.0f)) + "%",
+                                      text, juce::Justification::topLeft, 4);
+                }
+                else
+                {
+                    g.drawFittedText ("Click a block card or route row to inspect it here. This map is the readable routing overview for the selected bank.",
+                                      text, juce::Justification::topLeft, 4);
+                }
+                list.removeFromTop (8);
 
                 if (routes.empty())
                 {
@@ -752,12 +934,15 @@ namespace patchcraft
                 for (const auto& route : routes)
                 {
                     auto row = list.removeFromTop (54).reduced (0, 3);
+                    const auto routeIndex = (int) routeHitRects.size();
+                    routeHitRects.push_back (row);
                     g.setColour (route.enabled ? PatchCraftLookAndFeel::accent().withAlpha (0.14f)
                                                : PatchCraftLookAndFeel::panel().brighter (0.05f));
                     g.fillRoundedRectangle (row.toFloat(), 7.0f);
-                    g.setColour (route.enabled ? PatchCraftLookAndFeel::accent().withAlpha (0.55f)
+                    g.setColour (selectedRoute == routeIndex ? juce::Colour (0xff20d6ff)
+                                               : route.enabled ? PatchCraftLookAndFeel::accent().withAlpha (0.55f)
                                                : PatchCraftLookAndFeel::border());
-                    g.drawRoundedRectangle (row.toFloat(), 7.0f, 1.0f);
+                    g.drawRoundedRectangle (row.toFloat(), 7.0f, selectedRoute == routeIndex ? 2.0f : 1.0f);
 
                     auto text = row.reduced (9, 6);
                     g.setColour (route.enabled ? PatchCraftLookAndFeel::textBright()
@@ -1267,7 +1452,7 @@ namespace patchcraft
         setupBankButton (sectionBankButton3, 2);
         setupBankButton (sectionBankButton4, 3);
         nodeMapButton.getProperties().set ("smallButton", true);
-        nodeMapButton.setTooltip ("Open a read-only visual map of the current bank: signal blocks, targets, macros, modulation, and automation.");
+        nodeMapButton.setTooltip ("Open the interactive routing map for the current bank. Click blocks or routes to inspect what they contribute.");
         nodeMapButton.onClick = [this]
         {
             if (onNodeMapRequested)
@@ -1330,7 +1515,7 @@ namespace patchcraft
         g.setColour (PatchCraftLookAndFeel::border().brighter (0.35f));
         g.drawRoundedRectangle (bounds, 8.0f, 1.4f);
         auto r = getLocalBounds().reduced (14);
-        r.removeFromTop (66);
+        r.removeFromTop (96);
         if (showSectionBanks)
         {
             auto hint = r.removeFromTop (28).reduced (4, 0);
@@ -1404,7 +1589,7 @@ namespace patchcraft
     void DspPage::BuilderPanel::mouseDown (const juce::MouseEvent& e)
     {
         auto r = getLocalBounds().reduced (14);
-        r.removeFromTop (66);
+        r.removeFromTop (96);
         if (showSectionBanks)
             r.removeFromTop (32);
         const int columns = juce::jmax (1, juce::jmin (3, r.getWidth() / 260));
@@ -1447,27 +1632,33 @@ namespace patchcraft
     void DspPage::BuilderPanel::resized()
     {
         auto r = getLocalBounds().reduced (14);
-        auto header = r.removeFromTop (46);
-        title.setBounds (header.removeFromLeft (180));
-        expansionBox.setBounds (header.removeFromLeft (172).reduced (2));
-        packCreatorButton.setBounds (header.removeFromLeft (104).reduced (2));
-        clearAllButton.setBounds (header.removeFromRight (74).reduced (2));
-        clearSectionButton.setBounds (header.removeFromRight (78).reduced (2));
-        importSampleButton.setBounds (header.removeFromRight (104).reduced (2));
-        sendExpansionButton.setBounds (header.removeFromRight (92).reduced (2));
-        saveSectionPresetButton.setBounds (header.removeFromRight (104).reduced (2));
-        savePatchAsButton.setBounds (header.removeFromRight (104).reduced (2));
-        savePatchButton.setBounds (header.removeFromRight (86).reduced (2));
-        openSectionEditorButton.setBounds (header.removeFromRight (100).reduced (2));
-        mixerButton.setBounds (header.removeFromRight (72).reduced (2));
-        addAutomationButton.setBounds (header.removeFromRight (74).reduced (2));
+        auto header = r.removeFromTop (76);
+        auto top = header.removeFromTop (36);
+        auto actions = header.removeFromTop (36);
+
+        title.setBounds (top.removeFromLeft (180));
+        expansionBox.setBounds (top.removeFromLeft (172).reduced (2));
+        packCreatorButton.setBounds (top.removeFromLeft (104).reduced (2));
+
+        clearAllButton.setBounds (top.removeFromRight (74).reduced (2));
+        clearSectionButton.setBounds (top.removeFromRight (78).reduced (2));
+        importSampleButton.setBounds (top.removeFromRight (104).reduced (2));
+        sendExpansionButton.setBounds (top.removeFromRight (92).reduced (2));
+        saveSectionPresetButton.setBounds (top.removeFromRight (104).reduced (2));
+        savePatchAsButton.setBounds (top.removeFromRight (104).reduced (2));
+        savePatchButton.setBounds (top.removeFromRight (86).reduced (2));
+
+        addBlockButton.setBounds (actions.removeFromLeft (78).reduced (2));
+        addMacroButton.setBounds (actions.removeFromLeft (86).reduced (2));
+        addModButton.setBounds (actions.removeFromLeft (72).reduced (2));
         if (addArpButton.isVisible())
-            addArpButton.setBounds (header.removeFromRight (78).reduced (2));
+            addArpButton.setBounds (actions.removeFromLeft (78).reduced (2));
         else
             addArpButton.setBounds ({});
-        addModButton.setBounds (header.removeFromRight (66).reduced (2));
-        addMacroButton.setBounds (header.removeFromRight (76).reduced (2));
-        addBlockButton.setBounds (header.removeFromRight (76).reduced (2));
+        addAutomationButton.setBounds (actions.removeFromLeft (124).reduced (2));
+        mixerButton.setBounds (actions.removeFromLeft (78).reduced (2));
+        openSectionEditorButton.setBounds (actions.removeFromLeft (112).reduced (2));
+
         subtitle.setBounds (r.removeFromTop (20));
         if (showSectionBanks)
         {
@@ -1571,6 +1762,17 @@ namespace patchcraft
         updateFromMouse (e);
     }
 
+    void DspPage::FxWaveformView::mouseDoubleClick (const juce::MouseEvent& e)
+    {
+        if (owner.fxWaveformPeaks.empty())
+            return;
+
+        dragMode = DragMode::playhead;
+        updateFromMouse (e);
+        dragMode = DragMode::none;
+        owner.retriggerFxSamplePlayback (true);
+    }
+
     void DspPage::FxWaveformView::mouseDrag (const juce::MouseEvent& e)
     {
         updateFromMouse (e);
@@ -1672,6 +1874,15 @@ namespace patchcraft
         if (blockIndex < 0 || blockIndex >= (int) owner.project.getDspGraph().blocks.size())
             return;
 
+        const auto section = owner.project.getDspGraph().blocks[(size_t) blockIndex].section;
+        const int targetTab = section == "source" ? 0
+                            : section == "filter" ? 1
+                            : section == "amp"    ? 2
+                            : section == "mod"    ? 3
+                            : section == "fx"     ? 4 : 5;
+        if (owner.currentTab != targetTab)
+            owner.setTab (targetTab);
+
         owner.selectedGraphKind = 1;
         owner.selectedGraphIndex = blockIndex;
         owner.builderPanel.selectedItemIds.clear();
@@ -1702,7 +1913,7 @@ namespace patchcraft
         owner.refreshFxPreviewRouting();
         owner.refreshBuilderPanel();
         owner.syncGraphEditor();
-        owner.project.notifyChanged();
+        owner.project.notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
         owner.surgicalEqPanel.repaint();
         repaint();
     }
@@ -1793,6 +2004,16 @@ namespace patchcraft
             draggingValue = true;
             setBlockValueFromMouse (e);
         }
+    }
+
+    void DspPage::SourceMatrixPanel::mouseDoubleClick (const juce::MouseEvent& e)
+    {
+        const auto blockIndex = blockAt (e.y);
+        if (blockIndex < 0)
+            return;
+
+        selectBlock (blockIndex);
+        owner.showBlockEditorPopout (blockIndex);
     }
 
     void DspPage::SourceMatrixPanel::mouseDrag (const juce::MouseEvent& e)
@@ -1991,7 +2212,7 @@ namespace patchcraft
         owner.refreshFxPreviewRouting();
         owner.syncGraphEditor();
         owner.sourceMatrix.repaint();
-        owner.project.notifyChanged();
+        owner.project.notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
         repaint();
     }
 
@@ -2018,7 +2239,7 @@ namespace patchcraft
         owner.refreshFxPreviewRouting();
         owner.syncGraphEditor();
         owner.sourceMatrix.repaint();
-        owner.project.notifyChanged();
+        owner.project.notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
         repaint();
     }
 
@@ -2086,7 +2307,7 @@ namespace patchcraft
         selectBlock ((int) blocks.size() - 1, false);
         owner.rebuildGraphEditorItems();
         owner.refreshFxPreviewRouting();
-        owner.project.notifyChanged();
+        owner.project.notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
     }
 
     void DspPage::SurgicalEqPanel::paint (juce::Graphics& g)
@@ -2406,7 +2627,7 @@ namespace patchcraft
         {
             g.setColour (PatchCraftLookAndFeel::textDim());
             g.setFont (12.0f);
-            g.drawFittedText ("Select or add a Wavetable Source block to edit a custom table.",
+            g.drawFittedText ("Double-click here to create a Wavetable Source block, then drag points or import WAV/AIFF.",
                               graph.reduced (16), juce::Justification::centred, 3);
             return;
         }
@@ -2442,6 +2663,44 @@ namespace patchcraft
 
     void DspPage::WavetableEditorPanel::mouseDown (const juce::MouseEvent& e)
     {
+        if (selectedWavetableBlock() == nullptr && e.getNumberOfClicks() > 1)
+        {
+            auto& graph = owner.project.getDspGraph();
+            normaliseDspGraphSectionBanks (graph, "source");
+            const int targetBank = owner.currentSectionBank();
+            if (countBlocksInSectionBank (graph, "source", targetBank) >= kSourceMatrixBankSize)
+            {
+                showBlockBankFullAlert ("Source", targetBank);
+                return;
+            }
+
+            DspBlock block;
+            block.section = "source";
+            block.type = "wavetable";
+            block.id = "wavetable_" + juce::String ((int) graph.blocks.size() + 1);
+            block.name = "Wavetable Source";
+            block.targetId = "wtPosition";
+            block.values["bank"] = (float) targetBank;
+            block.values["wtEnabled"] = 1.0f;
+            block.values["wtTable"] = 8.0f;
+            block.values["wtPosition"] = 0.0f;
+            block.values["wtMorph"] = 0.0f;
+            block.values["wtWarp"] = 0.0f;
+            block.values["wtUnison"] = 1.0f;
+            block.values["wtLevel"] = 1.0f;
+            block.values["wtFrameCount"] = 1.0f;
+            graph.blocks.push_back (block);
+            owner.selectedGraphKind = 1;
+            owner.selectedGraphIndex = (int) graph.blocks.size() - 1;
+            owner.ensureWavetableShapeDefaults (graph.blocks.back());
+            owner.markGraphEdited();
+            owner.project.notifyChanged();
+            owner.rebuildGraphEditorItems();
+            owner.syncGraphEditor();
+            repaint();
+            return;
+        }
+
         dragPoint = pointAt (e.position.roundToInt());
         writePointFromMouse (e.position.roundToInt());
     }
@@ -2653,13 +2912,23 @@ namespace patchcraft
             // Draw connection line for visual feedback
             if (selected && (rowInfo.kind == 3 || rowInfo.kind == 4))
             {
-                const auto& route = (rowInfo.kind == 3) ? graph.modulation[(size_t) rowInfo.index]
-                                                      : graph.automation[(size_t) rowInfo.index];
-                if (route.enabled)
+                if (rowInfo.kind == 3)
                 {
+                    const auto& route = graph.modulation[(size_t) rowInfo.index];
+                    if (route.enabled)
+                    {
+                        g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.3f));
+                        g.drawLine ((float) row.getCentreX(), (float) row.getCentreY(),
+                                   (float) row.getRight(), (float) row.getCentreY(), 2.0f);
+                    }
+                }
+                else
+                {
+                    const auto& route = graph.automation[(size_t) rowInfo.index];
+                    // AutomationLane doesn't have enabled member, always draw if it exists
                     g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.3f));
-                    g.drawLine (float) row.getCentreX(), row.getCentreY(),
-                                (float) row.getRight(), row.getCentreY(), 2.0f);
+                    g.drawLine ((float) row.getCentreX(), (float) row.getCentreY(),
+                               (float) row.getRight(), (float) row.getCentreY(), 2.0f);
                 }
             }
 
@@ -2738,6 +3007,223 @@ namespace patchcraft
     {
         dragRow = {};
         dragColumn = -1;
+        draggingValue = false;
+    }
+
+    DspPage::FormulaPanel::FormulaPanel (DspPage& p) : owner (p)
+    {
+        setOpaque (false);
+        setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    }
+
+    void DspPage::FormulaPanel::paint (juce::Graphics& g)
+    {
+        hitZones.clear();
+
+        auto outer = getLocalBounds().reduced (2);
+        g.setColour (juce::Colour (0xff0b0d11));
+        g.fillRoundedRectangle (outer.toFloat(), 7.0f);
+        g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.70f));
+        g.fillRoundedRectangle (outer.withHeight (2).toFloat(), 2.0f);
+        g.setColour (PatchCraftLookAndFeel::border().brighter (0.35f));
+        g.drawRoundedRectangle (outer.toFloat(), 7.0f, 1.25f);
+
+        auto r = outer.reduced (12, 8);
+        auto titleRow = r.removeFromTop (22);
+        const auto& graph = owner.project.getDspGraph();
+        const auto presetName = owner.project.getManifest().defaultPreset.isNotEmpty()
+            ? owner.project.getManifest().defaultPreset
+            : owner.project.getManifest().instrumentName;
+
+        g.setColour (PatchCraftLookAndFeel::accent());
+        g.setFont (juce::Font (12.0f, juce::Font::bold));
+        g.drawText ("SOUND FORMULA", titleRow.removeFromLeft (128), juce::Justification::centredLeft);
+        g.setColour (PatchCraftLookAndFeel::textDim());
+        g.setFont (10.5f);
+        g.drawText ("Preset: " + presetName
+                    + "  |  Blocks: " + juce::String ((int) graph.blocks.size())
+                    + "  Macros: " + juce::String ((int) graph.macros.size())
+                    + "  Mods: " + juce::String ((int) graph.modulation.size())
+                    + "  Autos: " + juce::String ((int) graph.automation.size()),
+                    titleRow, juce::Justification::centredLeft, true);
+
+        r.removeFromTop (4);
+        if (graph.blocks.empty())
+        {
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (12.0f);
+            g.drawText ("No sound formula yet. Add Source, Filter, Amp, Mod, FX, and Out blocks; this panel will become the readable recipe for the patch.",
+                        r, juce::Justification::centredLeft, true);
+            return;
+        }
+
+        const juce::String sections[] { "source", "filter", "amp", "mod", "fx", "out" };
+        const int sectionW = juce::jmax (1, r.getWidth() / 6);
+        for (int sectionIndex = 0; sectionIndex < 6; ++sectionIndex)
+        {
+            const auto section = sections[sectionIndex];
+            auto column = juce::Rectangle<int> (r.getX() + sectionIndex * sectionW,
+                                                r.getY(),
+                                                sectionIndex == 5 ? r.getRight() - (r.getX() + sectionIndex * sectionW) : sectionW,
+                                                r.getHeight()).reduced (4, 0);
+            int count = 0;
+            for (const auto& block : graph.blocks)
+                if (block.section == section)
+                    ++count;
+
+            auto head = column.removeFromTop (18);
+            g.setColour (PatchCraftLookAndFeel::panelAlt().withAlpha (0.86f));
+            g.fillRoundedRectangle (head.toFloat(), 4.0f);
+            g.setColour (sectionIndex == owner.currentTab ? PatchCraftLookAndFeel::accent()
+                                                          : PatchCraftLookAndFeel::border().brighter (0.25f));
+            g.drawRoundedRectangle (head.toFloat(), 4.0f, sectionIndex == owner.currentTab ? 1.4f : 1.0f);
+            g.setFont (juce::Font (10.0f, juce::Font::bold));
+            g.setColour (PatchCraftLookAndFeel::accent());
+            g.drawText (sectionDisplayName (section) + "  " + juce::String (count), head.reduced (6, 0),
+                        juce::Justification::centredLeft);
+
+            column.removeFromTop (4);
+            const int rowH = 40;
+            int visibleRows = juce::jmax (1, column.getHeight() / rowH);
+            int drawn = 0;
+            for (int blockIndex = 0; blockIndex < (int) graph.blocks.size(); ++blockIndex)
+            {
+                const auto& block = graph.blocks[(size_t) blockIndex];
+                if (block.section != section)
+                    continue;
+
+                if (drawn >= visibleRows)
+                    break;
+
+                auto row = column.removeFromTop (rowH).reduced (0, 2);
+                const bool selected = owner.selectedGraphKind == 1 && owner.selectedGraphIndex == blockIndex;
+                g.setColour (selected ? PatchCraftLookAndFeel::accent().withAlpha (0.20f)
+                                      : juce::Colour (0xff171b21).withAlpha (block.enabled ? 0.92f : 0.46f));
+                g.fillRoundedRectangle (row.toFloat(), 4.0f);
+                g.setColour (selected ? PatchCraftLookAndFeel::accent()
+                                      : PatchCraftLookAndFeel::border().brighter (0.32f).withAlpha (0.85f));
+                g.drawRoundedRectangle (row.toFloat(), 4.0f, selected ? 1.5f : 1.0f);
+
+                hitZones.push_back ({ row, blockIndex, -1 });
+
+                auto text = row.reduced (6, 1).removeFromTop (15);
+                g.setColour (block.enabled ? PatchCraftLookAndFeel::text() : PatchCraftLookAndFeel::textDim().withAlpha (0.65f));
+                g.setFont (juce::Font (9.5f, juce::Font::bold));
+                g.drawText (block.name, text.removeFromLeft (text.getWidth() - 34), juce::Justification::centredLeft, true);
+                g.setColour (block.enabled ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::textDim());
+                g.drawText (block.type, text, juce::Justification::centredRight, true);
+
+                auto bars = row.reduced (6, 0).withTrimmedTop (18).withTrimmedBottom (4);
+                const auto labels = mixerLabelsForSection (section);
+                const int lanes = juce::jmin (4, labels.size());
+                const int laneW = juce::jmax (1, bars.getWidth() / lanes);
+                for (int lane = 0; lane < lanes; ++lane)
+                {
+                    auto laneArea = bars.removeFromLeft (laneW).reduced (2, 0);
+                    const float value = blockMixerValue (block, lane);
+                    g.setColour (PatchCraftLookAndFeel::border().withAlpha (0.65f));
+                    g.drawRoundedRectangle (laneArea.toFloat(), 3.0f, 1.0f);
+                    g.setColour (PatchCraftLookAndFeel::accent().withAlpha (block.enabled ? 0.95f : 0.42f));
+                    g.fillRoundedRectangle (laneArea.withWidth (juce::roundToInt ((float) laneArea.getWidth() * value)).toFloat(), 3.0f);
+                    g.setColour (PatchCraftLookAndFeel::text().withAlpha (0.94f));
+                    g.setFont (7.8f);
+                    g.drawText (labels[lane] + " " + formatFormulaMixerValue (block, lane),
+                                laneArea.reduced (3, 0), juce::Justification::centred, true);
+                    hitZones.push_back ({ laneArea.expanded (2, 3), blockIndex, lane });
+                }
+
+                ++drawn;
+            }
+
+            if (count > drawn)
+            {
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (9.0f);
+                g.drawText ("+" + juce::String (count - drawn) + " more in Node Map",
+                            column.removeFromTop (16), juce::Justification::centred);
+            }
+        }
+    }
+
+    void DspPage::FormulaPanel::selectBlock (int blockIndex)
+    {
+        if (blockIndex < 0 || blockIndex >= (int) owner.project.getDspGraph().blocks.size())
+            return;
+
+        owner.selectedGraphKind = 1;
+        owner.selectedGraphIndex = blockIndex;
+        owner.builderPanel.selectedItemIds.clear();
+        owner.builderPanel.selectedItemId = 1000 + blockIndex + 1;
+        owner.builderPanel.selectedItemIds.add (owner.builderPanel.selectedItemId);
+        owner.editorItemBox.setSelectedId (owner.builderPanel.selectedItemId, juce::sendNotification);
+        owner.refreshBuilderPanel();
+        owner.syncGraphEditor();
+        owner.repaint();
+        repaint();
+    }
+
+    void DspPage::FormulaPanel::setValueFromMouse (const juce::MouseEvent& e)
+    {
+        if (activeHit.blockIndex < 0 || activeHit.column < 0
+            || activeHit.blockIndex >= (int) owner.project.getDspGraph().blocks.size())
+            return;
+
+        const float value = juce::jlimit (0.0f, 1.0f,
+            (float) (e.x - activeHit.bounds.getX()) / (float) juce::jmax (1, activeHit.bounds.getWidth()));
+        auto& block = owner.project.getDspGraph().blocks[(size_t) activeHit.blockIndex];
+        setBlockMixerValue (block, activeHit.column, value);
+        owner.markGraphEdited();
+        owner.refreshFxPreviewRouting();
+        owner.syncGraphEditor();
+        owner.project.notifyChanged();
+        owner.builderPanel.repaint();
+        owner.repaint();
+        repaint();
+    }
+
+    void DspPage::FormulaPanel::mouseDown (const juce::MouseEvent& e)
+    {
+        activeHit = {};
+        draggingValue = false;
+
+        for (auto hit : hitZones)
+        {
+            if (! hit.bounds.contains (e.getPosition()))
+                continue;
+
+            activeHit = hit;
+            selectBlock (hit.blockIndex);
+            if (hit.column >= 0)
+            {
+                draggingValue = true;
+                setValueFromMouse (e);
+            }
+            return;
+        }
+    }
+
+    void DspPage::FormulaPanel::mouseDoubleClick (const juce::MouseEvent& e)
+    {
+        for (auto hit : hitZones)
+        {
+            if (! hit.bounds.contains (e.getPosition()))
+                continue;
+
+            selectBlock (hit.blockIndex);
+            owner.showBlockEditorPopout (hit.blockIndex);
+            return;
+        }
+    }
+
+    void DspPage::FormulaPanel::mouseDrag (const juce::MouseEvent& e)
+    {
+        if (draggingValue)
+            setValueFromMouse (e);
+    }
+
+    void DspPage::FormulaPanel::mouseUp (const juce::MouseEvent&)
+    {
+        activeHit = {};
         draggingValue = false;
     }
 
@@ -3290,11 +3776,19 @@ namespace patchcraft
             }
             else if (tab == 3)
             {
-                title.setText ("MIDI Playground", juce::dontSendNotification);
-                help.setText ("Create scale/chord/rhythm/sample-control MIDI generators. Use this modal to see the sections and configure starter modes.",
+                title.setText ("Mod Matrix", juce::dontSendNotification);
+                help.setText ("Edit actual Macro, Mod, and Automation graph routes. Click a row to select it; drag Depth/Rate or State cells to change values.",
                               juce::dontSendNotification);
-                midiPanel = std::make_unique<MidiPlaygroundPanel> (owner);
-                addAndMakeVisible (*midiPanel);
+                modPanel = std::make_unique<ModMatrixPanel> (owner);
+                addAndMakeVisible (*modPanel);
+                for (auto* button : { &primaryButton, &secondaryButton, &thirdButton })
+                    setupButton (*button);
+                primaryButton.setButtonText ("+ Macro");
+                secondaryButton.setButtonText ("+ Mod");
+                thirdButton.setButtonText ("+ Auto");
+                primaryButton.onClick = [this] { owner.addBuilderMacro(); repaintAllPanels(); };
+                secondaryButton.onClick = [this] { owner.addBuilderModRoute(); repaintAllPanels(); };
+                thirdButton.onClick = [this] { owner.addBuilderAutomation(); repaintAllPanels(); };
             }
             else if (tab == 4)
             {
@@ -3538,6 +4032,13 @@ namespace patchcraft
         easyHelpLabel.setJustificationType (juce::Justification::topLeft);
         addChildComponent (easyTitleLabel);
         addChildComponent (easyHelpLabel);
+        for (auto* label : { &easyRecipeLabel, &easyParametersLabel, &easyWorkflowLabel })
+        {
+            label->setFont (juce::Font (12.0f));
+            label->setColour (juce::Label::textColourId, PatchCraftLookAndFeel::text());
+            label->setJustificationType (juce::Justification::topLeft);
+            addChildComponent (*label);
+        }
         int themeId = 1;
         for (const auto& theme : PresetGenerator::themes())
             easyThemeBox.addItem (theme, themeId++);
@@ -3576,6 +4077,7 @@ namespace patchcraft
         addChildComponent (easyPackCreatorButton);
         addChildComponent (easyAdvancedButton);
         addChildComponent (builderPanel);
+        addChildComponent (formulaPanel);
         addChildComponent (sourceMatrix);
         addChildComponent (surgicalEqPanel);
         addChildComponent (wavetableEditor);
@@ -3606,29 +4108,7 @@ namespace patchcraft
         builderPanel.addBlockButton.onClick = [this] { addBuilderBlock(); };
         builderPanel.addMacroButton.onClick = [this] { addBuilderMacro(); };
         builderPanel.addModButton.onClick   = [this] { addBuilderModRoute(); };
-        builderPanel.addArpButton.onClick = [this]
-        {
-            if (currentTab != 3)
-                setTab (3);
-
-            auto& graph = project.getDspGraph();
-            const auto previousSize = (int) graph.blocks.size();
-            addBuilderBlock();
-            if ((int) graph.blocks.size() <= previousSize)
-                return;
-
-            auto& block = graph.blocks.back();
-            const auto previousType = block.type;
-            block.type = "arp";
-            block.name = "MIDI Playground " + juce::String ((int) graph.blocks.size());
-            applyBlockTypeDefaults (block, previousType);
-            selectedGraphKind = 1;
-            selectedGraphIndex = (int) graph.blocks.size() - 1;
-            project.notifyChanged();
-            rebuildGraphEditorItems();
-            refreshBuilderPanel();
-            syncGraphEditor();
-        };
+        builderPanel.addArpButton.onClick = [this] { addArpBlock(); };
         builderPanel.addAutomationButton.onClick = [this] { addBuilderAutomation(); };
         builderPanel.importSampleButton.onClick = [this] { importFxSampleForTesting(); };
         builderPanel.savePatchButton.onClick = [this]
@@ -4031,6 +4511,33 @@ namespace patchcraft
         guidedTutorial->restart();
     }
 
+    void DspPage::addArpBlock()
+    {
+        // Mirrors the BuilderPanel's "+ MIDI" click behaviour so the canvas
+        // right-click menu can drop an arpeggiator without forcing the user
+        // to navigate the DSP builder by hand.
+        if (currentTab != 3)
+            setTab (3);
+
+        auto& graph = project.getDspGraph();
+        const auto previousSize = (int) graph.blocks.size();
+        addBuilderBlock();
+        if ((int) graph.blocks.size() <= previousSize)
+            return;
+
+        auto& block = graph.blocks.back();
+        const auto previousType = block.type;
+        block.type = "arp";
+        block.name = "MIDI Playground " + juce::String ((int) graph.blocks.size());
+        applyBlockTypeDefaults (block, previousType);
+        selectedGraphKind = 1;
+        selectedGraphIndex = (int) graph.blocks.size() - 1;
+        project.notifyChanged();
+        rebuildGraphEditorItems();
+        refreshBuilderPanel();
+        syncGraphEditor();
+    }
+
     void DspPage::bindSections()
     {
         for (auto* section : { &engineSection, &toneSection, &ampSection,
@@ -4066,11 +4573,106 @@ namespace patchcraft
     {
         const auto theme = easyThemeBox.getText().isNotEmpty() ? easyThemeBox.getText() : juce::String ("Arps");
         easyHelpLabel.setText (
-            "Choose a sound type, then Create Preset. Generate Random keeps that sound type and creates a new musical seeded variation. Easy presets are saved as full playable patches, so parameter values, DSP blocks, samples, MIDI mappings, and the MIDI Playground pattern stay connected.\n\n"
-            "Current sound type: " + theme + "\n"
-            "Expansion target: " + (easyExpansionBox.getSelectedId() >= 100 ? easyExpansionBox.getText() : juce::String ("None")) + "\n"
-            "Use Open Advanced at any time to edit blocks, banks, macros, modulation routes, EQ, wavetable, FX, and output details.",
+            "Easy mode builds a complete playable patch, not a placeholder. Pick a musical direction, create or randomize it, then use Advanced only when you want to inspect or surgically edit the blocks.",
             juce::dontSendNotification);
+
+        const auto packTarget = easyExpansionBox.getSelectedId() >= 100 ? easyExpansionBox.getText() : juce::String ("None");
+        easyRecipeLabel.setText (
+            "PATCH RECIPE\n"
+            "Sound type: " + theme + "\n"
+            "Engine: " + project.getEngineType() + "\n"
+            "Blocks: " + easyBlockCountSummary() + "\n"
+            "Samples: " + juce::String ((int) project.getSampleMap().getZones().size()) + " mapped zone(s)\n"
+            "Expansion target: " + packTarget,
+            juce::dontSendNotification);
+
+        easyParametersLabel.setText (
+            "PARAMS YOU CAN EDIT\n"
+            + easyParameterSummary() + "\n\n"
+            "To expose a parameter on the instrument UI, go to Design, add a knob/slider/toggle, then assign its parameter in the Inspector.",
+            juce::dontSendNotification);
+
+        easyWorkflowLabel.setText (
+            "START-TO-FINISH\n"
+            "1. Choose a sound type and click Create Preset.\n"
+            "2. Generate Random for a different musical variation of that same type.\n"
+            "3. Enable Add to Pack if this preset belongs in a sellable expansion.\n"
+            "4. Open Advanced to edit source, filter, amp, mod, FX, output, macros, and graph routes.\n"
+            "5. Test, save the patch, then export the Player pack.",
+            juce::dontSendNotification);
+    }
+
+    juce::String DspPage::easyBlockCountSummary() const
+    {
+        std::map<juce::String, int> counts;
+        for (const auto& block : project.getDspGraph().blocks)
+            ++counts[block.section.isNotEmpty() ? block.section : juce::String ("source")];
+
+        auto value = [&] (const juce::String& section)
+        {
+            auto it = counts.find (section);
+            return it == counts.end() ? 0 : it->second;
+        };
+
+        return "Source " + juce::String (value ("source"))
+             + ", Filter " + juce::String (value ("filter"))
+             + ", Amp " + juce::String (value ("amp"))
+             + ", Mod " + juce::String (value ("mod"))
+             + ", FX " + juce::String (value ("fx"))
+             + ", Out " + juce::String (value ("out"));
+    }
+
+    juce::String DspPage::easyParameterSummary() const
+    {
+        const auto& live = project.getLiveValues();
+        const auto& parameters = project.getParameters();
+        juce::StringArray lines;
+
+        auto add = [&] (const juce::String& id)
+        {
+            if (const auto* def = parameters.find (id))
+            {
+                const auto value = live.getValue (id, def->defaultValue);
+                juce::String display = def->name.isNotEmpty() ? def->name : id;
+                display << ": " << juce::String (value, def->step >= 1.0f ? 0 : 2);
+                if (def->unit.isNotEmpty())
+                    display << " " << def->unit;
+                lines.add (display);
+            }
+        };
+
+        if (project.getEngineType() == "sample")
+        {
+            add ("sampleStart");
+            add ("sampleLength");
+            add ("samplePitch");
+            add ("granularDensity");
+            add ("filterCutoff");
+            add ("reverbMix");
+        }
+        else if (project.getEngineType() == "fx")
+        {
+            add ("drive");
+            add ("delayMix");
+            add ("reverbMix");
+            add ("multiTapMix");
+            add ("lofiMix");
+            add ("volume");
+        }
+        else
+        {
+            add ("oscBlend");
+            add ("filterCutoff");
+            add ("filterResonance");
+            add ("attack");
+            add ("delayMix");
+            add ("reverbMix");
+        }
+
+        if (lines.isEmpty())
+            return "No editable parameters are available for this engine yet.";
+
+        return lines.joinIntoString ("\n");
     }
 
     void DspPage::applyEasyPreset()
@@ -4101,6 +4703,10 @@ namespace patchcraft
                                                     project.getLiveValues(),
                                                     project.getEngineType(),
                                                     options);
+        auto& graph = project.getDspGraph();
+        graph.resetForEngine (project.getEngineType());
+        graph.userConfigured = true;
+
         Preset preset;
         bool hasPreset = false;
         if (! generated.empty())
@@ -4112,6 +4718,7 @@ namespace patchcraft
             preset.generated = true;
             if (forceRandomSeed)
                 applyEasyRandomVariation (preset, options.seed);
+            clampEasyPresetSafety (preset);
             for (const auto& value : preset.values)
                 project.getLiveValues().setValue (value.first, value.second);
             project.getManifest().defaultPreset = preset.name;
@@ -4136,6 +4743,16 @@ namespace patchcraft
         else if (lower.contains ("string") || lower.contains ("pad"))
         {
             applyGlobalPreset (2);
+        }
+        else if (lower.contains ("wavetable") || lower == "wt")
+        {
+            setTab (0);
+            const int sourcePresetId = 301 + (int) ((options.seed != 0 ? options.seed : (juce::uint32) theme.hashCode()) % 3u);
+            applySectionPreset (sourcePresetId);
+            setTab (1);
+            applySectionPreset (202);
+            setTab (2);
+            applySectionPreset (501);
         }
         else if (lower.contains ("bass"))
         {
@@ -4163,9 +4780,12 @@ namespace patchcraft
             randomizeEasyGraphBlocks (options.seed);
 
         configureEasyMidiForTheme (theme, options.seed, forceRandomSeed);
+        if (hasPreset)
+            syncEasyPresetValuesToGraphBlocks (preset);
 
         if (hasPreset)
         {
+            clampEasyPresetSafety (preset);
             for (const auto& value : preset.values)
                 project.getLiveValues().setValue (value.first, value.second);
         }
@@ -4214,22 +4834,22 @@ namespace patchcraft
 
         const auto lower = preset.theme.toLowerCase();
 
-        setNorm ("volume", 0.56f, 0.92f);
-        setLogHz ("filterCutoff", 380.0f, lower.contains ("string") || lower.contains ("pad") ? 12500.0f : 17000.0f);
-        setRange ("filterResonance", 0.04f, 0.72f);
-        setRange ("delayMix", lower.contains ("arp") || lower.contains ("motion") ? 0.12f : 0.0f, 0.58f);
-        setRange ("delayFeedback", 0.12f, 0.82f);
+        setNorm ("volume", 0.44f, lower.contains ("arp") ? 0.66f : 0.74f);
+        setLogHz ("filterCutoff", 380.0f, lower.contains ("string") || lower.contains ("pad") ? 11000.0f : 13500.0f);
+        setRange ("filterResonance", 0.04f, lower.contains ("arp") ? 0.48f : 0.62f);
+        setRange ("delayMix", lower.contains ("arp") || lower.contains ("motion") ? 0.10f : 0.0f, lower.contains ("arp") ? 0.36f : 0.46f);
+        setRange ("delayFeedback", 0.12f, lower.contains ("arp") ? 0.58f : 0.68f);
         setRange ("delayTime", 0.08f, 0.86f);
-        setRange ("reverbMix", lower.contains ("pluck") || lower.contains ("bass") ? 0.02f : 0.12f, 0.78f);
+        setRange ("reverbMix", lower.contains ("pluck") || lower.contains ("bass") ? 0.02f : 0.10f, lower.contains ("arp") ? 0.34f : 0.58f);
 
         if (project.getEngineType() == "synth")
         {
             setRaw ("oscType", (float) rng.nextInt (5));
             setRaw ("osc2Type", (float) rng.nextInt (5));
-            setRange ("oscBlend", 0.05f, 0.95f);
-            setRange ("osc2Detune", -35.0f, 35.0f);
-            setRange ("subBlend", 0.0f, lower.contains ("bass") ? 0.75f : 0.40f);
-            setRange ("noiseBlend", 0.0f, lower.contains ("fx") ? 0.55f : 0.24f);
+            setRange ("oscBlend", 0.08f, 0.76f);
+            setRange ("osc2Detune", -18.0f, 18.0f);
+            setRange ("subBlend", 0.0f, lower.contains ("bass") ? 0.62f : 0.30f);
+            setRange ("noiseBlend", 0.0f, lower.contains ("fx") ? 0.30f : lower.contains ("arp") ? 0.10f : 0.18f);
         }
 
         if (lower.contains ("arp"))
@@ -4238,9 +4858,9 @@ namespace patchcraft
             setRange ("decay", 0.045f, 0.42f);
             setRange ("sustain", 0.04f, 0.50f);
             setRange ("release", 0.035f, 0.46f);
-            setRange ("lfoAmount", 0.12f, 0.92f);
-            setRange ("lfoRate", 0.35f, 14.0f);
-            setRange ("vibratoDepth", 0.0f, 0.36f);
+            setRange ("lfoAmount", 0.10f, 0.55f);
+            setRange ("lfoRate", 0.35f, 8.0f);
+            setRange ("vibratoDepth", 0.0f, 0.16f);
             setRange ("vibratoRate", 2.0f, 11.5f);
         }
         else if (lower.contains ("pluck"))
@@ -4267,6 +4887,150 @@ namespace patchcraft
             setRange ("release", 0.05f, 0.38f);
             setLogHz ("filterCutoff", 180.0f, 5200.0f);
         }
+    }
+
+    void DspPage::clampEasyPresetSafety (Preset& preset)
+    {
+        auto clamp = [&] (const juce::String& id, float low, float high)
+        {
+            auto it = preset.values.find (id);
+            if (it != preset.values.end())
+                it->second = juce::jlimit (low, high, it->second);
+        };
+
+        const auto lower = preset.theme.toLowerCase();
+        clamp ("volume", 0.0f, lower.contains ("arp") ? 0.66f : 0.78f);
+        clamp ("wtLevel", 0.0f, 0.92f);
+        clamp ("drive", 0.0f, 0.58f);
+        clamp ("mix", 0.0f, 1.0f);
+        clamp ("delayMix", 0.0f, lower.contains ("arp") ? 0.38f : 0.52f);
+        clamp ("delayFeedback", 0.0f, lower.contains ("arp") ? 0.62f : 0.72f);
+        clamp ("reverbMix", 0.0f, lower.contains ("arp") ? 0.36f : 0.62f);
+        clamp ("filterResonance", 0.0f, lower.contains ("arp") ? 0.55f : 0.72f);
+        clamp ("noiseBlend", 0.0f, lower.contains ("arp") ? 0.12f : 0.32f);
+        clamp ("subBlend", 0.0f, lower.contains ("bass") ? 0.68f : 0.40f);
+        clamp ("lfoAmount", 0.0f, lower.contains ("arp") ? 0.58f : 0.78f);
+        clamp ("vibratoDepth", 0.0f, lower.contains ("arp") ? 0.16f : 0.36f);
+        clamp ("outputGainDb", -24.0f, 0.0f);
+        preset.values["outputLimiter"] = 1.0f;
+        preset.values["outputCeilingDb"] = -1.0f;
+    }
+
+    void DspPage::syncEasyPresetValuesToGraphBlocks (const Preset& preset)
+    {
+        auto& graph = project.getDspGraph();
+        const auto& model = project.getParameters();
+
+        auto raw = [&] (const juce::String& id, float fallback)
+        {
+            const auto it = preset.values.find (id);
+            return it == preset.values.end() ? fallback : it->second;
+        };
+
+        auto normalised = [&] (const juce::String& id, float fallback)
+        {
+            const auto it = preset.values.find (id);
+            const auto* def = model.find (id);
+            if (it == preset.values.end() || def == nullptr || std::abs (def->max - def->min) <= 0.000001f)
+                return fallback;
+
+            return juce::jlimit (0.0f, 1.0f, (it->second - def->min) / (def->max - def->min));
+        };
+
+        for (auto& block : graph.blocks)
+        {
+            if (block.section == "source")
+            {
+                if (block.type.containsIgnoreCase ("wavetable"))
+                {
+                    block.targetId = "wtPosition";
+                    block.values["wtEnabled"] = 1.0f;
+                    block.values["wtTable"] = raw ("wtTable", block.values.count ("wtTable") ? block.values["wtTable"] : 0.0f);
+                    block.values["wtPosition"] = raw ("wtPosition", block.values.count ("wtPosition") ? block.values["wtPosition"] : 0.0f);
+                    block.values["wtMorph"] = raw ("wtMorph", block.values.count ("wtMorph") ? block.values["wtMorph"] : 0.0f);
+                    block.values["wtWarp"] = raw ("wtWarp", block.values.count ("wtWarp") ? block.values["wtWarp"] : 0.0f);
+                    block.values["wtFold"] = raw ("wtFold", block.values.count ("wtFold") ? block.values["wtFold"] : 0.0f);
+                    block.values["wtUnison"] = raw ("wtUnison", block.values.count ("wtUnison") ? block.values["wtUnison"] : 1.0f);
+                    block.values["wtDetune"] = raw ("wtDetune", block.values.count ("wtDetune") ? block.values["wtDetune"] : 12.0f);
+                    block.values["wtSpread"] = raw ("wtSpread", block.values.count ("wtSpread") ? block.values["wtSpread"] : 0.0f);
+                    block.values["wtLevel"] = juce::jlimit (0.0f, 0.92f, raw ("wtLevel", block.values.count ("wtLevel") ? block.values["wtLevel"] : 0.75f));
+                    block.values["wtBend"] = raw ("wtBend", block.values.count ("wtBend") ? block.values["wtBend"] : 0.0f);
+                    block.values["wtSyncRatio"] = raw ("wtSyncRatio", block.values.count ("wtSyncRatio") ? block.values["wtSyncRatio"] : 1.0f);
+                    block.values["wtSpectralTilt"] = raw ("wtSpectralTilt", block.values.count ("wtSpectralTilt") ? block.values["wtSpectralTilt"] : 0.0f);
+                    block.values["wtPhaseMode"] = raw ("wtPhaseMode", block.values.count ("wtPhaseMode") ? block.values["wtPhaseMode"] : 0.0f);
+                    block.values["wtFramePosition"] = raw ("wtFramePosition", block.values.count ("wtFramePosition") ? block.values["wtFramePosition"] : 0.0f);
+                    block.values["wtFrameCount"] = raw ("wtFrameCount", block.values.count ("wtFrameCount") ? block.values["wtFrameCount"] : 1.0f);
+                }
+                else
+                {
+                    block.targetId = block.type.containsIgnoreCase ("noise") ? "noiseBlend" : "oscBlend";
+                    block.values["oscType"] = normalised ("oscType", block.values.count ("oscType") ? block.values["oscType"] : 0.25f);
+                    block.values["osc2Type"] = normalised ("osc2Type", block.values.count ("osc2Type") ? block.values["osc2Type"] : 0.75f);
+                    block.values["oscBlend"] = normalised ("oscBlend", block.values.count ("oscBlend") ? block.values["oscBlend"] : 0.0f);
+                    block.values["osc2Detune"] = normalised ("osc2Detune", block.values.count ("osc2Detune") ? block.values["osc2Detune"] : 0.535f);
+                    block.values["detune"] = normalised ("detune", block.values.count ("detune") ? block.values["detune"] : 0.50f);
+                    block.values["octave"] = normalised ("octave", block.values.count ("octave") ? block.values["octave"] : 0.50f);
+                    block.values["subBlend"] = normalised ("subBlend", block.values.count ("subBlend") ? block.values["subBlend"] : 0.0f);
+                    block.values["noiseBlend"] = normalised ("noiseBlend", block.values.count ("noiseBlend") ? block.values["noiseBlend"] : 0.0f);
+                    block.values["volume"] = juce::jmin (0.72f, normalised ("volume", block.values.count ("volume") ? block.values["volume"] : 0.65f));
+                }
+            }
+            else if (block.section == "filter" && ! block.type.containsIgnoreCase ("eq"))
+            {
+                block.targetId = "filterCutoff";
+                block.values["cutoff"] = normalised ("filterCutoff", block.values.count ("cutoff") ? block.values["cutoff"] : 0.50f);
+                block.values["resonance"] = normalised ("filterResonance", block.values.count ("resonance") ? block.values["resonance"] : 0.20f);
+                block.values["lfoAmount"] = normalised ("lfoAmount", block.values.count ("lfoAmount") ? block.values["lfoAmount"] : 0.0f);
+            }
+            else if (block.section == "amp")
+            {
+                block.targetId = "attack";
+                block.values["attack"] = normalised ("attack", block.values.count ("attack") ? block.values["attack"] : 0.01f);
+                block.values["decay"] = normalised ("decay", block.values.count ("decay") ? block.values["decay"] : 0.20f);
+                block.values["sustain"] = normalised ("sustain", block.values.count ("sustain") ? block.values["sustain"] : 0.80f);
+                block.values["release"] = normalised ("release", block.values.count ("release") ? block.values["release"] : 0.40f);
+            }
+            else if (block.section == "mod" && block.type.containsIgnoreCase ("lfo"))
+            {
+                block.targetId = "filterCutoff";
+                block.values["rate"] = raw ("lfoRate", block.values.count ("rate") ? block.values["rate"] : 1.0f);
+                block.values["amount"] = normalised ("lfoAmount", block.values.count ("amount") ? block.values["amount"] : 0.15f);
+                block.values["sync"] = raw ("bpmSync", 1.0f) >= 0.5f ? 1.0f : 0.0f;
+            }
+            else if (block.section == "fx")
+            {
+                if (block.type.containsIgnoreCase ("delay"))
+                {
+                    block.targetId = "delayMix";
+                    block.values["delayMix"] = normalised ("delayMix", block.values.count ("delayMix") ? block.values["delayMix"] : 0.18f);
+                    block.values["delayFeedback"] = normalised ("delayFeedback", block.values.count ("delayFeedback") ? block.values["delayFeedback"] : 0.35f);
+                    block.values["delayTime"] = normalised ("delayTime", block.values.count ("delayTime") ? block.values["delayTime"] : 0.25f);
+                    block.values["sync"] = raw ("bpmSync", 1.0f) >= 0.5f ? 1.0f : 0.0f;
+                }
+                else if (block.type.containsIgnoreCase ("reverb"))
+                {
+                    block.targetId = "reverbMix";
+                    block.values["reverbMix"] = normalised ("reverbMix", block.values.count ("reverbMix") ? block.values["reverbMix"] : 0.20f);
+                }
+                else if (block.values.count ("mix") != 0)
+                {
+                    block.values["mix"] = normalised ("mix", block.values["mix"]);
+                }
+            }
+            else if (block.section == "out")
+            {
+                block.values["volume"] = juce::jmin (0.72f, normalised ("volume", block.values.count ("volume") ? block.values["volume"] : 0.65f));
+                block.values["pan"] = normalised ("pan", block.values.count ("pan") ? block.values["pan"] : 0.50f);
+                block.values["bpmSync"] = raw ("bpmSync", 1.0f) >= 0.5f ? 1.0f : 0.0f;
+                block.values["retrigger"] = raw ("retrigger", 1.0f) >= 0.5f ? 1.0f : 0.0f;
+                block.values["outputLimiter"] = 1.0f;
+                block.values["outputCeilingDb"] = -1.0f;
+                block.values["outputGainDb"] = juce::jmin (0.0f, raw ("outputGainDb", 0.0f));
+            }
+        }
+
+        graph.userConfigured = true;
+        normaliseDspGraphBanks (graph);
     }
 
     DspBlock& DspPage::ensureEasyMidiPlaygroundBlock()
@@ -4579,25 +5343,26 @@ namespace patchcraft
             if (block.type.containsIgnoreCase ("arp") || block.type.containsIgnoreCase ("midi"))
                 continue;
 
-            setIfPresent (block, "amount", -0.95f, 0.95f);
-            setIfPresent (block, "depth", 0.05f, 0.95f);
-            setIfPresent (block, "value", 0.03f, 0.97f);
-            setIfPresent (block, "mix", 0.08f, 0.95f);
-            setIfPresent (block, "rate", 0.12f, 18.0f);
-            setIfPresent (block, "cutoff", 0.05f, 0.92f);
-            setIfPresent (block, "resonance", 0.02f, 0.86f);
-            setIfPresent (block, "drive", 0.0f, 0.82f);
-            setIfPresent (block, "volume", 0.48f, 0.95f);
-            setIfPresent (block, "detune", 0.25f, 0.75f);
-            setIfPresent (block, "oscBlend", 0.08f, 0.92f);
-            setIfPresent (block, "subBlend", 0.0f, 0.65f);
-            setIfPresent (block, "noiseBlend", 0.0f, 0.38f);
-            setIfPresent (block, "delayMix", 0.0f, 0.70f);
-            setIfPresent (block, "delayFeedback", 0.12f, 0.86f);
-            setIfPresent (block, "reverbMix", 0.02f, 0.84f);
+            setIfPresent (block, "amount", 0.04f, 0.58f);
+            setIfPresent (block, "depth", 0.04f, 0.62f);
+            setIfPresent (block, "value", 0.08f, 0.86f);
+            setIfPresent (block, "mix", 0.08f, 0.72f);
+            setIfPresent (block, "rate", 0.12f, 10.0f);
+            setIfPresent (block, "cutoff", 0.10f, 0.84f);
+            setIfPresent (block, "resonance", 0.02f, 0.58f);
+            setIfPresent (block, "drive", 0.0f, 0.52f);
+            setIfPresent (block, "volume", 0.42f, 0.72f);
+            setIfPresent (block, "detune", 0.36f, 0.64f);
+            setIfPresent (block, "oscBlend", 0.10f, 0.74f);
+            setIfPresent (block, "subBlend", 0.0f, 0.50f);
+            setIfPresent (block, "noiseBlend", 0.0f, 0.20f);
+            setIfPresent (block, "delayMix", 0.0f, 0.42f);
+            setIfPresent (block, "delayFeedback", 0.12f, 0.62f);
+            setIfPresent (block, "reverbMix", 0.02f, 0.50f);
             setIfPresent (block, "wtPosition", 0.0f, 1.0f);
             setIfPresent (block, "wtMorph", 0.0f, 1.0f);
-            setIfPresent (block, "wtWarp", 0.0f, 1.0f);
+            setIfPresent (block, "wtWarp", 0.0f, 0.72f);
+            setIfPresent (block, "wtLevel", 0.42f, 0.88f);
         }
 
         graph.userConfigured = true;
@@ -4949,7 +5714,12 @@ namespace patchcraft
             || targetId == "phaserFeedback" || targetId == "phaserMix" || targetId == "combFreq"
             || targetId == "combFeedback" || targetId == "combMix" || targetId == "resonatorFreq"
             || targetId == "resonatorQ" || targetId == "resonatorMix" || targetId == "convolutionSize"
-            || targetId == "convolutionMix" || targetId == "spectralTilt" || targetId == "spectralMix")
+            || targetId == "convolutionMix" || targetId == "spectralTilt" || targetId == "spectralMix"
+            || targetId == "tapeDrive" || targetId == "tapeTone" || targetId == "tapeFlutter" || targetId == "tapeMix"
+            || targetId == "vinylAge" || targetId == "vinylDust" || targetId == "vinylWarp" || targetId == "vinylMix"
+            || targetId == "lofiBits" || targetId == "lofiRate" || targetId == "lofiMix"
+            || targetId == "vocalFormant" || targetId == "vocalBody" || targetId == "vocalMix"
+            || targetId == "multiTapTime" || targetId == "multiTapFeedback" || targetId == "multiTapSpread" || targetId == "multiTapMix")
             return "fx";
         if (targetId == "volume" || targetId == "pan" || targetId == "bpmSync" || targetId == "retrigger"
             || targetId == "inputTrimDb" || targetId == "phaseInvert" || targetId == "stereoWidth"
@@ -5070,6 +5840,11 @@ namespace patchcraft
 
         if (block.section == "fx")
         {
+            if (block.type.containsIgnoreCase ("multiTap"))
+                return "Writes MultiTap Delay: time " + juce::String (get ("multiTapTime", 0.375f), 2)
+                    + " s, feedback " + pct (get ("multiTapFeedback", 0.35f))
+                    + ", spread " + pct (get ("multiTapSpread", 0.45f))
+                    + ", mix " + pct (get ("multiTapMix", 0.35f)) + ".";
             if (block.type.containsIgnoreCase ("delay"))
                 return "Writes Delay Mix " + pct (get ("delayMix", 0.0f))
                     + ", Feedback " + pct (get ("delayFeedback", 0.35f))
@@ -5104,6 +5879,24 @@ namespace patchcraft
             if (block.type.containsIgnoreCase ("spectral"))
                 return "Writes Spectral tilt " + juce::String (get ("spectralTilt", 0.0f), 2)
                     + ", mix " + pct (get ("spectralMix", 0.35f)) + ".";
+            if (block.type.containsIgnoreCase ("tape"))
+                return "Writes Tape: drive " + pct (get ("tapeDrive", 0.32f))
+                    + ", tone " + pct (get ("tapeTone", 0.58f))
+                    + ", flutter " + pct (get ("tapeFlutter", 0.12f))
+                    + ", mix " + pct (get ("tapeMix", 0.35f)) + ".";
+            if (block.type.containsIgnoreCase ("vinyl") || block.type.containsIgnoreCase ("oldSchool"))
+                return "Writes Vinyl: age " + pct (get ("vinylAge", 0.42f))
+                    + ", dust " + pct (get ("vinylDust", 0.10f))
+                    + ", warp " + pct (get ("vinylWarp", 0.16f))
+                    + ", mix " + pct (get ("vinylMix", 0.35f)) + ".";
+            if (block.type.containsIgnoreCase ("lofi"))
+                return "Writes LoFi: " + juce::String (juce::roundToInt (get ("lofiBits", 10.0f)))
+                    + " bits, rate crush " + pct (get ("lofiRate", 0.22f))
+                    + ", mix " + pct (get ("lofiMix", 0.35f)) + ".";
+            if (block.type.containsIgnoreCase ("vocal") || block.type.containsIgnoreCase ("formant"))
+                return "Writes Vocal Formant: vowel " + pct (get ("vocalFormant", 0.40f))
+                    + ", body " + pct (get ("vocalBody", 0.35f))
+                    + ", mix " + pct (get ("vocalMix", 0.35f)) + ".";
             return "Writes Reverb wet level " + pct (get ("reverbMix", 0.22f))
                 + " and FX Mix " + pct (get ("mix", 1.0f))
                 + ". It affects sound when audio is entering the FX chain.";
@@ -5144,7 +5937,8 @@ namespace patchcraft
                                 "eqBand1Q", "eqBand1Solo", "eqBand1Mode", "eqBand1DynMode", "eqBand1DynRangeDb" });
         setDefault ("amp",    { "attack", "decay", "sustain", "release", "volume" });
         setDefault ("mod",    { "lfoRate", "lfoAmount", "vibratoRate", "vibratoDepth" });
-        setDefault ("fx",     { "drive", "mix", "delayTime", "delayFeedback", "delayMix", "reverbMix" });
+        setDefault ("fx",     { "drive", "mix", "delayTime", "delayFeedback", "delayMix", "reverbMix",
+                                "tapeMix", "vinylMix", "lofiMix", "vocalMix", "multiTapMix" });
         setDefault ("out",    { "volume", "pan", "inputTrimDb", "stereoWidth", "monoMaker",
                                 "outputGainDb", "outputLimiter", "outputCeilingDb", "bpmSync", "retrigger" });
     }
@@ -5503,6 +6297,13 @@ namespace patchcraft
         sectionPresetBox.addItem ("FX: Triplet Wobble", 103);
         sectionPresetBox.addItem ("FX: Chop Gate Performer", 104);
         sectionPresetBox.addItem ("FX: Dirty Space Throw", 105);
+        sectionPresetBox.addSeparator();
+        sectionPresetBox.addSectionHeading ("FX Lab");
+        sectionPresetBox.addItem ("FX Lab: Vinyl Tape Wash", 106);
+        sectionPresetBox.addItem ("FX Lab: Vocal Throw Designer", 107);
+        sectionPresetBox.addItem ("FX Lab: LoFi Old Sampler", 108);
+        sectionPresetBox.addItem ("FX Lab: MultiTap Space Engine", 109);
+        sectionPresetBox.addItem ("FX Lab: Retro Destruction Chain", 110);
         sectionPresetBox.setTextWhenNothingSelected ("Section Preset");
         sectionPresetBox.onChange = [this] { applySectionPreset (sectionPresetBox.getSelectedId()); };
     }
@@ -6008,7 +6809,7 @@ namespace patchcraft
                 addRoute ("chop_mix", lfo, "mix", 0.55f);
                 addAuto ("chop_pattern", "mix", 4.0f, { 1.0f, 0.0f, 0.75f, 0.0f, 1.0f, 0.2f, 0.0f, 0.85f });
             }
-            else
+            else if (presetId == 105)
             {
                 addBlock ("dirty_throw_delay", "delay", "Dirty Space Throw Delay", "delayMix",
                           { { "delayMix", 0.64f }, { "delayFeedback", 0.74f }, { "delayTime", 0.375f },
@@ -6019,6 +6820,54 @@ namespace patchcraft
                           { { "reverbMix", 0.58f }, { "mix", 1.0f } });
                 const auto lfo = addLfo ("dirty_throw_motion", "Throw Motion", "delayMix", 0.5f, 0.3f, true);
                 addRoute ("dirty_throw_motion", lfo, "delayMix", 0.24f);
+            }
+            else if (presetId == 106)
+            {
+                addBlock ("vinyl_wash_tape", "tape", "Warm Tape Saturator", "tapeMix",
+                          { { "tapeDrive", 0.38f }, { "tapeTone", 0.52f }, { "tapeFlutter", 0.16f }, { "tapeMix", 0.42f } });
+                addBlock ("vinyl_wash_dust", "vinyl", "Aged Vinyl Texture", "vinylMix",
+                          { { "vinylAge", 0.62f }, { "vinylDust", 0.16f }, { "vinylWarp", 0.22f }, { "vinylMix", 0.34f } });
+                addBlock ("vinyl_wash_space", "reverb", "Soft Room Tail", "reverbMix",
+                          { { "reverbMix", 0.22f }, { "mix", 1.0f } });
+            }
+            else if (presetId == 107)
+            {
+                addBlock ("vocal_throw_formant", "vocalFormant", "Vocal Formant Throw", "vocalMix",
+                          { { "vocalFormant", 0.38f }, { "vocalBody", 0.72f }, { "vocalMix", 0.50f } });
+                addBlock ("vocal_throw_multitap", "multiTapDelay", "Vowel MultiTap Delay", "multiTapMix",
+                          { { "multiTapTime", 0.24f }, { "multiTapFeedback", 0.42f }, { "multiTapSpread", 0.74f }, { "multiTapMix", 0.32f } });
+                const auto lfo = addLfo ("vocal_sweep", "Formant Sweep LFO", "vocalFormant", 0.5f, 0.30f, true);
+                addRoute ("vocal_sweep", lfo, "vocalFormant", 0.28f);
+            }
+            else if (presetId == 108)
+            {
+                addBlock ("lofi_sampler_crush", "lofi", "Old Sampler Crunch", "lofiMix",
+                          { { "lofiBits", 9.0f }, { "lofiRate", 0.36f }, { "lofiMix", 0.42f } });
+                addBlock ("lofi_sampler_tape", "tape", "Input Tape Push", "tapeMix",
+                          { { "tapeDrive", 0.30f }, { "tapeTone", 0.44f }, { "tapeFlutter", 0.10f }, { "tapeMix", 0.30f } });
+            }
+            else if (presetId == 109)
+            {
+                addBlock ("space_multitap", "multiTapDelay", "Wide MultiTap Space", "multiTapMix",
+                          { { "multiTapTime", 0.375f }, { "multiTapFeedback", 0.55f }, { "multiTapSpread", 0.88f }, { "multiTapMix", 0.44f } });
+                addBlock ("space_chorus", "chorus", "Air Chorus", "chorusMix",
+                          { { "chorusRate", 0.18f }, { "chorusDepth", 0.42f }, { "chorusFeedback", 0.08f }, { "chorusMix", 0.22f } });
+                addBlock ("space_spectral", "spectral", "Spectral Air Lift", "spectralMix",
+                          { { "spectralTilt", 0.32f }, { "spectralMix", 0.18f } });
+            }
+            else
+            {
+                addBlock ("retro_destroy_tape", "tape", "Tape Overload", "tapeMix",
+                          { { "tapeDrive", 0.78f }, { "tapeTone", 0.38f }, { "tapeFlutter", 0.28f }, { "tapeMix", 0.64f } });
+                addBlock ("retro_destroy_lofi", "lofi", "Digital Breakdown", "lofiMix",
+                          { { "lofiBits", 6.0f }, { "lofiRate", 0.58f }, { "lofiMix", 0.46f } });
+                addBlock ("retro_destroy_vinyl", "vinyl", "Damaged Vinyl Bed", "vinylMix",
+                          { { "vinylAge", 0.70f }, { "vinylDust", 0.20f }, { "vinylWarp", 0.32f }, { "vinylMix", 0.18f } });
+                addBlock ("retro_destroy_multitap", "multiTapDelay", "Broken MultiTap", "multiTapMix",
+                          { { "multiTapTime", 0.17f }, { "multiTapFeedback", 0.66f }, { "multiTapSpread", 0.93f }, { "multiTapMix", 0.38f } });
+                const auto lfo = addLfo ("retro_destroy_wobble", "Retro Destroy Wobble", "multiTapMix", 2.0f, 0.45f, true);
+                addRoute ("retro_destroy_mix", lfo, "multiTapMix", 0.22f);
+                addRoute ("retro_destroy_vinyl", lfo, "vinylMix", 0.12f);
             }
 
             selectedGraphKind = 1;
@@ -6100,14 +6949,509 @@ namespace patchcraft
         sectionPresetBox.setSelectedId (presetId, juce::dontSendNotification);
     }
 
+    void DspPage::showBlockEditorPopout (int blockIndex)
+    {
+        if (blockIndex < 0 || blockIndex >= (int) project.getDspGraph().blocks.size())
+            return;
+
+        struct FormulaValueRow final : public juce::Component
+        {
+            FormulaValueRow (DspPage& ownerIn, int blockIndexIn, juce::String keyIn, float valueIn, bool editsLiveParameterIn)
+                : owner (ownerIn), blockIndex (blockIndexIn), key (std::move (keyIn)), editsLiveParameter (editsLiveParameterIn)
+            {
+                if (editsLiveParameter)
+                {
+                    if (const auto* def = owner.project.getParameters().find (key))
+                    {
+                        label.setText (def->name + " (" + key + ")", juce::dontSendNotification);
+                        valueIn = owner.project.getLiveValues().getValue (key, def->defaultValue);
+                    }
+                    else
+                        label.setText (key, juce::dontSendNotification);
+                }
+                else
+                    label.setText (key, juce::dontSendNotification);
+
+                label.setFont (juce::Font (11.5f, juce::Font::bold));
+                label.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::text());
+                addAndMakeVisible (label);
+
+                valueLabel.setFont (juce::Font (11.0f));
+                valueLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+                valueLabel.setJustificationType (juce::Justification::centredRight);
+                addAndMakeVisible (valueLabel);
+
+                double min = 0.0;
+                double max = 1.0;
+                double step = 0.001;
+                if (editsLiveParameter)
+                {
+                    if (const auto* def = owner.project.getParameters().find (key))
+                    {
+                        min = def->min;
+                        max = def->max;
+                        step = def->step > 0.0f ? def->step : 0.001;
+                    }
+                }
+
+                const auto lower = key.toLowerCase();
+                if (! editsLiveParameter && lower.contains ("freq") && ! lower.contains ("feedback"))
+                {
+                    min = 20.0; max = 20000.0; step = 1.0;
+                }
+                else if (! editsLiveParameter && (lower.contains ("db") || lower.contains ("gain")))
+                {
+                    min = -48.0; max = 24.0; step = 0.1;
+                }
+                else if (! editsLiveParameter && (lower.contains ("steps") || lower == "steps"))
+                {
+                    min = 1.0; max = 16.0; step = 1.0;
+                }
+                else if (! editsLiveParameter && (lower.contains ("pattern") || lower.contains ("type") || lower.contains ("mode") || lower.contains ("band")))
+                {
+                    min = 0.0; max = 8.0; step = 1.0;
+                }
+                else if (! editsLiveParameter && lower.contains ("note"))
+                {
+                    min = -24.0; max = 24.0; step = 1.0;
+                }
+                else if (! editsLiveParameter && lower.contains ("rate") && ! lower.contains ("lofirate"))
+                {
+                    min = 0.01; max = 20.0; step = 0.001;
+                }
+                else if (! editsLiveParameter && lower.contains ("time"))
+                {
+                    min = 0.0; max = 8.0; step = 0.001;
+                }
+                else if (! editsLiveParameter && lower.contains ("detune"))
+                {
+                    min = 0.0; max = key.startsWithIgnoreCase ("wt") ? 80.0 : 1.0; step = 0.001;
+                }
+                else if (! editsLiveParameter && lower.contains ("ratio"))
+                {
+                    min = 1.0; max = 16.0; step = 1.0;
+                }
+
+                if (valueIn < min || valueIn > max)
+                {
+                    min = std::floor ((double) valueIn - 1.0);
+                    max = std::ceil ((double) valueIn + 1.0);
+                    step = 0.001;
+                }
+
+                slider.setRange (min, max, step);
+                slider.setValue (valueIn, juce::dontSendNotification);
+                slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+                slider.onValueChange = [this]
+                {
+                    if (editsLiveParameter)
+                    {
+                        owner.project.getLiveValues().setValue (key, (float) slider.getValue());
+                        refreshValueLabel();
+                        owner.refreshFxPreviewRouting();
+                        owner.project.notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
+                        owner.formulaPanel.repaint();
+                        owner.repaint();
+                        return;
+                    }
+
+                    if (blockIndex < 0 || blockIndex >= (int) owner.project.getDspGraph().blocks.size())
+                        return;
+                    auto& block = owner.project.getDspGraph().blocks[(size_t) blockIndex];
+                    block.values[key] = (float) slider.getValue();
+                    refreshValueLabel();
+                    owner.markGraphEdited();
+                    owner.refreshFxPreviewRouting();
+                    owner.syncGraphEditor();
+                    owner.project.notifyChanged();
+                    owner.builderPanel.repaint();
+                    owner.formulaPanel.repaint();
+                    owner.repaint();
+                };
+                addAndMakeVisible (slider);
+                refreshValueLabel();
+            }
+
+            void resized() override
+            {
+                auto row = getLocalBounds().reduced (2);
+                label.setBounds (row.removeFromLeft (132));
+                valueLabel.setBounds (row.removeFromRight (76));
+                row.removeFromRight (8);
+                slider.setBounds (row);
+            }
+
+            void refreshValueLabel()
+            {
+                valueLabel.setText (juce::String (slider.getValue(), slider.getInterval() >= 1.0 ? 0 : 3),
+                                    juce::dontSendNotification);
+            }
+
+            DspPage& owner;
+            int blockIndex = -1;
+            juce::String key;
+            bool editsLiveParameter = false;
+            juce::Label label;
+            juce::Label valueLabel;
+            juce::Slider slider;
+        };
+
+        struct FormulaRowsPanel final : public juce::Component
+        {
+            explicit FormulaRowsPanel (juce::String titleIn) : title (std::move (titleIn))
+            {
+                setOpaque (true);
+            }
+
+            void addBlockRow (DspPage& owner, int blockIndex, const juce::String& key, float value)
+            {
+                rows.push_back (std::make_unique<FormulaValueRow> (owner, blockIndex, key, value, false));
+                addAndMakeVisible (*rows.back());
+            }
+
+            void addLiveParameterRow (DspPage& owner, const juce::String& id)
+            {
+                if (const auto* def = owner.project.getParameters().find (id))
+                {
+                    if (! def->visible)
+                        return;
+                    const auto value = owner.project.getLiveValues().getValue (id, def->defaultValue);
+                    rows.push_back (std::make_unique<FormulaValueRow> (owner, -1, id, value, true));
+                    addAndMakeVisible (*rows.back());
+                }
+            }
+
+            void paint (juce::Graphics& g) override
+            {
+                g.fillAll (PatchCraftLookAndFeel::bg());
+                auto r = getLocalBounds().reduced (16);
+                g.setColour (PatchCraftLookAndFeel::textBright());
+                g.setFont (juce::Font (16.0f, juce::Font::bold));
+                g.drawText (title, r.removeFromTop (24), juce::Justification::centredLeft, true);
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (12.0f);
+                if (rows.empty())
+                    g.drawFittedText ("No editable values in this group. Check Routes or Downstream for controls affecting the final sound.",
+                                      r.removeFromTop (50), juce::Justification::topLeft, 2);
+            }
+
+            void resized() override
+            {
+                auto list = getLocalBounds().reduced (16);
+                list.removeFromTop (34);
+                for (auto& row : rows)
+                {
+                    row->setBounds (list.removeFromTop (34));
+                    list.removeFromTop (4);
+                }
+            }
+
+            juce::String title;
+            std::vector<std::unique_ptr<FormulaValueRow>> rows;
+        };
+
+        struct FormulaInfoPanel final : public juce::Component
+        {
+            FormulaInfoPanel (juce::String titleIn, juce::StringArray linesIn)
+                : title (std::move (titleIn)), lines (std::move (linesIn))
+            {
+                setOpaque (true);
+            }
+
+            void paint (juce::Graphics& g) override
+            {
+                g.fillAll (PatchCraftLookAndFeel::bg());
+                auto r = getLocalBounds().reduced (18);
+                g.setColour (PatchCraftLookAndFeel::textBright());
+                g.setFont (juce::Font (17.0f, juce::Font::bold));
+                g.drawText (title, r.removeFromTop (28), juce::Justification::centredLeft, true);
+                r.removeFromTop (8);
+                g.setColour (PatchCraftLookAndFeel::panel());
+                g.fillRoundedRectangle (r.toFloat(), 10.0f);
+                g.setColour (PatchCraftLookAndFeel::border());
+                g.drawRoundedRectangle (r.toFloat(), 10.0f, 1.0f);
+                r.reduce (14, 12);
+                g.setFont (13.0f);
+                for (const auto& line : lines)
+                {
+                    g.setColour (line.startsWithIgnoreCase ("warning")
+                        ? PatchCraftLookAndFeel::accent()
+                        : PatchCraftLookAndFeel::text());
+                    g.drawFittedText (line, r.removeFromTop (36), juce::Justification::topLeft, 2);
+                    r.removeFromTop (2);
+                    if (r.getHeight() <= 20)
+                        break;
+                }
+            }
+
+            juce::String title;
+            juce::StringArray lines;
+        };
+
+        struct BlockEditor final : public juce::Component
+        {
+            BlockEditor (DspPage& ownerIn, int blockIndexIn)
+                : owner (ownerIn), blockIndex (blockIndexIn), tabs (juce::TabbedButtonBar::TabsAtTop)
+            {
+                setSize (940, 700);
+                tabs.setTabBarDepth (34);
+                addAndMakeVisible (tabs);
+                rebuildTabs();
+
+                closeButton.getProperties().set ("smallButton", true);
+                toggleButton.getProperties().set ("smallButton", true);
+                copyButton.getProperties().set ("smallButton", true);
+                toggleButton.onClick = [this]
+                {
+                    if (blockIndex >= 0 && blockIndex < (int) owner.project.getDspGraph().blocks.size())
+                    {
+                        auto& block = owner.project.getDspGraph().blocks[(size_t) blockIndex];
+                        block.enabled = ! block.enabled;
+                        owner.markGraphEdited();
+                        owner.project.notifyChanged();
+                        owner.refresh();
+                        repaint();
+                    }
+                };
+                copyButton.onClick = [this]
+                {
+                    if (blockIndex >= 0 && blockIndex < (int) owner.project.getDspGraph().blocks.size())
+                    {
+                        const auto& block = owner.project.getDspGraph().blocks[(size_t) blockIndex];
+                        juce::StringArray lines;
+                        lines.add (block.name + " [" + block.type + "]");
+                        lines.add (owner.blockImpactDescription (block));
+                        for (const auto& [key, value] : block.values)
+                            lines.add (key + ": " + juce::String (value, 3));
+                        juce::SystemClipboard::copyTextToClipboard (lines.joinIntoString ("\n"));
+                    }
+                };
+                closeButton.onClick = [this]
+                {
+                    if (auto* dialog = findParentComponentOfClass<juce::DialogWindow>())
+                        dialog->exitModalState (0);
+                };
+                for (auto* button : { &toggleButton, &copyButton, &closeButton })
+                    addAndMakeVisible (*button);
+            }
+
+            bool validBlock() const
+            {
+                return blockIndex >= 0 && blockIndex < (int) owner.project.getDspGraph().blocks.size();
+            }
+
+            const DspBlock* block() const
+            {
+                return validBlock() ? &owner.project.getDspGraph().blocks[(size_t) blockIndex] : nullptr;
+            }
+
+            static bool isShapeDataKey (const juce::String& key)
+            {
+                return key.startsWith ("wtShape") || key.startsWith ("wtFrame");
+            }
+
+            void rebuildTabs()
+            {
+                tabs.clearTabs();
+                const auto* currentBlock = block();
+                if (currentBlock == nullptr)
+                    return;
+
+                tabs.addTab ("Overview", PatchCraftLookAndFeel::panel(), makeOverviewPanel (*currentBlock), true);
+                tabs.addTab ("Block Values", PatchCraftLookAndFeel::panel(), makeBlockValuesPanel (*currentBlock), true);
+                if (currentBlock->section == "source")
+                    tabs.addTab ("Source Stack", PatchCraftLookAndFeel::panel(), makeSourceStackPanel (*currentBlock), true);
+                if (currentBlock->section == "source" && currentBlock->type.containsIgnoreCase ("wavetable"))
+                    tabs.addTab ("Wavetable", PatchCraftLookAndFeel::panel(), makeWavetablePanel (*currentBlock), true);
+                tabs.addTab ("Routes", PatchCraftLookAndFeel::panel(), makeRoutesPanel (*currentBlock), true);
+                tabs.addTab ("Downstream", PatchCraftLookAndFeel::panel(), makeDownstreamPanel (*currentBlock), true);
+            }
+
+            juce::Component* makeOverviewPanel (const DspBlock& currentBlock)
+            {
+                juce::StringArray lines;
+                lines.add (currentBlock.name + " [" + currentBlock.type + "] is in " + currentBlock.section.toUpperCase() + ".");
+                lines.add (owner.blockImpactDescription (currentBlock));
+                lines.add ("Block Values are stored on this formula block. Source Stack shows global source parameters that can still affect what you hear.");
+                if (currentBlock.section == "source" && currentBlock.type.containsIgnoreCase ("wavetable"))
+                {
+                    lines.add ("Warning: OSC 2 Type can be set to Noise. That noise is independent of Noise Blend.");
+                    lines.add ("Use Source Stack > OSC 2 Type to remove OSC2 noise, or Source Stack > Noise Blend to remove the separate additive noise layer.");
+                }
+                lines.add ("Routes shows Macro, Mod, and Automation lanes that touch this block or this section.");
+                lines.add ("Downstream shows Filter, Amp, FX, and Out blocks that still shape the final result after this source.");
+                return new FormulaInfoPanel ("What changes this sound?", lines);
+            }
+
+            juce::Component* makeBlockValuesPanel (const DspBlock& currentBlock)
+            {
+                auto* panel = new FormulaRowsPanel ("Block-local values");
+                for (const auto& [key, value] : currentBlock.values)
+                {
+                    if (key == "bank")
+                        continue;
+                    if (isShapeDataKey (key))
+                        continue;
+                    panel->addBlockRow (owner, blockIndex, key, value);
+                }
+                return panel;
+            }
+
+            juce::Component* makeSourceStackPanel (const DspBlock&)
+            {
+                auto* panel = new FormulaRowsPanel ("Audible source stack");
+                const juce::StringArray ids {
+                    "oscType", "osc2Type", "oscBlend", "osc2Detune", "subBlend", "noiseBlend",
+                    "wtEnabled", "wtTable", "wtPosition", "wtMorph", "wtWarp", "wtFold",
+                    "wtUnison", "wtDetune", "wtSpread", "wtLevel", "wtBend", "wtSyncRatio",
+                    "wtSpectralTilt", "wtFramePosition", "wtFrameCount", "volume", "pan"
+                };
+                for (const auto& id : ids)
+                    panel->addLiveParameterRow (owner, id);
+                return panel;
+            }
+
+            juce::Component* makeWavetablePanel (const DspBlock& currentBlock)
+            {
+                auto* panel = new FormulaRowsPanel ("Wavetable block values");
+                for (const auto& [key, value] : currentBlock.values)
+                {
+                    if (key.startsWith ("wt") && ! isShapeDataKey (key))
+                        panel->addBlockRow (owner, blockIndex, key, value);
+                }
+                return panel;
+            }
+
+            bool targetTouchesBlock (const DspBlock& currentBlock, const juce::String& target) const
+            {
+                if (target.isEmpty())
+                    return false;
+                if (target == currentBlock.id || target == currentBlock.targetId)
+                    return true;
+                if (currentBlock.values.find (target) != currentBlock.values.end())
+                    return true;
+                return owner.targetAppliesToSection (target, currentBlock.section);
+            }
+
+            juce::Component* makeRoutesPanel (const DspBlock& currentBlock)
+            {
+                juce::StringArray lines;
+                for (const auto& macro : owner.project.getDspGraph().macros)
+                    if (targetTouchesBlock (currentBlock, macro.targetId) || targetTouchesBlock (currentBlock, macro.macroId))
+                        lines.add ("Macro: " + macro.macroId + " -> " + macro.targetId
+                                   + "  range " + juce::String (macro.targetMin, 2) + " to " + juce::String (macro.targetMax, 2));
+                for (const auto& route : owner.project.getDspGraph().modulation)
+                    if (targetTouchesBlock (currentBlock, route.targetId) || targetTouchesBlock (currentBlock, route.sourceId))
+                        lines.add ("Mod: " + route.sourceId + " -> " + route.targetId
+                                   + "  amount " + juce::String (route.amount, 2)
+                                   + (route.enabled ? "  enabled" : "  bypassed"));
+                for (const auto& lane : owner.project.getDspGraph().automation)
+                    if (targetTouchesBlock (currentBlock, lane.targetId))
+                        lines.add ("Automation: " + lane.targetId
+                                   + "  rate " + juce::String (lane.rate, 2)
+                                   + (lane.syncToTempo ? "  BPM synced" : "  free"));
+                if (lines.isEmpty())
+                    lines.add ("No Macro, Mod, or Automation route currently targets this block or section.");
+                lines.add ("Tip: use + Automation for curve movement, + Mod for LFO/random/audio-reactive movement, and + Macro for performance controls.");
+                return new FormulaInfoPanel ("Routes that can move this sound", lines);
+            }
+
+            juce::Component* makeDownstreamPanel (const DspBlock& currentBlock)
+            {
+                juce::StringArray lines;
+                for (const auto& other : owner.project.getDspGraph().blocks)
+                {
+                    if (&other == &currentBlock)
+                        continue;
+                    if (other.section == currentBlock.section && currentBlock.section == "source")
+                        lines.add ("Source layer: " + other.name + " - " + owner.blockImpactDescription (other));
+                    else if (other.section == "filter" || other.section == "amp" || other.section == "fx" || other.section == "out")
+                        lines.add (other.section.toUpperCase() + ": " + other.name + " - " + owner.blockImpactDescription (other));
+                }
+                if (lines.isEmpty())
+                    lines.add ("No downstream blocks are active yet. Add Filter, Amp, FX, and Out blocks to finish the instrument chain.");
+                return new FormulaInfoPanel ("What happens after this block", lines);
+            }
+
+            void paint (juce::Graphics& g) override
+            {
+                g.fillAll (PatchCraftLookAndFeel::bg());
+                auto r = getLocalBounds().reduced (18);
+                const auto* selectedBlock = block();
+
+                g.setColour (PatchCraftLookAndFeel::textBright());
+                g.setFont (juce::Font (20.0f, juce::Font::bold));
+                g.drawText (selectedBlock != nullptr ? selectedBlock->name : juce::String ("Block Editor"),
+                            r.removeFromTop (28), juce::Justification::centredLeft, true);
+
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (12.0f);
+                g.drawFittedText (selectedBlock != nullptr ? owner.blockImpactDescription (*selectedBlock) : juce::String(),
+                                  r.removeFromTop (46), juce::Justification::topLeft, 2);
+                r.removeFromTop (8);
+                g.setColour (PatchCraftLookAndFeel::panel());
+                g.fillRoundedRectangle (r.withTrimmedBottom (48).toFloat(), 10.0f);
+                g.setColour (PatchCraftLookAndFeel::border());
+                g.drawRoundedRectangle (r.withTrimmedBottom (48).toFloat(), 10.0f, 1.0f);
+            }
+
+            void resized() override
+            {
+                auto r = getLocalBounds().reduced (18);
+                r.removeFromTop (90);
+                auto buttonRow = r.removeFromBottom (36);
+                closeButton.setBounds (buttonRow.removeFromRight (90));
+                buttonRow.removeFromRight (8);
+                copyButton.setBounds (buttonRow.removeFromRight (120));
+                buttonRow.removeFromRight (8);
+                toggleButton.setBounds (buttonRow.removeFromRight (130));
+                r.removeFromBottom (12);
+                tabs.setBounds (r.reduced (8, 10));
+            }
+
+            DspPage& owner;
+            int blockIndex = -1;
+            juce::TabbedComponent tabs;
+            juce::TextButton toggleButton { "Toggle On/Off" };
+            juce::TextButton copyButton { "Copy Formula" };
+            juce::TextButton closeButton { "Close" };
+        };
+
+        auto* editor = new BlockEditor (*this, blockIndex);
+        juce::DialogWindow::LaunchOptions options;
+        options.dialogTitle = "Sound Formula Block Editor";
+        options.dialogBackgroundColour = PatchCraftLookAndFeel::bg();
+        options.escapeKeyTriggersCloseButton = true;
+        options.useNativeTitleBar = true;
+        options.resizable = true;
+        options.componentToCentreAround = this;
+        options.content.setOwned (editor);
+        options.launchAsync();
+    }
+
+    void DspPage::selectNodeMapRoute (int kind, int index)
+    {
+        selectedGraphKind = kind;
+        selectedGraphIndex = index;
+        const int itemId = kind * 1000 + index + 1;
+        builderPanel.selectedItemId = itemId;
+        builderPanel.selectedItemIds.clear();
+        builderPanel.selectedItemIds.add (itemId);
+        editorItemBox.setSelectedId (itemId, juce::sendNotification);
+        syncGraphEditor();
+        refreshBuilderPanel();
+        repaint();
+    }
+
     void DspPage::showNodeMapPopout()
     {
         const auto sectionId = currentSectionId();
         const int bank = currentSectionBank();
         std::vector<NodeMapBlockSummary> blocks;
         int ordinal = 0;
-        for (const auto& block : project.getDspGraph().blocks)
+        for (int blockIndex = 0; blockIndex < (int) project.getDspGraph().blocks.size(); ++blockIndex)
         {
+            const auto& block = project.getDspGraph().blocks[(size_t) blockIndex];
             if (block.section != sectionId)
                 continue;
 
@@ -6119,6 +7463,7 @@ namespace patchcraft
             summary.name = block.name.isNotEmpty() ? block.name : block.type;
             summary.type = block.type.isNotEmpty() ? block.type : "block";
             summary.target = block.targetId.isNotEmpty() ? block.targetId : "section";
+            summary.graphIndex = blockIndex;
             summary.enabled = block.enabled;
             summary.values.add ("Target: " + summary.target);
 
@@ -6140,8 +7485,9 @@ namespace patchcraft
         }
 
         std::vector<NodeMapRouteSummary> routes;
-        for (const auto& macro : project.getDspGraph().macros)
+        for (int macroIndex = 0; macroIndex < (int) project.getDspGraph().macros.size(); ++macroIndex)
         {
+            const auto& macro = project.getDspGraph().macros[(size_t) macroIndex];
             if (! targetAppliesToSection (macro.targetId, sectionId))
                 continue;
 
@@ -6150,12 +7496,15 @@ namespace patchcraft
             route.detail = macro.targetId + "  " + juce::String (macro.targetMin, 2)
                          + " -> " + juce::String (macro.targetMax, 2);
             route.amount = std::abs (macro.targetMax - macro.targetMin);
+            route.kind = 2;
+            route.index = macroIndex;
             route.enabled = true;
             routes.push_back (std::move (route));
         }
 
-        for (const auto& mod : project.getDspGraph().modulation)
+        for (int modIndex = 0; modIndex < (int) project.getDspGraph().modulation.size(); ++modIndex)
         {
+            const auto& mod = project.getDspGraph().modulation[(size_t) modIndex];
             if (! targetAppliesToSection (mod.targetId, sectionId))
                 continue;
 
@@ -6163,12 +7512,15 @@ namespace patchcraft
             route.label = "Mod: " + mod.sourceId;
             route.detail = mod.targetId + "  amount " + juce::String (mod.amount, 2);
             route.amount = mod.amount;
+            route.kind = 3;
+            route.index = modIndex;
             route.enabled = mod.enabled;
             routes.push_back (std::move (route));
         }
 
-        for (const auto& lane : project.getDspGraph().automation)
+        for (int laneIndex = 0; laneIndex < (int) project.getDspGraph().automation.size(); ++laneIndex)
         {
+            const auto& lane = project.getDspGraph().automation[(size_t) laneIndex];
             if (! targetAppliesToSection (lane.targetId, sectionId))
                 continue;
 
@@ -6177,12 +7529,28 @@ namespace patchcraft
             route.detail = lane.targetId + "  rate " + juce::String (lane.rate, 2)
                          + (lane.syncToTempo ? " sync" : " free");
             route.amount = 1.0f;
+            route.kind = 4;
+            route.index = laneIndex;
             route.enabled = true;
             routes.push_back (std::move (route));
         }
 
         auto* view = new DspNodeMapView (getCurrentPatchSectionLabel(), bank,
-                                         std::move (blocks), std::move (routes));
+                                         std::move (blocks), std::move (routes),
+                                         [this] (int blockIndex)
+                                         {
+                                             selectedGraphKind = 1;
+                                             selectedGraphIndex = blockIndex;
+                                             const int itemId = 1000 + blockIndex + 1;
+                                             builderPanel.selectedItemId = itemId;
+                                             builderPanel.selectedItemIds.clear();
+                                             builderPanel.selectedItemIds.add (itemId);
+                                             editorItemBox.setSelectedId (itemId, juce::sendNotification);
+                                             syncGraphEditor();
+                                             refreshBuilderPanel();
+                                         },
+                                         [this] (int blockIndex) { showBlockEditorPopout (blockIndex); },
+                                         [this] (int kind, int index) { selectNodeMapRoute (kind, index); });
 
         juce::DialogWindow::LaunchOptions options;
         options.dialogTitle = "DSP Node Map";
@@ -6457,11 +7825,13 @@ namespace patchcraft
             }
             else if (block.section == "fx")
             {
-                addTypeGroup ("Time", { "delay" });
+                addTypeGroup ("Time", { "delay", "multiTapDelay" });
                 addTypeGroup ("Space", { "reverb" });
+                addTypeGroup ("Vintage / LoFi", { "tape", "vinyl", "lofi" });
                 addTypeGroup ("Saturation", { "distortion", "waveshaper", "bitcrush" });
                 addTypeGroup ("Dynamics", { "dynamics" });
                 addTypeGroup ("Modulation", { "chorus", "phaser" });
+                addTypeGroup ("Vocal", { "vocalFormant" });
                 addTypeGroup ("Resonators", { "comb", "resonator" });
                 addTypeGroup ("Convolution / Spectral", { "convolution", "spectral" });
             }
@@ -6483,7 +7853,8 @@ namespace patchcraft
             minSlider.setValue (get ("sync", 0.0f), juce::dontSendNotification);
             if (block.section == "fx")
             {
-                const bool delay = block.type.containsIgnoreCase ("delay");
+                const bool multiTap = block.type.containsIgnoreCase ("multiTap");
+                const bool delay = block.type.containsIgnoreCase ("delay") && ! multiTap;
                 const bool distortion = block.type.containsIgnoreCase ("dist") || block.type.containsIgnoreCase ("shape") || block.type.containsIgnoreCase ("crush");
                 const bool dynamics = block.type.containsIgnoreCase ("dynamics") || block.type.containsIgnoreCase ("compress");
                 const bool chorus = block.type.containsIgnoreCase ("chorus");
@@ -6492,9 +7863,33 @@ namespace patchcraft
                 const bool resonator = block.type.containsIgnoreCase ("resonator");
                 const bool convolution = block.type.containsIgnoreCase ("convolution");
                 const bool spectral = block.type.containsIgnoreCase ("spectral");
+                const bool tape = block.type.containsIgnoreCase ("tape");
+                const bool vinyl = block.type.containsIgnoreCase ("vinyl") || block.type.containsIgnoreCase ("oldSchool");
+                const bool lofi = block.type.containsIgnoreCase ("lofi");
+                const bool vocal = block.type.containsIgnoreCase ("vocal") || block.type.containsIgnoreCase ("formant");
                 amountSlider.setRange (0.0, 1.0, 0.001);
                 curveSlider.setRange (0.0, 1.0, 0.001);
-                if (delay)
+                if (multiTap)
+                {
+                    amountLabel.setText ("MIX", juce::dontSendNotification);
+                    rateLabel.setText ("TIME", juce::dontSendNotification);
+                    valueLabel.setText ("SPREAD", juce::dontSendNotification);
+                    minLabel.setText ("-", juce::dontSendNotification);
+                    maxLabel.setText ("FEEDBACK", juce::dontSendNotification);
+                    curveLabel.setText ("-", juce::dontSendNotification);
+                    minSlider.setEnabled (false);
+                    curveSlider.setEnabled (false);
+                    rateSlider.setRange (0.02, 2.0, 0.001);
+                    valueSlider.setRange (0.0, 1.0, 0.001);
+                    maxSlider.setRange (0.0, 0.92, 0.001);
+                    amountSlider.setValue (get ("multiTapMix", 0.35f), juce::dontSendNotification);
+                    rateSlider.setValue (get ("multiTapTime", 0.375f), juce::dontSendNotification);
+                    valueSlider.setValue (get ("multiTapSpread", 0.45f), juce::dontSendNotification);
+                    maxSlider.setValue (get ("multiTapFeedback", 0.35f), juce::dontSendNotification);
+                    editorHint.setText ("FX Lab MultiTap Delay creates three musical taps from one block. Use Mix, Time, Spread, and Feedback for complex echo plugins without manual routing.",
+                                        juce::dontSendNotification);
+                }
+                else if (delay)
                 {
                     amountLabel.setText ("DELAY MIX", juce::dontSendNotification);
                     rateLabel.setText (get ("sync", 0.0f) >= 0.5f ? "BEATS" : "TIME", juce::dontSendNotification);
@@ -6601,6 +7996,60 @@ namespace patchcraft
                     amountSlider.setRange (convolution ? 1.0 : -1.0, convolution ? 8.0 : 1.0, convolution ? 1.0 : 0.001);
                     amountSlider.setValue (get (convolution ? "convolutionSize" : "spectralTilt", convolution ? 3.0f : 0.0f), juce::dontSendNotification);
                     curveSlider.setValue (get (convolution ? "convolutionMix" : "spectralMix", 0.35f), juce::dontSendNotification);
+                }
+                else if (tape || vinyl)
+                {
+                    amountLabel.setText (tape ? "DRIVE" : "AGE", juce::dontSendNotification);
+                    rateLabel.setText (tape ? "FLUTTER" : "DUST", juce::dontSendNotification);
+                    valueLabel.setText (tape ? "TONE" : "WARP", juce::dontSendNotification);
+                    minLabel.setText ("-", juce::dontSendNotification);
+                    maxLabel.setText ("-", juce::dontSendNotification);
+                    curveLabel.setText ("MIX", juce::dontSendNotification);
+                    minSlider.setEnabled (false);
+                    maxSlider.setEnabled (false);
+                    amountSlider.setValue (get (tape ? "tapeDrive" : "vinylAge", tape ? 0.32f : 0.42f), juce::dontSendNotification);
+                    rateSlider.setValue (get (tape ? "tapeFlutter" : "vinylDust", tape ? 0.12f : 0.10f), juce::dontSendNotification);
+                    valueSlider.setValue (get (tape ? "tapeTone" : "vinylWarp", tape ? 0.58f : 0.16f), juce::dontSendNotification);
+                    curveSlider.setValue (get (tape ? "tapeMix" : "vinylMix", 0.35f), juce::dontSendNotification);
+                    editorHint.setText (tape
+                        ? "FX Lab Tape adds saturation, tone shaping, and subtle flutter as one easy vintage block."
+                        : "FX Lab Vinyl adds age, dust/crackle, and warp as one old-school texture block.",
+                        juce::dontSendNotification);
+                }
+                else if (lofi)
+                {
+                    amountLabel.setText ("BITS", juce::dontSendNotification);
+                    rateLabel.setText ("RATE CRUSH", juce::dontSendNotification);
+                    valueLabel.setText ("-", juce::dontSendNotification);
+                    minLabel.setText ("-", juce::dontSendNotification);
+                    maxLabel.setText ("-", juce::dontSendNotification);
+                    curveLabel.setText ("MIX", juce::dontSendNotification);
+                    valueSlider.setEnabled (false);
+                    minSlider.setEnabled (false);
+                    maxSlider.setEnabled (false);
+                    amountSlider.setRange (4.0, 16.0, 1.0);
+                    amountSlider.setValue (get ("lofiBits", 10.0f), juce::dontSendNotification);
+                    rateSlider.setValue (get ("lofiRate", 0.22f), juce::dontSendNotification);
+                    curveSlider.setValue (get ("lofiMix", 0.35f), juce::dontSendNotification);
+                    editorHint.setText ("FX Lab LoFi combines bit depth and sample-rate style crush for old sampler, SP, and digital degradation sounds.",
+                                        juce::dontSendNotification);
+                }
+                else if (vocal)
+                {
+                    amountLabel.setText ("FORMANT", juce::dontSendNotification);
+                    rateLabel.setText ("BODY", juce::dontSendNotification);
+                    valueLabel.setText ("-", juce::dontSendNotification);
+                    minLabel.setText ("-", juce::dontSendNotification);
+                    maxLabel.setText ("-", juce::dontSendNotification);
+                    curveLabel.setText ("MIX", juce::dontSendNotification);
+                    valueSlider.setEnabled (false);
+                    minSlider.setEnabled (false);
+                    maxSlider.setEnabled (false);
+                    amountSlider.setValue (get ("vocalFormant", 0.40f), juce::dontSendNotification);
+                    rateSlider.setValue (get ("vocalBody", 0.35f), juce::dontSendNotification);
+                    curveSlider.setValue (get ("vocalMix", 0.35f), juce::dontSendNotification);
+                    editorHint.setText ("FX Lab Vocal Formant turns any source into vowel-like motion. Automate Formant or map it to a macro for playable vocal effects.",
+                                        juce::dontSendNotification);
                 }
                 else
                 {
@@ -7162,7 +8611,15 @@ namespace patchcraft
             }
             else if (block.section == "fx")
             {
-                if (block.type.containsIgnoreCase ("delay"))
+                if (block.type.containsIgnoreCase ("multiTap"))
+                {
+                    block.targetId = "multiTapMix";
+                    block.values["multiTapMix"] = juce::jlimit (0.0f, 1.0f, (float) amountSlider.getValue());
+                    block.values["multiTapTime"] = juce::jlimit (0.02f, 2.0f, (float) rateSlider.getValue());
+                    block.values["multiTapSpread"] = juce::jlimit (0.0f, 1.0f, (float) valueSlider.getValue());
+                    block.values["multiTapFeedback"] = juce::jlimit (0.0f, 0.92f, (float) maxSlider.getValue());
+                }
+                else if (block.type.containsIgnoreCase ("delay"))
                 {
                     block.targetId = "delayMix";
                     block.values["delayMix"] = juce::jlimit (0.0f, 1.0f, (float) amountSlider.getValue());
@@ -7230,6 +8687,36 @@ namespace patchcraft
                     block.targetId = "spectralMix";
                     block.values["spectralTilt"] = juce::jlimit (-1.0f, 1.0f, (float) amountSlider.getValue());
                     block.values["spectralMix"] = juce::jlimit (0.0f, 1.0f, (float) curveSlider.getValue());
+                }
+                else if (block.type.containsIgnoreCase ("tape"))
+                {
+                    block.targetId = "tapeMix";
+                    block.values["tapeDrive"] = juce::jlimit (0.0f, 1.0f, (float) amountSlider.getValue());
+                    block.values["tapeFlutter"] = juce::jlimit (0.0f, 1.0f, (float) rateSlider.getValue());
+                    block.values["tapeTone"] = juce::jlimit (0.0f, 1.0f, (float) valueSlider.getValue());
+                    block.values["tapeMix"] = juce::jlimit (0.0f, 1.0f, (float) curveSlider.getValue());
+                }
+                else if (block.type.containsIgnoreCase ("vinyl") || block.type.containsIgnoreCase ("oldSchool"))
+                {
+                    block.targetId = "vinylMix";
+                    block.values["vinylAge"] = juce::jlimit (0.0f, 1.0f, (float) amountSlider.getValue());
+                    block.values["vinylDust"] = juce::jlimit (0.0f, 1.0f, (float) rateSlider.getValue());
+                    block.values["vinylWarp"] = juce::jlimit (0.0f, 1.0f, (float) valueSlider.getValue());
+                    block.values["vinylMix"] = juce::jlimit (0.0f, 1.0f, (float) curveSlider.getValue());
+                }
+                else if (block.type.containsIgnoreCase ("lofi"))
+                {
+                    block.targetId = "lofiMix";
+                    block.values["lofiBits"] = juce::jlimit (4.0f, 16.0f, (float) amountSlider.getValue());
+                    block.values["lofiRate"] = juce::jlimit (0.0f, 1.0f, (float) rateSlider.getValue());
+                    block.values["lofiMix"] = juce::jlimit (0.0f, 1.0f, (float) curveSlider.getValue());
+                }
+                else if (block.type.containsIgnoreCase ("vocal") || block.type.containsIgnoreCase ("formant"))
+                {
+                    block.targetId = "vocalMix";
+                    block.values["vocalFormant"] = juce::jlimit (0.0f, 1.0f, (float) amountSlider.getValue());
+                    block.values["vocalBody"] = juce::jlimit (0.0f, 1.0f, (float) rateSlider.getValue());
+                    block.values["vocalMix"] = juce::jlimit (0.0f, 1.0f, (float) curveSlider.getValue());
                 }
                 else
                 {
@@ -7362,7 +8849,7 @@ namespace patchcraft
         }
 
         markGraphEdited();
-        project.notifyChanged();
+        project.notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
         refreshBuilderPanel();
         surgicalEqPanel.repaint();
         refreshEqActionButtons();
@@ -7443,7 +8930,10 @@ namespace patchcraft
             {
                 block.targetId = "volume";
                 keepOnly ({ "volume", "pan", "sampleStart", "sampleLength", "sampleSlice", "sampleSliceCount",
-                            "samplePitch", "sampleReverse", "value", "amount", "rate" });
+                            "samplePitch", "sampleReverse", "granularOn", "granularDensity", "granularSizeMs",
+                            "granularSizeRandom", "granularSpread", "granularScan", "granularPitchSpread",
+                            "granularPanSpread", "granularReverse", "granularTexture", "granularMaxGrains",
+                            "granularDirection", "granularWindow", "granularFreeze", "value", "amount", "rate" });
                 putIfMissing ("volume", 0.85f);
                 putIfMissing ("pan", 0.50f);
                 putIfMissing ("sampleStart", 0.0f);
@@ -7452,6 +8942,20 @@ namespace patchcraft
                 putIfMissing ("sampleSliceCount", 1.0f);
                 putIfMissing ("samplePitch", 0.0f);
                 putIfMissing ("sampleReverse", 0.0f);
+                putIfMissing ("granularOn", block.type.containsIgnoreCase ("granular") ? 1.0f : 0.0f);
+                putIfMissing ("granularDensity", 24.0f);
+                putIfMissing ("granularSizeMs", 90.0f);
+                putIfMissing ("granularSizeRandom", 0.25f);
+                putIfMissing ("granularSpread", 0.18f);
+                putIfMissing ("granularScan", 0.0f);
+                putIfMissing ("granularPitchSpread", 0.0f);
+                putIfMissing ("granularPanSpread", 0.45f);
+                putIfMissing ("granularReverse", 0.0f);
+                putIfMissing ("granularTexture", 0.20f);
+                putIfMissing ("granularMaxGrains", 16.0f);
+                putIfMissing ("granularDirection", 3.0f);
+                putIfMissing ("granularWindow", 0.0f);
+                putIfMissing ("granularFreeze", 0.0f);
                 return;
             }
             if (block.type.containsIgnoreCase ("wavetable"))
@@ -7608,7 +9112,16 @@ namespace patchcraft
         }
         else if (block.section == "fx")
         {
-            if (block.type.containsIgnoreCase ("delay"))
+            if (block.type.containsIgnoreCase ("multiTap"))
+            {
+                keepOnly ({ "multiTapMix", "multiTapTime", "multiTapFeedback", "multiTapSpread", "amount", "value" });
+                block.targetId = "multiTapMix";
+                putIfMissing ("multiTapMix", 0.35f);
+                putIfMissing ("multiTapTime", 0.375f);
+                putIfMissing ("multiTapFeedback", 0.35f);
+                putIfMissing ("multiTapSpread", 0.45f);
+            }
+            else if (block.type.containsIgnoreCase ("delay"))
             {
                 keepOnly ({ "delayMix", "delayFeedback", "delayTime", "rate", "sync", "amount", "value" });
                 block.targetId = "delayMix";
@@ -7684,6 +9197,40 @@ namespace patchcraft
                 putIfMissing ("spectralTilt", 0.0f);
                 putIfMissing ("spectralMix", 0.35f);
             }
+            else if (block.type.containsIgnoreCase ("tape"))
+            {
+                keepOnly ({ "tapeDrive", "tapeTone", "tapeFlutter", "tapeMix", "amount", "value" });
+                block.targetId = "tapeMix";
+                putIfMissing ("tapeDrive", 0.32f);
+                putIfMissing ("tapeTone", 0.58f);
+                putIfMissing ("tapeFlutter", 0.12f);
+                putIfMissing ("tapeMix", 0.35f);
+            }
+            else if (block.type.containsIgnoreCase ("vinyl") || block.type.containsIgnoreCase ("oldSchool"))
+            {
+                keepOnly ({ "vinylAge", "vinylDust", "vinylWarp", "vinylMix", "amount", "value" });
+                block.targetId = "vinylMix";
+                putIfMissing ("vinylAge", 0.42f);
+                putIfMissing ("vinylDust", 0.10f);
+                putIfMissing ("vinylWarp", 0.16f);
+                putIfMissing ("vinylMix", 0.35f);
+            }
+            else if (block.type.containsIgnoreCase ("lofi"))
+            {
+                keepOnly ({ "lofiBits", "lofiRate", "lofiMix", "amount", "value" });
+                block.targetId = "lofiMix";
+                putIfMissing ("lofiBits", 10.0f);
+                putIfMissing ("lofiRate", 0.22f);
+                putIfMissing ("lofiMix", 0.35f);
+            }
+            else if (block.type.containsIgnoreCase ("vocal") || block.type.containsIgnoreCase ("formant"))
+            {
+                keepOnly ({ "vocalFormant", "vocalBody", "vocalMix", "amount", "value" });
+                block.targetId = "vocalMix";
+                putIfMissing ("vocalFormant", 0.40f);
+                putIfMissing ("vocalBody", 0.35f);
+                putIfMissing ("vocalMix", 0.35f);
+            }
             else
             {
                 keepOnly ({ "reverbMix", "mix", "amount", "value" });
@@ -7726,6 +9273,7 @@ namespace patchcraft
         for (auto* tab : { &tabEngine, &tabTone, &tabAmp, &tabMod, &tabFx, &tabOut })
             tab->setVisible (quickEdit || showAdvanced);
         builderPanel.setVisible (showAdvanced);
+        formulaPanel.setVisible (showAdvanced);
         for (auto* component : { static_cast<juce::Component*> (&easyTitleLabel),
                                  static_cast<juce::Component*> (&easyHelpLabel),
                                  static_cast<juce::Component*> (&easyThemeBox),
@@ -7734,11 +9282,14 @@ namespace patchcraft
                                  static_cast<juce::Component*> (&easyAddToPackToggle),
                                  static_cast<juce::Component*> (&easyExpansionBox),
                                  static_cast<juce::Component*> (&easyPackCreatorButton),
-                                 static_cast<juce::Component*> (&easyAdvancedButton) })
+                                 static_cast<juce::Component*> (&easyAdvancedButton),
+                                 static_cast<juce::Component*> (&easyRecipeLabel),
+                                 static_cast<juce::Component*> (&easyParametersLabel),
+                                 static_cast<juce::Component*> (&easyWorkflowLabel) })
             component->setVisible (showEasy);
         sourceMatrix.setVisible (false);
-        surgicalEqPanel.setVisible (false);
-        wavetableEditor.setVisible (false);
+        surgicalEqPanel.setVisible (showAdvanced && currentTab == 1);
+        wavetableEditor.setVisible (showAdvanced && currentTab == 0 && project.getEngineType() == "synth");
         modMatrix.setVisible (false);
         const bool showFxTrack = showAdvanced && currentTab == 4;
         for (auto* component : { static_cast<juce::Component*> (&fxTrackImportButton),
@@ -7760,7 +9311,7 @@ namespace patchcraft
                                  static_cast<juce::Component*> (&fxTrackStatusLabel),
                                  static_cast<juce::Component*> (&fxWaveform) })
             component->setVisible (showFxTrack);
-        const bool showEqControls = false;
+        const bool showEqControls = showAdvanced && currentTab == 1;
         for (auto* component : { static_cast<juce::Component*> (&eqAnalyzerToggle),
                                  static_cast<juce::Component*> (&eqAnalyzerFreezeToggle),
                                  static_cast<juce::Component*> (&eqBandCopyButton),
@@ -7768,7 +9319,7 @@ namespace patchcraft
                                  static_cast<juce::Component*> (&eqBandSaveButton),
                                  static_cast<juce::Component*> (&eqBandInsertButton) })
             component->setVisible (showEqControls);
-        const bool showWtControls = false;
+        const bool showWtControls = showAdvanced && currentTab == 0 && project.getEngineType() == "synth";
         for (auto* component : { static_cast<juce::Component*> (&wtImportButton),
                                  static_cast<juce::Component*> (&wtNormalizeButton),
                                  static_cast<juce::Component*> (&wtSineButton) })
@@ -7906,6 +9457,7 @@ namespace patchcraft
         builderPanel.savePatchAsButton.setButtonText ("Save Patch As");
         builderPanel.sendExpansionButton.setButtonText ("Add To Pack");
         builderPanel.resized();
+        formulaPanel.repaint();
         sourceMatrix.repaint();
         surgicalEqPanel.repaint();
         wavetableEditor.repaint();
@@ -8127,9 +9679,37 @@ namespace patchcraft
 
     void DspPage::addBuilderAutomation()
     {
+        auto chooseFirstValidTarget = [this] (std::initializer_list<const char*> candidates)
+        {
+            for (auto* candidate : candidates)
+                if (project.getParameters().find (candidate) != nullptr)
+                    return juce::String (candidate);
+            return juce::String ("volume");
+        };
+
         AutomationLane lane;
         lane.id = "auto_" + juce::String ((int) project.getDspGraph().automation.size() + 1);
-        lane.targetId = currentTab == 4 ? "reverbMix" : currentTab == 1 ? "filterCutoff" : "macro_motion";
+        if (currentTab == 0)
+        {
+            if (project.getEngineType() == "sample")
+                lane.targetId = chooseFirstValidTarget ({ "sampleStart", "sampleSlice", "granularScan", "volume" });
+            else if (project.getEngineType() == "fx")
+                lane.targetId = chooseFirstValidTarget ({ "drive", "mix", "filterCutoff", "volume" });
+            else
+                lane.targetId = selectedWavetableBlock() != nullptr
+                    ? chooseFirstValidTarget ({ "wtPosition", "wtMorph", "oscBlend", "volume" })
+                    : chooseFirstValidTarget ({ "oscBlend", "osc2Detune", "subBlend", "volume" });
+        }
+        else if (currentTab == 1)
+            lane.targetId = chooseFirstValidTarget ({ "filterCutoff", "filterResonance", "eqMix", "volume" });
+        else if (currentTab == 2)
+            lane.targetId = chooseFirstValidTarget ({ "volume", "attack", "release" });
+        else if (currentTab == 3)
+            lane.targetId = chooseFirstValidTarget ({ "lfoAmount", "vibratoDepth", "filterCutoff", "volume" });
+        else if (currentTab == 4)
+            lane.targetId = chooseFirstValidTarget ({ "reverbMix", "delayMix", "drive", "mix" });
+        else
+            lane.targetId = chooseFirstValidTarget ({ "volume", "pan", "outputGainDb" });
         lane.rate = 1.0f;
         lane.syncToTempo = true;
         lane.points = { 0.0f, 0.35f, 1.0f, 0.65f, 0.0f };
@@ -8139,6 +9719,250 @@ namespace patchcraft
         selectedGraphIndex = (int) project.getDspGraph().automation.size() - 1;
         project.notifyChanged();
         rebuildGraphEditorItems();
+        showAutomationEditorPopout (selectedGraphIndex);
+    }
+
+    void DspPage::showAutomationEditorPopout (int automationIndex)
+    {
+        if (automationIndex < 0 || automationIndex >= (int) project.getDspGraph().automation.size())
+            return;
+
+        struct CurvePreview final : public juce::Component
+        {
+            CurvePreview (DspPage& ownerIn, int indexIn) : owner (ownerIn), index (indexIn) {}
+
+            void paint (juce::Graphics& g) override
+            {
+                g.fillAll (juce::Colours::transparentBlack);
+                auto r = getLocalBounds().toFloat().reduced (8.0f);
+                g.setColour (PatchCraftLookAndFeel::panel());
+                g.fillRoundedRectangle (r, 8.0f);
+                g.setColour (PatchCraftLookAndFeel::border());
+                g.drawRoundedRectangle (r, 8.0f, 1.0f);
+
+                if (index < 0 || index >= (int) owner.project.getDspGraph().automation.size())
+                    return;
+
+                const auto& points = owner.project.getDspGraph().automation[(size_t) index].points;
+                if (points.size() < 2)
+                    return;
+
+                juce::Path path;
+                auto graph = r.reduced (14.0f, 12.0f);
+                for (int i = 0; i < (int) points.size(); ++i)
+                {
+                    const auto x = graph.getX() + graph.getWidth() * ((float) i / (float) (points.size() - 1));
+                    const auto y = graph.getBottom() - graph.getHeight() * juce::jlimit (0.0f, 1.0f, points[(size_t) i]);
+                    if (i == 0) path.startNewSubPath (x, y);
+                    else path.lineTo (x, y);
+                }
+                g.setColour (PatchCraftLookAndFeel::accent());
+                g.strokePath (path, juce::PathStrokeType (2.5f));
+            }
+
+            DspPage& owner;
+            int index = -1;
+        };
+
+        struct AutomationEditor final : public juce::Component
+        {
+            AutomationEditor (DspPage& ownerIn, int indexIn)
+                : owner (ownerIn), index (indexIn), preview (ownerIn, indexIn)
+            {
+                setSize (780, 520);
+
+                title.setText ("Automation Lane", juce::dontSendNotification);
+                title.setFont (juce::Font (20.0f, juce::Font::bold));
+                title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
+                addAndMakeVisible (title);
+
+                help.setText ("Automation writes a looping curve into one real parameter. Pick a target that belongs to this section, shape the curve, then keep playing while it moves.",
+                              juce::dontSendNotification);
+                help.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+                help.setJustificationType (juce::Justification::topLeft);
+                addAndMakeVisible (help);
+
+                targetLabel.setText ("TARGET", juce::dontSendNotification);
+                rateLabel.setText ("RATE", juce::dontSendNotification);
+                shapeLabel.setText ("SHAPE", juce::dontSendNotification);
+                for (auto* label : { &targetLabel, &rateLabel, &shapeLabel })
+                {
+                    label->setFont (juce::Font (11.0f, juce::Font::bold));
+                    label->setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+                    addAndMakeVisible (*label);
+                }
+
+                fillTargets();
+                addAndMakeVisible (targetBox);
+
+                rateSlider.setRange (0.01, 16.0, 0.01);
+                rateSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 72, 22);
+                shapeSlider.setRange (0.0, 1.0, 0.001);
+                shapeSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 72, 22);
+                addAndMakeVisible (rateSlider);
+                addAndMakeVisible (shapeSlider);
+
+                syncToggle.setButtonText ("BPM Sync");
+                syncToggle.setTooltip ("When enabled, automation speed follows the global BPM.");
+                addAndMakeVisible (syncToggle);
+
+                addAndMakeVisible (preview);
+
+                closeButton.setButtonText ("Close");
+                closeButton.getProperties().set ("smallButton", true);
+                closeButton.onClick = [this]
+                {
+                    if (auto* dialog = findParentComponentOfClass<juce::DialogWindow>())
+                        dialog->exitModalState (0);
+                };
+                addAndMakeVisible (closeButton);
+
+                targetBox.onChange = [this] { applyFromControls (true); };
+                rateSlider.onValueChange = [this] { applyFromControls (false); };
+                shapeSlider.onValueChange = [this] { applyFromControls (false); };
+                syncToggle.onClick = [this] { applyFromControls (false); };
+
+                syncControlsFromLane();
+            }
+
+            static juce::String extractId (const juce::String& text)
+            {
+                const auto open = text.lastIndexOfChar ('(');
+                const auto close = text.lastIndexOfChar (')');
+                return open >= 0 && close > open ? text.substring (open + 1, close) : text;
+            }
+
+            void fillTargets()
+            {
+                targetBox.clear (juce::dontSendNotification);
+                int itemId = 1;
+                const auto sectionId = owner.currentSectionId();
+                for (const auto& def : owner.project.getParameters().getAll())
+                {
+                    if (! def.visible || ! def.modulatable)
+                        continue;
+                    if (! owner.targetAppliesToSection (def.id, sectionId))
+                        continue;
+                    targetBox.addItem (def.name + " (" + def.id + ") - " + def.section, itemId++);
+                }
+
+                if (targetBox.getNumItems() == 0)
+                {
+                    for (const auto& def : owner.project.getParameters().getAll())
+                    {
+                        if (! def.visible || ! def.modulatable)
+                            continue;
+                        targetBox.addItem (def.name + " (" + def.id + ") - " + def.section, itemId++);
+                    }
+                }
+            }
+
+            void selectTarget (const juce::String& target)
+            {
+                for (int i = 0; i < targetBox.getNumItems(); ++i)
+                {
+                    if (extractId (targetBox.getItemText (i)) == target)
+                    {
+                        targetBox.setSelectedItemIndex (i, juce::dontSendNotification);
+                        return;
+                    }
+                }
+                if (targetBox.getNumItems() > 0)
+                    targetBox.setSelectedItemIndex (0, juce::dontSendNotification);
+            }
+
+            void syncControlsFromLane()
+            {
+                if (index < 0 || index >= (int) owner.project.getDspGraph().automation.size())
+                    return;
+                const auto& lane = owner.project.getDspGraph().automation[(size_t) index];
+                selectTarget (lane.targetId);
+                rateSlider.setValue (lane.rate, juce::dontSendNotification);
+                shapeSlider.setValue (lane.points.size() > 1 ? lane.points[1] : 0.5f, juce::dontSendNotification);
+                syncToggle.setToggleState (lane.syncToTempo, juce::dontSendNotification);
+            }
+
+            void applyFromControls (bool targetChanged)
+            {
+                if (index < 0 || index >= (int) owner.project.getDspGraph().automation.size())
+                    return;
+                auto& lane = owner.project.getDspGraph().automation[(size_t) index];
+                const auto selectedTarget = extractId (targetBox.getText());
+                if (selectedTarget.isNotEmpty())
+                    lane.targetId = selectedTarget;
+                lane.rate = (float) rateSlider.getValue();
+                lane.syncToTempo = syncToggle.getToggleState();
+                const auto shape = (float) shapeSlider.getValue();
+                lane.points = { 0.0f, shape, 1.0f, 1.0f - shape, 0.0f };
+
+                owner.markGraphEdited();
+                owner.project.notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
+                owner.builderPanel.repaint();
+                owner.formulaPanel.repaint();
+                preview.repaint();
+
+                if (targetChanged)
+                    owner.rebuildGraphEditorItems();
+            }
+
+            void paint (juce::Graphics& g) override
+            {
+                g.fillAll (PatchCraftLookAndFeel::bg());
+                auto r = getLocalBounds().reduced (18);
+                r.removeFromTop (82);
+                g.setColour (PatchCraftLookAndFeel::panel());
+                g.fillRoundedRectangle (r.withTrimmedBottom (48).toFloat(), 10.0f);
+                g.setColour (PatchCraftLookAndFeel::border());
+                g.drawRoundedRectangle (r.withTrimmedBottom (48).toFloat(), 10.0f, 1.0f);
+            }
+
+            void resized() override
+            {
+                auto r = getLocalBounds().reduced (18);
+                title.setBounds (r.removeFromTop (28));
+                help.setBounds (r.removeFromTop (44));
+                r.removeFromTop (12);
+                auto body = r.withTrimmedBottom (50).reduced (16, 14);
+                targetLabel.setBounds (body.removeFromTop (18));
+                targetBox.setBounds (body.removeFromTop (34));
+                body.removeFromTop (14);
+                rateLabel.setBounds (body.removeFromTop (18));
+                rateSlider.setBounds (body.removeFromTop (34));
+                body.removeFromTop (10);
+                shapeLabel.setBounds (body.removeFromTop (18));
+                shapeSlider.setBounds (body.removeFromTop (34));
+                body.removeFromTop (8);
+                syncToggle.setBounds (body.removeFromTop (30));
+                body.removeFromTop (10);
+                preview.setBounds (body.removeFromTop (120));
+                closeButton.setBounds (r.removeFromBottom (36).removeFromRight (94));
+            }
+
+            DspPage& owner;
+            int index = -1;
+            CurvePreview preview;
+            juce::Label title;
+            juce::Label help;
+            juce::Label targetLabel;
+            juce::Label rateLabel;
+            juce::Label shapeLabel;
+            juce::ComboBox targetBox;
+            juce::Slider rateSlider;
+            juce::Slider shapeSlider;
+            juce::ToggleButton syncToggle;
+            juce::TextButton closeButton;
+        };
+
+        auto* editor = new AutomationEditor (*this, automationIndex);
+        juce::DialogWindow::LaunchOptions options;
+        options.dialogTitle = "Automation Editor";
+        options.dialogBackgroundColour = PatchCraftLookAndFeel::bg();
+        options.escapeKeyTriggersCloseButton = true;
+        options.useNativeTitleBar = true;
+        options.resizable = true;
+        options.componentToCentreAround = this;
+        options.content.setOwned (editor);
+        options.launchAsync();
     }
 
     void DspPage::importFxSampleForTesting()
@@ -9442,6 +11266,21 @@ namespace patchcraft
         refresh();
     }
 
+    void DspPage::projectChanged (PatchCraftProject::ChangeScope scope)
+    {
+        refreshFxPreviewRouting();
+        if (scope == PatchCraftProject::ChangeScope::dspRealtime)
+        {
+            refreshBuilderPanel();
+            surgicalEqPanel.repaint();
+            formulaPanel.repaint();
+            repaint();
+            return;
+        }
+
+        refresh();
+    }
+
     void DspPage::refreshFxPreviewRouting()
     {
         const juce::SpinLock::ScopedTryLockType lock (fxAudioLock);
@@ -9517,7 +11356,29 @@ namespace patchcraft
         };
 
         drawSectionFrame (builderPanel.getBounds());
+        drawSectionFrame (formulaPanel.getBounds());
         drawSectionFrame (sourceMatrix.getBounds());
+
+        if (easyMode)
+        {
+            auto drawEasyCard = [&] (const juce::Label& label)
+            {
+                auto bounds = label.getBounds().expanded (12, 10);
+                if (bounds.isEmpty())
+                    return;
+                g.setColour (juce::Colour (0xff0f131a));
+                g.fillRoundedRectangle (bounds.toFloat(), 10.0f);
+                g.setColour (PatchCraftLookAndFeel::border().brighter (0.42f));
+                g.drawRoundedRectangle (bounds.toFloat().reduced (0.5f), 10.0f, 1.0f);
+                g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.82f));
+                g.fillRoundedRectangle (bounds.withHeight (3).toFloat(), 2.0f);
+            };
+
+            drawEasyCard (easyRecipeLabel);
+            drawEasyCard (easyParametersLabel);
+            drawEasyCard (easyWorkflowLabel);
+            return;
+        }
 
         auto inspector = editorTitle.getBounds();
         for (auto* component : { static_cast<juce::Component*> (&editorHint),
@@ -9556,17 +11417,11 @@ namespace patchcraft
     {
         auto shouldShow = [] (const juce::String& text, const juce::Component* c)
         {
+            juce::ignoreUnused (c);
             if (text.isEmpty())
                 return false;
 
-            return c == nullptr || ! c->isEnabled()
-                || text.startsWithIgnoreCase ("Disabled")
-                || text.startsWithIgnoreCase ("Enabled")
-                || text.startsWithIgnoreCase ("Select")
-                || text.containsIgnoreCase ("add/select")
-                || text.containsIgnoreCase ("add +")
-                || text.containsIgnoreCase ("not assigned")
-                || text.containsIgnoreCase ("not connected");
+            return true;
         };
 
         for (auto* current = component; current != nullptr; current = current->getParentComponent())
@@ -9612,13 +11467,7 @@ namespace patchcraft
                 return juce::String();
 
             const auto text = tooltipText (component);
-            if (text.isNotEmpty() && (! component.isEnabled()
-                || text.startsWithIgnoreCase ("Disabled")
-                || text.startsWithIgnoreCase ("Enabled")
-                || text.startsWithIgnoreCase ("Select")
-                || text.containsIgnoreCase ("add/select")
-                || text.containsIgnoreCase ("add +")
-                || text.containsIgnoreCase ("not connected")))
+            if (text.isNotEmpty())
                 return text;
 
             return juce::String();
@@ -9749,19 +11598,30 @@ namespace patchcraft
         {
             auto easy = content.reduced (18, 14);
             easyTitleLabel.setBounds (easy.removeFromTop (28));
-            easy.removeFromTop (8);
-            auto chooser = easy.removeFromTop (38);
-            easyThemeBox.setBounds (chooser.removeFromLeft (180).reduced (2));
-            easyGenerateButton.setBounds (chooser.removeFromLeft (118).reduced (2));
-            easyRandomButton.setBounds (chooser.removeFromLeft (130).reduced (2));
-            easyAddToPackToggle.setBounds (chooser.removeFromLeft (112).reduced (2));
-            easyExpansionBox.setBounds (chooser.removeFromLeft (180).reduced (2));
-            easyPackCreatorButton.setBounds (chooser.removeFromLeft (112).reduced (2));
-            easyAdvancedButton.setBounds (chooser.removeFromLeft (126).reduced (2));
+            auto help = easy.removeFromTop (38);
+            easyHelpLabel.setBounds (help.reduced (0, 2));
+
+            auto chooser = easy.removeFromTop (46);
+            easyThemeBox.setBounds (chooser.removeFromLeft (210).reduced (2));
+            easyGenerateButton.setBounds (chooser.removeFromLeft (132).reduced (2));
+            easyRandomButton.setBounds (chooser.removeFromLeft (148).reduced (2));
+            easyAddToPackToggle.setBounds (chooser.removeFromLeft (118).reduced (2));
+            easyExpansionBox.setBounds (chooser.removeFromLeft (210).reduced (2));
+            easyPackCreatorButton.setBounds (chooser.removeFromLeft (124).reduced (2));
+            easyAdvancedButton.setBounds (chooser.removeFromLeft (132).reduced (2));
             easy.removeFromTop (14);
-            easyHelpLabel.setBounds (easy.removeFromTop (136));
+
+            auto cards = easy.removeFromTop (juce::jlimit (210, 330, easy.getHeight() / 2));
+            const int gap = 12;
+            const int cardW = juce::jmax (220, (cards.getWidth() - gap * 2) / 3);
+            easyRecipeLabel.setBounds (cards.removeFromLeft (cardW).reduced (12, 10));
+            cards.removeFromLeft (gap);
+            easyParametersLabel.setBounds (cards.removeFromLeft (cardW).reduced (12, 10));
+            cards.removeFromLeft (gap);
+            easyWorkflowLabel.setBounds (cards.reduced (12, 10));
             content = {};
             builderPanel.setBounds ({});
+            formulaPanel.setBounds ({});
             sourceMatrix.setBounds ({});
             surgicalEqPanel.setBounds ({});
             wavetableEditor.setBounds ({});
@@ -9770,25 +11630,37 @@ namespace patchcraft
         else if (quickEdit)
         {
             builderPanel.setBounds (content);
+            formulaPanel.setBounds ({});
         }
         else
         {
             const bool showFxTrack = currentTab == 4;
-            const bool showEqEditor = false;
-            const bool showWtEditor = false;
+            const bool showEqEditor = currentTab == 1;
+            const bool showWtEditor = currentTab == 0 && project.getEngineType() == "synth";
             const int fxTrackH = showFxTrack ? 164 : 0;
             const int eqEditorReserve = showEqEditor ? 178 : 0;
             const int wtEditorReserve = showWtEditor ? 162 : 0;
             const int editorReserve = 172;
+            const int formulaReserve = content.getHeight() > 520 ? 128 : 0;
             const int cardColumns = juce::jmax (1, juce::jmin (3, content.getWidth() / 260));
             const int cardRows = juce::jmax (1, (builderPanel.cards.size() + cardColumns - 1) / cardColumns);
             const int desiredBuilderH = juce::jlimit (240, 430,
                                                       112 + cardRows * 104 + (builderPanel.showSectionBanks ? 34 : 0));
-            const int maxBuilderH = juce::jmax (220, content.getHeight() - fxTrackH - eqEditorReserve - wtEditorReserve - editorReserve - 16);
+            const int maxBuilderH = juce::jmax (220, content.getHeight() - fxTrackH - formulaReserve - eqEditorReserve - wtEditorReserve - editorReserve - 24);
             const int builderH = juce::jmin (maxBuilderH, juce::jmax (220, desiredBuilderH));
             auto builder = content.removeFromTop (builderH);
             builderPanel.setBounds (builder);
             content.removeFromTop (8);
+
+            if (formulaReserve > 0)
+            {
+                formulaPanel.setBounds (content.removeFromTop (formulaReserve).reduced (4, 0));
+                content.removeFromTop (8);
+            }
+            else
+            {
+                formulaPanel.setBounds ({});
+            }
 
             if (showEqEditor)
             {

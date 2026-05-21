@@ -3,6 +3,7 @@
 #include "PatchCraftLookAndFeel.h"
 #include "CanvasEditor.h"
 
+#include <algorithm>
 #include <memory>
 
 namespace patchcraft
@@ -49,6 +50,28 @@ namespace patchcraft
         const auto open = text.lastIndexOfChar ('(');
         const auto close = text.lastIndexOfChar (')');
         return open >= 0 && close > open ? text.substring (open + 1, close).trim() : text.trim();
+    }
+
+    static juce::StringArray linesPreservingChannelSlots (juce::String text)
+    {
+        juce::StringArray lines;
+        text = text.replace ("\r\n", "\n").replace ("\r", "\n");
+        int start = 0;
+        while (start <= text.length())
+        {
+            const int next = text.indexOf (start, "\n");
+            if (next < 0)
+            {
+                lines.add (text.substring (start).trim());
+                break;
+            }
+            lines.add (text.substring (start, next).trim());
+            start = next + 1;
+        }
+
+        while (! lines.isEmpty() && lines[lines.size() - 1].isEmpty())
+            lines.remove (lines.size() - 1);
+        return lines;
     }
 
     static bool isElementChildOfContainer (const LayoutElement& child, const LayoutElement& container)
@@ -104,11 +127,61 @@ namespace patchcraft
             tip->setTooltip (text);
     }
 
+    static bool isDrumMachineBlock (const DspBlock& block)
+    {
+        return block.type.containsIgnoreCase ("drum")
+            || block.values.find ("dmTracks") != block.values.end()
+            || block.values.find ("dmSteps") != block.values.end();
+    }
+
+    static float valueForBlockKey (const DspBlock& block, const juce::String& key, float fallback)
+    {
+        const auto it = block.values.find (key);
+        return it != block.values.end() ? it->second : fallback;
+    }
+
+    static juce::String defaultDrumTrackLabel (int track)
+    {
+        static const char* labels[] =
+        {
+            "Kick", "Snare", "Closed Hat", "Open Hat",
+            "Clap", "Low Tom", "Perc", "Crash",
+            "Ride", "Rim", "Shaker", "FX",
+            "Pad 13", "Pad 14", "Pad 15", "Pad 16"
+        };
+        return track >= 0 && track < 16 ? juce::String (labels[track])
+                                        : "Track " + juce::String (track + 1);
+    }
+
+    static int defaultDrumTrackNote (int track)
+    {
+        static const int notes[] =
+        {
+            36, 38, 42, 46, 39, 45, 48, 49,
+            51, 37, 44, 52, 53, 54, 55, 56
+        };
+        return track >= 0 && track < 16 ? notes[track] : 36 + track;
+    }
+
     InspectorPanel::InspectorPanel (StudioMainComponent& o) : owner (o)
     {
         styleLabel (header, "INSPECTOR", juce::Justification::centredLeft, 12.0f, true);
         header.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::text());
         addAndMakeVisible (header);
+
+        auto styleSection = [] (juce::Label& label, const juce::String& text)
+        {
+            styleLabel (label, "v  " + text, juce::Justification::centredLeft, 11.0f, true);
+            label.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+            label.setColour (juce::Label::backgroundColourId, PatchCraftLookAndFeel::raised().withAlpha (0.65f));
+            label.setColour (juce::Label::outlineColourId, PatchCraftLookAndFeel::border().withAlpha (0.75f));
+            label.setInterceptsMouseClicks (false, false);
+        };
+
+        styleSection (lblLayoutSection, "LAYOUT");
+        styleSection (lblParameterSection, "PARAMETER BINDING");
+        styleSection (lblStyleSection, "VISUAL STYLE");
+        styleSection (lblSpecialSection, "ADVANCED ELEMENT TOOLS");
 
         styleLabel (lblType,        "Type");
         styleLabel (lblId,          "ID");
@@ -150,7 +223,9 @@ namespace patchcraft
         styleLabel (lblPosY,        "Y", juce::Justification::centred, 11.0f);
         styleLabel (lblSizeW,       "W", juce::Justification::centred, 11.0f);
         styleLabel (lblSizeH,       "H", juce::Justification::centred, 11.0f);
+        styleLabel (lblAction,      "Action");
         styleLabel (lblActions,     "ACTIONS", juce::Justification::centredLeft, 11.0f, true);
+        lblActions.setInterceptsMouseClicks (false, false);
         styleLabel (lblAsset,       "Asset");
         styleLabel (lblGroup,       "Container");
         styleLabel (lblTabs,        "Tabs");
@@ -158,9 +233,45 @@ namespace patchcraft
         styleLabel (lblContainerChildren, "Children");
         styleLabel (lblFilmstripPath,   "Knob Image");
         styleLabel (lblFilmstripFrames, "Frames");
+        styleLabel (lblDrumGrid,        "DRUM GRID", juce::Justification::centredLeft, 11.0f, true);
+        styleLabel (lblDrumPattern,     "Pattern");
+        styleLabel (lblDrumTracks,      "Tracks");
+        styleLabel (lblDrumSteps,       "Steps");
+        styleLabel (lblDrumCell,        "Cell");
+        styleLabel (lblDrumVelocity,    "Velocity");
+        styleLabel (lblDrumGate,        "Gate");
+        styleLabel (lblDrumProbability, "Chance");
+        styleLabel (lblDrumDivision,    "Division");
+        styleLabel (lblDrumPadFxTarget, "Pad FX");
+        styleLabel (lblDrumPadFxAmount, "Pad FX Amt");
+        styleLabel (lblDrumCellFxTarget, "Cell FX");
+        styleLabel (lblDrumCellFxAmount, "Cell FX Amt");
+        styleLabel (lblMixer,           "MIXER", juce::Justification::centredLeft, 11.0f, true);
+        styleLabel (lblMixerMode,       "Mode");
+        styleLabel (lblMixerChannels,   "Channels");
+        styleLabel (lblMixerLabels,     "Labels");
+        styleLabel (lblMixerVolumes,    "Volume Params");
+        styleLabel (lblMixerPans,       "Pan Params");
+        styleLabel (lblMixerMutes,      "Mute Params");
+        styleLabel (lblMixerSolos,      "Solo Params");
+        styleLabel (lblMacroEditor,     "MACRO ROUTING", juce::Justification::centredLeft, 11.0f, true);
+        styleLabel (lblMacroTargets,    "Targets");
+        styleLabel (lblModMatrixEditor, "MOD MATRIX", juce::Justification::centredLeft, 11.0f, true);
+        styleLabel (lblModRoutes,       "Routes");
+        styleLabel (lblGranularEditor,  "GRANULAR ENGINE", juce::Justification::centredLeft, 11.0f, true);
+        styleLabel (lblGranularDirection, "Direction");
+        styleLabel (lblGranularDensity, "Density");
+        styleLabel (lblGranularSize,    "Size");
+        styleLabel (lblGranularRandom,  "Random");
+        styleLabel (lblGranularSpread,  "Spread");
+        styleLabel (lblGranularScan,    "Scan");
+        styleLabel (lblGranularPitch,   "Pitch");
+        styleLabel (lblGranularPan,     "Pan");
+        styleLabel (lblGranularTexture, "Texture");
 
-        for (auto* l : { &lblType, &lblId, &lblPos, &lblSize, &lblParam, &lblLabel,
+        for (auto* l : { &lblType, &lblId, &lblPos, &lblSize, &lblParam, &lblLabel, &lblAction,
                          &lblValFmt, &lblStyle, &lblKnobStyle, &lblMin, &lblMax,
+                         &lblLayoutSection, &lblParameterSection, &lblStyleSection, &lblSpecialSection,
                          &lblOpacity, &lblState, &lblShapeKind, &lblCorner, &lblStroke,
                          &lblShadow, &lblGlow, &lblBlur, &lblAudioReactive,
                          &lblAudioReactiveMode, &lblAudioReactiveAmount,
@@ -170,14 +281,33 @@ namespace patchcraft
                          &lblDefault, &lblStep, &lblValType, &lblSmoothing,
                          &lblActions, &lblPosX, &lblPosY, &lblSizeW, &lblSizeH,
                          &lblAsset, &lblGroup, &lblTabs, &lblContainerManager, &lblContainerChildren,
-                         &lblFilmstripPath, &lblFilmstripFrames })
+                         &lblFilmstripPath, &lblFilmstripFrames,
+                         &lblDrumGrid, &lblDrumPattern, &lblDrumTracks, &lblDrumSteps,
+                         &lblDrumCell, &lblDrumVelocity, &lblDrumGate, &lblDrumProbability,
+                          &lblDrumDivision, &lblDrumPadFxTarget, &lblDrumPadFxAmount,
+                          &lblDrumCellFxTarget, &lblDrumCellFxAmount,
+                          &lblMixer, &lblMixerMode, &lblMixerChannels, &lblMixerLabels,
+                          &lblMixerVolumes, &lblMixerPans, &lblMixerMutes, &lblMixerSolos,
+                          &lblMacroEditor, &lblMacroTargets, &lblModMatrixEditor, &lblModRoutes,
+                          &lblGranularEditor, &lblGranularDirection, &lblGranularDensity,
+                          &lblGranularSize, &lblGranularRandom, &lblGranularSpread,
+                          &lblGranularScan, &lblGranularPitch, &lblGranularPan,
+                          &lblGranularTexture })
+        {
             addAndMakeVisible (*l);
+            if (l == &lblDrumGrid || l == &lblMixer || l == &lblMacroEditor
+                || l == &lblModMatrixEditor || l == &lblGranularEditor || l == &lblContainerManager)
+                l->setInterceptsMouseClicks (false, false);
+        }
 
         // Type combo
         const char* types[] = { "Image", "Knob", "Slider", "Button", "Toggle",
                                 "Dropdown", "Label", "Value Display", "Meter",
                                 "Waveform", "Keyboard", "Panel", "Shape", "XY Pad",
-                                "Tab Panel", "Scroll Panel", "Group", "Separator" };
+                                "Granular Field",
+                                "Tab Panel", "Scroll Panel", "Group", "Separator",
+                                "Drum Pad", "Pad Grid", "Drum Grid", "Mixer",
+                                "Macro Control", "Mod Matrix" };
         int id = 1;
         for (auto* t : types) typeBox.addItem (t, id++);
         addAndMakeVisible (typeBox);
@@ -203,6 +333,9 @@ namespace patchcraft
         addAndMakeVisible (midiLearnButton);
         addAndMakeVisible (labelEdit);
         labelEdit.setIndents (6, 4);
+        addAndMakeVisible (actionEdit);
+        actionEdit.setIndents (6, 4);
+        actionEdit.setTooltip ("Optional runtime action, e.g. showContainer:layers, toggleContainer:help. Works on Button, Toggle, Label, and Image elements.");
 
         addAndMakeVisible (assetEdit);
         assetEdit.setIndents (6, 4);
@@ -399,6 +532,78 @@ namespace patchcraft
         };
         addAndMakeVisible (filmstripAutoBtn);
 
+        for (int pattern = 1; pattern <= 8; ++pattern)
+            drumPatternBox.addItem ("Pattern " + juce::String (pattern), pattern);
+        for (int track = 0; track < 16; ++track)
+            drumTrackBox.addItem (juce::String (track + 1) + "  " + defaultDrumTrackLabel (track), track + 1);
+        for (int step = 1; step <= 64; ++step)
+            drumStepBox.addItem ("Step " + juce::String (step), step);
+        drumDivisionBox.addItem ("Single x1", 1);
+        drumDivisionBox.addItem ("Double x2", 2);
+        drumDivisionBox.addItem ("Triple x3", 3);
+        drumDivisionBox.addItem ("Quad x4", 4);
+        auto addDrumFxTargets = [] (juce::ComboBox& combo)
+        {
+            combo.addItem ("None", 1);
+            combo.addItem ("Filter Throw", 2);
+            combo.addItem ("Resonance Ping", 3);
+            combo.addItem ("Drive Hit", 4);
+            combo.addItem ("Delay Throw", 5);
+            combo.addItem ("Reverb Throw", 6);
+            combo.addItem ("Tape Smear", 7);
+            combo.addItem ("Lo-Fi Crush", 8);
+            combo.addItem ("Granular Texture", 9);
+        };
+        addDrumFxTargets (drumPadFxTargetBox);
+        addDrumFxTargets (drumCellFxTargetBox);
+        drumPadFxTargetBox.setTooltip ("Effect fired when this drum track is triggered from pads or MIDI notes.");
+        drumCellFxTargetBox.setTooltip ("Effect fired only when the selected grid cell plays.");
+        for (auto* combo : { &drumPatternBox, &drumTrackBox, &drumStepBox, &drumDivisionBox,
+                             &drumPadFxTargetBox, &drumCellFxTargetBox })
+        {
+            combo->setTooltip ("Edits the selected Drum Grid and its connected drum-machine pattern.");
+            addAndMakeVisible (*combo);
+        }
+        drumPadFxTargetBox.setTooltip ("Effect fired when this drum track is triggered from pads or MIDI notes.");
+        drumCellFxTargetBox.setTooltip ("Effect fired only when the selected grid cell plays.");
+
+        for (auto* slider : { &drumTracksSlider, &drumStepsSlider, &drumVelocitySlider,
+                              &drumGateSlider, &drumProbabilitySlider,
+                              &drumPadFxAmountSlider, &drumCellFxAmountSlider })
+        {
+            slider->setSliderStyle (juce::Slider::LinearHorizontal);
+            slider->setTextBoxStyle (juce::Slider::TextBoxRight, true, 56, 22);
+            addAndMakeVisible (*slider);
+        }
+        drumTracksSlider.setRange (1.0, 16.0, 1.0);
+        drumStepsSlider.setRange (1.0, 64.0, 1.0);
+        drumVelocitySlider.setRange (0.0, 100.0, 1.0);
+        drumGateSlider.setRange (5.0, 100.0, 1.0);
+        drumProbabilitySlider.setRange (0.0, 100.0, 1.0);
+        drumPadFxAmountSlider.setRange (0.0, 100.0, 1.0);
+        drumCellFxAmountSlider.setRange (0.0, 100.0, 1.0);
+        drumVelocitySlider.setTextValueSuffix (" %");
+        drumGateSlider.setTextValueSuffix (" %");
+        drumProbabilitySlider.setTextValueSuffix (" %");
+        drumPadFxAmountSlider.setTextValueSuffix (" %");
+        drumCellFxAmountSlider.setTextValueSuffix (" %");
+
+        drumCellEnabledToggle.setTooltip ("Turns the selected pattern cell on or off.");
+        addAndMakeVisible (drumCellEnabledToggle);
+        for (auto* button : { &drumApplyTrapRollBtn, &drumClearPatternBtn, &drumCopyPatternBtn,
+                              &drumPastePatternBtn, &drumDuplicatePatternBtn, &drumOpenPerformanceBtn })
+        {
+            button->getProperties().set ("fontSize", 10.5);
+            button->getProperties().set ("smallButton", true);
+            addAndMakeVisible (*button);
+        }
+        drumApplyTrapRollBtn.setTooltip ("Adds musical x2/x3/x4 roll divisions to hats and percussion in the current pattern.");
+        drumClearPatternBtn.setTooltip ("Clears all hits in the selected pattern.");
+        drumCopyPatternBtn.setTooltip ("Copies the selected pattern's hits, velocities, gates, probabilities, and divisions.");
+        drumPastePatternBtn.setTooltip ("Pastes the copied pattern into the current pattern.");
+        drumDuplicatePatternBtn.setTooltip ("Copies the current pattern to the next pattern slot.");
+        drumOpenPerformanceBtn.setTooltip ("Opens MIDI Playground for full drum-machine editing and playback.");
+
         valueFormatBox.addItem ("Auto",     1);
         valueFormatBox.addItem ("0.00",     2);
         valueFormatBox.addItem ("4.2 kHz",  3);
@@ -520,35 +725,40 @@ namespace patchcraft
         smoothingSlider.setTextValueSuffix (" ms");
         addAndMakeVisible (smoothingSlider);
 
-        for (auto* b : { &btnDuplicate, &btnDelete, &btnForward, &btnBackward })
+        for (auto* b : { &btnDuplicate, &btnCopy, &btnCopyNoParams, &btnPaste,
+                          &btnAllTabs, &btnDelete, &btnForward, &btnBackward })
         {
             b->getProperties().set ("fontSize", 10.5);
+            b->getProperties().set ("toolbarIcon", true);
+            b->getProperties().set ("corner", 5.0);
             addAndMakeVisible (*b);
         }
         btnDuplicate.setTooltip ("Duplicate");
+        btnCopy.setTooltip      ("Copy selected elements with parameter bindings.");
+        btnCopyNoParams.setTooltip ("Copy selected elements but clear parameter bindings on paste.");
+        btnPaste.setTooltip     ("Paste copied elements.");
+        btnAllTabs.setTooltip   ("Copy selected tab-scoped elements to every tab in the same Tab Panel.");
         btnDelete.setTooltip    ("Delete");
         btnForward.setTooltip   ("Bring Forward");
         btnBackward.setTooltip  ("Send Backward");
+        copyTabsAsReferenceToggle.setTooltip ("When enabled, Copy Selection To All Tabs creates linked copies. Moving or editing one linked copy updates the matching copies on the other tabs.");
+        addAndMakeVisible (copyTabsAsReferenceToggle);
 
         btnDuplicate.onClick = [this]
         {
-            auto id = owner.getSelectedElementId();
-            if (auto* el = owner.getProject().getLayout().find (id))
-            {
-                LayoutElement copy = *el;
-                copy.id.clear();
-                copy.x += 16; copy.y += 16;
-                auto& added = owner.getProject().getLayout().add (copy);
-                owner.setSelectedElementId (added.id);
-                owner.getProject().notifyChanged();
-            }
+            owner.duplicateSelected();
+        };
+        btnCopy.onClick = [this] { owner.copySelectedElements (true); };
+        btnCopyNoParams.onClick = [this] { owner.copySelectedElements (false); };
+        btnPaste.onClick = [this] { owner.pasteCopiedElements(); };
+        btnAllTabs.onClick = [this] { owner.copySelectedToAllTabs(); };
+        copyTabsAsReferenceToggle.onClick = [this]
+        {
+            owner.setCopySelectionToTabsAsReference (copyTabsAsReferenceToggle.getToggleState());
         };
         btnDelete.onClick = [this]
         {
-            auto id = owner.getSelectedElementId();
-            owner.getProject().getLayout().remove (id);
-            owner.setSelectedElementId ({});
-            owner.getProject().notifyChanged();
+            owner.deleteSelected();
         };
         btnForward.onClick = [this]
         {
@@ -567,6 +777,7 @@ namespace patchcraft
         wEdit.onTextChange       = rewrite;
         hEdit.onTextChange       = rewrite;
         labelEdit.onTextChange   = rewrite;
+        actionEdit.onTextChange  = rewrite;
         minEdit.onTextChange     = rewrite;
         maxEdit.onTextChange     = rewrite;
         defaultEdit.onTextChange = rewrite;
@@ -601,6 +812,165 @@ namespace patchcraft
         valueTypeBox.onChange    = rewrite;
         smoothingSlider.onValueChange = rewrite;
 
+        drumPatternBox.onChange = [this]
+        {
+            if (inhibitCallbacks) return;
+            writeDrumGridElementFromUi();
+            refreshDrumControls();
+        };
+        drumTracksSlider.onValueChange = [this]
+        {
+            if (inhibitCallbacks) return;
+            writeDrumGridElementFromUi();
+            refreshDrumControls();
+        };
+        drumStepsSlider.onValueChange = [this]
+        {
+            if (inhibitCallbacks) return;
+            writeDrumGridElementFromUi();
+            refreshDrumControls();
+        };
+        drumTrackBox.onChange = [this] { if (! inhibitCallbacks) refreshDrumControls(); };
+        drumStepBox.onChange = [this] { if (! inhibitCallbacks) refreshDrumControls(); };
+        drumDivisionBox.onChange = [this] { writeDrumCellFromUi(); };
+        drumPadFxTargetBox.onChange = [this] { writeDrumTrackFxFromUi(); };
+        drumPadFxAmountSlider.onValueChange = [this] { writeDrumTrackFxFromUi(); };
+        drumCellFxTargetBox.onChange = [this] { writeDrumCellFromUi(); };
+        drumCellFxAmountSlider.onValueChange = [this] { writeDrumCellFromUi(); };
+        drumVelocitySlider.onValueChange = [this] { writeDrumCellFromUi(); };
+        drumGateSlider.onValueChange = [this] { writeDrumCellFromUi(); };
+        drumProbabilitySlider.onValueChange = [this] { writeDrumCellFromUi(); };
+        drumCellEnabledToggle.onClick = [this] { writeDrumCellFromUi(); };
+        drumApplyTrapRollBtn.onClick = [this] { applyTrapRollToCurrentPattern(); };
+        drumClearPatternBtn.onClick = [this] { clearCurrentDrumPattern(); };
+        drumCopyPatternBtn.onClick = [this] { copyCurrentDrumPattern(); };
+        drumPastePatternBtn.onClick = [this] { pasteCurrentDrumPattern(); };
+        drumDuplicatePatternBtn.onClick = [this] { duplicateCurrentDrumPatternToNext(); };
+        drumOpenPerformanceBtn.onClick = [this] { owner.setBottomTab (BottomPanel::Page::MidiPlayground); };
+
+        mixerModeBox.addItem ("Auto - layers when available", 1);
+        mixerModeBox.addItem ("Layers only", 2);
+        mixerModeBox.addItem ("Parameter channels", 3);
+        mixerModeBox.setTooltip ("Auto uses loaded Player layers when this is a multi-instrument pack; Parameter channels use the explicit parameter lists below.");
+        addAndMakeVisible (mixerModeBox);
+
+        mixerHelpLabel.setText ("Parameter mixer setup:\n"
+                                "1. Set Mode to Parameter channels and choose Channels.\n"
+                                "2. Enter one parameter id per line, e.g. volume, delayMix, reverbMix.\n"
+                                "3. Use right-click > Find Parameter for valid ids, or Break Selected Mixer Into Channels for separate strips.",
+                                juce::dontSendNotification);
+        mixerHelpLabel.setFont (juce::Font (10.5f));
+        mixerHelpLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+        mixerHelpLabel.setJustificationType (juce::Justification::topLeft);
+        addAndMakeVisible (mixerHelpLabel);
+
+        mixerChannelsSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+        mixerChannelsSlider.setTextBoxStyle (juce::Slider::TextBoxRight, true, 48, 22);
+        mixerChannelsSlider.setRange (1.0, 16.0, 1.0);
+        mixerChannelsSlider.setTooltip ("Number of mixer strips shown when not auto-expanding to multi-instrument layers.");
+        addAndMakeVisible (mixerChannelsSlider);
+
+        for (auto* editor : { &mixerLabelsEdit, &mixerVolumeParamsEdit, &mixerPanParamsEdit,
+                              &mixerMuteParamsEdit, &mixerSoloParamsEdit })
+        {
+            editor->setMultiLine (true, false);
+            editor->setReturnKeyStartsNewLine (true);
+            editor->setIndents (6, 4);
+            addAndMakeVisible (*editor);
+        }
+        mixerLabelsEdit.setTooltip ("One channel label per line. Example: Main, Drums, Pads, FX Bus.");
+        mixerVolumeParamsEdit.setTooltip ("One volume parameter id per line. Channel 1 defaults to volume if left empty.");
+        mixerPanParamsEdit.setTooltip ("One pan parameter id per line. Channel 1 defaults to pan if left empty.");
+        mixerMuteParamsEdit.setTooltip ("Optional toggle parameter ids for mute buttons, one per line.");
+        mixerSoloParamsEdit.setTooltip ("Optional toggle parameter ids for solo buttons, one per line.");
+        mixerModeBox.onChange = rewrite;
+        mixerChannelsSlider.onValueChange = rewrite;
+        mixerLabelsEdit.onTextChange = rewrite;
+        mixerVolumeParamsEdit.onTextChange = rewrite;
+        mixerPanParamsEdit.onTextChange = rewrite;
+        mixerMuteParamsEdit.onTextChange = rewrite;
+        mixerSoloParamsEdit.onTextChange = rewrite;
+
+        for (auto* editor : { &macroTargetsEdit, &modRoutesEdit })
+        {
+            editor->setMultiLine (true, false);
+            editor->setReturnKeyStartsNewLine (true);
+            editor->setIndents (6, 4);
+            addAndMakeVisible (*editor);
+        }
+        macroTargetsEdit.setTooltip ("One target per line: targetParameterId targetMin targetMax curve. Example: filterCutoff 400 8000 1.4");
+        modRoutesEdit.setTooltip ("One route per line: sourceId -> targetParameterId amount smoothing enabled. Example: lfo_1 -> filterCutoff 0.25 0.02 on");
+
+        for (auto* button : { &macroApplyBtn, &macroClearBtn, &modApplyBtn, &modClearBtn })
+        {
+            button->getProperties().set ("fontSize", 10.5);
+            button->getProperties().set ("smallButton", true);
+            addAndMakeVisible (*button);
+        }
+        macroApplyBtn.setTooltip ("Apply the macro target list to the selected Macro Control.");
+        macroClearBtn.setTooltip ("Remove all targets driven by the selected Macro Control.");
+        modApplyBtn.setTooltip ("Apply these modulation routes to the DSP graph.");
+        modClearBtn.setTooltip ("Clear all modulation routes from the DSP graph.");
+        macroApplyBtn.onClick = [this] { writeMacroTargetsFromUi(); };
+        macroClearBtn.onClick = [this]
+        {
+            macroTargetsEdit.clear();
+            writeMacroTargetsFromUi();
+        };
+        modApplyBtn.onClick = [this] { writeModRoutesFromUi(); };
+        modClearBtn.onClick = [this]
+        {
+            modRoutesEdit.clear();
+            writeModRoutesFromUi();
+        };
+
+        granularDirectionBox.addItem ("Forward", 1);
+        granularDirectionBox.addItem ("Reverse", 2);
+        granularDirectionBox.addItem ("Ping-Pong", 3);
+        granularDirectionBox.addItem ("Multi", 4);
+        granularDirectionBox.setTooltip ("Playback motion for grain scanning. Multi adds layered opposing grain motion.");
+        addAndMakeVisible (granularDirectionBox);
+
+        auto setupGranularSlider = [this] (juce::Slider& slider, double min, double max, double step,
+                                           const juce::String& suffix, const juce::String& tip)
+        {
+            slider.setSliderStyle (juce::Slider::LinearHorizontal);
+            slider.setTextBoxStyle (juce::Slider::TextBoxRight, true, 58, 22);
+            slider.setRange (min, max, step);
+            slider.setTextValueSuffix (suffix);
+            slider.setTooltip (tip);
+            addAndMakeVisible (slider);
+        };
+
+        setupGranularSlider (granularDensitySlider, 0.5, 220.0, 0.5, " g/s", "Grains per second. Low values pulse; high values become smooth clouds.");
+        setupGranularSlider (granularSizeSlider, 2.0, 1000.0, 1.0, " ms", "Individual grain duration.");
+        setupGranularSlider (granularRandomSlider, 0.0, 100.0, 1.0, " %", "Random variation in grain size.");
+        setupGranularSlider (granularSpreadSlider, 0.0, 100.0, 1.0, " %", "How wide the grain cloud sprays around the playhead.");
+        setupGranularSlider (granularScanSlider, -3.0, 3.0, 0.01, "x", "Autonomous scan speed. Negative scans backward.");
+        setupGranularSlider (granularPitchSlider, 0.0, 36.0, 0.1, " st", "Random pitch spread in semitones.");
+        setupGranularSlider (granularPanSlider, 0.0, 100.0, 1.0, " %", "Stereo position spread.");
+        setupGranularSlider (granularTextureSlider, 0.0, 100.0, 1.0, " %", "Adds grit, density irregularity, and cloud complexity.");
+
+        for (auto* toggle : { &granularOnToggle, &granularFreezeToggle, &granularReverseToggle })
+        {
+            toggle->setTooltip ("Granular runtime switch. These values are exported and affect Player playback.");
+            addAndMakeVisible (*toggle);
+        }
+
+        auto granularRewrite = [this] { writeGranularControlsFromUi(); };
+        granularDirectionBox.onChange = granularRewrite;
+        granularDensitySlider.onValueChange = granularRewrite;
+        granularSizeSlider.onValueChange = granularRewrite;
+        granularRandomSlider.onValueChange = granularRewrite;
+        granularSpreadSlider.onValueChange = granularRewrite;
+        granularScanSlider.onValueChange = granularRewrite;
+        granularPitchSlider.onValueChange = granularRewrite;
+        granularPanSlider.onValueChange = granularRewrite;
+        granularTextureSlider.onValueChange = granularRewrite;
+        granularOnToggle.onClick = granularRewrite;
+        granularFreezeToggle.onClick = granularRewrite;
+        granularReverseToggle.onClick = granularRewrite;
+
         refresh();
     }
 
@@ -611,6 +981,25 @@ namespace patchcraft
         g.fillAll (PatchCraftLookAndFeel::panel());
         g.setColour (PatchCraftLookAndFeel::border());
         g.fillRect (0, 0, 1, getHeight());
+    }
+
+    bool InspectorPanel::isSectionOpen (InspectorSection section) const
+    {
+        return sectionOpen[(size_t) section];
+    }
+
+    void InspectorPanel::mouseDown (const juce::MouseEvent& event)
+    {
+        for (size_t i = 0; i < sectionHeaderBounds.size(); ++i)
+        {
+            if (! sectionHeaderBounds[i].contains (event.getPosition()))
+                continue;
+
+            sectionOpen[i] = ! sectionOpen[i];
+            resized();
+            repaint();
+            return;
+        }
     }
 
     void InspectorPanel::layoutRow (juce::Rectangle<int>& area, juce::Label& l,
@@ -693,18 +1082,68 @@ namespace patchcraft
         const auto type = el != nullptr ? el->type : ElementType::Knob;
         const bool hasParam = (type == ElementType::Knob || type == ElementType::Slider
                                || type == ElementType::Meter || type == ElementType::Toggle
-                               || type == ElementType::ValueDisplay);
+                               || type == ElementType::ValueDisplay
+                               || type == ElementType::MacroControl);
         const bool isImage  = (type == ElementType::Image);
         const bool isLabel  = (type == ElementType::Label);
         const bool isShape  = (type == ElementType::Shape || type == ElementType::Panel);
+        const bool isDrumGrid = (type == ElementType::DrumGrid);
+        const bool isMixer = (type == ElementType::Mixer);
+        const bool isMacroControl = (type == ElementType::MacroControl);
+        const bool isModMatrix = (type == ElementType::ModMatrix);
+        const bool isGranularField = (type == ElementType::GranularField);
+        const bool isTabPanel = (type == ElementType::TabPanel);
         const bool canAnimate = (type != ElementType::Group && type != ElementType::Separator);
         const bool hasStyle = (type == ElementType::Knob || type == ElementType::Slider
                                || type == ElementType::Meter || type == ElementType::Button
                                || type == ElementType::Panel || type == ElementType::Shape);
         const bool isKnob   = (type == ElementType::Knob);
         const bool showContainerManager = (el != nullptr && isContainerElement (type));
+        const bool showFilmstrip = (type == ElementType::Knob
+                                    || type == ElementType::Slider
+                                    || type == ElementType::Meter);
+        const bool showLabelLayout = (el != nullptr && (type == ElementType::Knob || type == ElementType::Slider
+                                                        || type == ElementType::Button || type == ElementType::Toggle
+                                                        || type == ElementType::Dropdown || type == ElementType::ValueDisplay
+                                                        || type == ElementType::MacroControl));
+        const bool showColour = (type == ElementType::Panel || type == ElementType::Group
+                                 || type == ElementType::Shape || type == ElementType::Button
+                                 || type == ElementType::Toggle || type == ElementType::Dropdown
+                                  || type == ElementType::DrumGrid || type == ElementType::DrumPad
+                                  || type == ElementType::PadGrid || type == ElementType::Mixer
+                                  || type == ElementType::MacroControl || type == ElementType::ModMatrix
+                                  || type == ElementType::GranularField);
+        sectionHeaderBounds.fill ({});
+        auto sectionHeader = [this, &r] (juce::Label& label, InspectorSection section, const juce::String& title)
+        {
+            label.setVisible (true);
+            r.removeFromTop (6);
+            const auto bounds = r.removeFromTop (24).reduced (6, 2);
+            sectionHeaderBounds[(size_t) section] = bounds;
+            label.setText ((isSectionOpen (section) ? "v  " : ">  ") + title, juce::dontSendNotification);
+            label.setBounds (bounds);
+        };
+        auto setVisibleFor = [] (std::initializer_list<juce::Component*> components, bool visible)
+        {
+            for (auto* component : components)
+                if (component != nullptr)
+                    component->setVisible (visible);
+        };
 
         // Common: type, id
+        sectionHeader (lblLayoutSection, InspectorSection::Layout, "LAYOUT");
+        const bool layoutOpen = isSectionOpen (InspectorSection::Layout);
+        const bool supportsAction = el != nullptr
+            && (type == ElementType::Button || type == ElementType::Toggle
+                || type == ElementType::Label || type == ElementType::Image);
+        setVisibleFor ({ &typeBox, &idEdit, &xEdit, &yEdit, &wEdit, &hEdit,
+                         &labelEdit, &opacitySlider, &visibleToggle, &lockedToggle,
+                         &lblType, &lblId, &lblPos, &lblSize, &lblLabel, &lblOpacity,
+                         &lblState, &lblPosX, &lblPosY, &lblSizeW, &lblSizeH }, layoutOpen);
+        actionEdit.setVisible (layoutOpen && supportsAction);
+        lblAction.setVisible (layoutOpen && supportsAction);
+        if (layoutOpen)
+        {
         layoutRow (r, lblType, &typeBox);
         layoutRow (r, lblId,   &idEdit);
 
@@ -731,6 +1170,8 @@ namespace patchcraft
 
         // Label is always shown - useful for buttons/panels too
         layoutRow (r, lblLabel, &labelEdit);
+        if (supportsAction)
+            layoutRow (r, lblAction, &actionEdit);
         layoutRow (r, lblOpacity, &opacitySlider);
         {
             auto row = r.removeFromTop (34);
@@ -739,71 +1180,83 @@ namespace patchcraft
             visibleToggle.setBounds (row.removeFromLeft (half).reduced (4, 4));
             lockedToggle.setBounds (row.reduced (4, 4));
         }
+        }
 
         // Parameter binding section
         const bool showParam = hasParam;
-        parameterBox.setVisible (showParam);
-        midiLearnButton.setVisible (showParam);
-        valueFormatBox.setVisible (showParam);
-        minEdit.setVisible (showParam);
-        maxEdit.setVisible (showParam);
-        defaultEdit.setVisible (showParam);
-        stepEdit.setVisible (showParam);
-        valueTypeBox.setVisible (showParam);
-        smoothingSlider.setVisible (showParam);
-        lblParam.setVisible (showParam);
-        lblValFmt.setVisible (showParam);
-        lblMin.setVisible (showParam);
-        lblMax.setVisible (showParam);
-        lblDefault.setVisible (showParam);
-        lblStep.setVisible (showParam);
-        lblValType.setVisible (showParam);
-        lblSmoothing.setVisible (showParam);
+        const bool showParamControls = showParam && isSectionOpen (InspectorSection::Parameter);
+        lblParameterSection.setVisible (showParam);
+        parameterBox.setVisible (showParamControls);
+        midiLearnButton.setVisible (showParamControls);
+        valueFormatBox.setVisible (showParamControls);
+        minEdit.setVisible (showParamControls);
+        maxEdit.setVisible (showParamControls);
+        defaultEdit.setVisible (showParamControls);
+        stepEdit.setVisible (showParamControls);
+        valueTypeBox.setVisible (showParamControls);
+        smoothingSlider.setVisible (showParamControls);
+        lblParam.setVisible (showParamControls);
+        lblValFmt.setVisible (showParamControls);
+        lblMin.setVisible (showParamControls);
+        lblMax.setVisible (showParamControls);
+        lblDefault.setVisible (showParamControls);
+        lblStep.setVisible (showParamControls);
+        lblValType.setVisible (showParamControls);
+        lblSmoothing.setVisible (showParamControls);
 
         if (showParam)
         {
-            layoutRow (r, lblParam,  &parameterBox);
+            sectionHeader (lblParameterSection, InspectorSection::Parameter, "PARAMETER BINDING");
+            if (showParamControls)
             {
-                auto bounds = parameterBox.getBounds();
-                midiLearnButton.setBounds (bounds.removeFromRight (58).reduced (2));
-                parameterBox.setBounds (bounds.reduced (0, 0));
+                layoutRow (r, lblParam,  &parameterBox);
+                {
+                    auto bounds = parameterBox.getBounds();
+                    midiLearnButton.setBounds (bounds.removeFromRight (58).reduced (2));
+                    parameterBox.setBounds (bounds.reduced (0, 0));
+                }
+                layoutRow (r, lblValFmt, &valueFormatBox);
+                // Min / Max share a row
+                {
+                    auto row = r.removeFromTop (34);
+                    lblMin.setBounds (row.removeFromLeft (110).reduced (10, 4));
+                    const int half = row.getWidth() / 2;
+                    minEdit.setBounds (row.removeFromLeft (half).reduced (4, 4));
+                    maxEdit.setBounds (row.reduced (4, 4));
+                }
+                layoutRow (r, lblDefault,   &defaultEdit);
+                layoutRow (r, lblStep,      &stepEdit);
+                layoutRow (r, lblValType,   &valueTypeBox);
+                layoutRow (r, lblSmoothing, &smoothingSlider);
             }
-            layoutRow (r, lblValFmt, &valueFormatBox);
-            // Min / Max share a row
-            {
-                auto row = r.removeFromTop (34);
-                lblMin.setBounds (row.removeFromLeft (110).reduced (10, 4));
-                const int half = row.getWidth() / 2;
-                minEdit.setBounds (row.removeFromLeft (half).reduced (4, 4));
-                maxEdit.setBounds (row.reduced (4, 4));
-            }
-            layoutRow (r, lblDefault,   &defaultEdit);
-            layoutRow (r, lblStep,      &stepEdit);
-            layoutRow (r, lblValType,   &valueTypeBox);
-            layoutRow (r, lblSmoothing, &smoothingSlider);
         }
 
         // Style section
-        styleBox.setVisible (hasStyle);
-        knobStyleBox.setVisible (isKnob);
-        lblStyle.setVisible (hasStyle);
-        lblKnobStyle.setVisible (isKnob);
-        if (hasStyle)
+        const bool showVisualSection = hasStyle || isKnob || isShape || canAnimate || isImage
+                                    || (el != nullptr && ! el->locked)
+                                    || showLabelLayout || showColour || showFilmstrip;
+        const bool showVisualControls = showVisualSection && isSectionOpen (InspectorSection::Style);
+        lblStyleSection.setVisible (showVisualSection);
+        if (showVisualSection)
+            sectionHeader (lblStyleSection, InspectorSection::Style, "VISUAL STYLE");
+
+        styleBox.setVisible (hasStyle && showVisualControls);
+        knobStyleBox.setVisible (isKnob && showVisualControls);
+        lblStyle.setVisible (hasStyle && showVisualControls);
+        lblKnobStyle.setVisible (isKnob && showVisualControls);
+        if (showVisualControls && hasStyle)
             layoutRow (r, lblStyle, &styleBox);
-        if (isKnob)
+        if (showVisualControls && isKnob)
             layoutRow (r, lblKnobStyle, &knobStyleBox);
 
         // Filmstrip override (Knob / Slider / Meter)
-        const bool showFilmstrip = (type == ElementType::Knob
-                                    || type == ElementType::Slider
-                                    || type == ElementType::Meter);
-        filmstripPathEdit.setVisible   (showFilmstrip);
-        filmstripBrowseBtn.setVisible  (showFilmstrip);
-        filmstripFramesEdit.setVisible (showFilmstrip);
-        filmstripAutoBtn.setVisible    (showFilmstrip);
-        lblFilmstripPath.setVisible    (showFilmstrip);
-        lblFilmstripFrames.setVisible  (showFilmstrip);
-        if (showFilmstrip)
+        filmstripPathEdit.setVisible   (showFilmstrip && showVisualControls);
+        filmstripBrowseBtn.setVisible  (showFilmstrip && showVisualControls);
+        filmstripFramesEdit.setVisible (showFilmstrip && showVisualControls);
+        filmstripAutoBtn.setVisible    (showFilmstrip && showVisualControls);
+        lblFilmstripPath.setVisible    (showFilmstrip && showVisualControls);
+        lblFilmstripFrames.setVisible  (showFilmstrip && showVisualControls);
+        if (showFilmstrip && showVisualControls)
         {
             auto row = r.removeFromTop (34);
             lblFilmstripPath.setBounds (row.removeFromLeft (110).reduced (10, 4));
@@ -816,19 +1269,19 @@ namespace patchcraft
             filmstripFramesEdit.setBounds (row2.reduced (4, 4));
         }
 
-        shapeKindBox.setVisible (isShape);
-        cornerSlider.setVisible (isShape);
-        strokeSlider.setVisible (isShape);
-        shadowSlider.setVisible (isShape);
-        glowSlider.setVisible (isShape);
-        blurSlider.setVisible (isShape);
-        lblShapeKind.setVisible (isShape);
-        lblCorner.setVisible (isShape);
-        lblStroke.setVisible (isShape);
-        lblShadow.setVisible (isShape);
-        lblGlow.setVisible (isShape);
-        lblBlur.setVisible (isShape);
-        if (isShape)
+        shapeKindBox.setVisible (isShape && showVisualControls);
+        cornerSlider.setVisible (isShape && showVisualControls);
+        strokeSlider.setVisible (isShape && showVisualControls);
+        shadowSlider.setVisible (isShape && showVisualControls);
+        glowSlider.setVisible (isShape && showVisualControls);
+        blurSlider.setVisible (isShape && showVisualControls);
+        lblShapeKind.setVisible (isShape && showVisualControls);
+        lblCorner.setVisible (isShape && showVisualControls);
+        lblStroke.setVisible (isShape && showVisualControls);
+        lblShadow.setVisible (isShape && showVisualControls);
+        lblGlow.setVisible (isShape && showVisualControls);
+        lblBlur.setVisible (isShape && showVisualControls);
+        if (isShape && showVisualControls)
         {
             if (type == ElementType::Shape)
                 layoutRow (r, lblShapeKind, &shapeKindBox);
@@ -842,17 +1295,17 @@ namespace patchcraft
         const bool showAudioDetail = canAnimate && el != nullptr && el->audioReactive;
         const bool showAnimationRate = canAnimate && el != nullptr
             && el->animationMode.isNotEmpty() && el->animationMode != "none";
-        audioReactiveToggle.setVisible (canAnimate);
-        audioReactiveModeBox.setVisible (showAudioDetail);
-        audioReactiveAmountSlider.setVisible (showAudioDetail);
-        animationModeBox.setVisible (canAnimate);
-        animationRateSlider.setVisible (showAnimationRate);
-        lblAudioReactive.setVisible (canAnimate);
-        lblAudioReactiveMode.setVisible (showAudioDetail);
-        lblAudioReactiveAmount.setVisible (showAudioDetail);
-        lblAnimationMode.setVisible (canAnimate);
-        lblAnimationRate.setVisible (showAnimationRate);
-        if (canAnimate)
+        audioReactiveToggle.setVisible (canAnimate && showVisualControls);
+        audioReactiveModeBox.setVisible (showAudioDetail && showVisualControls);
+        audioReactiveAmountSlider.setVisible (showAudioDetail && showVisualControls);
+        animationModeBox.setVisible (canAnimate && showVisualControls);
+        animationRateSlider.setVisible (showAnimationRate && showVisualControls);
+        lblAudioReactive.setVisible (canAnimate && showVisualControls);
+        lblAudioReactiveMode.setVisible (showAudioDetail && showVisualControls);
+        lblAudioReactiveAmount.setVisible (showAudioDetail && showVisualControls);
+        lblAnimationMode.setVisible (canAnimate && showVisualControls);
+        lblAnimationRate.setVisible (showAnimationRate && showVisualControls);
+        if (canAnimate && showVisualControls)
         {
             layoutRow (r, lblAudioReactive, &audioReactiveToggle);
             if (showAudioDetail)
@@ -866,10 +1319,10 @@ namespace patchcraft
         }
 
         // Image-only: asset path + browse
-        assetEdit.setVisible (isImage);
-        browseAssetBtn.setVisible (isImage);
-        lblAsset.setVisible (isImage);
-        if (isImage)
+        assetEdit.setVisible (isImage && showVisualControls);
+        browseAssetBtn.setVisible (isImage && showVisualControls);
+        lblAsset.setVisible (isImage && showVisualControls);
+        if (isImage && showVisualControls)
         {
             auto row = r.removeFromTop (34);
             lblAsset.setBounds (row.removeFromLeft (110).reduced (10, 4));
@@ -879,23 +1332,20 @@ namespace patchcraft
 
         // Group ID (any non-locked element)
         const bool showGroup = (el != nullptr && ! el->locked);
-        containerBox.setVisible (showGroup);
-        lblGroup.setVisible (showGroup);
-        if (showGroup)
+        containerBox.setVisible (showGroup && showVisualControls);
+        lblGroup.setVisible (showGroup && showVisualControls);
+        if (showGroup && showVisualControls)
             layoutRow (r, lblGroup, &containerBox);
 
-        const bool showLabelLayout = (el != nullptr && (type == ElementType::Knob || type == ElementType::Slider
-                                                        || type == ElementType::Button || type == ElementType::Toggle
-                                                        || type == ElementType::Dropdown || type == ElementType::ValueDisplay));
         for (auto* component : { static_cast<juce::Component*> (&labelPositionBox),
                                  static_cast<juce::Component*> (&labelOffsetXSlider),
                                  static_cast<juce::Component*> (&labelOffsetYSlider),
                                  static_cast<juce::Component*> (&labelSpacingSlider),
                                  static_cast<juce::Component*> (&labelSizeSlider) })
-            component->setVisible (showLabelLayout);
+            component->setVisible (showLabelLayout && showVisualControls);
         for (auto* label : { &lblLabelPosition, &lblLabelOffsetX, &lblLabelOffsetY, &lblLabelSpacing, &lblLabelSize })
-            label->setVisible (showLabelLayout);
-        if (showLabelLayout)
+            label->setVisible (showLabelLayout && showVisualControls);
+        if (showLabelLayout && showVisualControls)
         {
             layoutRow (r, lblLabelPosition, &labelPositionBox);
             layoutRow (r, lblLabelOffsetX, &labelOffsetXSlider);
@@ -904,30 +1354,232 @@ namespace patchcraft
             layoutRow (r, lblLabelSize, &labelSizeSlider);
         }
 
-        const bool showColour = (type == ElementType::Panel || type == ElementType::Group
-                                 || type == ElementType::Shape || type == ElementType::Button
-                                 || type == ElementType::Toggle || type == ElementType::Dropdown);
         for (auto* component : { static_cast<juce::Component*> (&backgroundColourEdit),
                                  static_cast<juce::Component*> (&borderColourEdit),
                                  static_cast<juce::Component*> (&accentColourEdit),
                                  static_cast<juce::Component*> (&backgroundColourButton),
                                  static_cast<juce::Component*> (&borderColourButton),
                                  static_cast<juce::Component*> (&accentColourButton) })
-            component->setVisible (showColour);
+            component->setVisible (showColour && showVisualControls);
         for (auto* label : { &lblBgColour, &lblBorderColour, &lblAccentColour })
-            label->setVisible (showColour);
-        if (showColour)
+            label->setVisible (showColour && showVisualControls);
+        if (showColour && showVisualControls)
         {
             layoutColourRow (r, lblBgColour, backgroundColourEdit, backgroundColourButton);
             layoutColourRow (r, lblBorderColour, borderColourEdit, borderColourButton);
             layoutColourRow (r, lblAccentColour, accentColourEdit, accentColourButton);
         }
 
+        const bool showSpecialSection = isDrumGrid || isMixer || isMacroControl || isModMatrix
+                                     || isGranularField || isTabPanel || showContainerManager;
+        const bool showAdvancedControls = showSpecialSection && isSectionOpen (InspectorSection::Advanced);
+        lblSpecialSection.setVisible (showSpecialSection);
+        if (showSpecialSection)
+            sectionHeader (lblSpecialSection, InspectorSection::Advanced, "ADVANCED ELEMENT TOOLS");
+
+        for (auto* component : { static_cast<juce::Component*> (&drumPatternBox),
+                                 static_cast<juce::Component*> (&drumTrackBox),
+                                 static_cast<juce::Component*> (&drumStepBox),
+                                 static_cast<juce::Component*> (&drumDivisionBox),
+                                 static_cast<juce::Component*> (&drumPadFxTargetBox),
+                                 static_cast<juce::Component*> (&drumCellFxTargetBox),
+                                 static_cast<juce::Component*> (&drumTracksSlider),
+                                 static_cast<juce::Component*> (&drumStepsSlider),
+                                 static_cast<juce::Component*> (&drumVelocitySlider),
+                                 static_cast<juce::Component*> (&drumGateSlider),
+                                 static_cast<juce::Component*> (&drumProbabilitySlider),
+                                 static_cast<juce::Component*> (&drumPadFxAmountSlider),
+                                 static_cast<juce::Component*> (&drumCellFxAmountSlider),
+                                 static_cast<juce::Component*> (&drumCellEnabledToggle),
+                                 static_cast<juce::Component*> (&drumApplyTrapRollBtn),
+                                 static_cast<juce::Component*> (&drumClearPatternBtn),
+                                 static_cast<juce::Component*> (&drumCopyPatternBtn),
+                                 static_cast<juce::Component*> (&drumPastePatternBtn),
+                                 static_cast<juce::Component*> (&drumDuplicatePatternBtn),
+                                 static_cast<juce::Component*> (&drumOpenPerformanceBtn) })
+            component->setVisible (isDrumGrid && showAdvancedControls && isSectionOpen (InspectorSection::DrumGrid));
+        for (auto* label : { &lblDrumGrid, &lblDrumPattern, &lblDrumTracks, &lblDrumSteps,
+                             &lblDrumCell, &lblDrumVelocity, &lblDrumGate,
+                             &lblDrumProbability, &lblDrumDivision, &lblDrumPadFxTarget,
+                             &lblDrumPadFxAmount, &lblDrumCellFxTarget, &lblDrumCellFxAmount })
+            label->setVisible (isDrumGrid && showAdvancedControls
+                               && (label == &lblDrumGrid || isSectionOpen (InspectorSection::DrumGrid)));
+
+        if (isDrumGrid && showAdvancedControls)
+        {
+            r.removeFromTop (6);
+            sectionHeader (lblDrumGrid, InspectorSection::DrumGrid, "DRUM GRID / FX TRIGGERS");
+            if (isSectionOpen (InspectorSection::DrumGrid))
+            {
+                layoutRow (r, lblDrumPattern, &drumPatternBox);
+                layoutRow (r, lblDrumTracks, &drumTracksSlider);
+                layoutRow (r, lblDrumSteps, &drumStepsSlider);
+
+                {
+                    auto row = r.removeFromTop (34);
+                    lblDrumCell.setBounds (row.removeFromLeft (110).reduced (10, 4));
+                    const int half = row.getWidth() / 2;
+                    drumTrackBox.setBounds (row.removeFromLeft (half).reduced (4, 4));
+                    drumStepBox.setBounds (row.reduced (4, 4));
+                }
+
+                layoutRow (r, lblDrumDivision, &drumDivisionBox);
+                layoutRow (r, lblDrumVelocity, &drumVelocitySlider);
+                layoutRow (r, lblDrumGate, &drumGateSlider);
+                layoutRow (r, lblDrumProbability, &drumProbabilitySlider);
+                layoutRow (r, lblDrumPadFxTarget, &drumPadFxTargetBox);
+                layoutRow (r, lblDrumPadFxAmount, &drumPadFxAmountSlider);
+                layoutRow (r, lblDrumCellFxTarget, &drumCellFxTargetBox);
+                layoutRow (r, lblDrumCellFxAmount, &drumCellFxAmountSlider);
+
+                {
+                    auto row = r.removeFromTop (34);
+                    lblDrumCell.setBounds (row.removeFromLeft (110).reduced (10, 4));
+                    drumCellEnabledToggle.setBounds (row.reduced (4, 4));
+                }
+
+                {
+                    auto row = r.removeFromTop (34);
+                    const int buttonW = juce::jmax (52, row.getWidth() / 3);
+                    drumApplyTrapRollBtn.setBounds (row.removeFromLeft (buttonW).reduced (2));
+                    drumClearPatternBtn.setBounds (row.removeFromLeft (buttonW).reduced (2));
+                    drumOpenPerformanceBtn.setBounds (row.reduced (2));
+                }
+                {
+                    auto row = r.removeFromTop (34);
+                    const int buttonW = juce::jmax (52, row.getWidth() / 3);
+                    drumCopyPatternBtn.setBounds (row.removeFromLeft (buttonW).reduced (2));
+                    drumPastePatternBtn.setBounds (row.removeFromLeft (buttonW).reduced (2));
+                    drumDuplicatePatternBtn.setBounds (row.reduced (2));
+                }
+            }
+        }
+
+        for (auto* component : { static_cast<juce::Component*> (&mixerModeBox),
+                                 static_cast<juce::Component*> (&mixerChannelsSlider),
+                                 static_cast<juce::Component*> (&mixerLabelsEdit),
+                                 static_cast<juce::Component*> (&mixerVolumeParamsEdit),
+                                 static_cast<juce::Component*> (&mixerPanParamsEdit),
+                                 static_cast<juce::Component*> (&mixerMuteParamsEdit),
+                                 static_cast<juce::Component*> (&mixerSoloParamsEdit),
+                                 static_cast<juce::Component*> (&mixerHelpLabel) })
+            component->setVisible (isMixer && showAdvancedControls && isSectionOpen (InspectorSection::Mixer));
+        for (auto* label : { &lblMixer, &lblMixerMode, &lblMixerChannels, &lblMixerLabels,
+                             &lblMixerVolumes, &lblMixerPans, &lblMixerMutes, &lblMixerSolos })
+            label->setVisible (isMixer && showAdvancedControls
+                               && (label == &lblMixer || isSectionOpen (InspectorSection::Mixer)));
+
+        if (isMixer && showAdvancedControls)
+        {
+            r.removeFromTop (6);
+            sectionHeader (lblMixer, InspectorSection::Mixer, "MIXER");
+            if (isSectionOpen (InspectorSection::Mixer))
+            {
+                mixerHelpLabel.setBounds (r.removeFromTop (78).reduced (2, 4));
+                layoutRow (r, lblMixerMode, &mixerModeBox);
+                layoutRow (r, lblMixerChannels, &mixerChannelsSlider);
+                layoutRow (r, lblMixerLabels, &mixerLabelsEdit, 64);
+                layoutRow (r, lblMixerVolumes, &mixerVolumeParamsEdit, 56);
+                layoutRow (r, lblMixerPans, &mixerPanParamsEdit, 56);
+                layoutRow (r, lblMixerMutes, &mixerMuteParamsEdit, 48);
+                layoutRow (r, lblMixerSolos, &mixerSoloParamsEdit, 48);
+            }
+        }
+
+        for (auto* component : { static_cast<juce::Component*> (&macroTargetsEdit),
+                                 static_cast<juce::Component*> (&macroApplyBtn),
+                                 static_cast<juce::Component*> (&macroClearBtn) })
+            component->setVisible (isMacroControl && showAdvancedControls && isSectionOpen (InspectorSection::Macro));
+        for (auto* label : { &lblMacroEditor, &lblMacroTargets })
+            label->setVisible (isMacroControl && showAdvancedControls
+                               && (label == &lblMacroEditor || isSectionOpen (InspectorSection::Macro)));
+
+        if (isMacroControl && showAdvancedControls)
+        {
+            r.removeFromTop (6);
+            sectionHeader (lblMacroEditor, InspectorSection::Macro, "MACRO ROUTING");
+            if (isSectionOpen (InspectorSection::Macro))
+            {
+                layoutRow (r, lblMacroTargets, &macroTargetsEdit, 96);
+                auto row = r.removeFromTop (30).reduced (114, 3);
+                const int buttonW = juce::jmax (58, row.getWidth() / 2);
+                macroApplyBtn.setBounds (row.removeFromLeft (buttonW).reduced (2));
+                macroClearBtn.setBounds (row.reduced (2));
+            }
+        }
+
+        for (auto* component : { static_cast<juce::Component*> (&modRoutesEdit),
+                                 static_cast<juce::Component*> (&modApplyBtn),
+                                 static_cast<juce::Component*> (&modClearBtn) })
+            component->setVisible (isModMatrix && showAdvancedControls && isSectionOpen (InspectorSection::ModMatrix));
+        for (auto* label : { &lblModMatrixEditor, &lblModRoutes })
+            label->setVisible (isModMatrix && showAdvancedControls
+                               && (label == &lblModMatrixEditor || isSectionOpen (InspectorSection::ModMatrix)));
+
+        if (isModMatrix && showAdvancedControls)
+        {
+            r.removeFromTop (6);
+            sectionHeader (lblModMatrixEditor, InspectorSection::ModMatrix, "MOD MATRIX");
+            if (isSectionOpen (InspectorSection::ModMatrix))
+            {
+                layoutRow (r, lblModRoutes, &modRoutesEdit, 118);
+                auto row = r.removeFromTop (30).reduced (114, 3);
+                const int buttonW = juce::jmax (58, row.getWidth() / 2);
+                modApplyBtn.setBounds (row.removeFromLeft (buttonW).reduced (2));
+                modClearBtn.setBounds (row.reduced (2));
+            }
+        }
+
+        for (auto* component : { static_cast<juce::Component*> (&granularOnToggle),
+                                 static_cast<juce::Component*> (&granularFreezeToggle),
+                                 static_cast<juce::Component*> (&granularReverseToggle),
+                                 static_cast<juce::Component*> (&granularDirectionBox),
+                                 static_cast<juce::Component*> (&granularDensitySlider),
+                                 static_cast<juce::Component*> (&granularSizeSlider),
+                                 static_cast<juce::Component*> (&granularRandomSlider),
+                                 static_cast<juce::Component*> (&granularSpreadSlider),
+                                 static_cast<juce::Component*> (&granularScanSlider),
+                                 static_cast<juce::Component*> (&granularPitchSlider),
+                                 static_cast<juce::Component*> (&granularPanSlider),
+                                 static_cast<juce::Component*> (&granularTextureSlider) })
+            component->setVisible (isGranularField && showAdvancedControls && isSectionOpen (InspectorSection::Granular));
+        for (auto* label : { &lblGranularEditor, &lblGranularDirection, &lblGranularDensity,
+                             &lblGranularSize, &lblGranularRandom, &lblGranularSpread,
+                             &lblGranularScan, &lblGranularPitch, &lblGranularPan,
+                             &lblGranularTexture })
+            label->setVisible (isGranularField && showAdvancedControls
+                               && (label == &lblGranularEditor || isSectionOpen (InspectorSection::Granular)));
+
+        if (isGranularField && showAdvancedControls)
+        {
+            r.removeFromTop (6);
+            sectionHeader (lblGranularEditor, InspectorSection::Granular, "GRANULAR ENGINE");
+            if (isSectionOpen (InspectorSection::Granular))
+            {
+            {
+                auto row = r.removeFromTop (34);
+                row.removeFromLeft (110);
+                const int third = juce::jmax (70, row.getWidth() / 3);
+                granularOnToggle.setBounds (row.removeFromLeft (third).reduced (4, 4));
+                granularFreezeToggle.setBounds (row.removeFromLeft (third).reduced (4, 4));
+                granularReverseToggle.setBounds (row.reduced (4, 4));
+            }
+            layoutRow (r, lblGranularDirection, &granularDirectionBox);
+            layoutRow (r, lblGranularDensity, &granularDensitySlider);
+            layoutRow (r, lblGranularSize, &granularSizeSlider);
+            layoutRow (r, lblGranularRandom, &granularRandomSlider);
+            layoutRow (r, lblGranularSpread, &granularSpreadSlider);
+            layoutRow (r, lblGranularScan, &granularScanSlider);
+            layoutRow (r, lblGranularPitch, &granularPitchSlider);
+            layoutRow (r, lblGranularPan, &granularPanSlider);
+            layoutRow (r, lblGranularTexture, &granularTextureSlider);
+            }
+        }
+
         // TabPanel: tab list editor (one tab label per line)
-        const bool isTabPanel = (type == ElementType::TabPanel);
-        tabsEdit.setVisible (isTabPanel);
-        lblTabs.setVisible (isTabPanel);
-        if (isTabPanel)
+        tabsEdit.setVisible (isTabPanel && showAdvancedControls);
+        lblTabs.setVisible (isTabPanel && showAdvancedControls);
+        if (isTabPanel && showAdvancedControls)
         {
             auto row = r.removeFromTop (110);
             lblTabs.setBounds (row.removeFromLeft (110).reduced (10, 4));
@@ -940,40 +1592,62 @@ namespace patchcraft
                                  static_cast<juce::Component*> (&containerSelectChildBtn),
                                  static_cast<juce::Component*> (&containerAddTabBtn),
                                  static_cast<juce::Component*> (&containerRemoveTabBtn) })
-            component->setVisible (showContainerManager);
-        lblContainerManager.setVisible (showContainerManager);
-        lblContainerChildren.setVisible (showContainerManager);
-        containerAddTabBtn.setVisible (showContainerManager && isTabPanel);
-        containerRemoveTabBtn.setVisible (showContainerManager && isTabPanel);
+            component->setVisible (showContainerManager && showAdvancedControls && isSectionOpen (InspectorSection::Container));
+        lblContainerManager.setVisible (showContainerManager && showAdvancedControls);
+        lblContainerChildren.setVisible (showContainerManager && showAdvancedControls && isSectionOpen (InspectorSection::Container));
+        containerAddTabBtn.setVisible (showContainerManager && showAdvancedControls && isSectionOpen (InspectorSection::Container) && isTabPanel);
+        containerRemoveTabBtn.setVisible (showContainerManager && showAdvancedControls && isSectionOpen (InspectorSection::Container) && isTabPanel);
 
-        if (showContainerManager)
+        if (showContainerManager && showAdvancedControls)
         {
             r.removeFromTop (6);
-            lblContainerManager.setBounds (r.removeFromTop (20).reduced (10, 0));
-            layoutRow (r, lblContainerChildren, &containerChildrenBox);
-            auto row = r.removeFromTop (34);
-            const int buttonW = juce::jmax (52, row.getWidth() / (isTabPanel ? 5 : 3));
-            containerAddSelectedBtn.setBounds (row.removeFromLeft (buttonW).reduced (2));
-            containerRemoveChildBtn.setBounds (row.removeFromLeft (buttonW).reduced (2));
-            containerSelectChildBtn.setBounds (row.removeFromLeft (buttonW).reduced (2));
-            if (isTabPanel)
+            sectionHeader (lblContainerManager, InspectorSection::Container, "CONTAINER MANAGER");
+            if (isSectionOpen (InspectorSection::Container))
             {
-                containerAddTabBtn.setBounds (row.removeFromLeft (buttonW).reduced (2));
-                containerRemoveTabBtn.setBounds (row.reduced (2));
+                layoutRow (r, lblContainerChildren, &containerChildrenBox);
+                auto row = r.removeFromTop (34);
+                const int buttonW = juce::jmax (52, row.getWidth() / (isTabPanel ? 5 : 3));
+                containerAddSelectedBtn.setBounds (row.removeFromLeft (buttonW).reduced (2));
+                containerRemoveChildBtn.setBounds (row.removeFromLeft (buttonW).reduced (2));
+                containerSelectChildBtn.setBounds (row.removeFromLeft (buttonW).reduced (2));
+                if (isTabPanel)
+                {
+                    containerAddTabBtn.setBounds (row.removeFromLeft (buttonW).reduced (2));
+                    containerRemoveTabBtn.setBounds (row.reduced (2));
+                }
             }
         }
 
         juce::ignoreUnused (isLabel);
 
         // Actions
-        r.removeFromTop (12);
-        lblActions.setBounds (r.removeFromTop (20).reduced (10, 0));
-        auto actions = r.removeFromTop (54).reduced (10, 4);
-        const int aw = juce::jmin (60, actions.getWidth() / 4);
-        btnDuplicate.setBounds (actions.removeFromLeft (aw));
-        btnDelete.setBounds    (actions.removeFromLeft (aw));
-        btnForward.setBounds   (actions.removeFromLeft (aw));
-        btnBackward.setBounds  (actions);
+        sectionHeader (lblActions, InspectorSection::Actions, "ACTIONS");
+        const bool actionsOpen = isSectionOpen (InspectorSection::Actions);
+        for (auto* component : { static_cast<juce::Component*> (&btnDuplicate),
+                                 static_cast<juce::Component*> (&btnCopy),
+                                 static_cast<juce::Component*> (&btnCopyNoParams),
+                                 static_cast<juce::Component*> (&btnPaste),
+                                 static_cast<juce::Component*> (&btnAllTabs),
+                                 static_cast<juce::Component*> (&btnDelete),
+                                 static_cast<juce::Component*> (&btnForward),
+                                 static_cast<juce::Component*> (&btnBackward),
+                                 static_cast<juce::Component*> (&copyTabsAsReferenceToggle) })
+            component->setVisible (actionsOpen);
+        if (actionsOpen)
+        {
+            auto actions = r.removeFromTop (30).reduced (10, 3);
+            const int aw = juce::jmax (48, juce::jmin (68, actions.getWidth() / 4));
+            btnDuplicate.setBounds (actions.removeFromLeft (aw));
+            btnCopy.setBounds      (actions.removeFromLeft (aw));
+            btnPaste.setBounds     (actions.removeFromLeft (aw));
+            btnAllTabs.setBounds   (actions.removeFromLeft (aw));
+            auto actions2 = r.removeFromTop (30).reduced (10, 3);
+            btnCopyNoParams.setBounds (actions2.removeFromLeft (aw * 2).reduced (0, 1));
+            btnDelete.setBounds    (actions2.removeFromLeft (aw).reduced (0, 1));
+            btnForward.setBounds   (actions2.removeFromLeft (aw).reduced (0, 1));
+            btnBackward.setBounds  (actions2.reduced (0, 1));
+            copyTabsAsReferenceToggle.setBounds (r.removeFromTop (26).reduced (10, 2));
+        }
     }
 
     void InspectorPanel::selectionChanged()
@@ -1031,6 +1705,7 @@ namespace patchcraft
             static_cast<juce::Component*> (&parameterBox),
             static_cast<juce::Component*> (&midiLearnButton),
             static_cast<juce::Component*> (&labelEdit),
+            static_cast<juce::Component*> (&actionEdit),
             static_cast<juce::Component*> (&valueFormatBox),
             static_cast<juce::Component*> (&styleBox),
             static_cast<juce::Component*> (&knobStyleBox),
@@ -1072,7 +1747,54 @@ namespace patchcraft
             static_cast<juce::Component*> (&stepEdit),
             static_cast<juce::Component*> (&valueTypeBox),
             static_cast<juce::Component*> (&smoothingSlider),
+            static_cast<juce::Component*> (&drumPatternBox),
+            static_cast<juce::Component*> (&drumTrackBox),
+            static_cast<juce::Component*> (&drumStepBox),
+            static_cast<juce::Component*> (&drumDivisionBox),
+            static_cast<juce::Component*> (&drumTracksSlider),
+            static_cast<juce::Component*> (&drumStepsSlider),
+            static_cast<juce::Component*> (&drumVelocitySlider),
+            static_cast<juce::Component*> (&drumGateSlider),
+            static_cast<juce::Component*> (&drumProbabilitySlider),
+            static_cast<juce::Component*> (&drumCellEnabledToggle),
+            static_cast<juce::Component*> (&drumApplyTrapRollBtn),
+            static_cast<juce::Component*> (&drumClearPatternBtn),
+            static_cast<juce::Component*> (&drumCopyPatternBtn),
+            static_cast<juce::Component*> (&drumPastePatternBtn),
+            static_cast<juce::Component*> (&drumDuplicatePatternBtn),
+            static_cast<juce::Component*> (&drumOpenPerformanceBtn),
+            static_cast<juce::Component*> (&mixerModeBox),
+            static_cast<juce::Component*> (&mixerChannelsSlider),
+            static_cast<juce::Component*> (&mixerLabelsEdit),
+            static_cast<juce::Component*> (&mixerVolumeParamsEdit),
+            static_cast<juce::Component*> (&mixerPanParamsEdit),
+            static_cast<juce::Component*> (&mixerMuteParamsEdit),
+            static_cast<juce::Component*> (&mixerSoloParamsEdit),
+            static_cast<juce::Component*> (&mixerHelpLabel),
+            static_cast<juce::Component*> (&macroTargetsEdit),
+            static_cast<juce::Component*> (&macroApplyBtn),
+            static_cast<juce::Component*> (&macroClearBtn),
+            static_cast<juce::Component*> (&modRoutesEdit),
+            static_cast<juce::Component*> (&modApplyBtn),
+            static_cast<juce::Component*> (&modClearBtn),
+            static_cast<juce::Component*> (&granularOnToggle),
+            static_cast<juce::Component*> (&granularFreezeToggle),
+            static_cast<juce::Component*> (&granularReverseToggle),
+            static_cast<juce::Component*> (&granularDirectionBox),
+            static_cast<juce::Component*> (&granularDensitySlider),
+            static_cast<juce::Component*> (&granularSizeSlider),
+            static_cast<juce::Component*> (&granularRandomSlider),
+            static_cast<juce::Component*> (&granularSpreadSlider),
+            static_cast<juce::Component*> (&granularScanSlider),
+            static_cast<juce::Component*> (&granularPitchSlider),
+            static_cast<juce::Component*> (&granularPanSlider),
+            static_cast<juce::Component*> (&granularTextureSlider),
             static_cast<juce::Component*> (&btnDuplicate),
+            static_cast<juce::Component*> (&btnCopy),
+            static_cast<juce::Component*> (&btnCopyNoParams),
+            static_cast<juce::Component*> (&btnPaste),
+            static_cast<juce::Component*> (&btnAllTabs),
+            static_cast<juce::Component*> (&copyTabsAsReferenceToggle),
             static_cast<juce::Component*> (&btnDelete),
             static_cast<juce::Component*> (&btnForward),
             static_cast<juce::Component*> (&btnBackward)
@@ -1087,6 +1809,8 @@ namespace patchcraft
             c->setEnabled (enabled);
             setTip (c, enabled ? juce::String() : "Select an element on the canvas or in Layers to enable this Inspector control.");
         }
+        btnPaste.setEnabled (owner.hasCopiedElements());
+        copyTabsAsReferenceToggle.setToggleState (owner.getCopySelectionToTabsAsReference(), juce::dontSendNotification);
 
         if (! enabled)
         {
@@ -1096,6 +1820,7 @@ namespace patchcraft
             wEdit.setText ("", juce::dontSendNotification);
             hEdit.setText ("", juce::dontSendNotification);
             labelEdit.setText ("", juce::dontSendNotification);
+            actionEdit.setText ("", juce::dontSendNotification);
             return;
         }
 
@@ -1120,6 +1845,7 @@ namespace patchcraft
         wEdit.setText (juce::String (el->width),  juce::dontSendNotification);
         hEdit.setText (juce::String (el->height), juce::dontSendNotification);
         labelEdit.setText (el->label, juce::dontSendNotification);
+        actionEdit.setText (el->action, juce::dontSendNotification);
         opacitySlider.setValue (juce::jlimit (0.0f, 1.0f, el->opacity) * 100.0f, juce::dontSendNotification);
         visibleToggle.setToggleState (el->visible, juce::dontSendNotification);
         lockedToggle.setToggleState (el->locked, juce::dontSendNotification);
@@ -1169,6 +1895,25 @@ namespace patchcraft
         backgroundColourEdit.setText (colourToHex (el->backgroundColour), juce::dontSendNotification);
         borderColourEdit.setText (colourToHex (el->borderColour), juce::dontSendNotification);
         accentColourEdit.setText (colourToHex (el->accentColour), juce::dontSendNotification);
+        const bool isPadElement = el->type == ElementType::DrumPad || el->type == ElementType::PadGrid;
+        const auto accentTip = isPadElement
+            ? juce::String ("Pad trigger/highlight color. Hardware MIDI, software keys, and mouse-triggered pads use this Accent Color in the Player.")
+            : juce::String ("Primary accent color for this element.");
+        lblAccentColour.setTooltip (accentTip);
+        accentColourEdit.setTooltip (accentTip);
+        accentColourButton.setTooltip (accentTip);
+        mixerModeBox.setSelectedId (el->mixerMode == "layers" ? 2
+                                  : el->mixerMode == "parameters" ? 3 : 1,
+                                  juce::dontSendNotification);
+        mixerChannelsSlider.setValue (juce::jlimit (1, 16, el->mixerChannels), juce::dontSendNotification);
+        mixerLabelsEdit.setText (el->mixerChannelLabels.joinIntoString ("\n"), juce::dontSendNotification);
+        mixerVolumeParamsEdit.setText (el->mixerVolumeParams.joinIntoString ("\n"), juce::dontSendNotification);
+        mixerPanParamsEdit.setText (el->mixerPanParams.joinIntoString ("\n"), juce::dontSendNotification);
+        mixerMuteParamsEdit.setText (el->mixerMuteParams.joinIntoString ("\n"), juce::dontSendNotification);
+        mixerSoloParamsEdit.setText (el->mixerSoloParams.joinIntoString ("\n"), juce::dontSendNotification);
+        refreshMacroControls();
+        refreshModMatrixControls();
+        refreshGranularControls();
 
         // Parameter box selection
         int matchId = 1;
@@ -1245,6 +1990,9 @@ namespace patchcraft
                 setComponentTooltip (*component, tip);
             }
         }
+
+        if (el->type == ElementType::DrumGrid)
+            refreshDrumControls();
     }
 
     void InspectorPanel::writeFromUi()
@@ -1259,6 +2007,7 @@ namespace patchcraft
         el->width  = juce::jmax (1, wEdit.getText().getIntValue());
         el->height = juce::jmax (1, hEdit.getText().getIntValue());
         el->label  = labelEdit.getText();
+        el->action = actionEdit.getText().trim();
         el->opacity = juce::jlimit (0.0f, 1.0f, (float) opacitySlider.getValue() * 0.01f);
         el->visible = visibleToggle.getToggleState();
         el->locked = lockedToggle.getToggleState();
@@ -1345,6 +2094,31 @@ namespace patchcraft
         if (valueFormatBox.getSelectedId() > 0)
             el->valueFormat = valueFormatBox.getText();
 
+        if (el->type == ElementType::DrumGrid)
+        {
+            el->drumPattern = juce::jlimit (0, 7, drumPatternBox.getSelectedId() - 1);
+            el->drumTracks = juce::jlimit (1, 16, juce::roundToInt (drumTracksSlider.getValue()));
+            el->drumSteps = juce::jlimit (1, 64, juce::roundToInt (drumStepsSlider.getValue()));
+
+            auto& block = ensureDrumMachineBlock();
+            block.values["dmPattern"] = (float) el->drumPattern;
+            block.values["dmTracks"] = (float) el->drumTracks;
+            block.values["dmSteps"] = (float) el->drumSteps;
+            block.values["dmTransport"] = 1.0f;
+        }
+
+        if (el->type == ElementType::Mixer)
+        {
+            el->mixerMode = mixerModeBox.getSelectedId() == 2 ? "layers"
+                           : mixerModeBox.getSelectedId() == 3 ? "parameters" : "auto";
+            el->mixerChannels = juce::jlimit (1, 16, juce::roundToInt (mixerChannelsSlider.getValue()));
+            el->mixerChannelLabels = linesPreservingChannelSlots (mixerLabelsEdit.getText());
+            el->mixerVolumeParams = linesPreservingChannelSlots (mixerVolumeParamsEdit.getText());
+            el->mixerPanParams = linesPreservingChannelSlots (mixerPanParamsEdit.getText());
+            el->mixerMuteParams = linesPreservingChannelSlots (mixerMuteParamsEdit.getText());
+            el->mixerSoloParams = linesPreservingChannelSlots (mixerSoloParamsEdit.getText());
+        }
+
         if (auto* p = owner.getProject().getParameters().find (el->parameterId))
         {
             p->min          = minEdit.getText().getFloatValue();
@@ -1363,6 +2137,579 @@ namespace patchcraft
                 owner.getProject().getLiveValues().setValue (p->id, newDefault);
         }
 
+        owner.propagateLinkedElementChange (el->id);
+        owner.getProject().notifyChanged();
+    }
+
+    void InspectorPanel::refreshMacroControls()
+    {
+        auto* el = owner.getProject().getLayout().find (owner.getSelectedElementId());
+        if (el == nullptr || el->type != ElementType::MacroControl)
+        {
+            macroTargetsEdit.setText ({}, juce::dontSendNotification);
+            return;
+        }
+
+        juce::StringArray lines;
+        const auto macroId = el->parameterId;
+        for (const auto& macro : owner.getProject().getDspGraph().macros)
+        {
+            if (macro.macroId != macroId)
+                continue;
+
+            lines.add (macro.targetId
+                + " " + juce::String (macro.targetMin, 3)
+                + " " + juce::String (macro.targetMax, 3)
+                + " " + juce::String (macro.curve, 3));
+        }
+
+        macroTargetsEdit.setText (lines.joinIntoString ("\n"), juce::dontSendNotification);
+    }
+
+    void InspectorPanel::writeMacroTargetsFromUi()
+    {
+        if (inhibitCallbacks) return;
+        auto* el = owner.getProject().getLayout().find (owner.getSelectedElementId());
+        if (el == nullptr || el->type != ElementType::MacroControl)
+            return;
+
+        auto& graph = owner.getProject().getDspGraph();
+        auto macroId = el->parameterId.trim();
+        if (macroId.isEmpty())
+        {
+            macroId = "macro_" + juce::String ((int) graph.macros.size() + 1);
+            el->parameterId = macroId;
+        }
+
+        auto blockExists = [&graph] (const juce::String& id)
+        {
+            for (const auto& block : graph.blocks)
+                if (block.id == id)
+                    return true;
+            return false;
+        };
+
+        if (owner.getProject().getParameters().find (macroId) == nullptr && ! blockExists (macroId))
+        {
+            DspBlock block;
+            block.id = macroId;
+            block.section = "mod";
+            block.type = "macro";
+            block.name = el->label.isNotEmpty() ? el->label : "Macro Control";
+            block.enabled = true;
+            block.values["value"] = 0.5f;
+            graph.blocks.push_back (std::move (block));
+        }
+
+        graph.macros.erase (std::remove_if (graph.macros.begin(), graph.macros.end(),
+            [&macroId] (const MacroAssignment& macro) { return macro.macroId == macroId; }),
+            graph.macros.end());
+
+        juce::StringArray lines;
+        lines.addLines (macroTargetsEdit.getText());
+        int index = 1;
+        for (auto line : lines)
+        {
+            line = line.trim();
+            if (line.isEmpty())
+                continue;
+
+            juce::String normalised = line.replace ("->", " ")
+                                         .replace (":", " ")
+                                         .replace (",", " ");
+            juce::StringArray tokens;
+            tokens.addTokens (normalised, " \t", "\"'");
+            tokens.removeEmptyStrings (true);
+            if (tokens.isEmpty())
+                continue;
+
+            const auto targetId = tokens[0].trim();
+            const auto* targetParam = owner.getProject().getParameters().find (targetId);
+            const bool targetBlockExists = blockExists (targetId);
+            if (targetParam == nullptr && ! targetBlockExists)
+                continue;
+
+            MacroAssignment macro;
+            macro.id = macroId + "_to_" + targetId + "_" + juce::String (index++);
+            macro.macroId = macroId;
+            macro.targetId = targetId;
+            macro.sourceMin = 0.0f;
+            macro.sourceMax = 1.0f;
+            const float fallbackMin = targetParam != nullptr ? targetParam->min : 0.0f;
+            const float fallbackMax = targetParam != nullptr ? targetParam->max : 1.0f;
+            macro.targetMin = tokens.size() > 1 ? tokens[1].getFloatValue() : fallbackMin;
+            macro.targetMax = tokens.size() > 2 ? tokens[2].getFloatValue() : fallbackMax;
+            macro.curve = tokens.size() > 3 ? juce::jmax (0.05f, tokens[3].getFloatValue()) : 1.0f;
+            graph.macros.push_back (std::move (macro));
+        }
+
+        graph.userConfigured = true;
+        owner.getProject().notifyChanged();
+        refreshMacroControls();
+    }
+
+    void InspectorPanel::refreshModMatrixControls()
+    {
+        auto* el = owner.getProject().getLayout().find (owner.getSelectedElementId());
+        if (el == nullptr || el->type != ElementType::ModMatrix)
+        {
+            modRoutesEdit.setText ({}, juce::dontSendNotification);
+            return;
+        }
+
+        juce::StringArray lines;
+        for (const auto& route : owner.getProject().getDspGraph().modulation)
+        {
+            lines.add (route.sourceId + " -> " + route.targetId
+                + " " + juce::String (route.amount, 3)
+                + " " + juce::String (route.smoothing, 3)
+                + " " + (route.enabled ? "on" : "off"));
+        }
+        modRoutesEdit.setText (lines.joinIntoString ("\n"), juce::dontSendNotification);
+    }
+
+    void InspectorPanel::writeModRoutesFromUi()
+    {
+        if (inhibitCallbacks) return;
+
+        auto& graph = owner.getProject().getDspGraph();
+        auto nodeExists = [this, &graph] (const juce::String& id)
+        {
+            if (owner.getProject().getParameters().find (id) != nullptr)
+                return true;
+            for (const auto& block : graph.blocks)
+                if (block.id == id)
+                    return true;
+            return false;
+        };
+
+        std::vector<ModRoute> routes;
+        juce::StringArray lines;
+        lines.addLines (modRoutesEdit.getText());
+        int index = 1;
+        for (auto line : lines)
+        {
+            line = line.trim();
+            if (line.isEmpty())
+                continue;
+
+            juce::String normalised = line.replace ("->", " ")
+                                         .replace (":", " ")
+                                         .replace (",", " ");
+            juce::StringArray tokens;
+            tokens.addTokens (normalised, " \t", "\"'");
+            tokens.removeEmptyStrings (true);
+            if (tokens.size() < 2)
+                continue;
+
+            const auto sourceId = tokens[0].trim();
+            const auto targetId = tokens[1].trim();
+            if (! nodeExists (sourceId) || ! nodeExists (targetId))
+                continue;
+
+            ModRoute route;
+            route.id = sourceId + "_to_" + targetId + "_" + juce::String (index++);
+            route.sourceId = sourceId;
+            route.targetId = targetId;
+            route.amount = tokens.size() > 2 ? tokens[2].getFloatValue() : 0.25f;
+            route.smoothing = tokens.size() > 3 ? juce::jmax (0.0f, tokens[3].getFloatValue()) : 0.02f;
+            route.enabled = tokens.size() > 4 ? ! tokens[4].equalsIgnoreCase ("off") : true;
+            routes.push_back (std::move (route));
+        }
+
+        graph.modulation = std::move (routes);
+        graph.userConfigured = true;
+        owner.getProject().notifyChanged();
+        refreshModMatrixControls();
+    }
+
+    float InspectorPanel::granularValue (const juce::String& parameterId, float fallback) const
+    {
+        const auto* def = owner.getProject().getParameters().find (parameterId);
+        return owner.getProject().getLiveValues().getValue (parameterId, def != nullptr ? def->defaultValue : fallback);
+    }
+
+    void InspectorPanel::setGranularValue (const juce::String& parameterId, float value, bool notify)
+    {
+        auto* def = owner.getProject().getParameters().find (parameterId);
+        if (def != nullptr)
+            value = juce::jlimit (def->min, def->max, value);
+
+        owner.getProject().getLiveValues().setValue (parameterId, value);
+        if (notify)
+            owner.getProject().notifyChanged();
+    }
+
+    void InspectorPanel::refreshGranularControls()
+    {
+        const juce::ScopedValueSetter<bool> s (inhibitCallbacks, true);
+        auto* el = owner.getProject().getLayout().find (owner.getSelectedElementId());
+        if (el == nullptr || el->type != ElementType::GranularField)
+            return;
+
+        granularOnToggle.setToggleState (granularValue ("granularOn", 0.0f) >= 0.5f, juce::dontSendNotification);
+        granularFreezeToggle.setToggleState (granularValue ("granularFreeze", 0.0f) >= 0.5f, juce::dontSendNotification);
+        granularReverseToggle.setToggleState (granularValue ("granularReverse", 0.0f) >= 0.5f, juce::dontSendNotification);
+        granularDirectionBox.setSelectedId (juce::jlimit (1, 4, juce::roundToInt (granularValue ("granularDirection", 3.0f)) + 1),
+                                            juce::dontSendNotification);
+        granularDensitySlider.setValue (granularValue ("granularDensity", 24.0f), juce::dontSendNotification);
+        granularSizeSlider.setValue (granularValue ("granularSizeMs", 90.0f), juce::dontSendNotification);
+        granularRandomSlider.setValue (granularValue ("granularSizeRandom", 0.25f) * 100.0f, juce::dontSendNotification);
+        granularSpreadSlider.setValue (granularValue ("granularSpread", 0.18f) * 100.0f, juce::dontSendNotification);
+        granularScanSlider.setValue (granularValue ("granularScan", 0.0f), juce::dontSendNotification);
+        granularPitchSlider.setValue (granularValue ("granularPitchSpread", 0.0f), juce::dontSendNotification);
+        granularPanSlider.setValue (granularValue ("granularPanSpread", 0.45f) * 100.0f, juce::dontSendNotification);
+        granularTextureSlider.setValue (granularValue ("granularTexture", 0.20f) * 100.0f, juce::dontSendNotification);
+    }
+
+    void InspectorPanel::writeGranularControlsFromUi()
+    {
+        if (inhibitCallbacks)
+            return;
+
+        auto* el = owner.getProject().getLayout().find (owner.getSelectedElementId());
+        if (el == nullptr || el->type != ElementType::GranularField)
+            return;
+
+        setGranularValue ("granularOn", granularOnToggle.getToggleState() ? 1.0f : 0.0f, false);
+        setGranularValue ("granularFreeze", granularFreezeToggle.getToggleState() ? 1.0f : 0.0f, false);
+        setGranularValue ("granularReverse", granularReverseToggle.getToggleState() ? 1.0f : 0.0f, false);
+        setGranularValue ("granularDirection", (float) juce::jlimit (0, 3, granularDirectionBox.getSelectedId() - 1), false);
+        setGranularValue ("granularDensity", (float) granularDensitySlider.getValue(), false);
+        setGranularValue ("granularSizeMs", (float) granularSizeSlider.getValue(), false);
+        setGranularValue ("granularSizeRandom", (float) granularRandomSlider.getValue() * 0.01f, false);
+        setGranularValue ("granularSpread", (float) granularSpreadSlider.getValue() * 0.01f, false);
+        setGranularValue ("granularScan", (float) granularScanSlider.getValue(), false);
+        setGranularValue ("granularPitchSpread", (float) granularPitchSlider.getValue(), false);
+        setGranularValue ("granularPanSpread", (float) granularPanSlider.getValue() * 0.01f, false);
+        setGranularValue ("granularTexture", (float) granularTextureSlider.getValue() * 0.01f, false);
+
+        owner.getProject().notifyChanged();
+    }
+
+    DspBlock* InspectorPanel::findDrumMachineBlock()
+    {
+        for (auto& block : owner.getProject().getDspGraph().blocks)
+            if (isDrumMachineBlock (block))
+                return &block;
+        return nullptr;
+    }
+
+    const DspBlock* InspectorPanel::findDrumMachineBlock() const
+    {
+        for (const auto& block : owner.getProject().getDspGraph().blocks)
+            if (isDrumMachineBlock (block))
+                return &block;
+        return nullptr;
+    }
+
+    DspBlock& InspectorPanel::ensureDrumMachineBlock()
+    {
+        if (auto* existing = findDrumMachineBlock())
+            return *existing;
+
+        DspBlock block;
+        block.section = "mod";
+        block.type = "drumMachine";
+        block.name = "Drum Machine Performance";
+        block.targetId = "midiDrumMachine";
+        block.enabled = true;
+
+        auto idAvailable = [this] (const juce::String& id)
+        {
+            for (const auto& existing : owner.getProject().getDspGraph().blocks)
+                if (existing.id == id)
+                    return false;
+            return true;
+        };
+
+        block.id = "midi_drum_machine";
+        int suffix = 2;
+        while (! idAvailable (block.id))
+            block.id = "midi_drum_machine_" + juce::String (suffix++);
+
+        block.values["dmTracks"] = 8.0f;
+        block.values["dmSteps"] = 16.0f;
+        block.values["dmPattern"] = 0.0f;
+        block.values["dmTransport"] = 1.0f;
+        block.values["dmSwing"] = 0.08f;
+        block.values["dmProbability"] = 1.0f;
+        block.values["dmGate"] = 0.65f;
+        block.values["rate"] = 1.0f;
+        block.values["sync"] = 1.0f;
+        block.values["enabled"] = 1.0f;
+
+        for (int track = 0; track < 16; ++track)
+        {
+            block.values["dmTrack" + juce::String (track) + "Note"] = (float) defaultDrumTrackNote (track);
+            block.metadata["dmTrack" + juce::String (track) + "Label"] = defaultDrumTrackLabel (track);
+        }
+
+        auto& blocks = owner.getProject().getDspGraph().blocks;
+        blocks.push_back (std::move (block));
+        owner.getProject().getDspGraph().userConfigured = true;
+        return blocks.back();
+    }
+
+    juce::String InspectorPanel::drumPrefix (int pattern, int track, int step) const
+    {
+        return "dmP" + juce::String (juce::jlimit (0, 7, pattern))
+             + "T" + juce::String (juce::jlimit (0, 15, track))
+             + "S" + juce::String (juce::jlimit (0, 63, step));
+    }
+
+    float InspectorPanel::drumValue (const juce::String& key, float fallback) const
+    {
+        if (const auto* block = findDrumMachineBlock())
+            return valueForBlockKey (*block, key, fallback);
+        return fallback;
+    }
+
+    void InspectorPanel::setDrumValue (const juce::String& key, float value, bool notify)
+    {
+        auto& block = ensureDrumMachineBlock();
+        block.values[key] = value;
+        owner.getProject().getDspGraph().userConfigured = true;
+        if (notify)
+            owner.getProject().notifyChanged();
+        else
+            owner.getProject().markDirty();
+    }
+
+    void InspectorPanel::refreshDrumControls()
+    {
+        auto* el = owner.getProject().getLayout().find (owner.getSelectedElementId());
+        if (el == nullptr || el->type != ElementType::DrumGrid)
+            return;
+
+        const juce::ScopedValueSetter<bool> s (inhibitCallbacks, true);
+        const auto* block = findDrumMachineBlock();
+        const int tracks = juce::jlimit (1, 16, juce::roundToInt (block != nullptr
+            ? valueForBlockKey (*block, "dmTracks", (float) el->drumTracks)
+            : (float) el->drumTracks));
+        const int steps = juce::jlimit (1, 64, juce::roundToInt (block != nullptr
+            ? valueForBlockKey (*block, "dmSteps", (float) el->drumSteps)
+            : (float) el->drumSteps));
+        const int pattern = juce::jlimit (0, 7, juce::roundToInt (block != nullptr
+            ? valueForBlockKey (*block, "dmPattern", (float) el->drumPattern)
+            : (float) el->drumPattern));
+
+        drumPatternBox.setSelectedId (pattern + 1, juce::dontSendNotification);
+        drumTracksSlider.setValue (tracks, juce::dontSendNotification);
+        drumStepsSlider.setValue (steps, juce::dontSendNotification);
+
+        const int track = juce::jlimit (0, tracks - 1, juce::jmax (0, drumTrackBox.getSelectedId() - 1));
+        const int step = juce::jlimit (0, steps - 1, juce::jmax (0, drumStepBox.getSelectedId() - 1));
+        drumTrackBox.setSelectedId (track + 1, juce::dontSendNotification);
+        drumStepBox.setSelectedId (step + 1, juce::dontSendNotification);
+
+        const auto prefix = drumPrefix (pattern, track, step);
+        const auto trackFxTargetKey = "dmTrack" + juce::String (track) + "FxTarget";
+        const auto trackFxAmountKey = "dmTrack" + juce::String (track) + "FxAmount";
+        drumPadFxTargetBox.setSelectedId (juce::jlimit (1, 9,
+            juce::roundToInt (drumValue (trackFxTargetKey, 0.0f)) + 1),
+            juce::dontSendNotification);
+        drumPadFxAmountSlider.setValue (juce::jlimit (0.0f, 1.0f,
+            drumValue (trackFxAmountKey, 0.0f)) * 100.0f,
+            juce::dontSendNotification);
+        drumCellEnabledToggle.setToggleState (drumValue (prefix + "On", 0.0f) >= 0.5f,
+                                              juce::dontSendNotification);
+        drumVelocitySlider.setValue (juce::jlimit (0.0f, 1.0f, drumValue (prefix + "Vel", 0.82f)) * 100.0f,
+                                     juce::dontSendNotification);
+        drumGateSlider.setValue (juce::jlimit (0.05f, 1.0f, drumValue (prefix + "Gate", 0.65f)) * 100.0f,
+                                 juce::dontSendNotification);
+        drumProbabilitySlider.setValue (juce::jlimit (0.0f, 1.0f, drumValue (prefix + "Prob", 1.0f)) * 100.0f,
+                                        juce::dontSendNotification);
+        drumDivisionBox.setSelectedId (juce::jlimit (1, 4, juce::roundToInt (drumValue (prefix + "Div", 1.0f))),
+                                       juce::dontSendNotification);
+        drumCellFxTargetBox.setSelectedId (juce::jlimit (1, 9,
+            juce::roundToInt (drumValue (prefix + "FxTarget", drumValue (trackFxTargetKey, 0.0f))) + 1),
+            juce::dontSendNotification);
+        drumCellFxAmountSlider.setValue (juce::jlimit (0.0f, 1.0f,
+            drumValue (prefix + "FxAmount", drumValue (trackFxAmountKey, 0.0f))) * 100.0f,
+            juce::dontSendNotification);
+        drumPastePatternBtn.setEnabled (hasDrumPatternClipboard);
+
+        const auto tip = "Edits Pattern " + juce::String (pattern + 1)
+                       + ", " + defaultDrumTrackLabel (track)
+                       + ", Step " + juce::String (step + 1)
+                       + ". Ctrl/Cmd-click a cell on the canvas cycles x1/x2/x3/x4 divisions; Shift/Alt-click toggles hits.";
+        for (auto* component : { static_cast<juce::Component*> (&drumCellEnabledToggle),
+                                 static_cast<juce::Component*> (&drumVelocitySlider),
+                                 static_cast<juce::Component*> (&drumGateSlider),
+                                 static_cast<juce::Component*> (&drumProbabilitySlider),
+                                 static_cast<juce::Component*> (&drumDivisionBox),
+                                 static_cast<juce::Component*> (&drumPadFxTargetBox),
+                                 static_cast<juce::Component*> (&drumPadFxAmountSlider),
+                                 static_cast<juce::Component*> (&drumCellFxTargetBox),
+                                 static_cast<juce::Component*> (&drumCellFxAmountSlider) })
+            setComponentTooltip (*component, tip);
+    }
+
+    void InspectorPanel::writeDrumGridElementFromUi()
+    {
+        if (inhibitCallbacks) return;
+        auto* el = owner.getProject().getLayout().find (owner.getSelectedElementId());
+        if (el == nullptr || el->type != ElementType::DrumGrid)
+            return;
+
+        el->drumPattern = juce::jlimit (0, 7, drumPatternBox.getSelectedId() - 1);
+        el->drumTracks = juce::jlimit (1, 16, juce::roundToInt (drumTracksSlider.getValue()));
+        el->drumSteps = juce::jlimit (1, 64, juce::roundToInt (drumStepsSlider.getValue()));
+
+        auto& block = ensureDrumMachineBlock();
+        block.values["dmPattern"] = (float) el->drumPattern;
+        block.values["dmTracks"] = (float) el->drumTracks;
+        block.values["dmSteps"] = (float) el->drumSteps;
+        block.values["dmTransport"] = 1.0f;
+        owner.getProject().getDspGraph().userConfigured = true;
+        owner.getProject().notifyChanged();
+    }
+
+    void InspectorPanel::writeDrumTrackFxFromUi()
+    {
+        if (inhibitCallbacks) return;
+        auto* el = owner.getProject().getLayout().find (owner.getSelectedElementId());
+        if (el == nullptr || el->type != ElementType::DrumGrid)
+            return;
+
+        const int track = juce::jlimit (0, 15, drumTrackBox.getSelectedId() - 1);
+        auto& block = ensureDrumMachineBlock();
+        block.values["dmTrack" + juce::String (track) + "FxTarget"] =
+            (float) juce::jlimit (0, 8, drumPadFxTargetBox.getSelectedId() - 1);
+        block.values["dmTrack" + juce::String (track) + "FxAmount"] =
+            juce::jlimit (0.0f, 1.0f, (float) drumPadFxAmountSlider.getValue() * 0.01f);
+        owner.getProject().getDspGraph().userConfigured = true;
+        owner.getProject().notifyChanged();
+    }
+
+    void InspectorPanel::writeDrumCellFromUi()
+    {
+        if (inhibitCallbacks) return;
+        auto* el = owner.getProject().getLayout().find (owner.getSelectedElementId());
+        if (el == nullptr || el->type != ElementType::DrumGrid)
+            return;
+
+        const int pattern = juce::jlimit (0, 7, drumPatternBox.getSelectedId() - 1);
+        const int track = juce::jlimit (0, 15, drumTrackBox.getSelectedId() - 1);
+        const int step = juce::jlimit (0, 63, drumStepBox.getSelectedId() - 1);
+        const auto prefix = drumPrefix (pattern, track, step);
+        auto& block = ensureDrumMachineBlock();
+        block.values[prefix + "On"] = drumCellEnabledToggle.getToggleState() ? 1.0f : 0.0f;
+        block.values[prefix + "Vel"] = juce::jlimit (0.0f, 1.0f, (float) drumVelocitySlider.getValue() * 0.01f);
+        block.values[prefix + "Gate"] = juce::jlimit (0.05f, 1.0f, (float) drumGateSlider.getValue() * 0.01f);
+        block.values[prefix + "Prob"] = juce::jlimit (0.0f, 1.0f, (float) drumProbabilitySlider.getValue() * 0.01f);
+        block.values[prefix + "Div"] = (float) juce::jlimit (1, 4, drumDivisionBox.getSelectedId());
+        block.values[prefix + "FxTarget"] = (float) juce::jlimit (0, 8, drumCellFxTargetBox.getSelectedId() - 1);
+        block.values[prefix + "FxAmount"] = juce::jlimit (0.0f, 1.0f, (float) drumCellFxAmountSlider.getValue() * 0.01f);
+        block.values["dmPattern"] = (float) pattern;
+        block.values["dmTracks"] = (float) juce::jlimit (1, 16, juce::roundToInt (drumTracksSlider.getValue()));
+        block.values["dmSteps"] = (float) juce::jlimit (1, 64, juce::roundToInt (drumStepsSlider.getValue()));
+        owner.getProject().getDspGraph().userConfigured = true;
+        owner.getProject().notifyChanged();
+    }
+
+    void InspectorPanel::clearCurrentDrumPattern()
+    {
+        const int pattern = juce::jlimit (0, 7, drumPatternBox.getSelectedId() - 1);
+        auto& block = ensureDrumMachineBlock();
+        for (int track = 0; track < 16; ++track)
+            for (int step = 0; step < 64; ++step)
+            {
+                const auto prefix = drumPrefix (pattern, track, step);
+                block.values[prefix + "On"] = 0.0f;
+                block.values[prefix + "Div"] = 1.0f;
+                block.values[prefix + "FxTarget"] = 0.0f;
+                block.values[prefix + "FxAmount"] = 0.0f;
+            }
+        owner.getProject().getDspGraph().userConfigured = true;
+        owner.getProject().notifyChanged();
+    }
+
+    void InspectorPanel::copyCurrentDrumPattern()
+    {
+        const int pattern = juce::jlimit (0, 7, drumPatternBox.getSelectedId() - 1);
+        const auto head = "dmP" + juce::String (pattern);
+        drumPatternClipboard.clear();
+        if (const auto* block = findDrumMachineBlock())
+        {
+            for (const auto& entry : block->values)
+                if (entry.first.startsWith (head))
+                    drumPatternClipboard[entry.first.substring (head.length())] = entry.second;
+        }
+        drumPatternClipboardTracks = juce::jlimit (1, 16, juce::roundToInt (drumTracksSlider.getValue()));
+        drumPatternClipboardSteps = juce::jlimit (1, 64, juce::roundToInt (drumStepsSlider.getValue()));
+        hasDrumPatternClipboard = true;
+        drumPastePatternBtn.setEnabled (true);
+    }
+
+    void InspectorPanel::pasteCurrentDrumPattern()
+    {
+        if (! hasDrumPatternClipboard)
+            return;
+
+        const int pattern = juce::jlimit (0, 7, drumPatternBox.getSelectedId() - 1);
+        auto& block = ensureDrumMachineBlock();
+        for (int track = 0; track < 16; ++track)
+            for (int step = 0; step < 64; ++step)
+            {
+                const auto prefix = drumPrefix (pattern, track, step);
+                block.values[prefix + "On"] = 0.0f;
+                block.values[prefix + "Div"] = 1.0f;
+            }
+        for (const auto& entry : drumPatternClipboard)
+            block.values["dmP" + juce::String (pattern) + entry.first] = entry.second;
+        block.values["dmTracks"] = (float) juce::jlimit (1, 16, drumPatternClipboardTracks);
+        block.values["dmSteps"] = (float) juce::jlimit (1, 64, drumPatternClipboardSteps);
+        owner.getProject().getDspGraph().userConfigured = true;
+        owner.getProject().notifyChanged();
+    }
+
+    void InspectorPanel::duplicateCurrentDrumPatternToNext()
+    {
+        copyCurrentDrumPattern();
+        const int current = juce::jlimit (0, 7, drumPatternBox.getSelectedId() - 1);
+        {
+            const juce::ScopedValueSetter<bool> s (inhibitCallbacks, true);
+            drumPatternBox.setSelectedId ((current + 1) % 8 + 1, juce::dontSendNotification);
+        }
+        pasteCurrentDrumPattern();
+    }
+
+    void InspectorPanel::applyTrapRollToCurrentPattern()
+    {
+        const int pattern = juce::jlimit (0, 7, drumPatternBox.getSelectedId() - 1);
+        const int tracks = juce::jlimit (1, 16, juce::roundToInt (drumTracksSlider.getValue()));
+        const int steps = juce::jlimit (1, 64, juce::roundToInt (drumStepsSlider.getValue()));
+        auto& block = ensureDrumMachineBlock();
+        const int hatTrack = juce::jlimit (0, tracks - 1, 2);
+        const int percTrack = juce::jlimit (0, tracks - 1, 6);
+
+        for (int step = 0; step < steps; ++step)
+        {
+            if (step % 2 == 0)
+            {
+                const auto prefix = drumPrefix (pattern, hatTrack, step);
+                block.values[prefix + "On"] = 1.0f;
+                block.values[prefix + "Vel"] = step % 8 == 0 ? 0.86f : 0.64f;
+                block.values[prefix + "Gate"] = 0.28f;
+                block.values[prefix + "Prob"] = 0.96f;
+                block.values[prefix + "Div"] = (step % 16 == 14) ? 4.0f
+                                             : (step % 8 == 6) ? 3.0f
+                                             : (step % 4 == 2) ? 2.0f : 1.0f;
+            }
+            if (tracks > 6 && (step == steps / 2 - 1 || step == steps - 2 || step == steps - 1))
+            {
+                const auto prefix = drumPrefix (pattern, percTrack, step);
+                block.values[prefix + "On"] = 1.0f;
+                block.values[prefix + "Vel"] = step == steps - 1 ? 0.74f : 0.58f;
+                block.values[prefix + "Gate"] = 0.42f;
+                block.values[prefix + "Prob"] = 0.88f;
+                block.values[prefix + "Div"] = step == steps - 1 ? 4.0f : 2.0f;
+            }
+        }
+
+        owner.getProject().getDspGraph().userConfigured = true;
         owner.getProject().notifyChanged();
     }
 

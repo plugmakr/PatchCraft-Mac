@@ -16,6 +16,7 @@ namespace patchcraft
 
         void paint (juce::Graphics&) override;
         void resized() override;
+        void addSliderToLibrary();
 
     private:
         StudioMainComponent& owner;
@@ -45,7 +46,6 @@ namespace patchcraft
         bool writeSliderSourceJson (const juce::File&, bool verticalStrip, juce::String& error) const;
         void exportSliderFilmstrip();
         void exportSliderSourceJson();
-        void addSliderToLibrary();
     };
 
 } // namespace patchcraft

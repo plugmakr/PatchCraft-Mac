@@ -31,12 +31,15 @@ namespace patchcraft
         // doesn't break the wiring.
         struct TabSpec { juce::TextButton* btn; int pageIndex; };
         const TabSpec specs[] = {
+            { &tabWorkflow, (int) BottomPanel::Page::Workflow },
             { &tabDesign,   (int) BottomPanel::Page::Design },
             { &tabMapper,   (int) BottomPanel::Page::SampleMapper },
+            { &tabOneShot,  (int) BottomPanel::Page::OneShotMaker },
             { &tabMidi,     (int) BottomPanel::Page::MidiPlayground },
             { &tabDSP,      (int) BottomPanel::Page::DSP },
             { &tabBuild,    (int) BottomPanel::Page::Build },
-            { &tabBranding, (int) BottomPanel::Page::Branding }
+            { &tabBranding, (int) BottomPanel::Page::Branding },
+            { &tabLaunch,   (int) BottomPanel::Page::Launch }
         };
         for (const auto& s : specs)
         {
@@ -50,7 +53,7 @@ namespace patchcraft
             b->onClick = [this, captured] { onSectionTabClick (captured); };
             addAndMakeVisible (*b);
         }
-        tabDesign.setToggleState (true, juce::dontSendNotification);
+        tabWorkflow.setToggleState (true, juce::dontSendNotification);
 
         patchSeparator.setText ("|", juce::dontSendNotification);
         patchSeparator.setJustificationType (juce::Justification::centred);
@@ -94,14 +97,25 @@ namespace patchcraft
         snapBox.onChange = [this] { applySelectedSnap(); };
         addAndMakeVisible (snapBox);
 
-        const int zooms[] = { 25, 50, 75, 100, 125, 150, 200 };
+        const int zooms[] = { 10, 25, 33, 50, 67, 75, 90, 100, 110, 125, 150, 175, 200, 300, 400 };
         int zid = 1;
         for (int z : zooms) zoomBox.addItem (juce::String (z) + " %", zid++);
-        zoomBox.setSelectedId (4, juce::dontSendNotification); // = 100% (we'll fit on first show)
+        zoomBox.setSelectedId (8, juce::dontSendNotification); // = 100% (we'll fit on first show)
         zoomBox.onChange = [this] { applySelectedZoom(); };
         addAndMakeVisible (zoomBox);
 
-        fitBtn.onClick = [this] { canvas.fit(); };
+        canvasPropsBtn.getProperties().set ("smallButton", true);
+        canvasPropsBtn.getProperties().set ("fontSize", 11.0);
+        canvasPropsBtn.setTooltip ("Canvas properties: grid, snap, colours, zoom, and custom size.");
+        canvasPropsBtn.onClick = [this] { showCanvasProperties(); };
+        addAndMakeVisible (canvasPropsBtn);
+
+        fitBtn.onClick = [this]
+        {
+            canvas.fit();
+            refresh();
+            owner.refreshCanvasToolbar();
+        };
         addAndMakeVisible (fitBtn);
 
         // Alignment cluster: 6 align glyphs + 2 distribute + 1 order popup.
@@ -229,6 +243,24 @@ namespace patchcraft
         // distribute / order ops need 2+ or 3+ selected to do anything.
         const bool designActive = owner.getBottomTab() == BottomPanel::Page::Design;
         const int selectionCount = owner.getSelectedElementIds().size();
+
+        if (canvas.isAutoFitEnabled())
+        {
+            zoomBox.setText ("Fit", juce::dontSendNotification);
+        }
+        else
+        {
+            const int pct = juce::roundToInt (canvas.getZoom() * 100.0f);
+            int selectedZoomId = 0;
+            for (int i = 0; i < zoomBox.getNumItems(); ++i)
+                if (zoomBox.getItemText (i).startsWith (juce::String (pct)))
+                    selectedZoomId = zoomBox.getItemId (i);
+            if (selectedZoomId > 0)
+                zoomBox.setSelectedId (selectedZoomId, juce::dontSendNotification);
+            else
+                zoomBox.setText (juce::String (pct) + " %", juce::dontSendNotification);
+        }
+        snapBox.setEnabled (canvas.isSnapEnabled());
         alignmentVisible = designActive;
         for (auto& b : alignButtons)
         {
@@ -255,13 +287,16 @@ namespace patchcraft
     void CanvasToolbar::syncSectionTabFromOwner()
     {
         const auto p = owner.getBottomTab();
+        tabWorkflow.setToggleState (p == BottomPanel::Page::Workflow,       juce::dontSendNotification);
         tabDesign.setToggleState   (p == BottomPanel::Page::Design,         juce::dontSendNotification);
         tabMapper.setToggleState   (p == BottomPanel::Page::SampleMapper,   juce::dontSendNotification);
+        tabOneShot.setToggleState  (p == BottomPanel::Page::OneShotMaker,   juce::dontSendNotification);
         tabMidi  .setToggleState   (p == BottomPanel::Page::MidiPlayground, juce::dontSendNotification);
         tabDSP   .setToggleState   (p == BottomPanel::Page::DSP,            juce::dontSendNotification);
         tabBuild .setToggleState   (p == BottomPanel::Page::Build,          juce::dontSendNotification);
         tabBranding.setToggleState (p == BottomPanel::Page::Branding
                                   || p == BottomPanel::Page::Test,         juce::dontSendNotification);
+        tabLaunch.setToggleState   (p == BottomPanel::Page::Launch,         juce::dontSendNotification);
         refresh();
     }
 
@@ -323,13 +358,13 @@ namespace patchcraft
             bg->height = preset.h;
         }
         owner.getProject().notifyChanged();
-        canvas.fit();
+        canvas.setZoom (canvas.getZoom());
     }
 
     void CanvasToolbar::applySelectedZoom()
     {
         const int idx = zoomBox.getSelectedId() - 1;
-        const int zooms[] = { 25, 50, 75, 100, 125, 150, 200 };
+        const int zooms[] = { 10, 25, 33, 50, 67, 75, 90, 100, 110, 125, 150, 175, 200, 300, 400 };
         if (idx < 0 || idx >= (int) (sizeof (zooms) / sizeof (zooms[0]))) return;
         canvas.setZoom (zooms[idx] / 100.0f);
     }
@@ -340,6 +375,111 @@ namespace patchcraft
         const int idx = snapBox.getSelectedId() - 1;
         if (idx < 0 || idx >= (int) (sizeof (snaps) / sizeof (snaps[0]))) return;
         canvas.setSnap (snaps[idx]);
+    }
+
+    void CanvasToolbar::showCanvasProperties()
+    {
+        juce::PopupMenu menu;
+        menu.addItem (1, "Grid Visible", true, canvas.isGridVisible());
+        menu.addItem (2, "Snap Enabled", true, canvas.isSnapEnabled());
+        menu.addSeparator();
+        menu.addItem (3, "Grid Colour...");
+        menu.addItem (4, "Snap Colour...");
+        menu.addSeparator();
+        menu.addItem (5, "Zoom In  (Shift + Mouse Wheel)");
+        menu.addItem (6, "Zoom Out  (Shift + Mouse Wheel)");
+        menu.addItem (7, "Fit Canvas");
+        menu.addSeparator();
+        menu.addItem (8, "Custom Canvas Size...");
+
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&canvasPropsBtn),
+            [this] (int result)
+            {
+                if (result == 1)      canvas.setGridVisible (! canvas.isGridVisible());
+                else if (result == 2) canvas.setSnapEnabled (! canvas.isSnapEnabled());
+                else if (result == 3) showCanvasColourMenu (true);
+                else if (result == 4) showCanvasColourMenu (false);
+                else if (result == 5) canvas.setZoom (canvas.getZoom() * 1.15f);
+                else if (result == 6) canvas.setZoom (canvas.getZoom() * 0.85f);
+                else if (result == 7) canvas.fit();
+                else if (result == 8) showCanvasSizeDialog();
+
+                if (result > 0)
+                    refresh();
+            });
+    }
+
+    void CanvasToolbar::showCanvasColourMenu (bool chooseGridColour)
+    {
+        struct Swatch { int id; const char* name; juce::Colour colour; };
+        const Swatch swatches[] = {
+            { 1, "Studio Blue",  juce::Colour (0xff253449) },
+            { 2, "Warm Amber",   juce::Colour (0xff3b2a13) },
+            { 3, "Soft Grey",    juce::Colour (0xff252932) },
+            { 4, "Deep Purple",  juce::Colour (0xff2a2440) },
+            { 5, "Muted Green",  juce::Colour (0xff20372d) },
+            { 6, "Low Contrast", juce::Colour (0xff15181e) }
+        };
+
+        juce::PopupMenu menu;
+        for (const auto& swatch : swatches)
+            menu.addItem (swatch.id, swatch.name);
+
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&canvasPropsBtn),
+            [this, chooseGridColour, swatches] (int result)
+            {
+                for (const auto& swatch : swatches)
+                {
+                    if (swatch.id != result)
+                        continue;
+                    if (chooseGridColour) canvas.setGridColour (swatch.colour);
+                    else                  canvas.setSnapColour (swatch.colour.brighter (0.35f));
+                    break;
+                }
+            });
+    }
+
+    void CanvasToolbar::showCanvasSizeDialog()
+    {
+        const auto& cs = owner.getProject().getCanvasSize();
+        auto window = std::make_unique<juce::AlertWindow> ("Custom Canvas Size",
+                                                           "Set the canvas pixel size. Existing elements keep their positions and dimensions.",
+                                                           juce::AlertWindow::NoIcon);
+        auto* raw = window.get();
+        raw->addTextEditor ("width", juce::String (cs.width), "Width");
+        raw->addTextEditor ("height", juce::String (cs.height), "Height");
+        raw->addButton ("Apply", 1, juce::KeyPress (juce::KeyPress::returnKey));
+        raw->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+        raw->enterModalState (true,
+            juce::ModalCallbackFunction::create ([this, raw] (int result)
+            {
+                std::unique_ptr<juce::AlertWindow> cleanup (raw);
+                if (result != 1)
+                    return;
+
+                const int w = juce::jlimit (320, 4096, cleanup->getTextEditorContents ("width").getIntValue());
+                const int h = juce::jlimit (240, 4096, cleanup->getTextEditorContents ("height").getIntValue());
+                auto& csRef = owner.getProject().getCanvasSize();
+                if (csRef.width == w && csRef.height == h)
+                    return;
+
+                csRef.width = w;
+                csRef.height = h;
+                if (auto* bg = owner.getProject().getLayout().find ("background"))
+                {
+                    bg->x = 0;
+                    bg->y = 0;
+                    bg->width = w;
+                    bg->height = h;
+                }
+                owner.getProject().notifyChanged();
+                canvas.setZoom (canvas.getZoom());
+                refresh();
+            }),
+            false);
+        raw->setVisible (true);
+        window.release();
     }
 
     void CanvasToolbar::paint (juce::Graphics& g)
@@ -354,19 +494,22 @@ namespace patchcraft
         auto r = getLocalBounds().reduced (10, 4);
 
         canvasLabel.setBounds (r.removeFromLeft (54));
-        sizeBox.setBounds     (r.removeFromLeft (200));
-        r.removeFromLeft (10);
-        engineLabel.setBounds (r.removeFromLeft (46));
-        engineBox.setBounds   (r.removeFromLeft (100));
-        r.removeFromLeft (16);
+        sizeBox.setBounds     (r.removeFromLeft (180));
+        r.removeFromLeft (8);
+        engineLabel.setBounds (r.removeFromLeft (42));
+        engineBox.setBounds   (r.removeFromLeft (88));
+        r.removeFromLeft (12);
 
         // Section tabs (left of right cluster)
-        tabDesign.setBounds (r.removeFromLeft (74));
-        tabMapper.setBounds (r.removeFromLeft (110));
-        tabMidi  .setBounds (r.removeFromLeft (132));
-        tabDSP   .setBounds (r.removeFromLeft (104));
-        tabBuild .setBounds (r.removeFromLeft (60));
-        tabBranding.setBounds (r.removeFromLeft (96));
+        tabWorkflow.setBounds (r.removeFromLeft (66));
+        tabDesign.setBounds (r.removeFromLeft (52));
+        tabMapper.setBounds (r.removeFromLeft (62));
+        tabOneShot.setBounds (r.removeFromLeft (64));
+        tabMidi  .setBounds (r.removeFromLeft (44));
+        tabDSP   .setBounds (r.removeFromLeft (42));
+        tabBuild .setBounds (r.removeFromLeft (44));
+        tabBranding.setBounds (r.removeFromLeft (58));
+        tabLaunch.setBounds (r.removeFromLeft (58));
         if (owner.getBottomTab() == BottomPanel::Page::DSP)
         {
             patchSeparator.setBounds (r.removeFromLeft (14));
@@ -377,6 +520,8 @@ namespace patchcraft
 
         // Right cluster
         fitBtn.setBounds   (r.removeFromRight (60));
+        r.removeFromRight (4);
+        canvasPropsBtn.setBounds (r.removeFromRight (70));
         r.removeFromRight (4);
         zoomBox.setBounds  (r.removeFromRight (90));
         r.removeFromRight (12);

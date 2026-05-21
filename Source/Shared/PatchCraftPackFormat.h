@@ -35,4 +35,6 @@ namespace patchcraft
         const InstrumentPatch* findDefaultPatch() const;
     };
 
+    void ensurePresetBackedPatches (PatchCraftPack& pack, bool replaceExisting = false);
+
 } // namespace patchcraft

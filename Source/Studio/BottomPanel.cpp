@@ -14,6 +14,9 @@
 #include "BrandingLabPage.h"
 #include "DspPage.h"
 #include "MidiPlaygroundPage.h"
+#include "OneShotMakerPage.h"
+#include "WorkflowPage.h"
+#include "LaunchCenterPage.h"
 
 namespace patchcraft
 {
@@ -28,22 +31,22 @@ namespace patchcraft
 
     BottomPanel::BottomPanel (StudioMainComponent& o) : owner (o)
     {
+        // Workflow page -----------------------------------------------------
+        workflowPage = std::make_unique<WorkflowPage> (owner);
+        addAndMakeVisible (*workflowPage);
+
         // Design page -------------------------------------------------------
         designDspHeader.setText ("DSP QUICK EDIT", juce::dontSendNotification);
         designDspHeader.setFont (juce::Font (11.0f, juce::Font::bold));
         designDspHeader.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::text());
         addAndMakeVisible (designDspHeader);
 
-        designPresetsHeader.setText ("PRESETS", juce::dontSendNotification);
-        designPresetsHeader.setFont (juce::Font (11.0f, juce::Font::bold));
-        designPresetsHeader.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::text());
-        addAndMakeVisible (designPresetsHeader);
-
+        // The Presets list lives in the right tab panel (next to Layers and
+        // Inspector) now, so the bottom panel's Design page is just the DSP
+        // quick-edit grid at full width.
         parameters = std::make_unique<ParametersComponent> (owner);
-        presets    = std::make_unique<PresetsComponent>    (owner);
         designDspPage = std::make_unique<DspPage> (owner.getProject(), true, &owner);
         addAndMakeVisible (*designDspPage);
-        addAndMakeVisible (*presets);
 
         // Sample Mapper page ------------------------------------------------
         styleSubTab (btnMapperMain,     8810);
@@ -82,6 +85,10 @@ namespace patchcraft
         addChildComponent (*keyzones);
         addChildComponent (*velocityMap);
 
+        // One Shot Maker page ------------------------------------------------
+        oneShotMaker = std::make_unique<OneShotMakerPage> (owner);
+        addChildComponent (*oneShotMaker);
+
         // MIDI Playground page -----------------------------------------------
         midiPlayground = std::make_unique<MidiPlaygroundPage> (owner);
         addChildComponent (*midiPlayground);
@@ -102,6 +109,10 @@ namespace patchcraft
         // Branding Lab -------------------------------------------------------
         brandingLab = std::make_unique<BrandingLabPage> (owner);
         addChildComponent (*brandingLab);
+
+        // Launch Center ------------------------------------------------------
+        launchCenter = std::make_unique<LaunchCenterPage> (owner);
+        addChildComponent (*launchCenter);
 
         rebuildPageVisibility();
     }
@@ -165,10 +176,18 @@ namespace patchcraft
             dspPage->beginGuidedTutorial();
     }
 
+    void BottomPanel::addArpBlock()
+    {
+        currentPage = Page::DSP;
+        rebuildPageVisibility();
+        if (dspPage != nullptr)
+            dspPage->addArpBlock();
+    }
+
     void BottomPanel::refresh()
     {
+        if (workflowPage) workflowPage->refresh();
         if (parameters)  parameters->refresh();
-        if (presets)     presets->refresh();
         if (sampleMapper) sampleMapper->refresh();
         if (keyzones)    keyzones->refresh();
         if (velocityMap)
@@ -176,9 +195,11 @@ namespace patchcraft
             velocityMap->setZones (owner.getProject().getSampleMap().getZones());
             velocityMap->setSelectedZone (sampleMapper != nullptr ? sampleMapper->getSelectedZoneIndex() : -1);
         }
+        if (oneShotMaker) oneShotMaker->refresh();
         if (designDspPage) designDspPage->refresh();
         if (midiPlayground) midiPlayground->refresh();
         if (dspPage) dspPage->refresh();
+        if (launchCenter) launchCenter->refresh();
         repaint();
     }
 
@@ -192,21 +213,23 @@ namespace patchcraft
 
     void BottomPanel::rebuildPageVisibility()
     {
+        const bool workflow = currentPage == Page::Workflow;
         const bool design  = currentPage == Page::Design;
         const bool mapper  = currentPage == Page::SampleMapper;
+        const bool oneShot = currentPage == Page::OneShotMaker;
         const bool midi    = currentPage == Page::MidiPlayground;
         const bool dsp     = currentPage == Page::DSP;
         const bool build   = currentPage == Page::Build;
+        const bool launch  = currentPage == Page::Launch;
         // "Test" now routes to the Brand Lab — the developer's live test
         // environment is the same surface as their branding workspace.
         const bool brand   = currentPage == Page::Branding || currentPage == Page::Test;
         const bool test    = false;
 
+        if (workflowPage) workflowPage->setVisible (workflow);
         designDspHeader     .setVisible (design);
-        designPresetsHeader .setVisible (design);
         if (parameters) parameters->setVisible (false);
         if (designDspPage) designDspPage->setVisible (design);
-        if (presets)    presets   ->setVisible (design);
 
         btnMapperMain    .setVisible (mapper);
         btnMapperKeyzones.setVisible (mapper);
@@ -219,9 +242,11 @@ namespace patchcraft
             if (velocityMap)          velocityMap->setVisible (false);
         }
 
+        if (oneShotMaker) oneShotMaker->setVisible (oneShot);
         if (midiPlayground) midiPlayground->setVisible (midi);
         if (testPage) testPage->setVisible (test);
         if (dspPage) dspPage->setVisible (dsp);
+        if (launchCenter) launchCenter->setVisible (launch);
 
         if (builder) builder->setVisible (build);
         if (brandingLab)
@@ -263,18 +288,19 @@ namespace patchcraft
 
         switch (currentPage)
         {
+            case Page::Workflow:
+            {
+                if (workflowPage) workflowPage->setBounds (r);
+                break;
+            }
+
             case Page::Design:
             {
-                // Two columns: DSP quick edit (70%) + compact presets (30%).
-                const int leftW = juce::jmax (420, r.getWidth() * 7 / 10);
-                auto left  = r.removeFromLeft (leftW).reduced (4);
-                auto right = r.reduced (4);
-
-                designDspHeader.setBounds (left.removeFromTop (22));
-                if (designDspPage) designDspPage->setBounds (left);
-
-                designPresetsHeader.setBounds (right.removeFromTop (22));
-                if (presets) presets->setBounds (right);
+                // Presets now live in the right tab panel, so the DSP quick
+                // edit gets the full width of the bottom panel.
+                auto full = r.reduced (4);
+                designDspHeader.setBounds (full.removeFromTop (22));
+                if (designDspPage) designDspPage->setBounds (full);
                 break;
             }
 
@@ -297,6 +323,12 @@ namespace patchcraft
             case Page::MidiPlayground:
             {
                 if (midiPlayground) midiPlayground->setBounds (r);
+                break;
+            }
+
+            case Page::OneShotMaker:
+            {
+                if (oneShotMaker) oneShotMaker->setBounds (r);
                 break;
             }
 
@@ -324,6 +356,12 @@ namespace patchcraft
             case Page::Branding:
             {
                 if (brandingLab) brandingLab->setBounds (r);
+                break;
+            }
+
+            case Page::Launch:
+            {
+                if (launchCenter) launchCenter->setBounds (r);
                 break;
             }
         }

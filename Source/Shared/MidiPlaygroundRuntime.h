@@ -30,6 +30,7 @@ namespace patchcraft
         static constexpr int kMaxDrumPatterns = 8;
         static constexpr int kMaxDrumTracks = 16;
         static constexpr int kMaxDrumSteps = 64;
+        static constexpr int kDrumFxTargetCount = 9;
 
         struct Settings
         {
@@ -96,6 +97,11 @@ namespace patchcraft
             std::array<float, kMaxDrumPatterns * kMaxDrumTracks * kMaxDrumSteps> drumVelocities {};
             std::array<float, kMaxDrumPatterns * kMaxDrumTracks * kMaxDrumSteps> drumGates {};
             std::array<float, kMaxDrumPatterns * kMaxDrumTracks * kMaxDrumSteps> drumProbabilities {};
+            std::array<float, kMaxDrumPatterns * kMaxDrumTracks * kMaxDrumSteps> drumDivisions {};
+            std::array<float, kMaxDrumPatterns * kMaxDrumTracks * kMaxDrumSteps> drumFxTargets {};
+            std::array<float, kMaxDrumPatterns * kMaxDrumTracks * kMaxDrumSteps> drumFxAmounts {};
+            std::array<float, kMaxDrumTracks> drumTrackFxTargets {};
+            std::array<float, kMaxDrumTracks> drumTrackFxAmounts {};
         };
 
         bool enabled = false;
@@ -118,6 +124,8 @@ namespace patchcraft
         int pendingStep = -1;
         std::array<int, kMaxDrumTracks> activeDrumNotes {};
         std::array<double, kMaxDrumTracks> activeDrumGateEnds {};
+        std::array<int, kMaxDrumTracks> activeDrumSubSlots {};
+        std::array<float, kDrumFxTargetCount> drumFxState {};
 
         static bool isMidiPlaygroundBlock (const DspBlock&);
         static float valueForKey (const DspBlock&, const juce::String&, float fallback);
@@ -143,6 +151,8 @@ namespace patchcraft
         void stopActive (IInstrumentEngine&);
         void stopActiveDrums (IInstrumentEngine&);
         void processDrumMachine (IInstrumentEngine&, const RenderContext&);
+        void triggerDrumFx (IInstrumentEngine&, int target, float amount, float velocity);
+        void applyDrumFxState (IInstrumentEngine&);
         void startStep (IInstrumentEngine&, int step, double stepPhase, double swingDelay, double stepGate);
     };
 }

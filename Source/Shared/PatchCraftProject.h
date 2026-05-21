@@ -20,6 +20,12 @@ namespace patchcraft
     class PatchCraftProject
     {
     public:
+        enum class ChangeScope
+        {
+            structural,
+            dspRealtime
+        };
+
         PatchCraftProject();
 
         // ---- Project I/O ------------------------------------------------------
@@ -72,13 +78,15 @@ namespace patchcraft
                                  juce::String& error);
         ExpansionMetadata& ensureExpansion (const juce::String& idOrName);
 
-        // ---- Undo / redo (layout-only, coarse snapshot) --------------------
+        // ---- Undo / redo (coarse snapshots) -------------------------------
         juce::UndoManager& getUndoManager()              { return undoManager; }
 
         // Snapshot the current layout, run mutator, push action onto undo stack.
         // Action is named so the UI can show "Undo: <name>".
         void performLayoutEdit (const juce::String& actionName,
                                 std::function<void (LayoutModel&)> mutator);
+        void performSampleMapEdit (const juce::String& actionName,
+                                   std::function<void (SampleMap&)> mutator);
 
         bool canUndo() const { return undoManager.canUndo(); }
         bool canRedo() const { return undoManager.canRedo(); }
@@ -90,6 +98,7 @@ namespace patchcraft
         // Switch the project's engine. Replaces parameter palette and layout
         // with that engine's template. Destructive - undo via UndoManager.
         void setEngineType (const juce::String& engineId);
+        bool loadRuntimePackAsProject (const juce::File& packFolder, juce::String& error);
         juce::String getEngineType() const                  { return manifest.engine; }
 
         juce::File getAssetsFolder() const;
@@ -104,10 +113,11 @@ namespace patchcraft
         {
             virtual ~Listener() = default;
             virtual void projectChanged() {}
+            virtual void projectChanged (ChangeScope) { projectChanged(); }
         };
         void addListener (Listener* l)                  { listeners.add (l); }
         void removeListener (Listener* l)               { listeners.remove (l); }
-        void notifyChanged();
+        void notifyChanged (ChangeScope scope = ChangeScope::structural);
 
     private:
         juce::File   projectFolder;

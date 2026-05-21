@@ -1,0 +1,119 @@
+{
+  "formatVersion": 1,
+  "instrumentName": "Layered Performance Suite",
+  "creator": "PatchCraft",
+  "description": "A musical Layer Patch demo: synced drum loop, sub bassline, piano chords, guitar pulse, and atmospheric texture with real per-layer mixer and controls.",
+  "category": "Layer Patch",
+  "engine": "multi",
+  "backgroundImage": "assets/background.png",
+  "libraryThumbnail": "assets/thumbnail.png",
+  "defaultPreset": "Midnight Layer Jam",
+  "createdWith": "PatchCraft Studio",
+  "version": "1.0",
+  "playerDisplayName": "Layered Performance Suite",
+  "playerTagline": "Loop + Keys + Guitar + Bass + Drums",
+  "playerBackgroundColour": "ff03070b",
+  "playerPanelColour": "ff07121a",
+  "playerAccentColour": "ff39f5c8",
+  "playerTextColour": "fff2f7ff",
+  "playerTextDimColour": "ff8ba9b7",
+  "playerBorderColour": "ff1b4455",
+  "playerAllowMidiLearn": true,
+  "playerShowParameterGuidance": true,
+  "multiInstrumentMode": true,
+  "instrumentIds": [
+    "drums_layer",
+    "bass_layer",
+    "piano_layer",
+    "guitar_layer",
+    "texture_layer"
+  ],
+  "instrumentNames": [
+    "Drum Loop",
+    "Sub Bassline",
+    "Piano Chords",
+    "Guitar Pulse",
+    "Atmos Texture"
+  ],
+  "instrumentFiles": [
+    "instruments/drums_layer/mappings.json",
+    "instruments/bass_layer/mappings.json",
+    "instruments/piano_layer/mappings.json",
+    "instruments/guitar_layer/mappings.json",
+    "instruments/texture_layer/mappings.json"
+  ],
+  "instrumentVolumes": [
+    0.88,
+    0.68,
+    0.62,
+    0.54,
+    0.38
+  ],
+  "instrumentPans": [
+    0.0,
+    0.0,
+    -0.1,
+    0.18,
+    0.36
+  ],
+  "instrumentMidiChannels": [
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "instrumentOutputRoutes": [
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "instrumentTransposeSemitones": [
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "instrumentEnabled": [
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "instrumentAutoPlay": [
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "instrumentAutoPlayNotes": [
+    60,
+    60,
+    60,
+    60,
+    60
+  ],
+  "instrumentAutoPlayVelocities": [
+    1.0,
+    0.95,
+    0.9,
+    0.82,
+    0.78
+  ],
+  "tags": [
+    "factory-demo",
+    "layered",
+    "layer-patch",
+    "loop",
+    "piano",
+    "guitar",
+    "bass",
+    "drums",
+    "player-ready"
+  ]
+}

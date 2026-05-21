@@ -67,15 +67,49 @@ namespace patchcraft
         juce::TextButton selectAllBtn{ "Select All" };
         juce::TextButton clearAllBtn{ "Clear All" };
         juce::TextButton autoMapBtn{ "Auto Map" };
+        juce::ToggleButton spanOnDropToggle{ "Span on Drop" };
         juce::ComboBox   mapPresetBox;
         juce::TextButton zoomInBtn{ "+" };
         juce::TextButton zoomOutBtn{ "-" };
         juce::TextButton auditionBtn{ "Audition" };
         juce::TextButton stopAuditionBtn{ "Stop" };
+        juce::TextButton playModeBtn{ "Play Mode" };
         juce::ToggleButton loopToggle{ "Loop" };
         juce::TextButton fadeInBtn{ "+ Fade In" };
         juce::TextButton fadeOutBtn{ "+ Fade Out" };
         juce::TextButton zoomFitBtn{ "Fit" };
+
+        // Smart zone tools: one-click professional sample recipes for the
+        // currently selected zones. These keep Easy mode simple while giving
+        // Advanced mode a fast path for common sound-design edits.
+        juce::TextButton smartTrimBtn{ "Auto Trim" };
+        juce::TextButton smartDrumBtn{ "Drum One-Shot" };
+        juce::TextButton smartLoopBtn{ "Loop Pad" };
+        juce::TextButton smartVelLayerBtn{ "Velocity Layers" };
+        juce::TextButton smartRRBtn{ "Round Robin" };
+        juce::TextButton smartHumanizeBtn{ "Humanize" };
+        juce::TextButton smartResetBtn{ "Reset Edits" };
+
+        // Easy / Advanced workflow
+        bool easyMode = true;
+        juce::Rectangle<int> easyGuideBounds;
+        juce::TextButton easyModeBtn{ "Easy" };
+        juce::TextButton advancedModeBtn{ "Advanced" };
+        juce::Label easyTitleLabel{ "EasySampleTitle", "Easy Sample Builder" };
+        juce::Label easyHelpLabel{ "EasySampleHelp",
+                                   "Sampler is the sound source for sample-based instruments. Import samples, choose Keyboard / Drum / Slice mapping, Play Mapper, then Test in the Player. Advanced edits zones, velocity, round robin, fades, loops, and pad metadata." };
+        juce::Label easySummaryLabel{ "EasySampleSummary", "" };
+        juce::TextButton easyImportBtn{ "1  Import Samples" };
+        juce::ComboBox   easyMapTypeBox;
+        juce::TextButton easyKeyboardMapBtn{ "2  Build Map" };
+        juce::TextButton easyDrumKitBtn{ "2B Drum Kit" };
+        juce::TextButton easyGlitchKitBtn{ "2C Slice Kit" };
+        juce::TextButton easyRemixKitBtn{ "2D Remix Kit" };
+        juce::TextButton easyPlayModeBtn{ "3  Play Mapper" };
+        juce::TextButton easyAuditionBtn{ "Audition Selected" };
+        juce::TextButton easyStopBtn{ "Stop" };
+        juce::TextButton easyTestBtn{ "4  Test Player" };
+        juce::TextButton easyClearBtn{ "Clear" };
         
         // Info bar labels
         juce::Label keyRangeLabel{ "KeyRange", "Key Range: -" };
@@ -109,6 +143,7 @@ namespace patchcraft
             StepperControl (const juce::String& name);
             void resized() override;
             void setValue (int v, bool notify = true);
+            void setTooltip (const juce::String& tooltip);
         };
 
         // Bottom panel controls - Source section
@@ -127,6 +162,7 @@ namespace patchcraft
         
         // Zone editing steppers (for selected zone)
         StepperControl rrGroupStepper{ "RR Group" };
+        StepperControl rrIndexStepper{ "RR Index" };
         StepperControl rootStepper{ "Root" };
         StepperControl loKeyStepper{ "Low Key" };
         StepperControl hiKeyStepper{ "High Key" };
@@ -212,9 +248,12 @@ namespace patchcraft
         int dragStartRoot = 0;
         int dragStartLoVel = 1;
         int dragStartHiVel = 127;
+        std::vector<SampleZoneDef> dragZonesBefore;
+        bool dragChangedSampleMap = false;
         
         // MIDI learn for zone selection
         bool midiLearnMode = false;
+        bool midiCallbackActive = false;
 
         // Paint methods
         juce::Rectangle<int> editPanelBounds;
@@ -224,12 +263,25 @@ namespace patchcraft
         void paintHealthPanel (juce::Graphics& g, juce::Rectangle<int> bounds);
         void paintEditPanel (juce::Graphics& g, juce::Rectangle<int> bounds);
         void paintEditCard (juce::Graphics& g, juce::Rectangle<int> bounds, const juce::String& title);
+        void paintEasyGuide (juce::Graphics& g, juce::Rectangle<int> bounds);
+        void setEasyMode (bool shouldUseEasyMode);
+        void updateModeVisibility();
+        juce::String buildEasySummary();
+        bool ensureAuditionEngineForMap (juce::String& error);
+        void setPlayModeEnabled (bool enabled);
+        void triggerPreviewNoteOn (int midiNote, float velocity, bool selectMappedZone);
+        void triggerPreviewNoteOff (int midiNote);
+        void stopPreviewNotesOnly();
+        void updateMidiCallbackRegistration();
+        int noteAtKeyboardPosition (juce::Point<int> position) const;
         int padIndexAtPosition (juce::Point<int> position) const;
         int zoneIndexForPad (int padIndex) const;
 
         // Actions
         void addSample();
-        void importSampleFiles (const juce::Array<juce::File>& files);
+        void importSampleFiles (const juce::Array<juce::File>& files, bool spanMappedRoots = true);
+        void commitSampleMapEdit (const juce::String& actionName,
+                                  std::vector<SampleZoneDef> beforeZones);
 
         // FileDragAndDropTarget — accept WAV / AIFF / FLAC drops, including
         // folders (recurses one level deep collecting audio files).
@@ -244,6 +296,16 @@ namespace patchcraft
         void normalizeSelectedZones();
         void applyMapPreset (int presetId);
         void showEditMenu();
+        juce::Array<int> editableZoneIndexes() const;
+        void applySmartTrimToSelected();
+        void applyDrumOneShotRecipeToSelected();
+        void applySustainLoopRecipeToSelected();
+        void applyVelocityLayersToSelected();
+        void applyRoundRobinToSelected();
+        void applyHumanizeToSelected();
+        void selectAllRoundRobinAndHumanize();
+        void fabricateRoundRobinVariations (int variationCount = 4);
+        void resetPlaybackEditsForSelectedZones();
         void toggleReverseForSelected();
         void auditionSelectedZone();
         void stopAudition();
@@ -255,6 +317,10 @@ namespace patchcraft
         void chopSelectedZoneIntoSlices (int sliceCount);
         void chopSelectedZoneAtTransients (int maxSlices);
         void mergeSelectedZoneWithNext();
+        void showPrecisionSampleEditor();
+        void copySelectedZoneToClipboard();
+        void cutSelectedZoneToClipboard();
+        void pasteZoneClipboard();
         void resetSelectedZonePlaybackEdits();
         void setSelectedZoneBoundsToFullSample();
         void selectZoneForMidi (int note, int velocity);
@@ -268,6 +334,10 @@ namespace patchcraft
         int auditionChannels = 2;
         bool auditionCallbackActive = false;
         int auditionNote = -1;
+        bool playModeEnabled = false;
+        int mousePreviewNote = -1;
+        SampleZoneDef zoneClipboard;
+        bool hasZoneClipboard = false;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SampleMapEditor)
     };

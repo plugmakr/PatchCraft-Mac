@@ -54,13 +54,14 @@ namespace patchcraft
 
         // PatchCraftProject::Listener
         void projectChanged() override;
+        void projectChanged (PatchCraftProject::ChangeScope scope) override;
 
         // Timer
         void timerCallback() override;
 
         // Push every current live value into the engine.
         void syncAllValuesToEngine();
-        void syncRoutingFromProject();
+        void syncRoutingFromProject (bool preserveActiveNotes = false);
         juce::String makePlaybackStatusText();
         void refreshPlaybackStatus();
 

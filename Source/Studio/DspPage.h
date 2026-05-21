@@ -39,6 +39,10 @@ namespace patchcraft
         juce::String getCurrentPatchSectionId() const;
         juce::String getCurrentPatchSectionLabel() const;
         void beginGuidedTutorial();
+        // Programmatic equivalent of the BuilderPanel's "+ MIDI" button -
+        // switches the DSP builder to the MIDI tab and drops in a default
+        // arpeggiator block. Used by the canvas right-click "Add ARP" shortcut.
+        void addArpBlock();
         std::function<void()> onPatchSectionChanged;
 
     private:
@@ -86,7 +90,7 @@ namespace patchcraft
             juce::TextButton addMacroButton { "+ Macro" };
             juce::TextButton addModButton   { "+ Mod" };
             juce::TextButton addArpButton   { "+ MIDI" };
-            juce::TextButton addAutomationButton { "+ Auto" };
+            juce::TextButton addAutomationButton { "+ Automation" };
             juce::TextButton importSampleButton { "Import Sample" };
             juce::TextButton savePatchButton { "Save Patch" };
             juce::TextButton savePatchAsButton { "Save Patch As" };
@@ -136,6 +140,7 @@ namespace patchcraft
             explicit FxWaveformView (DspPage& owner);
             void paint (juce::Graphics&) override;
             void mouseDown (const juce::MouseEvent&) override;
+            void mouseDoubleClick (const juce::MouseEvent&) override;
             void mouseDrag (const juce::MouseEvent&) override;
             void mouseUp (const juce::MouseEvent&) override;
             DspPage& owner;
@@ -165,6 +170,7 @@ namespace patchcraft
             explicit SourceMatrixPanel (DspPage& owner);
             void paint (juce::Graphics&) override;
             void mouseDown (const juce::MouseEvent&) override;
+            void mouseDoubleClick (const juce::MouseEvent&) override;
             void mouseDrag (const juce::MouseEvent&) override;
             void mouseUp (const juce::MouseEvent&) override;
 
@@ -260,6 +266,32 @@ namespace patchcraft
             void setRowValueFromMouse (const juce::MouseEvent&);
         };
 
+        struct FormulaPanel : public juce::Component
+        {
+            explicit FormulaPanel (DspPage& owner);
+            void paint (juce::Graphics&) override;
+            void mouseDown (const juce::MouseEvent&) override;
+            void mouseDoubleClick (const juce::MouseEvent&) override;
+            void mouseDrag (const juce::MouseEvent&) override;
+            void mouseUp (const juce::MouseEvent&) override;
+
+        private:
+            struct HitZone
+            {
+                juce::Rectangle<int> bounds;
+                int blockIndex = -1;
+                int column = -1;
+            };
+
+            DspPage& owner;
+            std::vector<HitZone> hitZones;
+            HitZone activeHit;
+            bool draggingValue = false;
+
+            void selectBlock (int blockIndex);
+            void setValueFromMouse (const juce::MouseEvent&);
+        };
+
         struct MidiPlaygroundPanel : public juce::Component
         {
             explicit MidiPlaygroundPanel (DspPage& owner);
@@ -321,7 +353,11 @@ namespace patchcraft
         juce::ComboBox easyExpansionBox;
         juce::TextButton easyPackCreatorButton { "Pack Creator" };
         juce::TextButton easyAdvancedButton { "Open Advanced" };
+        juce::Label easyRecipeLabel;
+        juce::Label easyParametersLabel;
+        juce::Label easyWorkflowLabel;
         BuilderPanel builderPanel;
+        FormulaPanel formulaPanel { *this };
         SourceMatrixPanel sourceMatrix { *this };
         SurgicalEqPanel surgicalEqPanel { *this };
         WavetableEditorPanel wavetableEditor { *this };
@@ -436,10 +472,14 @@ namespace patchcraft
         void applyEasyPreset();
         void applyEasyPresetForTheme (const juce::String& theme, bool forceRandomSeed);
         void applyEasyRandomVariation (Preset& preset, juce::uint32 seed);
+        void clampEasyPresetSafety (Preset& preset);
+        void syncEasyPresetValuesToGraphBlocks (const Preset& preset);
         void randomizeEasyGraphBlocks (juce::uint32 seed);
         DspBlock& ensureEasyMidiPlaygroundBlock();
         void configureEasyMidiForTheme (const juce::String& theme, juce::uint32 seed, bool forceVariation);
         void refreshEasyModeSummary();
+        juce::String easyBlockCountSummary() const;
+        juce::String easyParameterSummary() const;
         void refreshExpansionChoices();
         void showPackCreator();
         void addCurrentPatchToSelectedExpansion();
@@ -457,6 +497,7 @@ namespace patchcraft
         void addBuilderMacro();
         void addBuilderModRoute();
         void addBuilderAutomation();
+        void showAutomationEditorPopout (int automationIndex);
         void importFxSampleForTesting();
         bool loadFxSampleFile (const juce::File&);
         bool loadFxSampleZone (const SampleZoneDef&);
@@ -518,11 +559,14 @@ namespace patchcraft
         void configurePresetBoxes();
         void applyGlobalPreset (int presetId);
         void applySectionPreset (int presetId);
+        void showBlockEditorPopout (int blockIndex);
+        void selectNodeMapRoute (int kind, int index);
         void showNodeMapPopout();
         void showSectionEditorPopout();
         void showSectionMixerPopout();
 
         void projectChanged() override;
+        void projectChanged (PatchCraftProject::ChangeScope scope) override;
         void liveValueChanged (const juce::String&, float) override;
         void timerCallback() override;
 

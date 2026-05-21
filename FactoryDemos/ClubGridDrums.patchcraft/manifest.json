@@ -1,0 +1,23 @@
+{
+  "formatVersion": 1,
+  "instrumentName": "Club Grid Drums",
+  "creator": "PatchCraft",
+  "description": "A playable drum-machine demo with mapped one-shot kit samples, tight envelopes, and dry club punch.",
+  "category": "Drum Machine",
+  "engine": "sample",
+  "backgroundImage": "assets/background.png",
+  "libraryThumbnail": "assets/thumbnail.png",
+  "defaultPreset": "Club Grid Kit",
+  "createdWith": "PatchCraft Studio",
+  "version": "1.0",
+  "playerDisplayName": "Club Grid Drums",
+  "playerTagline": "Factory demo template",
+  "playerAccentColour": "ffff5a2f",
+  "tags": [
+    "factory-demo",
+    "drums",
+    "sample",
+    "drum machine",
+    "drum"
+  ]
+}

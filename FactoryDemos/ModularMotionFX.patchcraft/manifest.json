@@ -1,0 +1,23 @@
+{
+  "formatVersion": 1,
+  "instrumentName": "Modular Motion FX",
+  "creator": "PatchCraft",
+  "description": "A rhythmic modular FX demo with drive, movement, resonant filtering, and synced throw delays.",
+  "category": "Modulation FX",
+  "engine": "fx",
+  "backgroundImage": "assets/background.png",
+  "libraryThumbnail": "assets/thumbnail.png",
+  "defaultPreset": "Gate Matrix",
+  "createdWith": "PatchCraft Studio",
+  "version": "1.0",
+  "playerDisplayName": "Modular Motion FX",
+  "playerTagline": "Factory demo template",
+  "playerAccentColour": "ffb7ff3a",
+  "tags": [
+    "factory-demo",
+    "modfx",
+    "fx",
+    "modulation fx",
+    "motion-fx"
+  ]
+}

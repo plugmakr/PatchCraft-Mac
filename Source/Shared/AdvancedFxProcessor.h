@@ -5,6 +5,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include <vector>
 
 namespace patchcraft
@@ -51,23 +52,58 @@ namespace patchcraft
 
             std::atomic<float> spectralTilt        { 0.0f };
             std::atomic<float> spectralMix         { 0.0f };
+
+            std::atomic<float> tapeDrive           { 0.25f };
+            std::atomic<float> tapeTone            { 0.55f };
+            std::atomic<float> tapeFlutter         { 0.12f };
+            std::atomic<float> tapeMix             { 0.0f };
+
+            std::atomic<float> vinylAge            { 0.35f };
+            std::atomic<float> vinylDust           { 0.08f };
+            std::atomic<float> vinylWarp           { 0.12f };
+            std::atomic<float> vinylMix            { 0.0f };
+
+            std::atomic<float> lofiBits            { 12.0f };
+            std::atomic<float> lofiRate            { 0.20f };
+            std::atomic<float> lofiMix             { 0.0f };
+
+            std::atomic<float> vocalFormant        { 0.40f };
+            std::atomic<float> vocalBody           { 0.35f };
+            std::atomic<float> vocalMix            { 0.0f };
+
+            std::atomic<float> multiTapTime        { 0.375f };
+            std::atomic<float> multiTapFeedback    { 0.35f };
+            std::atomic<float> multiTapSpread      { 0.45f };
+            std::atomic<float> multiTapMix         { 0.0f };
         } atomics;
 
         double sampleRate = 44100.0;
         int blockSize = 512;
         int channels = 2;
         int maxCombDelaySamples = 44100;
+        int maxMultiTapDelaySamples = 88200;
 
         juce::dsp::Chorus<float> chorus;
         juce::dsp::Phaser<float> phaser;
         juce::dsp::StateVariableTPTFilter<float> resonator;
+        juce::dsp::StateVariableTPTFilter<float> vocalFormantA;
+        juce::dsp::StateVariableTPTFilter<float> vocalFormantB;
 
         juce::AudioBuffer<float> scratchBuffer;
+        juce::AudioBuffer<float> formantScratchBuffer;
         std::vector<float> dynamicsEnvelope;
         std::vector<float> spectralLowState;
+        std::vector<float> tapeToneState;
+        std::vector<float> vinylToneState;
+        std::vector<float> lofiHeld;
+        std::vector<int> lofiCounters;
         std::vector<std::vector<float>> combLines;
         std::vector<int> combWriteIndices;
+        std::vector<std::vector<float>> multiTapLines;
+        std::vector<int> multiTapWriteIndices;
         std::vector<std::array<float, 8>> convolutionState;
         std::vector<int> convolutionWriteIndices;
+        std::uint32_t randomState = 0x1234abcd;
+        double modulationPhase = 0.0;
     };
 }

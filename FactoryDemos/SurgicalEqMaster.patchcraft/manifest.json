@@ -1,0 +1,22 @@
+{
+  "formatVersion": 1,
+  "instrumentName": "Surgical EQ Master",
+  "creator": "PatchCraft",
+  "description": "A clean mastering-style EQ demo with active surgical bands, careful trim, and minimal ambience.",
+  "category": "FX Plugin",
+  "engine": "fx",
+  "backgroundImage": "assets/background.png",
+  "libraryThumbnail": "assets/thumbnail.png",
+  "defaultPreset": "Clean Master Lift",
+  "createdWith": "PatchCraft Studio",
+  "version": "1.0",
+  "playerDisplayName": "Surgical EQ Master",
+  "playerTagline": "Factory demo template",
+  "playerAccentColour": "ff58b7ff",
+  "tags": [
+    "factory-demo",
+    "eq",
+    "fx",
+    "fx plugin"
+  ]
+}

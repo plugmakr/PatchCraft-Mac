@@ -1,0 +1,65 @@
+{
+  "blocks": [
+    {
+      "id": "input_drive",
+      "section": "source",
+      "type": "drive",
+      "name": "Input Character",
+      "enabled": true,
+      "targetId": "drive",
+      "values": {}
+    },
+    {
+      "id": "filter_eq",
+      "section": "filter",
+      "type": "surgical_eq",
+      "name": "Surgical EQ",
+      "enabled": true,
+      "targetId": "eqMix",
+      "values": {}
+    },
+    {
+      "id": "mod_motion",
+      "section": "mod",
+      "type": "macro",
+      "name": "Motion Macro",
+      "enabled": true,
+      "targetId": "dynMix",
+      "values": {}
+    },
+    {
+      "id": "fx_delay",
+      "section": "fx",
+      "type": "delay",
+      "name": "Tempo Throw",
+      "enabled": true,
+      "targetId": "delayMix",
+      "values": {}
+    },
+    {
+      "id": "fx_reverb",
+      "section": "fx",
+      "type": "reverb",
+      "name": "Space Processor",
+      "enabled": true,
+      "targetId": "reverbMix",
+      "values": {}
+    },
+    {
+      "id": "out_safe",
+      "section": "out",
+      "type": "output",
+      "name": "Safe Output",
+      "enabled": true,
+      "targetId": "outputGainDb",
+      "values": {}
+    }
+  ],
+  "edges": [],
+  "macros": [],
+  "modulation": [],
+  "automation": [],
+  "typedNodes": [],
+  "userConfigured": true,
+  "quickEditControls": {}
+}

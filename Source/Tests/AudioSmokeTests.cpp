@@ -2,11 +2,18 @@
 #include "DspRoutingEngine.h"
 #include "EffectEngine.h"
 #include "EngineFactory.h"
+#include "AiAssistService.h"
+#include "AiImageService.h"
+#include "LicenseValidator.h"
+#include "LibraryScanner.h"
 #include "MidiPlaygroundRuntime.h"
 #include "MidiPlaygroundPattern.h"
+#include "MultiInstrumentEngine.h"
 #include "ParameterModel.h"
 #include "PatchCraftPackReader.h"
 #include "PatchCraftPackWriter.h"
+#include "PcexpManager.h"
+#include "PluginClubPublisher.h"
 #include "PatchCraftProject.h"
 #include "SampleMap.h"
 #include "SampleSynthEngine.h"
@@ -345,6 +352,103 @@ namespace
         pass ("sample MIDI start/slice controls");
     }
 
+    void smokeSamplerGranularVoiceEngine()
+    {
+        const auto file = createSegmentedSmokeWav();
+
+        patchcraft::SampleMap map;
+        patchcraft::SampleZoneDef zone;
+        zone.samplePath = file.getFileName();
+        zone.rootNote = 60;
+        zone.lowNote = 0;
+        zone.highNote = 127;
+        zone.lowVelocity = 1;
+        zone.highVelocity = 127;
+        map.add (zone);
+
+        patchcraft::SampleSynthEngine engine;
+        engine.prepare (kSampleRate, kBlockSize, kChannels);
+        engine.loadFromMap (file.getParentDirectory(), map);
+        engine.setParameter ("attack", 0.001f);
+        engine.setParameter ("release", 0.2f);
+        engine.setParameter ("sampleStart", 0.55f);
+        engine.setParameter ("sampleLength", 0.40f);
+        engine.setParameter ("granularOn", 1.0f);
+        engine.setParameter ("granularDensity", 42.0f);
+        engine.setParameter ("granularSizeMs", 70.0f);
+        engine.setParameter ("granularSpread", 0.22f);
+        engine.setParameter ("granularPitchSpread", 5.0f);
+        engine.setParameter ("granularPanSpread", 1.0f);
+        engine.setParameter ("granularReverse", 0.45f);
+        engine.setParameter ("granularDirection", 3.0f);
+        engine.setParameter ("granularWindow", 2.0f);
+
+        juce::AudioBuffer<float> buffer (kChannels, kBlockSize);
+        engine.noteOn (60, 1.0f);
+        float peak = 0.0f;
+        for (int block = 0; block < 12; ++block)
+        {
+            buffer.clear();
+            if (block == 4)
+            {
+                engine.setParameter ("granularScan", 0.55f);
+                engine.setParameter ("granularTexture", 0.75f);
+            }
+            engine.process (buffer, 0, buffer.getNumSamples());
+            peak = juce::jmax (peak, peakAbs (buffer));
+        }
+        require (peak > 0.001f, "granular voice engine produced silence");
+        require (engine.getActiveVoiceCount() > 0, "granular voice did not report an active voice");
+        engine.noteOff (60);
+        pass ("sample granular voice engine");
+    }
+
+    void smokeSamplerBpmSyncPlayback()
+    {
+        const auto file = createSegmentedSmokeWav();
+
+        patchcraft::SampleMap map;
+        patchcraft::SampleZoneDef zone;
+        zone.samplePath = file.getFileName();
+        zone.rootNote = 60;
+        zone.lowNote = 0;
+        zone.highNote = 127;
+        zone.lowVelocity = 1;
+        zone.highVelocity = 127;
+        zone.bpm = 240.0f;
+        map.add (zone);
+
+        auto renderPeak = [&] (bool sync, int blocks)
+        {
+            patchcraft::SampleSynthEngine engine;
+            engine.prepare (kSampleRate, kBlockSize, kChannels);
+            engine.setRenderContext (patchcraft::RenderContext::forBlock (kSampleRate, kBlockSize,
+                                                                           kBlockSize, kChannels,
+                                                                           kChannels, 120.0));
+            engine.loadFromMap (file.getParentDirectory(), map);
+            engine.setParameter ("attack", 0.001f);
+            engine.setParameter ("bpmSync", sync ? 1.0f : 0.0f);
+            juce::AudioBuffer<float> buffer (kChannels, kBlockSize);
+            engine.noteOn (60, 1.0f);
+            float peak = 0.0f;
+            for (int block = 0; block < blocks; ++block)
+            {
+                buffer.clear();
+                engine.process (buffer, 0, buffer.getNumSamples());
+                peak = juce::jmax (peak, peakAbs (buffer));
+            }
+            return peak;
+        };
+
+        require (renderPeak (false, 50) > 0.01f,
+                 "unsynced sample did not reach the audible segment at normal speed");
+        require (renderPeak (true, 50) < 0.0001f,
+                 "BPM sync did not slow sample playback using zone BPM metadata");
+        require (renderPeak (true, 95) > 0.01f,
+                 "BPM-synced sample never reached the audible segment");
+        pass ("sample BPM-synced playback");
+    }
+
     void smokeSampleDrumPadsAndPerformanceMetadata()
     {
         patchcraft::SampleMap map;
@@ -368,13 +472,15 @@ namespace
                  "hat samples did not share a choke group");
         require (zones[4].oneShot && zones[4].group == "Drum Pads",
                  "fallback drum pad did not become a one-shot drum zone");
+        map.getZones()[2].bpm = 92.5f;
 
         auto roundTrip = patchcraft::SampleZoneDef::fromVar (zones[2].toVar());
         require (roundTrip.padIndex == zones[2].padIndex
                  && roundTrip.padLabel == zones[2].padLabel
                  && roundTrip.chokeGroup == zones[2].chokeGroup
                  && roundTrip.oneShot == zones[2].oneShot
-                 && roundTrip.triggerProbability == zones[2].triggerProbability,
+                 && roundTrip.triggerProbability == zones[2].triggerProbability
+                 && std::abs (roundTrip.bpm - zones[2].bpm) < 0.001f,
                  "sample performance metadata did not serialize");
 
         pass ("sample drum pad metadata");
@@ -679,6 +785,8 @@ namespace
             { "dmTransport", 1.0f },
             { "dmProbability", 1.0f },
             { "dmTrack0Note", 36.0f },
+            { "dmTrack0FxTarget", 4.0f },
+            { "dmTrack0FxAmount", 0.70f },
             { "dmTrack1Note", 38.0f },
             { "dmTrack2Note", 42.0f },
             { "dmTrack3Note", 46.0f }
@@ -696,6 +804,9 @@ namespace
         for (int step : { 0, 4, 8, 12 }) setCell (0, step, 1.0f);
         for (int step : { 4, 12 }) setCell (1, step, 0.85f);
         for (int step = 0; step < 16; step += 2) setCell (2, step, 0.60f);
+        block.values["dmP0T0S0FxTarget"] = 4.0f;
+        block.values["dmP0T0S0FxAmount"] = 0.85f;
+        block.values["dmP0T2S0Div"] = 4.0f;
 
         patchcraft::DspGraph graph;
         graph.blocks.push_back (block);
@@ -708,6 +819,8 @@ namespace
         auto context = makeContext (0);
         require (! runtime.handleNoteOn (engine, 36, 1.0f),
                  "drum machine should not consume live drum-pad note input");
+        require (engine.parameters["delayMix"] > 0.60f,
+                 "drum pad note input did not trigger assigned FX amount");
         for (int blockIndex = 0; blockIndex < 120; ++blockIndex)
         {
             runtime.process (engine, context);
@@ -721,10 +834,46 @@ namespace
                  "drum machine did not trigger snare note");
         require (std::find (engine.noteOns.begin(), engine.noteOns.end(), 42) != engine.noteOns.end(),
                  "drum machine did not trigger hat note");
+        require (std::count (engine.noteOns.begin(), engine.noteOns.end(), 42) >= 4,
+                 "drum machine cell divisions did not create repeated hat hits");
         require (engine.noteOffCount >= 1, "drum machine did not gate triggered notes");
+        require (engine.parameters["delayMix"] > 0.01f,
+                 "drum grid cell did not trigger assigned FX amount");
 
         context.isPlaying = false;
         runtime.process (engine, context);
+
+        patchcraft::DspBlock divisionBlock;
+        divisionBlock.id = "midi_playground_drum_divisions";
+        divisionBlock.section = "mod";
+        divisionBlock.type = "drumMachine";
+        divisionBlock.enabled = true;
+        divisionBlock.values = {
+            { "rate", 2.0f },
+            { "sync", 0.0f },
+            { "dmTracks", 1.0f },
+            { "dmSteps", 4.0f },
+            { "dmPattern", 0.0f },
+            { "dmTransport", 1.0f },
+            { "dmTrack0Note", 42.0f },
+            { "dmP0T0S0On", 1.0f },
+            { "dmP0T0S0Vel", 0.80f },
+            { "dmP0T0S0Gate", 0.20f },
+            { "dmP0T0S0Div", 4.0f }
+        };
+        patchcraft::DspGraph divisionGraph;
+        divisionGraph.blocks.push_back (divisionBlock);
+        patchcraft::MidiPlaygroundRuntime divisionRuntime;
+        divisionRuntime.bind (divisionGraph);
+        CountingEngine divisionEngine;
+        auto divisionContext = makeContext (0);
+        for (int blockIndex = 0; blockIndex < 30; ++blockIndex)
+        {
+            divisionRuntime.process (divisionEngine, divisionContext);
+            advanceContext (divisionContext);
+        }
+        require (std::count (divisionEngine.noteOns.begin(), divisionEngine.noteOns.end(), 42) >= 4,
+                 "drum machine per-cell divisions did not retrigger inside one step");
         pass ("MIDI Playground drum machine runtime");
     }
 
@@ -975,6 +1124,13 @@ namespace
         progressionBlock.targetId = "filterCutoff";
         progressionBlock.values["mpScaleRoot"] = 0.0f;
         patchcraft::MidiPlaygroundPattern::applyProgressionPreset (progressionBlock, 0, 0);
+        const auto progressionNames = patchcraft::MidiPlaygroundPattern::getProgressionNames();
+        require (progressionNames.size() >= 18,
+                 "MIDI Playground curated progression library lost its premium preset count");
+        require (progressionNames.contains ("Cinematic Lift")
+                 && progressionNames.contains ("Neo Soul Glow")
+                 && progressionNames.contains ("Future Bass Anthem"),
+                 "MIDI Playground curated progression library is missing flagship presets");
         require (progressionBlock.values["arpSteps"] == 16.0f,
                  "MIDI progression helper did not create a 16-step phrase");
         require (progressionBlock.values["mpChordSize"] >= 3.0f,
@@ -986,6 +1142,22 @@ namespace
                  "MIDI progression helper did not enable chord change steps");
         require (progressionBlock.values["mpStep1On"] < 0.5f,
                  "MIDI progression helper left non-change filler steps active");
+
+        patchcraft::DspBlock cinematicBlock;
+        cinematicBlock.id = "midi_playground_cinematic_preset";
+        cinematicBlock.section = "mod";
+        cinematicBlock.type = "midiPlayground";
+        cinematicBlock.targetId = "filterCutoff";
+        cinematicBlock.values["mpScaleRoot"] = 0.0f;
+        const auto cinematicIndex = progressionNames.indexOf ("Cinematic Lift");
+        require (cinematicIndex >= 0, "MIDI Playground missing Cinematic Lift preset");
+        patchcraft::MidiPlaygroundPattern::applyProgressionPreset (cinematicBlock, cinematicIndex, 0);
+        require (cinematicBlock.values["mpStep1On"] > 0.5f
+                 && cinematicBlock.values["mpStep2On"] > 0.5f,
+                 "Cinematic MIDI preset did not create a playable multi-step phrase");
+        require (cinematicBlock.values["arpGate"] < 0.9f
+                 && cinematicBlock.values["mpGate1"] < 0.9f,
+                 "Cinematic MIDI preset did not apply its musical timing profile");
 
         auto midiFile = juce::File::getSpecialLocation (juce::File::tempDirectory)
             .getChildFile ("PatchCraftMidiPlaygroundExport.mid");
@@ -1124,6 +1296,7 @@ namespace
         drum.values["dmP0T0S0On"] = 1.0f;
         drum.values["dmP0T0S0Vel"] = 1.0f;
         drum.values["dmP0T0S0Gate"] = 0.40f;
+        drum.values["dmP0T0S0Div"] = 3.0f;
         drum.values["dmP0T1S2On"] = 1.0f;
         drum.values["dmP0T1S2Vel"] = 0.85f;
         drum.values["dmP0T1S2Gate"] = 0.35f;
@@ -1140,6 +1313,7 @@ namespace
                  "drum machine MIDI export could not be read back");
         bool hasKick = false;
         bool hasSnare = false;
+        int kickEvents = 0;
         for (int track = 0; track < parsedDrum.getNumTracks(); ++track)
             if (const auto* sequence = parsedDrum.getTrack (track))
                 for (int event = 0; event < sequence->getNumEvents(); ++event)
@@ -1150,9 +1324,12 @@ namespace
                         {
                             hasKick = hasKick || message.getNoteNumber() == 36;
                             hasSnare = hasSnare || message.getNoteNumber() == 38;
+                            if (message.getNoteNumber() == 36)
+                                ++kickEvents;
                         }
                     }
         require (hasKick && hasSnare, "drum machine MIDI export did not include mapped drum notes");
+        require (kickEvents >= 3, "drum machine MIDI export did not include cell divisions");
 
         pass ("MIDI Playground advanced runtime and MIDI export");
     }
@@ -1220,6 +1397,216 @@ namespace
         pass ("Player FX factory render");
     }
 
+    void smokeMultiInstrumentFactoryAndRouting()
+    {
+        patchcraft::Manifest manifest;
+        manifest.engine = "multi";
+        manifest.multiInstrumentMode = true;
+        manifest.instrumentIds.add ("a");
+        manifest.instrumentIds.add ("b");
+        manifest.instrumentNames.add ("Layer A");
+        manifest.instrumentNames.add ("Layer B");
+        manifest.instrumentFiles.add ("instruments/a.json");
+        manifest.instrumentFiles.add ("instruments/b.json");
+        manifest.instrumentVolumes.add (0.7f);
+        manifest.instrumentVolumes.add (0.4f);
+        manifest.instrumentPans.add (-0.25f);
+        manifest.instrumentPans.add (0.25f);
+        manifest.instrumentAutoPlay.add (1);
+        manifest.instrumentAutoPlay.add (0);
+        manifest.instrumentAutoPlayNotes.add (60);
+        manifest.instrumentAutoPlayNotes.add (60);
+        manifest.instrumentAutoPlayVelocities.add (0.8f);
+        manifest.instrumentAutoPlayVelocities.add (0.8f);
+        const auto restoredManifest = patchcraft::Manifest::fromVar (manifest.toVar());
+        require (restoredManifest.multiInstrumentMode
+                 && restoredManifest.instrumentIds.size() == 2
+                 && restoredManifest.instrumentNames[1] == "Layer B"
+                 && restoredManifest.instrumentFiles[0] == "instruments/a.json"
+                 && restoredManifest.instrumentVolumes.size() == 2
+                 && std::abs (restoredManifest.instrumentVolumes[0] - 0.7f) < 0.0001f
+                 && restoredManifest.instrumentAutoPlay[0] == 1,
+                 "multi instrument manifest metadata did not serialize");
+
+        require (patchcraft::engineTypeFromString ("multi") == patchcraft::EngineType::Multi,
+                 "engine factory did not parse multi engine type");
+        require (patchcraft::engineTypeToString (patchcraft::EngineType::Multi) == "multi",
+                 "engine factory did not serialize multi engine type");
+
+        auto factoryEngine = patchcraft::createEngineFromManifest ("multi");
+        require (factoryEngine != nullptr && juce::String (factoryEngine->engineId()) == "multi",
+                 "Player factory did not create a multi instrument engine");
+
+        const auto sourceSample = createSmokeWav();
+        auto packDirectory = juce::File::getSpecialLocation (juce::File::tempDirectory)
+            .getChildFile ("PatchCraftMultiInstrumentPackSmoke");
+        packDirectory.deleteRecursively();
+        require (packDirectory.createDirectory(), "failed to create multi instrument pack directory");
+
+        require (juce::JSON::toString (manifest.toVar(), true).isNotEmpty()
+                 && packDirectory.getChildFile ("manifest.json").replaceWithText (juce::JSON::toString (manifest.toVar(), true)),
+                 "failed to write multi instrument manifest");
+
+        const auto samplesDirectory = packDirectory.getChildFile ("samples");
+        require (samplesDirectory.createDirectory(), "failed to create multi instrument sample directory");
+        require (sourceSample.copyFileTo (samplesDirectory.getChildFile ("sample.wav")),
+                 "failed to copy shared multi instrument sample");
+
+        const auto instrumentsDirectory = packDirectory.getChildFile ("instruments");
+        require (instrumentsDirectory.createDirectory(), "failed to create multi instrument definitions directory");
+
+        for (const auto& layerId : { juce::String ("a"), juce::String ("b") })
+        {
+            patchcraft::SampleMap layerMap;
+            patchcraft::SampleZoneDef zone;
+            zone.samplePath = "samples/sample.wav";
+            zone.rootNote = 60;
+            zone.lowNote = 0;
+            zone.highNote = 127;
+            zone.lowVelocity = 1;
+            zone.highVelocity = 127;
+            layerMap.add (zone);
+            require (instrumentsDirectory.getChildFile (layerId + ".json")
+                         .replaceWithText (juce::JSON::toString (layerMap.toVar(), true)),
+                     "failed to write manifest-referenced layer sample map");
+        }
+
+        patchcraft::MultiInstrumentEngine loadedEngine;
+        loadedEngine.prepare (kSampleRate, kBlockSize, kChannels);
+        loadedEngine.loadFromPack (packDirectory, {});
+        require (loadedEngine.getLayerCount() == 2, "multi pack did not load both layers");
+        require (loadedEngine.getLoadedSampleCount() == 2, "multi pack did not load layer samples");
+        juce::AudioBuffer<float> loadedBuffer (kChannels, kBlockSize);
+        loadedBuffer.clear();
+        loadedEngine.noteOn (60, 0.8f);
+        loadedEngine.process (loadedBuffer, 0, loadedBuffer.getNumSamples());
+        require (peakAbs (loadedBuffer) > 0.0001f, "loaded multi pack produced silence");
+        loadedEngine.allNotesOff();
+        loadedEngine.reset();
+
+        auto transportContext = makeContext (0);
+        transportContext.isPlaying = true;
+        loadedEngine.setRenderContext (transportContext);
+        loadedBuffer.clear();
+        loadedEngine.process (loadedBuffer, 0, loadedBuffer.getNumSamples());
+        require (peakAbs (loadedBuffer) > 0.0001f,
+                 "transport auto-play layer did not produce sound without a MIDI note");
+        transportContext.isPlaying = false;
+        loadedEngine.setRenderContext (transportContext);
+        loadedEngine.process (loadedBuffer, 0, loadedBuffer.getNumSamples());
+
+        auto writerRoot = juce::File::getSpecialLocation (juce::File::tempDirectory)
+            .getChildFile ("PatchCraftMultiInstrumentWriterSmoke");
+        writerRoot.deleteRecursively();
+        auto projectDirectory = writerRoot.getChildFile ("Project");
+        auto writerPackDirectory = writerRoot.getChildFile ("WriterExport.patchcraft");
+        require (projectDirectory.createDirectory(), "failed to create multi writer project directory");
+        auto layerSourceDirectory = projectDirectory.getChildFile ("layers");
+        require (layerSourceDirectory.createDirectory(), "failed to create multi writer layer directory");
+        require (sourceSample.copyFileTo (layerSourceDirectory.getChildFile ("a.wav")),
+                 "failed to create multi writer layer A sample");
+        require (sourceSample.copyFileTo (layerSourceDirectory.getChildFile ("b.wav")),
+                 "failed to create multi writer layer B sample");
+
+        auto writeLayerMap = [&] (const juce::String& id, const juce::String& sampleName)
+        {
+            patchcraft::SampleMap layerMap;
+            patchcraft::SampleZoneDef zone;
+            zone.samplePath = sampleName;
+            zone.rootNote = 60;
+            zone.lowNote = 0;
+            zone.highNote = 127;
+            zone.lowVelocity = 1;
+            zone.highVelocity = 127;
+            layerMap.add (zone);
+            return layerSourceDirectory.getChildFile (id + ".json")
+                .replaceWithText (juce::JSON::toString (layerMap.toVar(), true));
+        };
+        require (writeLayerMap ("a", "a.wav"), "failed to write multi writer layer A map");
+        require (writeLayerMap ("b", "b.wav"), "failed to write multi writer layer B map");
+
+        patchcraft::PatchCraftProject writerProject;
+        writerProject.setProjectFolder (projectDirectory);
+        writerProject.setEngineType ("multi");
+        writerProject.getLayout().clear();
+        writerProject.backgroundImageRelative.clear();
+        writerProject.getManifest().backgroundImage.clear();
+        writerProject.getManifest().libraryThumbnail.clear();
+        writerProject.getManifest().playerLogoImage.clear();
+        writerProject.getManifest().instrumentName = "Layered Writer Smoke";
+        writerProject.getManifest().creator = "PatchCraft QA";
+        writerProject.getManifest().multiInstrumentMode = true;
+        writerProject.getManifest().instrumentIds.add ("a");
+        writerProject.getManifest().instrumentIds.add ("b");
+        writerProject.getManifest().instrumentNames.add ("Writer Layer A");
+        writerProject.getManifest().instrumentNames.add ("Writer Layer B");
+        writerProject.getManifest().instrumentFiles.add ("layers/a.json");
+        writerProject.getManifest().instrumentFiles.add ("layers/b.json");
+        writerProject.getPatches().clear();
+        writerProject.getPresets().clear();
+        writerProject.getExpansions().clear();
+
+        patchcraft::PatchCraftPackWriter writer;
+        juce::String writerError;
+        require (writer.write (writerProject, writerPackDirectory, writerError),
+                 "multi writer export did not copy layer mappings and samples");
+
+        patchcraft::PatchCraftPack writerPack;
+        patchcraft::PatchCraftPackReader writerReader;
+        require (writerReader.read (writerPackDirectory, writerPack, writerError),
+                 "multi writer exported pack did not read back");
+        require (writerPack.manifest.multiInstrumentMode
+                 && writerPack.manifest.instrumentFiles.size() == 2
+                 && writerPack.manifest.instrumentFiles[0] == "instruments/a.json",
+                 "multi writer export did not normalize layer file references");
+        require (writerPackDirectory.getChildFile ("instruments").getChildFile ("a.json").existsAsFile(),
+                 "multi writer export is missing layer A mapping");
+        require (writerPackDirectory.getChildFile ("instruments").getChildFile ("b.json").existsAsFile(),
+                 "multi writer export is missing layer B mapping");
+
+        patchcraft::MultiInstrumentEngine writerLoadedEngine;
+        writerLoadedEngine.prepare (kSampleRate, kBlockSize, kChannels);
+        writerLoadedEngine.loadFromPack (writerPackDirectory, {});
+        require (writerLoadedEngine.getLayerCount() == 2,
+                 "multi writer exported pack did not load two layers");
+        require (writerLoadedEngine.getLoadedSampleCount() == 2,
+                 "multi writer exported pack did not load copied layer samples");
+        loadedBuffer.clear();
+        writerLoadedEngine.noteOn (60, 0.8f);
+        writerLoadedEngine.process (loadedBuffer, 0, loadedBuffer.getNumSamples());
+        require (peakAbs (loadedBuffer) > 0.0001f,
+                 "multi writer exported pack produced silence");
+        writerLoadedEngine.allNotesOff();
+
+        patchcraft::MultiInstrumentEngine engine;
+        engine.prepare (kSampleRate, kBlockSize, kChannels);
+        engine.addInstrumentLayer ("a", "Layer A");
+        engine.addInstrumentLayer ("b", "Layer B");
+        require (engine.getLayerCount() == 2, "multi engine did not add layers");
+
+        juce::AudioBuffer<float> buffer (kChannels, kBlockSize);
+        buffer.clear();
+        engine.noteOn (60, 0.8f);
+        require (engine.getActiveVoiceCount() == 2, "multi engine did not trigger both layers");
+        engine.process (buffer, 0, buffer.getNumSamples());
+        require (peakAbs (buffer) > 0.0001f, "multi engine layer render produced silence");
+        engine.reset();
+
+        engine.setLayerSolo ("a", true);
+        engine.noteOn (64, 0.8f);
+        require (engine.getActiveVoiceCount() == 1, "multi engine solo did not isolate one layer");
+        buffer.clear();
+        engine.process (buffer, 32, 96);
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+            for (int sample = 0; sample < 32; ++sample)
+                require (std::abs (buffer.getSample (channel, sample)) < 0.000001f,
+                         "multi engine wrote before requested start sample");
+        require (peakAbs (buffer) > 0.0001f, "multi engine offset render produced silence");
+        engine.allNotesOff();
+
+        pass ("multi instrument factory and routing");
+    }
+
     void smokeTypedGraphEdges()
     {
         patchcraft::DspGraph graph;
@@ -1267,6 +1654,15 @@ namespace
         engine.setParameter ("convolutionMix", 0.15f);
         engine.setParameter ("spectralMix", 0.25f);
         engine.setParameter ("spectralTilt", 0.4f);
+        engine.setParameter ("tapeMix", 0.25f);
+        engine.setParameter ("tapeDrive", 0.35f);
+        engine.setParameter ("vinylMix", 0.18f);
+        engine.setParameter ("vinylDust", 0.12f);
+        engine.setParameter ("lofiMix", 0.12f);
+        engine.setParameter ("lofiBits", 10.0f);
+        engine.setParameter ("vocalMix", 0.16f);
+        engine.setParameter ("multiTapMix", 0.24f);
+        engine.setParameter ("multiTapFeedback", 0.42f);
 
         float peak = 0.0f;
         juce::AudioBuffer<float> buffer (kChannels, kBlockSize);
@@ -1328,6 +1724,211 @@ namespace
         }
         require (peak > 0.05f, "Studio preview project render is too quiet");
         pass ("Studio preview project render");
+    }
+
+    void smokePlayerLibraryScannerFindsFactoryDemos()
+    {
+        auto demoRoot = juce::File::getCurrentWorkingDirectory().getChildFile ("FactoryDemos");
+        require (demoRoot.isDirectory(), "FactoryDemos folder is missing");
+
+        patchcraft::LibraryScanner scanner;
+        scanner.addSearchPath (demoRoot);
+        scanner.scanLibrary();
+
+        const auto entries = scanner.getEntries();
+        require (entries.size() >= 10, "Player library scanner did not find the factory demo packs");
+        require (scanner.search ("Braam").size() > 0, "Player library search cannot find Trailer Braam demo");
+        require (scanner.getEntriesByCategory ("synth").size() >= 3, "Player library scanner is missing synth demos");
+        require (scanner.getEntriesByCategory ("sample").size() >= 3, "Player library scanner is missing sample demos");
+        require (scanner.getEntriesByCategory ("fx").size() >= 3, "Player library scanner is missing FX demos");
+
+        bool hasThumbnail = false;
+        for (const auto& entry : entries)
+        {
+            require (entry.folder.isDirectory(), "Player library entry points at a missing folder");
+            require (entry.instrumentName.isNotEmpty(), "Player library entry is missing an instrument name");
+            require (entry.engineId.isNotEmpty(), "Player library entry is missing an engine id");
+            hasThumbnail = hasThumbnail || entry.thumbnailImage.isValid();
+        }
+        require (hasThumbnail, "Player library entries did not load or generate thumbnails");
+        pass ("Player library scanner finds factory demos");
+    }
+
+    void smokeFactoryDemoPacks()
+    {
+        auto demoRoot = juce::File::getCurrentWorkingDirectory().getChildFile ("FactoryDemos");
+        require (demoRoot.isDirectory(), "FactoryDemos folder is missing");
+
+        auto demoFolders = demoRoot.findChildFiles (juce::File::findDirectories, false, "*.patchcraft");
+        require (demoFolders.size() >= 10, "factory demo library should ship at least 10 complete demos");
+
+        int audibleInstrumentCount = 0;
+        juce::StringArray defaultPresetSignatures;
+        for (const auto& folder : demoFolders)
+        {
+            patchcraft::PatchCraftPack pack;
+            patchcraft::PatchCraftPackReader reader;
+            juce::String error;
+            require (reader.read (folder, pack, error),
+                     ("factory demo failed to read: " + folder.getFileName()).toRawUTF8());
+            require (folder.getChildFile (pack.manifest.backgroundImage).existsAsFile(),
+                     "factory demo background image is missing");
+            require (folder.getChildFile (pack.manifest.libraryThumbnail).existsAsFile(),
+                     "factory demo thumbnail image is missing");
+            require (pack.layout.getAll().size() >= 12,
+                     "factory demo does not contain a real player layout");
+            require (pack.presets.size() >= 5,
+                     "factory demo does not contain enough curated presets");
+            require (pack.manifest.playerDisplayName.isNotEmpty(),
+                     "factory demo is missing Player display branding");
+            require (pack.manifest.playerTagline.isNotEmpty(),
+                     "factory demo is missing Player tagline branding");
+
+            const auto referenceIssues = pack.parameters.validateReferences (
+                pack.layout.getAll(), pack.dspGraph, pack.presets);
+            for (const auto& issue : referenceIssues)
+            {
+                const auto issueText = issue.toString();
+                require (! issueText.containsIgnoreCase ("missing parameter"),
+                         ("factory demo contains a missing parameter reference: " + issueText).toRawUTF8());
+            }
+
+            for (const auto& element : pack.layout.getAll())
+            {
+                require (patchcraft::isPlayerRuntimeElementSupported (element.type),
+                         ("factory demo uses unsupported Player runtime element: "
+                          + element.id + " / " + patchcraft::elementTypeDisplayName (element.type)).toRawUTF8());
+
+                if (element.type == patchcraft::ElementType::Knob)
+                    require (element.width <= 180 && element.height <= 180,
+                             "factory demo contains an oversized knob that will not match Studio/Player scale");
+
+                if (element.filmstripAsset.isNotEmpty())
+                {
+                    const auto filmstrip = juce::File::isAbsolutePath (element.filmstripAsset)
+                        ? juce::File (element.filmstripAsset)
+                        : folder.getChildFile (element.filmstripAsset);
+                    require (filmstrip.existsAsFile(),
+                             ("factory demo references a missing filmstrip asset: "
+                              + element.filmstripAsset).toRawUTF8());
+                }
+
+                if (patchcraft::isRuntimeControlElement (element.type))
+                {
+                    if (element.type == patchcraft::ElementType::Dropdown && element.id == "presets")
+                        continue;
+                    if (element.action.isNotEmpty())
+                        continue;
+
+                    require (element.parameterId.isNotEmpty(),
+                             ("factory demo runtime control is not mapped to a parameter: "
+                              + element.id).toRawUTF8());
+                    require (pack.parameters.find (element.parameterId) != nullptr,
+                             ("factory demo runtime control maps to a missing parameter: "
+                              + element.id + " -> " + element.parameterId).toRawUTF8());
+                    require (element.label.isNotEmpty() || element.parameterId.isNotEmpty(),
+                             "factory demo runtime control has no visible label or parameter fallback");
+                }
+            }
+
+            const patchcraft::LayoutElement* tabPanel = nullptr;
+            for (const auto& element : pack.layout.getAll())
+                if (element.type == patchcraft::ElementType::TabPanel && element.id == "tabs")
+                {
+                    tabPanel = &element;
+                    break;
+                }
+            require (tabPanel != nullptr && tabPanel->tabs.size() >= 4,
+                     "factory demo is missing the main runtime tab strip");
+
+            for (const auto& tab : tabPanel->tabs)
+            {
+                const auto groupId = patchcraft::LayoutElement::tabLabelToGroupId (tab);
+                bool hasRuntimeControlOnTab = false;
+                for (const auto& element : pack.layout.getAll())
+                {
+                    if (element.groupId == groupId
+                        && patchcraft::isRuntimeControlElement (element.type)
+                        && element.parameterId.isNotEmpty())
+                    {
+                        hasRuntimeControlOnTab = true;
+                        break;
+                    }
+                }
+                require (hasRuntimeControlOnTab,
+                         "factory demo tab has no grouped runtime controls");
+            }
+
+            const auto* defaultPreset = pack.findDefaultPreset();
+            require (defaultPreset != nullptr, "factory demo is missing a default preset");
+            juce::String signature = folder.getFileNameWithoutExtension() + ":";
+            for (const auto& id : { juce::String ("oscType"), juce::String ("wtEnabled"),
+                                    juce::String ("sampleLength"), juce::String ("sampleSliceCount"),
+                                    juce::String ("drive"), juce::String ("eqEnabled"),
+                                    juce::String ("attack"), juce::String ("release"),
+                                    juce::String ("filterCutoff"), juce::String ("delayMix"),
+                                    juce::String ("reverbMix"), juce::String ("volume") })
+            {
+                if (auto it = defaultPreset->values.find (id); it != defaultPreset->values.end())
+                    signature << id << "=" << juce::String (it->second, 4) << ";";
+            }
+            defaultPresetSignatures.add (signature);
+
+            patchcraft::PatchCraftProject project;
+            require (project.loadRuntimePackAsProject (folder, error),
+                     "factory demo cannot be loaded into Studio as a project");
+            require (project.getManifest().instrumentName == pack.manifest.instrumentName,
+                     "factory demo project load changed the instrument identity");
+
+            auto engine = patchcraft::createEngineFromManifest (pack.manifest.engine);
+            require (engine != nullptr, "factory demo could not create runtime engine");
+            engine->prepare (kSampleRate, kBlockSize, kChannels);
+            engine->loadFromPack (folder, pack.sampleMap);
+            auto context = makeContext (engine->needsAudioInput() ? kChannels : 0);
+            engine->setRenderContext (context);
+
+            const auto* preset = pack.findDefaultPreset();
+            if (preset != nullptr)
+                for (const auto& value : preset->values)
+                    engine->setParameter (value.first, value.second);
+
+            juce::AudioBuffer<float> buffer (kChannels, kBlockSize);
+            float peak = 0.0f;
+            if (engine->needsAudioInput())
+            {
+                for (int block = 0; block < 8; ++block)
+                {
+                    fillSineInput (buffer, 220.0, block);
+                    engine->setRenderContext (context);
+                    engine->process (buffer, 0, buffer.getNumSamples());
+                    peak = juce::jmax (peak, peakAbs (buffer));
+                    advanceContext (context);
+                }
+                require (peak > 0.0001f, "factory FX demo produced silence with input");
+            }
+            else
+            {
+                const bool drumDemo = pack.manifest.category.containsIgnoreCase ("drum");
+                engine->noteOn (drumDemo ? 36 : 60, 0.9f);
+                for (int block = 0; block < 12; ++block)
+                {
+                    buffer.clear();
+                    engine->setRenderContext (context);
+                    engine->process (buffer, 0, buffer.getNumSamples());
+                    peak = juce::jmax (peak, peakAbs (buffer));
+                    advanceContext (context);
+                }
+                engine->noteOff (drumDemo ? 36 : 60);
+                require (peak > 0.0001f, "factory instrument demo produced silence");
+                ++audibleInstrumentCount;
+            }
+        }
+
+        require (audibleInstrumentCount >= 7, "factory demos need multiple playable instruments");
+        defaultPresetSignatures.removeDuplicates (false);
+        require (defaultPresetSignatures.size() == demoFolders.size(),
+                 "factory demo default presets must be unique per shipped demo");
+        pass ("factory demo packs load and render");
     }
 
     void smokeProjectSaveRestoresCurrentSound()
@@ -1532,7 +2133,7 @@ namespace
 
     void smokeLayoutRuntimeParityAndMalformedPacks()
     {
-        const std::array<patchcraft::ElementType, 18> elementTypes {
+        const std::array<patchcraft::ElementType, 23> elementTypes {
             patchcraft::ElementType::Image,
             patchcraft::ElementType::Knob,
             patchcraft::ElementType::Slider,
@@ -1547,10 +2148,15 @@ namespace
             patchcraft::ElementType::Panel,
             patchcraft::ElementType::Shape,
             patchcraft::ElementType::XYPad,
+            patchcraft::ElementType::GranularField,
             patchcraft::ElementType::TabPanel,
             patchcraft::ElementType::ScrollPanel,
             patchcraft::ElementType::Group,
-            patchcraft::ElementType::Separator
+            patchcraft::ElementType::Separator,
+            patchcraft::ElementType::DrumPad,
+            patchcraft::ElementType::PadGrid,
+            patchcraft::ElementType::DrumGrid,
+            patchcraft::ElementType::Mixer
         };
 
         patchcraft::CanvasSize canvas;
@@ -1701,6 +2307,218 @@ namespace
 
         pass ("physical MIDI and mod wheel crash repros");
     }
+
+    void smokeAiCloudLicensingAndPublishScaffolds()
+    {
+        patchcraft::AiAssistService::CloudIntegrationConfig cloud;
+        cloud.imageProvider = patchcraft::AiAssistService::ImageProviderMode::OpenAIImages;
+        cloud.imageApiKey = "test-key";
+        cloud.imageModel = "gpt-image-1";
+        cloud.murekaApiKey = "mureka-test";
+        cloud.pluginClubEndpoint = "";
+        cloud.licenseEndpoint = "https://license.test/activate";
+        const auto restoredCloud = patchcraft::AiAssistService::CloudIntegrationConfig::fromVar (cloud.toVar());
+        require (restoredCloud.imageProvider == patchcraft::AiAssistService::ImageProviderMode::OpenAIImages,
+                 "cloud image provider did not round-trip");
+        require (restoredCloud.murekaApiKey == "mureka-test", "Mureka API setting did not round-trip");
+        require (restoredCloud.licenseEndpoint.contains ("license.test"), "license endpoint did not round-trip");
+
+        patchcraft::Manifest manifest;
+        manifest.instrumentName = "Protected Smoke";
+        manifest.creator = "PatchCraft";
+        manifest.licenseRequired = true;
+        manifest.licenseProductId = "PROTECTED-SMOKE";
+        manifest.licenseServerUrl = cloud.licenseEndpoint;
+        manifest.licensePublicKey = "public-key";
+        manifest.licensePolicy = "online-or-offline-grace";
+        manifest.licenseOfflineGraceDays = 21;
+        const auto restoredManifest = patchcraft::Manifest::fromVar (manifest.toVar());
+        require (restoredManifest.licenseProductId == manifest.licenseProductId,
+                 "manifest license product id did not round-trip");
+        require (restoredManifest.licenseOfflineGraceDays == 21,
+                 "manifest offline license grace did not round-trip");
+
+        patchcraft::LicenseValidator::LicenseInfo info;
+        info.instrumentName = manifest.instrumentName;
+        info.creator = manifest.creator;
+        info.productId = manifest.licenseProductId;
+        info.licenseServerUrl = manifest.licenseServerUrl;
+        info.policy = manifest.licensePolicy;
+        info.offlineGraceDays = manifest.licenseOfflineGraceDays;
+        const auto activation = patchcraft::LicenseValidator::buildActivationRequest (info, "TEST-MACHINE");
+        require (activation.getDynamicObject() != nullptr, "activation request was not an object");
+        require (activation.getDynamicObject()->getProperty ("machineId").toString() == "TEST-MACHINE",
+                 "activation request did not include explicit machine id");
+
+        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
+            .getChildFile ("PatchCraftAiCloudSmoke");
+        root.deleteRecursively();
+        require (root.createDirectory(), "failed to create AI cloud smoke folder");
+
+        patchcraft::PatchCraftProject project;
+        project.setEngineType ("synth");
+        project.setProjectFolder (root.getChildFile ("Project"));
+        require (project.getProjectFolder().createDirectory(), "failed to create AI cloud smoke project folder");
+        project.getManifest().instrumentName = "Protected Smoke";
+        project.getManifest().creator = "PatchCraft";
+        project.getManifest().licenseRequired = true;
+        project.getManifest().licenseServerUrl = cloud.licenseEndpoint;
+        project.getManifest().licenseProductId = "PROTECTED-SMOKE";
+        project.getManifest().libraryThumbnail.clear();
+        project.getManifest().playerLogoImage.clear();
+        project.backgroundImageRelative.clear();
+        project.getManifest().backgroundImage.clear();
+        project.getPatches().clear();
+        project.getPresets().clear();
+        project.getExpansions().clear();
+        auto patch = project.captureCurrentPatch ("Protected Smoke Patch");
+        patch.includedAssets.clear();
+        patch.isDefault = true;
+        auto preset = patch.toPreset();
+        preset.isDefault = true;
+        preset.libraryReferences.clear();
+        project.getPatches().push_back (patch);
+        project.getPresets().push_back (preset);
+
+        patchcraft::AiImageService::Request request;
+        request.kind = patchcraft::AiImageService::ImageKind::Asset;
+        request.width = 128;
+        request.height = 128;
+        request.transparent = true;
+        request.outputFile = root.getChildFile ("fallback-asset.png");
+        request.prompt = patchcraft::AiImageService::buildPrompt (request.kind, project, "gold geometry");
+        patchcraft::AiAssistService::CloudIntegrationConfig fallbackCloud;
+        const auto imageResult = patchcraft::AiImageService::generate (request, fallbackCloud);
+        require (imageResult.success, "fallback AI image generation failed");
+        require (imageResult.outputFile.existsAsFile(), "fallback AI image was not written");
+
+        auto options = patchcraft::PluginClubPublisher::optionsFromCloudConfig (fallbackCloud);
+        require (patchcraft::PluginClubPublisher::normaliseSellerImportEndpoint ("https://plugin.club")
+                    == "https://plugin.club/functions/sellerImport",
+                 "Plugin.club root endpoint did not normalize to /functions/sellerImport");
+        require (patchcraft::PluginClubPublisher::normaliseSellerImportEndpoint ("https://plugin.club/sellerImport")
+                    == "https://plugin.club/functions/sellerImport",
+                 "Plugin.club endpoint missing /functions was not repaired");
+        require (patchcraft::PluginClubPublisher::normaliseSellerImportEndpoint ("https://plugin.club/functions/romplurSellerImport")
+                    == "https://plugin.club/functions/sellerImport",
+                 "legacy Plugin.club Romplur seller endpoint was not migrated");
+        options.endpoint.clear();
+        options.stagingRoot = root.getChildFile ("Publish");
+        const auto publish = patchcraft::PluginClubPublisher::publishDraft (project, options);
+        if (! publish.success)
+            std::cerr << publish.message << std::endl;
+        require (publish.success, "Plugin.club draft staging failed");
+        require (! publish.uploaded, "Plugin.club draft unexpectedly uploaded with no endpoint");
+        require (publish.packFolder.getChildFile ("manifest.json").existsAsFile(),
+                 "Plugin.club staged pack is missing manifest");
+        require (publish.packFolder.getChildFile ("license.json").existsAsFile(),
+                 "Plugin.club staged protected pack is missing license.json");
+        require (publish.payloadFile.existsAsFile(), "Plugin.club publish payload was not written");
+        require (publish.metadataFile.existsAsFile(), "Plugin.club publish metadata was not written");
+        require (publish.archiveFile.existsAsFile() && publish.archiveFile.getSize() > 0,
+                 "Plugin.club publish archive was not written");
+        auto parsedPublishMetadata = juce::JSON::parse (publish.metadataFile);
+        if (auto* metadata = parsedPublishMetadata.getDynamicObject())
+        {
+            require (metadata->getProperty ("artifact_kind").toString() == "patchcraft_instrument_pack",
+                     "Plugin.club instrument metadata has wrong artifact_kind");
+            require (metadata->getProperty ("product_type").toString() == "instrument",
+                     "Plugin.club instrument metadata has wrong product_type");
+            require (juce::JSON::toString (metadata->getProperty ("plugin_format"), false).contains ("PatchCraft"),
+                     "Plugin.club instrument metadata does not advertise PatchCraft format");
+            require (metadata->hasProperty ("license_config"),
+                     "Plugin.club protected instrument metadata is missing license_config");
+        }
+        else
+        {
+            require (false, "Plugin.club metadata file is not valid JSON");
+        }
+
+        const auto oneShotFolder = root.getChildFile ("OneShotPublishSource");
+        require (oneShotFolder.createDirectory(), "could not create one-shot publish source");
+        require (oneShotFolder.getChildFile ("Kick_C1.wav").replaceWithText ("fake wav bytes"),
+                 "could not write one-shot publish source file");
+        require (oneShotFolder.getChildFile ("oneshot_pack.json").replaceWithText ("{\"format\":\"PatchCraftOneShotPack\"}"),
+                 "could not write one-shot publish metadata");
+
+        patchcraft::PluginClubPublisher::PublishArtifact oneShotArtifact;
+        oneShotArtifact.kind = patchcraft::PluginClubPublisher::ArtifactKind::OneShotPack;
+        oneShotArtifact.title = "Smoke One Shots";
+        oneShotArtifact.creator = "PatchCraft";
+        oneShotArtifact.category = "Drums";
+        oneShotArtifact.formats.add ("WAV");
+        oneShotArtifact.sourcePath = oneShotFolder;
+
+        const auto oneShotPublish = patchcraft::PluginClubPublisher::publishArtifact (oneShotArtifact, options);
+        if (! oneShotPublish.success)
+            std::cerr << oneShotPublish.message << std::endl;
+        require (oneShotPublish.success, "Plugin.club one-shot artifact staging failed");
+        require (! oneShotPublish.uploaded, "Plugin.club one-shot artifact unexpectedly uploaded with no endpoint");
+        require (oneShotPublish.metadataFile.existsAsFile(), "Plugin.club one-shot metadata was not written");
+        require (oneShotPublish.payloadFile.existsAsFile(), "Plugin.club one-shot payload was not written");
+        require (oneShotPublish.archiveFile.existsAsFile() && oneShotPublish.archiveFile.getSize() > 0,
+                 "Plugin.club one-shot archive was not written");
+
+        pass ("AI cloud, licensing, and Plugin.club scaffolds");
+    }
+
+    void smokePcexpExpansionSystem()
+    {
+        auto root = juce::File::getSpecialLocation (juce::File::tempDirectory)
+            .getChildFile ("PatchCraftPcexpSmoke");
+        root.deleteRecursively();
+        require (root.createDirectory(), "failed to create pcexp smoke root");
+
+        patchcraft::PcexpManager manager (root.getChildFile ("UserExpansions"),
+                                          root.getChildFile ("BundledExpansions"));
+        require (manager.hasCapability ("script.pscript"), "built-in pScript capability missing");
+        require (manager.findInstalled ("com.patchcraft.pscript.core") != nullptr,
+                 "built-in pScript manifest missing");
+
+        const auto package = root.getChildFile ("JavaScriptRuntime.pcexp");
+        require (package.createDirectory(), "failed to create pcexp package folder");
+        const char* manifestJson = R"json({
+  "format": "PatchCraft Extension",
+  "formatVersion": 1,
+  "id": "com.patchcraft.javascript-runtime",
+  "name": "JavaScript Runtime",
+  "version": "1.0.0",
+  "kind": "script-runtime",
+  "author": "PatchCraft",
+  "description": "Optional JavaScript bridge for Studio-side scripts.",
+  "minPatchCraftVersion": "0.1.0",
+  "capabilities": ["script.runtime.javascript"],
+  "dependencies": ["com.patchcraft.pscript.core>=1.0.0"],
+  "license": { "mode": "none" },
+  "tags": ["script", "javascript"]
+})json";
+        require (package.getChildFile ("manifest.json").replaceWithText (manifestJson),
+                 "failed to write pcexp manifest");
+
+        const auto validation = manager.validatePackage (package);
+        require (validation.valid, "pcexp package validation failed");
+        require (validation.manifest.id == "com.patchcraft.javascript-runtime",
+                 "pcexp manifest id did not parse");
+
+        const auto install = manager.installPackage (package, true);
+        if (install.failed())
+            std::cerr << install.getErrorMessage() << std::endl;
+        require (install.wasOk(), "pcexp package install failed");
+        require (manager.hasCapability ("script.runtime.javascript"),
+                 "installed pcexp capability missing");
+
+        const auto disable = manager.setEnabled ("com.patchcraft.javascript-runtime", false);
+        require (disable.wasOk(), "failed to disable pcexp");
+        require (! manager.hasCapability ("script.runtime.javascript"),
+                 "disabled pcexp capability still active");
+
+        const auto enable = manager.setEnabled ("com.patchcraft.javascript-runtime", true);
+        require (enable.wasOk(), "failed to re-enable pcexp");
+        require (manager.hasCapability ("script.runtime.javascript"),
+                 "re-enabled pcexp capability missing");
+
+        pass ("PatchCraft .pcexp extension system");
+    }
 }
 
 int main()
@@ -1710,6 +2528,8 @@ int main()
         smokeSynthWavetable();
         smokeSamplerWavLoad();
         smokeSamplerMidiSampleControls();
+        smokeSamplerGranularVoiceEngine();
+        smokeSamplerBpmSyncPlayback();
         smokeSampleDrumPadsAndPerformanceMetadata();
         smokeSamplerDrumPadRuntime();
         smokeSampleImportNameParsing();
@@ -1727,14 +2547,19 @@ int main()
         smokeMidiPlaygroundDspModulationRouting();
         smokePlayerInstrumentFactory();
         smokePlayerFxFactory();
+        smokeMultiInstrumentFactoryAndRouting();
         smokeTypedGraphEdges();
         smokeAdvancedFxProcessors();
         smokeStudioPreviewProjectRender();
+        smokePlayerLibraryScannerFindsFactoryDemos();
+        smokeFactoryDemoPacks();
         smokeProjectSaveRestoresCurrentSound();
         smokePresetAppliesLinkedPatchState();
         smokePatchExpansionSerialization();
         smokePatchExpansionPackExport();
         smokeLayoutRuntimeParityAndMalformedPacks();
+        smokePcexpExpansionSystem();
+        smokeAiCloudLicensingAndPublishScaffolds();
         smokePhysicalMidiAndModWheelCrashRepros();
         std::cout << "PatchCraft audio smoke tests passed." << std::endl;
         return 0;

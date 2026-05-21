@@ -1,24 +1,35 @@
 #pragma once
 
+#include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_gui_extra/juce_gui_extra.h>
+#include <map>
 #include <memory>
 
+#include "MidiPlaygroundRuntime.h"
 #include "PatchCraftProject.h"
 
 namespace patchcraft
 {
     class StudioMainComponent;
+    class SampleSynthEngine;
 
     class MidiPlaygroundPage : public juce::Component,
+                               public juce::AudioIODeviceCallback,
                                private juce::Timer
     {
     public:
         explicit MidiPlaygroundPage (StudioMainComponent& owner);
+        ~MidiPlaygroundPage() override;
 
         void paint (juce::Graphics&) override;
         void resized() override;
         void mouseDown (const juce::MouseEvent&) override;
         void refresh();
+        void audioDeviceIOCallbackWithContext (const float* const*, int,
+                                               float* const*, int, int,
+                                               const juce::AudioIODeviceCallbackContext&) override;
+        void audioDeviceAboutToStart (juce::AudioIODevice*) override;
+        void audioDeviceStopped() override;
 
     private:
         StudioMainComponent& owner;
@@ -30,6 +41,7 @@ namespace patchcraft
         juce::ComboBox sourceBox;
         juce::ComboBox modeBox;
         juce::ComboBox editorViewBox;
+        juce::ComboBox musicalPresetBox;
         juce::ComboBox chordPresetBox;
         juce::ComboBox midiTemplateBox;
         juce::ComboBox guiTemplateBox;
@@ -59,28 +71,39 @@ namespace patchcraft
         juce::Slider euclideanRotateSlider;
         juce::ToggleButton octaveFoldToggle { "Fold Octaves" };
 
-        juce::TextButton addPlaygroundButton { "Add Playground" };
-        juce::TextButton chordPhraseButton { "Chord Phrase" };
-        juce::TextButton sampleSliceButton { "Sample Slice Control" };
-        juce::TextButton drumMachineButton { "Drum Machine" };
-        juce::TextButton operatorsButton { "Operators" };
-        juce::TextButton phraseLibraryButton { "Phrases" };
-        juce::TextButton randomButton { "Seed Variation" };
+        juce::TextButton addPlaygroundButton { "Add Performance" };
+        juce::TextButton chordPhraseButton { "Chords" };
+        juce::TextButton sampleSliceButton { "Sample Chops" };
+        juce::TextButton drumMachineButton { "Drums" };
+        juce::TextButton operatorsButton { "Musical Tools" };
+        juce::TextButton phraseLibraryButton { "Phrase Library" };
+        juce::TextButton randomButton { "Create Variation" };
+        juce::TextButton applyMusicalPresetButton { "Drop MIDI" };
         juce::TextButton storeBankButton { "Store Bank" };
         juce::TextButton duplicateBankButton { "Duplicate Bank" };
         juce::TextButton applyProgressionButton { "Apply Prog" };
-        juce::TextButton applyMidiTemplateButton { "Apply MIDI" };
-        juce::TextButton applyGuiTemplateButton { "Apply GUI" };
+        juce::TextButton applyMidiTemplateButton { "Apply Behavior" };
+        juce::TextButton applyGuiTemplateButton { "Add Player UI" };
         juce::TextButton exportMidiButton { "Export MIDI" };
+        juce::TextButton playPatternButton { "Play Pattern" };
+        juce::TextButton stopPatternButton { "Stop" };
         juce::TextButton sourceBuilderButton { "Source Builder" };
         juce::TextButton sampleMapperButton { "Sample Mapper" };
-        juce::TextButton testButton { "Go To Test" };
+        juce::TextButton testButton { "Test Runtime" };
         std::unique_ptr<juce::FileChooser> exportChooser;
 
         juce::String activeBlockId;
         int selectedSectionCard = 0;
         bool syncingControls = false;
         bool pendingGraphNotification = false;
+        bool patternPreviewActive = false;
+        double previewSampleRate = 44100.0;
+        int previewBlockSize = 512;
+        int previewChannels = 2;
+        int previewHeldNote = 60;
+        std::unique_ptr<SampleSynthEngine> previewEngine;
+        MidiPlaygroundRuntime previewRuntime;
+        juce::SpinLock previewLock;
 
         struct MidiOutputLane : public juce::Component
         {
@@ -143,6 +166,7 @@ namespace patchcraft
             void paint (juce::Graphics&) override;
             void mouseDown (const juce::MouseEvent&) override;
             void mouseDrag (const juce::MouseEvent&) override;
+            void mouseUp (const juce::MouseEvent&) override;
 
         private:
             MidiPlaygroundPage& owner;
@@ -164,13 +188,18 @@ namespace patchcraft
         DspBlock& createMidiBlock();
 
         void configureChordPhrase();
+        void configureArpSequencer();
         void configureSampleSliceControl();
+        void configureModulationLane();
         void configureDrumMachine();
         void randomiseSeed();
         void showOperatorsMenu();
         void showPhraseLibraryMenu();
         void applyOperator (int operatorId);
         void applyPhraseFromLibrary (int phraseId);
+        void applyDrumOperator (int operatorId);
+        void applyDrumTemplate (int templateId);
+        void applySelectedMusicalPreset();
         void switchPhraseBank (int bank);
         void storeActivePhraseBank();
         void duplicateActivePhraseBank();
@@ -179,6 +208,8 @@ namespace patchcraft
         void applySelectedMidiTemplate();
         void applySelectedGuiTemplate();
         void exportMidiClip();
+        void startPatternPreview();
+        void stopPatternPreview();
         void syncControlsFromBlock();
         void updateBlockFromControls();
         void notifyGraphChanged (bool immediate);
@@ -186,8 +217,14 @@ namespace patchcraft
         void setStepValueFromEditor (int step, int noteOffset, float velocity, float gate,
                                      float probability, bool active, bool editNote,
                                      bool editVelocity, bool editGate, bool editProbability);
-        void setDrumStepFromEditor (int track, int step, bool active, float velocity, bool editVelocity);
+        void setDrumStepFromEditor (int track, int step, bool active, float velocity,
+                                    bool editVelocity, int divisions = -1);
         bool isDrumMachineBlock (const DspBlock&) const;
+
+        bool hasDrumPatternClipboard = false;
+        int drumPatternClipboardTracks = 0;
+        int drumPatternClipboardSteps = 0;
+        std::map<juce::String, float> drumPatternClipboard;
 
         juce::String blockSummary() const;
         juce::Rectangle<int> drawControl (juce::Graphics&, juce::Rectangle<int>,

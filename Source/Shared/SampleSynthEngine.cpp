@@ -38,6 +38,17 @@ namespace patchcraft
             return juce::String::fromUTF8 (data, 4);
         }
 
+        static int parsePadControlIndex (const juce::String& id, const juce::String& suffix)
+        {
+            if (! id.startsWithIgnoreCase ("pad") || ! id.endsWithIgnoreCase (suffix))
+                return -1;
+
+            const auto numberText = id.substring (3, id.length() - suffix.length());
+            const int oneBasedIndex = numberText.getIntValue();
+            const int zeroBasedIndex = oneBasedIndex - 1;
+            return zeroBasedIndex >= 0 && zeroBasedIndex < 16 ? zeroBasedIndex : -1;
+        }
+
         static float clampSampleValue (double value)
         {
             return juce::jlimit (-1.0f, 1.0f, (float) value);
@@ -258,6 +269,7 @@ namespace patchcraft
         preparedMaxSamples = maxBlockSize;
 
         for (auto& v : voices)     v.prepare (sr);
+        for (auto& v : granularVoices) v.prepare (sr);
         for (auto& sv : sineVoices) sv.env.setSampleRate (sr);
 
         juce::dsp::ProcessSpec spec { sr, (juce::uint32) maxBlockSize,
@@ -289,6 +301,7 @@ namespace patchcraft
     void SampleSynthEngine::reset()
     {
         for (auto& v : voices) v.kill();
+        for (auto& v : granularVoices) v.kill();
         for (auto& sv : sineVoices) { sv.active = false; sv.env.reset(); }
         filter.reset();
         eq.reset();
@@ -462,6 +475,40 @@ namespace patchcraft
         return &voices[(size_t) nextVoiceIndex];
     }
 
+    GranularVoice* SampleSynthEngine::findFreeGranularVoice()
+    {
+        for (auto& v : granularVoices)
+            if (! v.isActive()) return &v;
+        nextGranularVoiceIndex = (nextGranularVoiceIndex + 1) % kMaxVoices;
+        granularVoices[(size_t) nextGranularVoiceIndex].kill();
+        return &granularVoices[(size_t) nextGranularVoiceIndex];
+    }
+
+    GranularVoice::Params SampleSynthEngine::currentGranularParams (float tempoRatio) const
+    {
+        GranularVoice::Params params;
+        params.sampleStart = juce::jlimit (0.0f, 1.0f, atomics.sampleStart.load());
+        params.sampleLength = juce::jlimit (0.01f, 1.0f, atomics.sampleLength.load());
+        params.sampleSlice = juce::roundToInt (atomics.sampleSlice.load());
+        params.sampleSliceCount = juce::jlimit (1, 128, juce::roundToInt (atomics.sampleSliceCount.load()));
+        params.pitchOffset = juce::jlimit (-48.0f, 48.0f, atomics.samplePitch.load());
+        params.tempoRatio = juce::jlimit (0.25f, 4.0f, tempoRatio);
+        params.density = juce::jlimit (0.5f, 220.0f, atomics.granularDensity.load());
+        params.sizeMs = juce::jlimit (2.0f, 1000.0f, atomics.granularSizeMs.load());
+        params.sizeRandom = juce::jlimit (0.0f, 1.0f, atomics.granularSizeRandom.load());
+        params.positionSpread = juce::jlimit (0.0f, 1.0f, atomics.granularSpread.load());
+        params.scanRate = juce::jlimit (-3.0f, 3.0f, atomics.granularScan.load());
+        params.pitchSpread = juce::jlimit (0.0f, 36.0f, atomics.granularPitchSpread.load());
+        params.panSpread = juce::jlimit (0.0f, 1.0f, atomics.granularPanSpread.load());
+        params.reverseProbability = juce::jlimit (0.0f, 1.0f, atomics.granularReverse.load());
+        params.texture = juce::jlimit (0.0f, 1.0f, atomics.granularTexture.load());
+        params.maxGrains = juce::jlimit (1, 32, juce::roundToInt (atomics.granularMaxGrains.load()));
+        params.directionMode = juce::jlimit (0, 3, juce::roundToInt (atomics.granularDirection.load()));
+        params.windowShape = juce::jlimit (0, 3, juce::roundToInt (atomics.granularWindow.load()));
+        params.freeze = atomics.granularFreeze.load() >= 0.5f;
+        return params;
+    }
+
     LoadedSamplePtr SampleSynthEngine::selectSample (int note, int velocity)
     {
         auto list = getSamples();
@@ -531,6 +578,9 @@ namespace patchcraft
             for (auto& v : voices)
                 if (v.isActive() && v.getNote() == note)
                     return;
+            for (auto& v : granularVoices)
+                if (v.isActive() && v.getNote() == note)
+                    return;
             for (auto& sv : sineVoices)
                 if (sv.active && sv.note == note)
                 {
@@ -560,9 +610,14 @@ namespace patchcraft
             lastMissedNote.store (-1, std::memory_order_release);
             const int chokeGroup = juce::jlimit (0, 127, s->zone.chokeGroup);
             if (chokeGroup > 0)
+            {
                 for (auto& voice : voices)
                     if (voice.isActive() && voice.getChokeGroup() == chokeGroup)
                         voice.kill();
+                for (auto& voice : granularVoices)
+                    if (voice.isActive() && voice.getChokeGroup() == chokeGroup)
+                        voice.kill();
+            }
 
             float start01 = juce::jlimit (0.0f, 1.0f, atomics.sampleStart.load());
             float length01 = juce::jlimit (0.01f, 1.0f, atomics.sampleLength.load());
@@ -570,6 +625,30 @@ namespace patchcraft
             int sliceCount = juce::roundToInt (atomics.sampleSliceCount.load());
             float pitchOffset = juce::jlimit (-48.0f, 48.0f, atomics.samplePitch.load());
             bool reverse = atomics.sampleReverse.load() >= 0.5f;
+            int padIndex = s->zone.padIndex;
+            if (padIndex < 0 || padIndex >= 16)
+            {
+                const int notePadIndex = note - 36;
+                if (notePadIndex >= 0 && notePadIndex < 16)
+                    padIndex = notePadIndex;
+            }
+
+            float padGain = 1.0f;
+            float padPanOffset = 0.0f;
+            if (padIndex >= 0 && padIndex < 16)
+            {
+                padGain = juce::jlimit (0.0f, 2.0f, atomics.padVolume[(size_t) padIndex].load());
+                pitchOffset += juce::jlimit (-24.0f, 24.0f, atomics.padPitch[(size_t) padIndex].load());
+                padPanOffset = juce::jlimit (-1.0f, 1.0f, atomics.padPan[(size_t) padIndex].load());
+            }
+
+            float tempoRatio = 1.0f;
+            if (atomics.bpmSync.load() >= 0.5f && s->zone.bpm > 0.0f)
+            {
+                const float hostBpm = (float) RenderContext::sanitiseBpm (renderContext.bpm);
+                const float sampleBpm = (float) RenderContext::sanitiseBpm ((double) s->zone.bpm);
+                tempoRatio = juce::jlimit (0.25f, 4.0f, hostBpm / juce::jmax (1.0f, sampleBpm));
+            }
 
             const float glitchAmount = juce::jlimit (0.0f, 1.0f, atomics.sampleGlitch.load());
             if (glitchAmount > 0.001f)
@@ -588,11 +667,30 @@ namespace patchcraft
                 }
             }
 
+            if (atomics.granularOn.load() >= 0.5f)
+            {
+                if (auto* v = findFreeGranularVoice())
+                {
+                    PC_DBG("[SampleSynthEngine::noteOn] Starting granular voice with sample %s", s->path.toStdString().c_str());
+                    auto params = currentGranularParams (tempoRatio);
+                    params.sampleStart = start01;
+                    params.sampleLength = length01;
+                    params.sampleSlice = slice;
+                    params.sampleSliceCount = sliceCount;
+                    params.pitchOffset = pitchOffset;
+                    params.padGain = padGain;
+                    params.padPanOffset = padPanOffset;
+                    v->start (s, note, velocity, currentAdsr(), params, triggerHash);
+                }
+                return;
+            }
+
             if (auto* v = findFreeVoice())
             {
                 PC_DBG("[SampleSynthEngine::noteOn] Starting voice with sample %s", s->path.toStdString().c_str());
                 v->start (s, note, velocity, currentAdsr(), false,
-                          start01, length01, slice, sliceCount, pitchOffset, reverse);
+                          start01, length01, slice, sliceCount, pitchOffset, reverse, tempoRatio,
+                          padGain, padPanOffset);
             }
             else
             {
@@ -622,6 +720,9 @@ namespace patchcraft
                 if (! v.isOneShot())
                     v.release();
             }
+        for (auto& v : granularVoices)
+            if (v.isActive() && v.getNote() == note)
+                v.release();
         for (auto& sv : sineVoices)
             if (sv.active && sv.note == note)
                 sv.env.noteOff();
@@ -630,6 +731,7 @@ namespace patchcraft
     void SampleSynthEngine::allNotesOff()
     {
         for (auto& v : voices) v.release();
+        for (auto& v : granularVoices) v.release();
         for (auto& sv : sineVoices) if (sv.active) sv.env.noteOff();
     }
 
@@ -647,6 +749,20 @@ namespace patchcraft
         else if (id == "sampleReverse") atomics.sampleReverse = value;
         else if (id == "sampleGlitch")  atomics.sampleGlitch = value;
         else if (id == "sampleGlitchGrid") atomics.sampleGlitchGrid = value;
+        else if (id == "granularOn") atomics.granularOn = value;
+        else if (id == "granularDensity") atomics.granularDensity = value;
+        else if (id == "granularSizeMs") atomics.granularSizeMs = value;
+        else if (id == "granularSizeRandom") atomics.granularSizeRandom = value;
+        else if (id == "granularSpread") atomics.granularSpread = value;
+        else if (id == "granularScan") atomics.granularScan = value;
+        else if (id == "granularPitchSpread") atomics.granularPitchSpread = value;
+        else if (id == "granularPanSpread") atomics.granularPanSpread = value;
+        else if (id == "granularReverse") atomics.granularReverse = value;
+        else if (id == "granularTexture") atomics.granularTexture = value;
+        else if (id == "granularMaxGrains") atomics.granularMaxGrains = value;
+        else if (id == "granularDirection") atomics.granularDirection = value;
+        else if (id == "granularWindow") atomics.granularWindow = value;
+        else if (id == "granularFreeze") atomics.granularFreeze = value;
         else if (id == "filterCutoff")  atomics.cutoff       = value;
         else if (id == "filterResonance") atomics.resonance  = value;
         else if (id == "reverbMix")     atomics.reverbMix    = value;
@@ -657,15 +773,32 @@ namespace patchcraft
         else if (id == "expression")    atomics.expression   = value;
         else if (id == "pan")           atomics.pan          = value;
         else if (id == "retrigger")     atomics.retrigger    = value;
-        else if (id.startsWithIgnoreCase ("eq")) eq.setParameter (id, value);
-        else if (advancedFx.setParameter (id, value)) {}
-        else utility.setParameter (id, value);
+        else if (id == "bpmSync")       atomics.bpmSync      = value;
+        else
+        {
+            const int padVolumeIndex = parsePadControlIndex (id, "Volume");
+            const int padPitchIndex = parsePadControlIndex (id, "Pitch");
+            const int padPanIndex = parsePadControlIndex (id, "Pan");
+
+            if (padVolumeIndex >= 0)
+                atomics.padVolume[(size_t) padVolumeIndex].store (juce::jlimit (0.0f, 2.0f, value), std::memory_order_relaxed);
+            else if (padPitchIndex >= 0)
+                atomics.padPitch[(size_t) padPitchIndex].store (juce::jlimit (-24.0f, 24.0f, value), std::memory_order_relaxed);
+            else if (padPanIndex >= 0)
+                atomics.padPan[(size_t) padPanIndex].store (juce::jlimit (-1.0f, 1.0f, value), std::memory_order_relaxed);
+            else if (id.startsWithIgnoreCase ("eq"))
+                eq.setParameter (id, value);
+            else if (advancedFx.setParameter (id, value)) {}
+            else
+                utility.setParameter (id, value);
+        }
     }
 
     int SampleSynthEngine::getActiveVoiceCount() const noexcept
     {
         int count = 0;
         for (auto& v : voices) if (v.isActive()) ++count;
+        for (auto& v : granularVoices) if (v.isActive()) ++count;
         for (auto& sv : sineVoices) if (sv.active) ++count;
         return count;
     }
@@ -726,6 +859,10 @@ namespace patchcraft
         for (auto& v : voices)
             if (v.isActive())
                 v.render (tempBuffer, 0, numSamples);
+        const auto granularParams = currentGranularParams();
+        for (auto& v : granularVoices)
+            if (v.isActive())
+                v.render (tempBuffer, 0, numSamples, granularParams);
 
         // Sine fallback voices
         if (! hasUsableSamples())

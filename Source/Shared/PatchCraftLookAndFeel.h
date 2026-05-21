@@ -14,22 +14,22 @@ namespace patchcraft
         PatchCraftLookAndFeel();
 
         // ---- Palette ---------------------------------------------------------
-        static constexpr int kBgDarkest   = 0xff0a0b0d;
-        static constexpr int kBgPanel     = 0xff121316;
-        static constexpr int kBgPanelAlt  = 0xff181a1e;
-        static constexpr int kBgRaised    = 0xff1c1f24;
-        static constexpr int kBorder      = 0xff2a2d33;
-        static constexpr int kBorderSoft  = 0xff202227;
-        static constexpr int kTextDim     = 0xff7a8088;
-        static constexpr int kText        = 0xffd9dde2;
-        static constexpr int kTextBright  = 0xffffffff;
-        static constexpr int kAccent      = 0xfff5a623;   // amber/gold
-        static constexpr int kAccentDim   = 0xffb0791a;
-        static constexpr int kSecondary   = 0xff5c7a99;
-        static constexpr int kZoneA       = 0xff8e6cd6;   // purple sample zone
-        static constexpr int kZoneB       = 0xff5fb37b;   // green
-        static constexpr int kZoneC       = 0xffe6a13f;   // gold
-        static constexpr int kZoneD       = 0xff70747a;   // gray
+        static constexpr juce::uint32 kBgDarkest   = 0xff06080b;
+        static constexpr juce::uint32 kBgPanel     = 0xff0d1117;
+        static constexpr juce::uint32 kBgPanelAlt  = 0xff131923;
+        static constexpr juce::uint32 kBgRaised    = 0xff1b2430;
+        static constexpr juce::uint32 kBorder      = 0xff344252;
+        static constexpr juce::uint32 kBorderSoft  = 0xff202a36;
+        static constexpr juce::uint32 kTextDim     = 0xff8d96a3;
+        static constexpr juce::uint32 kText        = 0xffe3e8ef;
+        static constexpr juce::uint32 kTextBright  = 0xffffffff;
+        static constexpr juce::uint32 kAccent      = 0xfff5a623;   // amber/gold
+        static constexpr juce::uint32 kAccentDim   = 0xff9d6817;
+        static constexpr juce::uint32 kSecondary   = 0xff58b7ff;
+        static constexpr juce::uint32 kZoneA       = 0xff8e6cd6;   // purple sample zone
+        static constexpr juce::uint32 kZoneB       = 0xff5fb37b;   // green
+        static constexpr juce::uint32 kZoneC       = 0xffe6a13f;   // gold
+        static constexpr juce::uint32 kZoneD       = 0xff70747a;   // gray
 
         static juce::Colour bg()           { return juce::Colour (kBgDarkest); }
         static juce::Colour panel()        { return juce::Colour (kBgPanel); }
@@ -102,6 +102,19 @@ namespace patchcraft
                             bool isMouseOver, bool isMouseDown) override;
 
         void drawPopupMenuBackground (juce::Graphics&, int width, int height) override;
+        void drawPopupMenuItem (juce::Graphics&, const juce::Rectangle<int>& area,
+                                bool isSeparator, bool isActive, bool isHighlighted,
+                                bool isTicked, bool hasSubMenu, const juce::String& text,
+                                const juce::String& shortcutKeyText,
+                                const juce::Drawable* icon, const juce::Colour* textColourToUse) override;
+        juce::Font getPopupMenuFont() override;
+
+        void drawAlertBox (juce::Graphics&, juce::AlertWindow&,
+                           const juce::Rectangle<int>& textArea,
+                           juce::TextLayout&) override;
+        juce::Font getAlertWindowTitleFont() override;
+        juce::Font getAlertWindowMessageFont() override;
+        juce::Font getAlertWindowFont() override;
     };
 
 } // namespace patchcraft

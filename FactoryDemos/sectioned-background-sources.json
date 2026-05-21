@@ -1,0 +1,74 @@
+[
+  {
+    "slug": "AuroraArpSynth",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\AuroraArpSynth.patchcraft\\assets\\background.png",
+    "sectioned": "M:\\AudiCode\\PCraft\\FactoryDemos\\AuroraArpSynth.patchcraft\\assets\\background-sectioned.png",
+    "clean": "M:\\AudiCode\\PCraft\\FactoryDemos\\AuroraArpSynth.patchcraft\\assets\\background-clean.png"
+  },
+  {
+    "slug": "CinematicAmberPad",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\CinematicAmberPad.patchcraft\\assets\\background.png",
+    "sectioned": "M:\\AudiCode\\PCraft\\FactoryDemos\\CinematicAmberPad.patchcraft\\assets\\background-sectioned.png",
+    "clean": "M:\\AudiCode\\PCraft\\FactoryDemos\\CinematicAmberPad.patchcraft\\assets\\background-clean.png"
+  },
+  {
+    "slug": "ClubGridDrums",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\ClubGridDrums.patchcraft\\assets\\background.png",
+    "sectioned": "M:\\AudiCode\\PCraft\\FactoryDemos\\ClubGridDrums.patchcraft\\assets\\background-sectioned.png",
+    "clean": "M:\\AudiCode\\PCraft\\FactoryDemos\\ClubGridDrums.patchcraft\\assets\\background-clean.png"
+  },
+  {
+    "slug": "GlitchSliceSampler",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\GlitchSliceSampler.patchcraft\\assets\\background.png",
+    "sectioned": "M:\\AudiCode\\PCraft\\FactoryDemos\\GlitchSliceSampler.patchcraft\\assets\\background-sectioned.png",
+    "clean": "M:\\AudiCode\\PCraft\\FactoryDemos\\GlitchSliceSampler.patchcraft\\assets\\background-clean.png"
+  },
+  {
+    "slug": "GranularVocalClouds",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\GranularVocalClouds.patchcraft\\assets\\background.png",
+    "sectioned": "M:\\AudiCode\\PCraft\\FactoryDemos\\GranularVocalClouds.patchcraft\\assets\\background-sectioned.png",
+    "clean": "M:\\AudiCode\\PCraft\\FactoryDemos\\GranularVocalClouds.patchcraft\\assets\\background-clean.png"
+  },
+  {
+    "slug": "LoFiKeysTape",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\LoFiKeysTape.patchcraft\\assets\\background.png",
+    "sectioned": "M:\\AudiCode\\PCraft\\FactoryDemos\\LoFiKeysTape.patchcraft\\assets\\background-sectioned.png",
+    "clean": "M:\\AudiCode\\PCraft\\FactoryDemos\\LoFiKeysTape.patchcraft\\assets\\background-clean.png"
+  },
+  {
+    "slug": "ModularMotionFX",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\ModularMotionFX.patchcraft\\assets\\background.png",
+    "sectioned": "M:\\AudiCode\\PCraft\\FactoryDemos\\ModularMotionFX.patchcraft\\assets\\background-sectioned.png",
+    "clean": "M:\\AudiCode\\PCraft\\FactoryDemos\\ModularMotionFX.patchcraft\\assets\\background-clean.png"
+  },
+  {
+    "slug": "NeonWavetableMotion",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\NeonWavetableMotion.patchcraft\\assets\\background.png",
+    "sectioned": "M:\\AudiCode\\PCraft\\FactoryDemos\\NeonWavetableMotion.patchcraft\\assets\\background-sectioned.png",
+    "clean": "M:\\AudiCode\\PCraft\\FactoryDemos\\NeonWavetableMotion.patchcraft\\assets\\background-clean.png"
+  },
+  {
+    "slug": "OceanicEvolvePad",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\OceanicEvolvePad.patchcraft\\assets\\background.png",
+    "sectioned": "M:\\AudiCode\\PCraft\\FactoryDemos\\OceanicEvolvePad.patchcraft\\assets\\background-sectioned.png",
+    "clean": "M:\\AudiCode\\PCraft\\FactoryDemos\\OceanicEvolvePad.patchcraft\\assets\\background-clean.png"
+  },
+  {
+    "slug": "OrganicTapeSampler",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\OrganicTapeSampler.patchcraft\\assets\\background.png",
+    "sectioned": "M:\\AudiCode\\PCraft\\FactoryDemos\\OrganicTapeSampler.patchcraft\\assets\\background-sectioned.png",
+    "clean": "M:\\AudiCode\\PCraft\\FactoryDemos\\OrganicTapeSampler.patchcraft\\assets\\background-clean.png"
+  },
+  {
+    "slug": "SurgicalEqMaster",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\SurgicalEqMaster.patchcraft\\assets\\background.png",
+    "sectioned": "M:\\AudiCode\\PCraft\\FactoryDemos\\SurgicalEqMaster.patchcraft\\assets\\background-sectioned.png",
+    "clean": "M:\\AudiCode\\PCraft\\FactoryDemos\\SurgicalEqMaster.patchcraft\\assets\\background-clean.png"
+  },
+  {
+    "slug": "TrailerBraamFX",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\TrailerBraamFX.patchcraft\\assets\\background.png",
+    "sectioned": "M:\\AudiCode\\PCraft\\FactoryDemos\\TrailerBraamFX.patchcraft\\assets\\background-sectioned.png",
+    "clean": "M:\\AudiCode\\PCraft\\FactoryDemos\\TrailerBraamFX.patchcraft\\assets\\background-clean.png"
+  }
+]

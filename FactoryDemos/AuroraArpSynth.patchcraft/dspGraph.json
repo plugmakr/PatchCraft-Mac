@@ -1,0 +1,105 @@
+{
+  "blocks": [
+    {
+      "id": "source_main",
+      "section": "source",
+      "type": "oscillator",
+      "name": "Main Source",
+      "enabled": true,
+      "targetId": "oscBlend",
+      "values": {}
+    },
+    {
+      "id": "filter_tone",
+      "section": "filter",
+      "type": "filter",
+      "name": "Tone Filter",
+      "enabled": true,
+      "targetId": "filterCutoff",
+      "values": {}
+    },
+    {
+      "id": "amp_shape",
+      "section": "amp",
+      "type": "amp",
+      "name": "Amplitude Shape",
+      "enabled": true,
+      "targetId": "attack",
+      "values": {}
+    },
+    {
+      "id": "mod_motion",
+      "section": "mod",
+      "type": "lfo",
+      "name": "Motion LFO",
+      "enabled": true,
+      "targetId": "filterCutoff",
+      "values": {}
+    },
+    {
+      "id": "arp_aurora",
+      "section": "mod",
+      "type": "arpStepSequencer",
+      "name": "Aurora Step Sequencer",
+      "enabled": true,
+      "values": {
+        "sync": 1.0,
+        "rate": 0.25,
+        "arpSteps": 16.0,
+        "arpPattern": 2.0,
+        "arpGate": 0.48,
+        "arpOctaves": 2.0,
+        "arpNote0": 0.0,
+        "arpNote1": 7.0,
+        "arpNote2": 12.0,
+        "arpNote3": 16.0,
+        "arpNote4": 14.0,
+        "arpNote5": 12.0,
+        "arpNote6": 7.0,
+        "arpNote7": 4.0,
+        "arpNote8": 0.0,
+        "arpNote9": 4.0,
+        "arpNote10": 7.0,
+        "arpNote11": 11.0,
+        "arpNote12": 12.0,
+        "arpNote13": 16.0,
+        "arpNote14": 19.0,
+        "arpNote15": 24.0
+      }
+    },
+    {
+      "id": "fx_delay",
+      "section": "fx",
+      "type": "delay",
+      "name": "Tempo Delay",
+      "enabled": true,
+      "targetId": "delayMix",
+      "values": {}
+    },
+    {
+      "id": "fx_reverb",
+      "section": "fx",
+      "type": "reverb",
+      "name": "Space Reverb",
+      "enabled": true,
+      "targetId": "reverbMix",
+      "values": {}
+    },
+    {
+      "id": "out_safe",
+      "section": "out",
+      "type": "output",
+      "name": "Safe Output",
+      "enabled": true,
+      "targetId": "outputGainDb",
+      "values": {}
+    }
+  ],
+  "edges": [],
+  "macros": [],
+  "modulation": [],
+  "automation": [],
+  "typedNodes": [],
+  "userConfigured": true,
+  "quickEditControls": {}
+}

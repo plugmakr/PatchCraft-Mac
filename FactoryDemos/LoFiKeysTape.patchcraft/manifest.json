@@ -1,0 +1,23 @@
+{
+  "formatVersion": 1,
+  "instrumentName": "Lo-Fi Keys Tape",
+  "creator": "PatchCraft",
+  "description": "A lo-fi keys sampler demo with dusty short attacks, dark tape filtering, subtle pitch motion, and small-room ambience.",
+  "category": "Keys Sample Instrument",
+  "engine": "sample",
+  "backgroundImage": "assets/background.png",
+  "libraryThumbnail": "assets/thumbnail.png",
+  "defaultPreset": "Dusty Tape Keys",
+  "createdWith": "PatchCraft Studio",
+  "version": "1.0",
+  "playerDisplayName": "Lo-Fi Keys Tape",
+  "playerTagline": "Factory demo template",
+  "playerAccentColour": "ff70d5c9",
+  "tags": [
+    "factory-demo",
+    "lofi",
+    "sample",
+    "keys sample instrument",
+    "keys"
+  ]
+}

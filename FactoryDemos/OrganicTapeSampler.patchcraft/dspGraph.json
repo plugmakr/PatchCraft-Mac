@@ -1,0 +1,74 @@
+{
+  "blocks": [
+    {
+      "id": "source_sampler",
+      "section": "source",
+      "type": "sampler",
+      "name": "Mapped Sample Source",
+      "enabled": true,
+      "targetId": "sampleStart",
+      "values": {}
+    },
+    {
+      "id": "filter_sampler",
+      "section": "filter",
+      "type": "filter",
+      "name": "Sampler Tone",
+      "enabled": true,
+      "targetId": "filterCutoff",
+      "values": {}
+    },
+    {
+      "id": "amp_sampler",
+      "section": "amp",
+      "type": "amp",
+      "name": "Sample Envelope",
+      "enabled": true,
+      "targetId": "attack",
+      "values": {}
+    },
+    {
+      "id": "mod_performance",
+      "section": "mod",
+      "type": "macro",
+      "name": "Performance Motion",
+      "enabled": true,
+      "targetId": "sampleGlitch",
+      "values": {}
+    },
+    {
+      "id": "fx_delay",
+      "section": "fx",
+      "type": "delay",
+      "name": "Tempo Delay",
+      "enabled": true,
+      "targetId": "delayMix",
+      "values": {}
+    },
+    {
+      "id": "fx_reverb",
+      "section": "fx",
+      "type": "reverb",
+      "name": "Room / Space",
+      "enabled": true,
+      "targetId": "reverbMix",
+      "values": {}
+    },
+    {
+      "id": "out_safe",
+      "section": "out",
+      "type": "output",
+      "name": "Safe Output",
+      "enabled": true,
+      "targetId": "outputGainDb",
+      "values": {}
+    }
+  ],
+  "edges": [],
+  "macros": [],
+  "modulation": [],
+  "automation": [],
+  "typedNodes": [],
+  "userConfigured": true,
+  "quickEditControls": {}
+}

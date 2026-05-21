@@ -96,7 +96,7 @@ namespace patchcraft
     {
         auto r = getLocalBounds().reduced (8);
         auto searchRow = r.removeFromTop (24);
-        popOutBtn.setBounds (searchRow.removeFromRight (28));
+        popOutBtn.setBounds (searchRow.removeFromRight (38));
         searchRow.removeFromRight (4);
         search.setBounds (searchRow);
         r.removeFromTop (6);

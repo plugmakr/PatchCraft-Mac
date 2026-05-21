@@ -170,6 +170,13 @@ Goal: define PatchCraft's own safe scripting language for extending instruments,
 - Define authoring UX: script editor, autocomplete from the parameter registry, inline errors, test harness, examples, reusable snippets, and export-time compatibility checks.
 - Define runtime boundaries: Studio-only scripts first, then reviewed Player-safe scripts for exported instruments once the sandbox and validator are proven.
 
+Completed platform groundwork:
+
+- [x] Added the `.pcexp` application extension system for exporters, script runtimes, synth/DSP module packs, validators, templates, and integrations.
+- [x] Defined `pScript Core` as a built-in, non-removable PatchCraft capability instead of a paid/free expansion package.
+- [x] Added package documentation for `.pcexp` manifests, capabilities, install locations, license modes, and future language runtime add-ons.
+- [x] Added a detailed pScript language specification covering syntax, events, mappings, macros, safety rules, validation, and expansion interaction.
+
 ## Pinned Architecture - Instrument Performance Layer
 
 Goal: exported instruments should support DAW-playable performance modules that sit above a preset and can be switched, automated, MIDI-learned, and gesture-controlled while playing.
@@ -280,3 +287,47 @@ Completed Phase 8 slice:
 - [x] Centralized Player runtime element support checks and enabled XY Pad support in exported packs.
 - [x] Added XY Pad drawing and parameter gestures to Player runtime and Studio test preview so supported layout elements are not silently inert.
 - [x] Added `PatchCraftReleaseChecklist`, a CMake target that builds smoke tests plus Studio, Player, and Player FX targets when enabled.
+
+## Phase 9 - Multi-Instrument and Sample Performance
+
+Goal: make PatchCraft handle layered instruments, tempo-aware samples, and performance-ready Player workflows without breaking the single-instrument path.
+
+- [x] Wire the multi-instrument engine into the shared engine factory and build system.
+- [x] Add layered sample playback with per-layer volume, pan, mute, solo, note routing, and safe offset rendering.
+- [x] Preserve BPM metadata on sample zones for tempo-aware sample playback and future chopping/sync workflows.
+- [x] Add focused smoke tests for multi-engine factory routing, layer solo behavior, offset rendering, and sample BPM serialization.
+- [x] Add manifest serialization for multi-instrument ids, names, file references, and mode state.
+- [x] Add runtime import support for multi-instrument packs with per-layer mappings and assets.
+- [ ] Finish authoring UI for multi-instrument layer creation, ordering, routing, and per-layer DSP sends.
+- [x] Add Studio pack export support for per-layer mappings and assets.
+- [x] Connect sample BPM metadata to Player playback sync and MIDI-triggered sample performance controls.
+- [x] Add Player-facing layer display and mix controls for layered instruments.
+- [ ] Add advanced layered-preset and expansion authoring workflows for multi-instrument products.
+
+Completed Phase 9 slice:
+
+- [x] Multi-engine creation now round-trips through `EngineFactory` using the `"multi"` engine id.
+- [x] Multi-layer rendering now respects mute/solo state, keeps nonzero process offsets inside bounds, and adds into the host buffer like other source engines.
+- [x] Sample zone BPM now serializes with the rest of the mapper metadata.
+- [x] Multi-instrument manifest fields now serialize and restore through the shared manifest model.
+- [x] Smoke tests now cover the new multi-engine, multi-pack import, and BPM metadata behavior.
+- [x] Multi-instrument loading now honors manifest `instrumentFiles`, `instruments/<id>.json`, and shared sample roots.
+- [x] Multi-layer rendering now uses preallocated scratch buffers and non-blocking audio-thread locks.
+- [x] Studio default/reset preset actions now operate on project state instead of a null Player processor.
+- [x] Player license watermarks now validate against the loaded pack identity.
+- [x] VST export smoke coverage is now part of the release checklist target.
+- [x] VST3 exports now restamp `moduleinfo.json` plugin name, manufacturer, version, and unique class IDs so DAWs scan exported plugins as distinct products.
+- [x] FX projects now export from the Player FX VST3 template instead of the instrument Player template, preserving `Fx` category and audio-input behavior.
+- [x] Export smoke coverage now verifies instrument and FX bundles, renamed inner binaries, rewritten metadata, and non-template class IDs.
+- [x] Studio pack export now writes multi-instrument `instruments/<layer>.json` maps, copies each layer's referenced samples into the pack, normalizes manifest layer references, and smoke-tests Player loading/rendering from the exported layered pack.
+- [x] Player runtime now shows a collapsible multi-instrument layer dock with per-layer volume, pan, mute, and solo controls.
+- [x] Sample playback now uses zone BPM metadata when `bpmSync` is enabled so tempo-labeled samples follow host BPM by basic resampling.
+- [x] One Shot Pack Library `Load Pack` now opens a playable audition path and mutes Studio preview so the loaded pack is the active audition source.
+- [x] Sample Mapper now exposes `Select All` next to `Auto Trim`; Auto Trim can target the selected zones explicitly or all zones when no selection exists.
+
+Ship-readiness status:
+
+- [x] `PatchCraftReleaseChecklist` builds Studio, Player, Player FX, standalone variants, and smoke-test binaries.
+- [x] `PatchCraftRcBundle` creates `build/dist/PatchCraftStudio-RC` with Studio, FactoryDemos, Library, Player templates, docs, install notes, and RC manifest.
+- [x] Audio smoke coverage includes synth, sampler, BPM sync, drum pads, MIDI Playground, DSP routing, multi-instrument loading/export, pcexp extensions, Plugin.club scaffolds, and MIDI crash regressions.
+- [x] VST export smoke coverage verifies instrument and FX VST3 export metadata, class IDs, embedded pack policy, and license-trial validation.

@@ -6,12 +6,43 @@ namespace patchcraft
 {
     LibraryScanner::LibraryScanner()
     {
-        // Default search paths: user documents/PatchCraft/Library
-        auto defaultPath = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
-                              .getChildFile ("PatchCraft")
-                              .getChildFile ("Library");
-        if (defaultPath.isDirectory())
-            searchPaths.add (defaultPath);
+        juce::StringArray seenPaths;
+        auto addIfDirectory = [this, &seenPaths] (const juce::File& folder)
+        {
+            const auto key = folder.getFullPathName().replaceCharacter ('\\', '/').trimCharactersAtEnd ("/").toLowerCase();
+            if (folder.isDirectory() && ! seenPaths.contains (key))
+            {
+                searchPaths.addIfNotAlreadyThere (folder);
+                seenPaths.add (key);
+            }
+        };
+
+        const auto documentsPatchCraft = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+            .getChildFile ("PatchCraft");
+        addIfDirectory (documentsPatchCraft.getChildFile ("Library"));
+        addIfDirectory (documentsPatchCraft.getChildFile ("Instruments"));
+        addIfDirectory (documentsPatchCraft.getChildFile ("Patches"));
+        addIfDirectory (documentsPatchCraft.getChildFile ("Packs"));
+        addIfDirectory (documentsPatchCraft.getChildFile ("FactoryDemos"));
+        addIfDirectory (documentsPatchCraft.getChildFile ("VST3 Exports"));
+        addIfDirectory (documentsPatchCraft.getChildFile ("Exports"));
+
+        const auto appDataPatchCraft = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+            .getChildFile ("PatchCraft");
+        addIfDirectory (appDataPatchCraft.getChildFile ("Library"));
+        addIfDirectory (appDataPatchCraft.getChildFile ("Instruments"));
+        addIfDirectory (appDataPatchCraft.getChildFile ("Packs"));
+
+        const auto app = juce::File::getSpecialLocation (juce::File::currentApplicationFile);
+        const auto appDir = app.isDirectory() ? app : app.getParentDirectory();
+        addIfDirectory (appDir.getChildFile ("FactoryDemos"));
+        addIfDirectory (appDir.getChildFile ("Library").getChildFile ("Templates"));
+        addIfDirectory (appDir.getChildFile ("Library").getChildFile ("Instruments"));
+
+        const auto cwd = juce::File::getCurrentWorkingDirectory();
+        addIfDirectory (cwd.getChildFile ("FactoryDemos"));
+        addIfDirectory (cwd.getChildFile ("Library").getChildFile ("Templates"));
+        addIfDirectory (cwd.getChildFile ("Library").getChildFile ("Instruments"));
     }
 
     LibraryScanner::~LibraryScanner() = default;
@@ -36,6 +67,7 @@ namespace patchcraft
 
     void LibraryScanner::scanLibrary (juce::ThreadPool* threadPool)
     {
+        juce::ignoreUnused (threadPool);
         entries.clear();
 
         for (auto& path : searchPaths)
@@ -50,21 +82,33 @@ namespace patchcraft
     {
         if (! dir.isDirectory()) return;
 
-        // Find all .patchcraft folders (they end with .patchcraft extension)
-        auto subdirs = dir.findChildFiles (juce::File::findDirectories, false);
+        scanPackFolder (dir);
 
+        auto subdirs = dir.findChildFiles (juce::File::findDirectories, true);
         for (auto& sub : subdirs)
+            scanPackFolder (sub);
+    }
+
+    void LibraryScanner::scanPackFolder (const juce::File& packFolder)
+    {
+        auto manifest = packFolder.getChildFile ("manifest.json");
+        if (! manifest.existsAsFile())
+            return;
+
+        const auto packKey = packFolder.getFullPathName().replaceCharacter ('\\', '/').trimCharactersAtEnd ("/").toLowerCase();
+        for (const auto& existing : entries)
         {
-            // Check if this is a valid pack (has manifest.json)
-            auto manifest = sub.getChildFile ("manifest.json");
-            if (manifest.existsAsFile())
-            {
-                LibraryEntry entry;
-                if (loadPackMetadata (sub, entry))
-                {
-                    entries.add (entry);
-                }
-            }
+            const auto existingKey = existing.folder.getFullPathName().replaceCharacter ('\\', '/').trimCharactersAtEnd ("/").toLowerCase();
+            if (existingKey == packKey)
+                return;
+        }
+
+        LibraryEntry entry;
+        if (loadPackMetadata (packFolder, entry))
+        {
+            if (entry.instrumentName.isEmpty())
+                entry.instrumentName = packFolder.getFileNameWithoutExtension();
+            entries.add (entry);
         }
     }
 
@@ -85,6 +129,7 @@ namespace patchcraft
             entry.creator = manifest.creator;
             entry.description = manifest.description;
             entry.category = manifest.category;
+            entry.engineId = manifest.engine;
             entry.libraryThumbnail = manifest.libraryThumbnail;
             entry.tags = manifest.tags;
             entry.version = manifest.version;
@@ -156,7 +201,9 @@ namespace patchcraft
     {
         juce::Array<LibraryEntry> result;
         for (auto& e : entries)
-            if (e.category == category)
+            if (e.category.equalsIgnoreCase (category)
+                || e.engineId.equalsIgnoreCase (category)
+                || e.tags.contains (category))
                 result.add (e);
         return result;
     }
@@ -180,7 +227,9 @@ namespace patchcraft
             if (e.instrumentName.toLowerCase().contains (q) ||
                 e.description.toLowerCase().contains (q) ||
                 e.creator.toLowerCase().contains (q) ||
-                e.category.toLowerCase().contains (q))
+                e.category.toLowerCase().contains (q) ||
+                e.engineId.toLowerCase().contains (q) ||
+                e.tags.joinIntoString (" ").toLowerCase().contains (q))
             {
                 result.add (e);
             }

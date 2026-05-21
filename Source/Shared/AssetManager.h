@@ -16,7 +16,7 @@ namespace patchcraft
         juce::Image loadImage (const juce::File& path);
         void clear();
 
-        // Renders a placeholder cinematic mountain background of any size.
+        // Renders the default cinematic mountain background of any size.
         // Used when an instrument has no background image.
         static juce::Image renderDefaultHeroImage (int width, int height);
 

@@ -45,7 +45,26 @@ namespace patchcraft
         setVisible (true);
     }
 
-    void StudioApplication::initialise (const juce::String&)
+    namespace
+    {
+        juce::File screenshotOutputFolderFromCommandLine (const juce::String& commandLine)
+        {
+            constexpr const char* key = "--capture-tutorial-screenshots=";
+            if (! commandLine.contains (key))
+                return {};
+
+            auto value = commandLine.fromFirstOccurrenceOf (key, false, false).trim();
+            if (value.startsWithChar ('"'))
+                value = value.fromFirstOccurrenceOf ("\"", false, false)
+                             .upToFirstOccurrenceOf ("\"", false, false);
+            else if (value.containsChar (' '))
+                value = value.upToFirstOccurrenceOf (" ", false, false);
+
+            return value.isNotEmpty() ? juce::File (value) : juce::File();
+        }
+    }
+
+    void StudioApplication::initialise (const juce::String& commandLine)
     {
         #ifdef _WIN32
         SetUnhandledExceptionFilter(pcCrashHandler);
@@ -53,6 +72,25 @@ namespace patchcraft
         PC_DBG("StudioApplication::initialise - app starting");
         juce::LookAndFeel::setDefaultLookAndFeel (&laf);
         mainWindow = std::make_unique<StudioWindow> (getApplicationName(), laf);
+
+        const auto screenshotFolder = screenshotOutputFolderFromCommandLine (commandLine);
+        if (screenshotFolder.getFullPathName().isNotEmpty())
+        {
+            juce::Timer::callAfterDelay (750, [this, screenshotFolder]
+            {
+                juce::String error;
+                if (mainWindow != nullptr)
+                {
+                    if (auto* studio = dynamic_cast<StudioMainComponent*> (mainWindow->getContentComponent()))
+                    {
+                        if (! studio->captureTutorialScreenshots (screenshotFolder, error))
+                            PC_DBG("Tutorial screenshot capture failed: %s", error.toRawUTF8());
+                    }
+                }
+
+                quit();
+            });
+        }
     }
 
     void StudioApplication::shutdown()

@@ -8,8 +8,9 @@ namespace patchcraft
 {
     EngineType engineTypeFromString (const juce::String& s)
     {
-        if (s == "synth") return EngineType::Synth;
-        if (s == "fx" || s == "effect") return EngineType::Effect;
+        if (s.equalsIgnoreCase ("synth")) return EngineType::Synth;
+        if (s.equalsIgnoreCase ("fx") || s.equalsIgnoreCase ("effect")) return EngineType::Effect;
+        if (s.equalsIgnoreCase ("multi") || s.equalsIgnoreCase ("multiInstrument")) return EngineType::Multi;
         return EngineType::Sample;
     }
 
@@ -18,6 +19,7 @@ namespace patchcraft
         switch (t) {
             case EngineType::Synth:  return "synth";
             case EngineType::Effect: return "fx";
+            case EngineType::Multi:  return "multi";
             case EngineType::Sample: default: return "sample";
         }
     }
@@ -27,6 +29,7 @@ namespace patchcraft
         switch (t) {
             case EngineType::Synth:  return "Synth";
             case EngineType::Effect: return "Effect";
+            case EngineType::Multi:  return "Multi Instrument";
             case EngineType::Sample: default: return "Sampler";
         }
     }

@@ -2,10 +2,589 @@
 #include "StudioMainComponent.h"
 #include "PatchCraftLookAndFeel.h"
 
+#include <cmath>
 #include <vector>
 
 namespace patchcraft
 {
+    namespace
+    {
+        static float blockValue (const DspBlock& block, const juce::String& key, float fallback)
+        {
+            const auto it = block.values.find (key);
+            return it != block.values.end() ? it->second : fallback;
+        }
+
+        static const DspBlock* findDrumMachineBlock (const DspGraph& graph)
+        {
+            for (const auto& block : graph.blocks)
+                if (block.type.containsIgnoreCase ("drum") || block.values.find ("dmTracks") != block.values.end())
+                    return &block;
+            return nullptr;
+        }
+
+        static DspBlock* findDrumMachineBlock (DspGraph& graph)
+        {
+            for (auto& block : graph.blocks)
+                if (block.type.containsIgnoreCase ("drum") || block.values.find ("dmTracks") != block.values.end())
+                    return &block;
+            return nullptr;
+        }
+
+        static juce::String defaultDrumTrackLabel (int track)
+        {
+            static const char* labels[] =
+            {
+                "Kick", "Snare", "Closed Hat", "Open Hat",
+                "Clap", "Low Tom", "Perc", "Crash",
+                "Ride", "Rim", "Shaker", "FX",
+                "Pad 13", "Pad 14", "Pad 15", "Pad 16"
+            };
+            return track >= 0 && track < 16 ? juce::String (labels[track])
+                                            : "Track " + juce::String (track + 1);
+        }
+
+        static int defaultDrumTrackNote (int track)
+        {
+            static const int notes[] =
+            {
+                36, 38, 42, 46, 39, 45, 48, 49,
+                51, 37, 44, 52, 53, 54, 55, 56
+            };
+            return track >= 0 && track < 16 ? notes[track] : 36 + track;
+        }
+
+        static juce::String stringAtOr (const juce::StringArray& values,
+                                        int index,
+                                        const juce::String& fallback)
+        {
+            return (index >= 0 && index < values.size()) ? values[index] : fallback;
+        }
+
+        static DspBlock& ensureDrumMachineBlock (DspGraph& graph)
+        {
+            if (auto* existing = findDrumMachineBlock (graph))
+                return *existing;
+
+            DspBlock block;
+            block.section = "mod";
+            block.type = "drumMachine";
+            block.name = "Drum Machine Performance";
+            block.targetId = "midiDrumMachine";
+            block.enabled = true;
+            block.id = "midi_drum_machine";
+            int suffix = 2;
+            auto idExists = [&] (const juce::String& id)
+            {
+                for (const auto& existing : graph.blocks)
+                    if (existing.id == id)
+                        return true;
+                return false;
+            };
+            while (idExists (block.id))
+                block.id = "midi_drum_machine_" + juce::String (suffix++);
+
+            block.values["dmTracks"] = 8.0f;
+            block.values["dmSteps"] = 16.0f;
+            block.values["dmPattern"] = 0.0f;
+            block.values["dmTransport"] = 1.0f;
+            block.values["dmGate"] = 0.65f;
+            block.values["dmProbability"] = 1.0f;
+            block.values["rate"] = 1.0f;
+            block.values["sync"] = 1.0f;
+            block.values["enabled"] = 1.0f;
+            for (int track = 0; track < 16; ++track)
+            {
+                block.values["dmTrack" + juce::String (track) + "Note"] = (float) defaultDrumTrackNote (track);
+                block.metadata["dmTrack" + juce::String (track) + "Label"] = defaultDrumTrackLabel (track);
+            }
+            graph.blocks.push_back (std::move (block));
+            graph.userConfigured = true;
+            return graph.blocks.back();
+        }
+
+        static void drawDrumGridPreview (juce::Graphics& g,
+                                         juce::Rectangle<int> r,
+                                         const LayoutElement& element,
+                                         const DspGraph& graph)
+        {
+            const auto* block = findDrumMachineBlock (graph);
+            const int tracks = block != nullptr
+                ? juce::jlimit (1, 16, juce::roundToInt (blockValue (*block, "dmTracks", (float) element.drumTracks)))
+                : juce::jlimit (1, 16, element.drumTracks);
+            const int steps = block != nullptr
+                ? juce::jlimit (1, 64, juce::roundToInt (blockValue (*block, "dmSteps", (float) element.drumSteps)))
+                : juce::jlimit (1, 64, element.drumSteps);
+            const int pattern = block != nullptr
+                ? juce::jlimit (0, 7, juce::roundToInt (blockValue (*block, "dmPattern", (float) element.drumPattern)))
+                : juce::jlimit (0, 7, element.drumPattern);
+
+            const auto bg = element.backgroundColour.isTransparent() ? juce::Colour (0xff15191f) : element.backgroundColour;
+            const auto border = element.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : element.borderColour;
+            const auto accent = element.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : element.accentColour;
+
+            g.setColour (bg);
+            g.fillRoundedRectangle (r.toFloat(), juce::jmax (4.0f, element.cornerRadius));
+            g.setColour (border);
+            g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (4.0f, element.cornerRadius), 1.0f);
+
+            auto area = r.reduced (8);
+            auto header = area.removeFromTop (20);
+            g.setColour (accent);
+            g.setFont (juce::Font (11.0f, juce::Font::bold));
+            g.drawText ((element.label.isNotEmpty() ? element.label : "DRUM GRID")
+                            + "  P" + juce::String (pattern + 1)
+                            + "  " + juce::String (tracks) + "x" + juce::String (steps),
+                        header, juce::Justification::centredLeft, true);
+
+            area.removeFromTop (4);
+            if (area.isEmpty())
+                return;
+
+            const int labelW = juce::jlimit (42, 86, area.getWidth() / 5);
+            auto grid = area.withTrimmedLeft (labelW);
+            const float cellW = (float) grid.getWidth() / (float) steps;
+            const float cellH = (float) area.getHeight() / (float) tracks;
+            static const char* names[] = { "Kick", "Snare", "Hat", "Clap", "Tom", "Perc", "Ride", "Crash" };
+
+            for (int track = 0; track < tracks; ++track)
+            {
+                const int y = area.getY() + juce::roundToInt ((float) track * cellH);
+                const int h = juce::roundToInt (cellH);
+                auto label = juce::Rectangle<int> (area.getX(), y, labelW - 5, h);
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (juce::Font (juce::jlimit (8.0f, 10.5f, cellH * 0.40f), juce::Font::bold));
+                const juce::String trackLabel = track < 8 ? juce::String (names[track]) : "T" + juce::String (track + 1);
+                g.drawText (trackLabel, label, juce::Justification::centredLeft, true);
+
+                for (int step = 0; step < steps; ++step)
+                {
+                    const int x = grid.getX() + juce::roundToInt ((float) step * cellW);
+                    const auto cell = juce::Rectangle<float> ((float) x + 1.0f,
+                                                              (float) y + 1.0f,
+                                                              juce::jmax (1.0f, cellW - 2.0f),
+                                                              juce::jmax (1.0f, cellH - 2.0f));
+                    const auto prefix = "dmP" + juce::String (pattern)
+                                      + "T" + juce::String (track)
+                                      + "S" + juce::String (step);
+                    const bool fallbackHit = (track == 0 && step % 4 == 0)
+                                          || (track == 1 && (step == 4 || step == 12))
+                                          || (track == 2 && step % 2 == 0)
+                                          || (track == 3 && (step == 7 || step == 15));
+                    const bool active = block != nullptr
+                        ? blockValue (*block, prefix + "On", 0.0f) >= 0.5f
+                        : fallbackHit;
+                    const float velocity = block != nullptr
+                        ? juce::jlimit (0.1f, 1.0f, blockValue (*block, prefix + "Vel", 0.8f))
+                        : 0.75f;
+                    const int divisions = block != nullptr
+                        ? juce::jlimit (1, 4, juce::roundToInt (blockValue (*block, prefix + "Div", 1.0f)))
+                        : 1;
+                    g.setColour ((step % 4 == 0 ? PatchCraftLookAndFeel::panelAlt().brighter (0.08f)
+                                                 : PatchCraftLookAndFeel::panelAlt())
+                                     .withAlpha (0.86f));
+                    g.fillRoundedRectangle (cell, 2.5f);
+                    if (divisions > 1 && cellW >= 11.0f)
+                    {
+                        g.setColour (accent.withAlpha (0.20f));
+                        for (int division = 1; division < divisions; ++division)
+                        {
+                            const float xLine = cell.getX() + cell.getWidth() * (float) division / (float) divisions;
+                            g.drawVerticalLine (juce::roundToInt (xLine), cell.getY() + 2.0f, cell.getBottom() - 2.0f);
+                        }
+                    }
+                    if (active)
+                    {
+                        auto hit = cell.reduced (2.0f);
+                        hit.removeFromTop (hit.getHeight() * (1.0f - velocity));
+                        g.setColour (accent.withAlpha (0.68f + velocity * 0.28f));
+                        g.fillRoundedRectangle (hit, 2.0f);
+                        if (divisions > 1 && cellW >= 18.0f && cellH >= 12.0f)
+                        {
+                            g.setColour (juce::Colours::black.withAlpha (0.70f));
+                            g.setFont (juce::Font (juce::jlimit (7.0f, 9.0f, cellH * 0.34f), juce::Font::bold));
+                            g.drawText ("x" + juce::String (divisions), cell.toNearestInt(), juce::Justification::centred, true);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Searchable parameter picker. Replaces the right-click "Add DSP
+        // Control" submenu cascade with a single popup containing a search
+        // field + filtered list - the submenu was unusable once the
+        // parameter palette grew past ~20 entries.
+        class ParameterSearchPopup : public juce::Component,
+                                     private juce::TextEditor::Listener,
+                                     private juce::ListBoxModel
+        {
+        public:
+            struct Entry
+            {
+                juce::String id;
+                juce::String label;       // display string ("Cutoff  (filterCutoff) - Filter")
+                juce::String haystack;    // lowercased search text
+            };
+
+            using SelectCallback = std::function<void (const juce::String& parameterId)>;
+
+            ParameterSearchPopup (std::vector<Entry> entries, SelectCallback onSelect)
+                : allEntries (std::move (entries)),
+                  callback (std::move (onSelect))
+            {
+                visibleEntries = allEntries;
+
+                search.setTextToShowWhenEmpty ("Search parameters...",
+                                               juce::Colours::grey);
+                search.setMultiLine (false);
+                search.setReturnKeyStartsNewLine (false);
+                search.addListener (this);
+                addAndMakeVisible (search);
+
+                list.setModel (this);
+                list.setRowHeight (22);
+                addAndMakeVisible (list);
+
+                setSize (380, 360);
+                juce::Timer::callAfterDelay (50, [self = juce::Component::SafePointer<ParameterSearchPopup> (this)]
+                {
+                    if (auto* p = self.getComponent()) p->search.grabKeyboardFocus();
+                });
+            }
+
+            void paint (juce::Graphics& g) override
+            {
+                g.fillAll (PatchCraftLookAndFeel::panel());
+            }
+
+            void resized() override
+            {
+                auto r = getLocalBounds().reduced (6);
+                search.setBounds (r.removeFromTop (28));
+                r.removeFromTop (4);
+                list.setBounds (r);
+            }
+
+            // ListBoxModel
+            int getNumRows() override { return (int) visibleEntries.size(); }
+
+            void paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool selected) override
+            {
+                if (row < 0 || row >= (int) visibleEntries.size()) return;
+                if (selected)
+                {
+                    g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.25f));
+                    g.fillRect (0, 0, w, h);
+                }
+                g.setColour (PatchCraftLookAndFeel::text());
+                g.setFont (12.0f);
+                g.drawText (visibleEntries[(size_t) row].label,
+                            8, 0, w - 16, h, juce::Justification::centredLeft);
+            }
+
+            void listBoxItemClicked (int row, const juce::MouseEvent&) override
+            {
+                commitRow (row);
+            }
+
+            void listBoxItemDoubleClicked (int row, const juce::MouseEvent&) override
+            {
+                commitRow (row);
+            }
+
+            void returnKeyPressed (int row) override
+            {
+                commitRow (row >= 0 ? row : 0);
+            }
+
+        private:
+            void textEditorTextChanged (juce::TextEditor&) override
+            {
+                rebuildVisible();
+            }
+
+            void textEditorReturnKeyPressed (juce::TextEditor&) override
+            {
+                if (! visibleEntries.empty())
+                    commitRow (0);
+            }
+
+            void textEditorEscapeKeyPressed (juce::TextEditor&) override
+            {
+                if (auto* parent = findParentComponentOfClass<juce::CallOutBox>())
+                    parent->exitModalState (0);
+            }
+
+            void rebuildVisible()
+            {
+                const auto query = search.getText().trim().toLowerCase();
+                visibleEntries.clear();
+                if (query.isEmpty())
+                {
+                    visibleEntries = allEntries;
+                }
+                else
+                {
+                    juce::StringArray tokens;
+                    tokens.addTokens (query, " ", "");
+                    tokens.removeEmptyStrings();
+                    for (const auto& entry : allEntries)
+                    {
+                        bool matchesAll = true;
+                        for (const auto& tok : tokens)
+                        {
+                            if (! entry.haystack.contains (tok))
+                            {
+                                matchesAll = false;
+                                break;
+                            }
+                        }
+                        if (matchesAll)
+                            visibleEntries.push_back (entry);
+                    }
+                }
+                list.updateContent();
+                list.repaint();
+                if (! visibleEntries.empty())
+                    list.selectRow (0);
+            }
+
+            void commitRow (int row)
+            {
+                if (row < 0 || row >= (int) visibleEntries.size()) return;
+                const auto id = visibleEntries[(size_t) row].id;
+                auto cb = callback;
+                if (auto* parent = findParentComponentOfClass<juce::CallOutBox>())
+                    parent->exitModalState (0);
+                if (cb)
+                    cb (id);
+            }
+
+            std::vector<Entry> allEntries;
+            std::vector<Entry> visibleEntries;
+            SelectCallback     callback;
+            juce::TextEditor   search;
+            juce::ListBox      list { "paramSearch", nullptr };
+        };
+
+        class CanvasActionSearchPopup : public juce::Component,
+                                        private juce::TextEditor::Listener,
+                                        private juce::ListBoxModel
+        {
+        public:
+            struct Entry
+            {
+                juce::String id;
+                juce::String title;
+                juce::String detail;
+                juce::String haystack;
+            };
+
+            using SelectCallback = std::function<void (const juce::String& actionId)>;
+
+            CanvasActionSearchPopup (std::vector<Entry> entries, SelectCallback onSelect)
+                : allEntries (std::move (entries)),
+                  callback (std::move (onSelect))
+            {
+                visibleEntries = allEntries;
+                search.setTextToShowWhenEmpty ("Search canvas actions, elements, controls...",
+                                               PatchCraftLookAndFeel::textDim());
+                search.setMultiLine (false);
+                search.setReturnKeyStartsNewLine (false);
+                search.addListener (this);
+                addAndMakeVisible (search);
+
+                list.setModel (this);
+                list.setRowHeight (34);
+                addAndMakeVisible (list);
+
+                setSize (430, 420);
+                juce::Timer::callAfterDelay (50, [self = juce::Component::SafePointer<CanvasActionSearchPopup> (this)]
+                {
+                    if (auto* p = self.getComponent()) p->search.grabKeyboardFocus();
+                });
+            }
+
+            void paint (juce::Graphics& g) override
+            {
+                g.fillAll (PatchCraftLookAndFeel::panel());
+            }
+
+            void resized() override
+            {
+                auto r = getLocalBounds().reduced (8);
+                search.setBounds (r.removeFromTop (30));
+                r.removeFromTop (6);
+                list.setBounds (r);
+            }
+
+            int getNumRows() override { return (int) visibleEntries.size(); }
+
+            void paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool selected) override
+            {
+                if (row < 0 || row >= (int) visibleEntries.size()) return;
+                const auto& entry = visibleEntries[(size_t) row];
+                if (selected)
+                {
+                    g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.20f));
+                    g.fillRoundedRectangle (juce::Rectangle<float> (2.0f, 2.0f, (float) w - 4.0f, (float) h - 4.0f), 5.0f);
+                }
+                g.setColour (PatchCraftLookAndFeel::textBright());
+                g.setFont (juce::Font (12.0f, juce::Font::bold));
+                g.drawText (entry.title, 10, 2, w - 20, 16, juce::Justification::centredLeft, true);
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (10.5f);
+                g.drawText (entry.detail, 10, 18, w - 20, 14, juce::Justification::centredLeft, true);
+            }
+
+            void listBoxItemClicked (int row, const juce::MouseEvent&) override { commitRow (row); }
+            void listBoxItemDoubleClicked (int row, const juce::MouseEvent&) override { commitRow (row); }
+            void returnKeyPressed (int row) override { commitRow (row >= 0 ? row : 0); }
+
+        private:
+            void textEditorTextChanged (juce::TextEditor&) override
+            {
+                const auto query = search.getText().trim().toLowerCase();
+                visibleEntries.clear();
+                if (query.isEmpty())
+                {
+                    visibleEntries = allEntries;
+                }
+                else
+                {
+                    juce::StringArray tokens;
+                    tokens.addTokens (query, " ", "");
+                    tokens.removeEmptyStrings();
+                    for (const auto& entry : allEntries)
+                    {
+                        bool matches = true;
+                        for (const auto& token : tokens)
+                            if (! entry.haystack.contains (token))
+                            {
+                                matches = false;
+                                break;
+                            }
+                        if (matches)
+                            visibleEntries.push_back (entry);
+                    }
+                }
+                list.updateContent();
+                list.repaint();
+                if (! visibleEntries.empty())
+                    list.selectRow (0);
+            }
+
+            void textEditorReturnKeyPressed (juce::TextEditor&) override
+            {
+                if (! visibleEntries.empty())
+                    commitRow (0);
+            }
+
+            void textEditorEscapeKeyPressed (juce::TextEditor&) override
+            {
+                if (auto* parent = findParentComponentOfClass<juce::CallOutBox>())
+                    parent->exitModalState (0);
+            }
+
+            void commitRow (int row)
+            {
+                if (row < 0 || row >= (int) visibleEntries.size()) return;
+                const auto id = visibleEntries[(size_t) row].id;
+                auto cb = callback;
+                if (auto* parent = findParentComponentOfClass<juce::CallOutBox>())
+                    parent->exitModalState (0);
+                if (cb)
+                    cb (id);
+            }
+
+            std::vector<Entry> allEntries;
+            std::vector<Entry> visibleEntries;
+            SelectCallback callback;
+            juce::TextEditor search;
+            juce::ListBox list { "canvasActionSearch", nullptr };
+        };
+
+        static std::vector<ParameterSearchPopup::Entry>
+            collectParameterEntries (const PatchCraftProject& project)
+        {
+            std::vector<ParameterSearchPopup::Entry> entries;
+            for (const auto& def : project.getParameters().getAll())
+            {
+                ParameterSearchPopup::Entry e;
+                e.id = def.id;
+                const auto cat = def.category.isNotEmpty() ? def.category : juce::String ("Other");
+                e.label    = def.name + "  (" + def.id + ")  - " + cat;
+                e.haystack = (def.name + " " + def.id + " " + cat + " " + def.section).toLowerCase();
+                entries.push_back (std::move (e));
+            }
+            return entries;
+        }
+
+        static void launchParameterPicker (juce::Component* attachTo,
+                                           juce::Rectangle<int> screenAnchor,
+                                           std::vector<ParameterSearchPopup::Entry> entries,
+                                           ParameterSearchPopup::SelectCallback cb)
+        {
+            auto popup = std::make_unique<ParameterSearchPopup> (std::move (entries), std::move (cb));
+            juce::CallOutBox::launchAsynchronously (std::move (popup), screenAnchor,
+                                                    attachTo != nullptr ? attachTo->getTopLevelComponent()
+                                                                        : nullptr);
+        }
+
+        static std::vector<CanvasActionSearchPopup::Entry> collectCanvasActionEntries()
+        {
+            auto make = [] (juce::String id, juce::String title, juce::String detail, juce::String keywords)
+            {
+                CanvasActionSearchPopup::Entry entry;
+                entry.id = std::move (id);
+                entry.title = std::move (title);
+                entry.detail = std::move (detail);
+                entry.haystack = (entry.id + " " + entry.title + " " + entry.detail + " " + keywords).toLowerCase();
+                return entry;
+            };
+
+            return {
+                make ("findParameter", "Find Parameter / Add Knob", "Search all DSP parameters and add a connected knob.", "control dsp assign knob"),
+                make ("panel", "Add Panel / Container", "Add a resizable visual container.", "container box section"),
+                make ("tabPanel", "Add Tab Panel", "Add tabs for multi-page instrument UIs.", "tabs pages container"),
+                make ("roundedRect", "Add Rounded Rectangle", "Add a shape with editable colour, opacity, and border.", "shape rect box"),
+                make ("ellipse", "Add Ellipse", "Add a circular/oval shape.", "shape circle"),
+                make ("mixer", "Add Mixer", "Add a mixer surface mapped to output or bus parameters.", "fader volume pan bus"),
+                make ("mixerChannel", "Add Single Mixer Channel", "Add one compact mixer strip instead of a full mixer group.", "fader channel strip volume pan"),
+                make ("explodeMixer", "Break Mixer Into Channels", "Convert a selected mixer into separate one-channel strips.", "ungroup split mixer channels"),
+                make ("macro", "Add Macro Control", "Add a performable macro control.", "macro performance"),
+                make ("modMatrix", "Add Mod Matrix", "Add a modulation matrix UI element.", "modulation routing"),
+                make ("granular", "Add Granular Field", "Add a runtime granular control surface.", "sample grain cloud"),
+                make ("drumMachine", "Add Drum Machine Surface", "Add pads, pattern grid, bank controls, and mixer.", "drums sequencer pads"),
+                make ("bpm", "Add Project BPM Control", "Add a knob connected to the global preview/standalone BPM.", "tempo global sync"),
+                make ("bpmSync", "Add BPM Sync Toggle", "Add an on/off switch for tempo-synced blocks.", "tempo sync toggle"),
+                make ("retrigger", "Add Retrigger Toggle", "Add an on/off switch for retrigger behaviour.", "performance toggle"),
+                make ("copy", "Copy Selection", "Copy selected elements with parameters.", "clipboard duplicate"),
+                make ("copyNoParams", "Copy Selection Without Parameters", "Copy UI design only; leave parameter assignments behind.", "clipboard style"),
+                make ("paste", "Paste Elements", "Paste the current copied elements.", "clipboard"),
+                make ("copyTabs", "Copy Selection To All Tabs", "Place selected controls across every tab.", "tabs reference duplicate"),
+                make ("group", "Create Group From Selection", "Group selected elements in the layer tree.", "folder group")
+            };
+        }
+
+        static void launchCanvasActionPicker (juce::Component* attachTo,
+                                              juce::Rectangle<int> screenAnchor,
+                                              CanvasActionSearchPopup::SelectCallback cb)
+        {
+            auto popup = std::make_unique<CanvasActionSearchPopup> (collectCanvasActionEntries(), std::move (cb));
+            juce::CallOutBox::launchAsynchronously (std::move (popup), screenAnchor,
+                                                    attachTo != nullptr ? attachTo->getTopLevelComponent()
+                                                                        : nullptr);
+        }
+
+        static juce::String mixerSlotAt (const juce::StringArray& values, int index, juce::String fallback = {})
+        {
+            return index >= 0 && index < values.size() && values[index].isNotEmpty()
+                ? values[index]
+                : std::move (fallback);
+        }
+    }
+
     static constexpr int kRulerSize = 22;
 
     static juce::String scopedTabGroupId (const LayoutElement& tabPanel, const juce::String& label)
@@ -18,6 +597,27 @@ namespace patchcraft
     static bool isScopedTabGroupId (const juce::String& groupId)
     {
         return groupId.contains ("__tab__");
+    }
+
+    static juce::String manualContainerTargetForCanvasElement (const LayoutElement& element, bool& toggleMode)
+    {
+        const auto action = element.action.isNotEmpty() ? element.action.trim() : element.parameterId.trim();
+        toggleMode = false;
+        if (action.startsWithIgnoreCase ("showContainer:"))
+            return action.fromFirstOccurrenceOf (":", false, false).trim();
+        if (action.startsWithIgnoreCase ("toggleContainer:"))
+        {
+            toggleMode = true;
+            return action.fromFirstOccurrenceOf (":", false, false).trim();
+        }
+        if (action.startsWithIgnoreCase ("showGroup:"))
+            return action.fromFirstOccurrenceOf (":", false, false).trim();
+        if (action.startsWithIgnoreCase ("toggleGroup:"))
+        {
+            toggleMode = true;
+            return action.fromFirstOccurrenceOf (":", false, false).trim();
+        }
+        return {};
     }
 
     static bool canvasParameterIsEnabled (const PatchCraftProject& project, const ParameterDef& parameter)
@@ -77,9 +677,34 @@ namespace patchcraft
         repaint();
     }
 
+    void CanvasEditor::mouseWheelMove (const juce::MouseEvent& e,
+                                       const juce::MouseWheelDetails& wheel)
+    {
+        if (! e.mods.isShiftDown())
+        {
+            Component::mouseWheelMove (e, wheel);
+            return;
+        }
+
+        const float delta = std::abs (wheel.deltaY) >= std::abs (wheel.deltaX) ? wheel.deltaY : wheel.deltaX;
+        if (std::abs (delta) < 0.0001f)
+            return;
+
+        const float factor = delta > 0.0f ? 1.10f : 0.90f;
+        setZoom (zoom * factor);
+        owner.refreshCanvasToolbar();
+    }
+
     bool CanvasEditor::isElementOnCurrentTab (const LayoutElement& e) const
     {
         if (e.groupId.isEmpty()) return true;
+
+        if (isManualContainerGroup (e.groupId))
+        {
+            const auto state = manualContainerOpen.find (e.groupId);
+            return state != manualContainerOpen.end() && state->second;
+        }
+
         for (const auto& parent : owner.getProject().getLayout().getAll())
         {
             if ((parent.type == ElementType::Group || parent.type == ElementType::Panel)
@@ -104,6 +729,52 @@ namespace patchcraft
         if (isScopedTabGroupId (e.groupId))
             return false;
         return e.groupId == currentTabGroup;
+    }
+
+    bool CanvasEditor::isManualContainerGroup (const juce::String& groupId) const
+    {
+        return manualContainerOrder.contains (groupId);
+    }
+
+    void CanvasEditor::ensureManualContainerDefaults()
+    {
+        manualContainerOrder.clear();
+        for (const auto& element : owner.getProject().getLayout().getAll())
+        {
+            bool toggleMode = false;
+            const auto target = manualContainerTargetForCanvasElement (element, toggleMode);
+            juce::ignoreUnused (toggleMode);
+            if (target.isNotEmpty())
+                manualContainerOrder.addIfNotAlreadyThere (target);
+        }
+
+        for (int i = 0; i < manualContainerOrder.size(); ++i)
+            if (manualContainerOpen.find (manualContainerOrder[i]) == manualContainerOpen.end())
+                manualContainerOpen[manualContainerOrder[i]] = (i == 0);
+    }
+
+    bool CanvasEditor::triggerManualContainer (const LayoutElement& element)
+    {
+        bool toggleMode = false;
+        const auto target = manualContainerTargetForCanvasElement (element, toggleMode);
+        if (target.isEmpty())
+            return false;
+
+        ensureManualContainerDefaults();
+        if (! manualContainerOrder.contains (target))
+            manualContainerOrder.add (target);
+
+        if (toggleMode)
+            manualContainerOpen[target] = ! manualContainerOpen[target];
+        else
+        {
+            for (const auto& group : manualContainerOrder)
+                manualContainerOpen[group] = false;
+            manualContainerOpen[target] = true;
+        }
+
+        repaint();
+        return true;
     }
 
     juce::Rectangle<int> CanvasEditor::canvasScreenRect() const
@@ -133,15 +804,36 @@ namespace patchcraft
                  juce::roundToInt ((p.y - c.getY()) / zoom) };
     }
 
+    void CanvasEditor::setZoom (float z)
+    {
+        autoFitCanvas = false;
+        zoom = juce::jlimit (0.10f, 4.0f, z);
+        resized();
+        repaint();
+    }
+
+    void CanvasEditor::refreshZoomForBounds()
+    {
+        if (autoFitCanvas)
+        {
+            fit();
+            return;
+        }
+
+        resized();
+        repaint();
+    }
+
     void CanvasEditor::fit()
     {
+        autoFitCanvas = true;
         const auto& cs = owner.getProject().getCanvasSize();
         if (cs.width <= 0 || cs.height <= 0) return;
         const int avail = juce::jmax (200, getWidth() - kRulerSize * 2 - 60);
         const int availV = juce::jmax (200, getHeight() - kRulerSize * 2 - 60);
         zoom = juce::jmin ((float) avail / (float) cs.width,
                            (float) availV / (float) cs.height);
-        zoom = juce::jlimit (0.15f, 2.0f, zoom);
+        zoom = juce::jlimit (0.10f, 4.0f, zoom);
         resized();
         repaint();
     }
@@ -149,6 +841,7 @@ namespace patchcraft
     // -------------------------------------------------------------------------
     void CanvasEditor::paint (juce::Graphics& g)
     {
+        ensureManualContainerDefaults();
         g.fillAll (PatchCraftLookAndFeel::bg());
 
         if (showRulers) drawRulers (g);
@@ -222,11 +915,30 @@ namespace patchcraft
 
     bool CanvasEditor::isInterestedInDragSource (const SourceDetails& details)
     {
-        return details.description.toString().startsWith ("param:");
+        if (details.description.toString().startsWith ("param:"))
+            return true;
+
+        if (auto* object = details.description.getDynamicObject())
+            return object->getProperty ("patchcraftDragType").toString() == "libraryAsset";
+
+        return false;
     }
 
     void CanvasEditor::itemDropped (const SourceDetails& details)
     {
+        if (auto* object = details.description.getDynamicObject())
+        {
+            if (object->getProperty ("patchcraftDragType").toString() == "libraryAsset")
+            {
+                const auto category = object->getProperty ("category").toString();
+                const juce::File file (object->getProperty ("path").toString());
+                const int frames = juce::jmax (1, (int) object->getProperty ("frames"));
+                const bool vertical = (bool) object->getProperty ("vertical");
+                owner.addLibraryAssetToCanvas (category, file, frames, vertical, screenToCanvas (details.localPosition));
+                return;
+            }
+        }
+
         const auto descriptor = details.description.toString();
         if (! descriptor.startsWith ("param:"))
             return;
@@ -236,6 +948,28 @@ namespace patchcraft
             return;
 
         addElementAt (ElementType::Knob, screenToCanvas (details.localPosition), parameterId);
+    }
+
+    void CanvasEditor::addMoveOriginWithChildren (const juce::String& id)
+    {
+        if (id.isEmpty() || multiDragOrigins.find (id) != multiDragOrigins.end())
+            return;
+
+        if (auto* element = owner.getProject().getLayout().find (id))
+            multiDragOrigins[id] = { element->x, element->y };
+        else
+            return;
+
+        for (const auto& child : owner.getProject().getLayout().getAll())
+            if (child.containerId == id)
+                addMoveOriginWithChildren (child.id);
+    }
+
+    void CanvasEditor::captureMoveOriginsForSelection()
+    {
+        multiDragOrigins.clear();
+        for (const auto& id : owner.getSelectedElementIds())
+            addMoveOriginWithChildren (id);
     }
 
     // ---- Rulers --------------------------------------------------------------
@@ -283,9 +1017,19 @@ namespace patchcraft
         // Grid
         if (showGrid)
         {
-            g.setColour (juce::Colour (0xff15181e));
+            const auto minorStep = (float) snapGrid * zoom;
+            if (minorStep >= 3.0f)
+            {
+                g.setColour (gridColour.withAlpha (0.80f));
+                for (float x = (float) r.getX(); x < (float) r.getRight(); x += minorStep)
+                    g.drawVerticalLine ((int) x, (float) r.getY(), (float) r.getBottom());
+                for (float y = (float) r.getY(); y < (float) r.getBottom(); y += minorStep)
+                    g.drawHorizontalLine ((int) y, (float) r.getX(), (float) r.getRight());
+            }
+
+            g.setColour (snapColour.withAlpha (0.95f));
             const auto step = (float) snapGrid * zoom * 5.0f;
-            if (step >= 6.0f)
+            if (step >= 3.0f)
             {
                 for (float x = (float) r.getX(); x < (float) r.getRight(); x += step)
                     g.drawVerticalLine ((int) x, (float) r.getY(), (float) r.getBottom());
@@ -457,6 +1201,100 @@ namespace patchcraft
         drawControlLabel (g, r, e, valueText);
     }
 
+    static void drawMacroControlElement (juce::Graphics& g, juce::Rectangle<int> r,
+                                         const LayoutElement& e,
+                                         const PatchCraftProject& project)
+    {
+        const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
+        const auto bg = e.backgroundColour.isTransparent() ? juce::Colour (0xff15171b) : e.backgroundColour;
+        const auto border = e.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : e.borderColour;
+        g.setColour (bg);
+        g.fillRoundedRectangle (r.toFloat(), juce::jmax (6.0f, e.cornerRadius));
+        g.setColour (border);
+        g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (6.0f, e.cornerRadius), 1.0f);
+
+        auto area = r.reduced (9, 7);
+        auto title = area.removeFromTop (18);
+        g.setColour (accent);
+        g.setFont (juce::Font (11.0f, juce::Font::bold));
+        g.drawText (e.label.isNotEmpty() ? e.label.toUpperCase() : "MACRO",
+                    title, juce::Justification::centredLeft, true);
+
+        const auto* def = project.getParameters().find (e.parameterId);
+        const float raw = def != nullptr ? project.getLiveValues().getValue (def->id, def->defaultValue) : 0.5f;
+        const float norm = def != nullptr
+            ? juce::jlimit (0.0f, 1.0f, (raw - def->min) / juce::jmax (0.0001f, def->max - def->min))
+            : 0.5f;
+
+        auto knob = area.removeFromLeft (juce::jmin (area.getHeight(), 74)).reduced (4);
+        LayoutElement knobElement = e;
+        knobElement.labelPosition = "hidden";
+        drawCanvasKnob (g, knob, knobElement, {}, accent, norm);
+
+        auto lanes = area.reduced (5, 4);
+        const juce::StringArray targetLabels { "TONE", "MOTION", "SPACE", "DRIVE" };
+        for (int i = 0; i < targetLabels.size(); ++i)
+        {
+            auto row = lanes.removeFromTop (juce::jmax (14, lanes.getHeight() / (targetLabels.size() - i))).reduced (0, 2);
+            g.setColour (PatchCraftLookAndFeel::bg().withAlpha (0.70f));
+            g.fillRoundedRectangle (row.toFloat(), 3.0f);
+            g.setColour (accent.withAlpha (0.35f + 0.10f * (float) i));
+            g.fillRoundedRectangle (row.withWidth (juce::roundToInt ((float) row.getWidth() * norm)).toFloat(), 3.0f);
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (juce::Font (8.5f, juce::Font::bold));
+            g.drawText (targetLabels[i], row.reduced (5, 0), juce::Justification::centredLeft, true);
+        }
+    }
+
+    static void drawModMatrixElement (juce::Graphics& g, juce::Rectangle<int> r,
+                                      const LayoutElement& e,
+                                      const PatchCraftProject& project)
+    {
+        const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
+        const auto bg = e.backgroundColour.isTransparent() ? juce::Colour (0xff15171b) : e.backgroundColour;
+        const auto border = e.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : e.borderColour;
+        g.setColour (bg);
+        g.fillRoundedRectangle (r.toFloat(), juce::jmax (6.0f, e.cornerRadius));
+        g.setColour (border);
+        g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (6.0f, e.cornerRadius), 1.0f);
+
+        auto area = r.reduced (10, 8);
+        auto header = area.removeFromTop (20);
+        g.setColour (accent);
+        g.setFont (juce::Font (11.0f, juce::Font::bold));
+        g.drawText (e.label.isNotEmpty() ? e.label.toUpperCase() : "MOD MATRIX",
+                    header.removeFromLeft (140), juce::Justification::centredLeft, true);
+        g.setColour (PatchCraftLookAndFeel::textDim());
+        g.setFont (juce::Font (9.0f));
+        g.drawText (juce::String ((int) project.getDspGraph().modulation.size()) + " routes",
+                    header, juce::Justification::centredRight, true);
+
+        auto list = area.reduced (4, 6);
+        const auto& routes = project.getDspGraph().modulation;
+        if (routes.empty())
+        {
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (juce::Font (10.0f, juce::Font::bold));
+            g.drawFittedText ("No routes yet. Select this element, then add source -> target rows in the Inspector.",
+                              list, juce::Justification::centred, 3);
+            return;
+        }
+
+        const int maxRows = juce::jmin (6, (int) routes.size());
+        for (int i = 0; i < maxRows; ++i)
+        {
+            const auto& route = routes[(size_t) i];
+            auto row = list.removeFromTop (juce::jmax (18, list.getHeight() / (maxRows - i))).reduced (0, 2);
+            g.setColour (route.enabled ? accent.withAlpha (0.16f) : PatchCraftLookAndFeel::bg().withAlpha (0.78f));
+            g.fillRoundedRectangle (row.toFloat(), 4.0f);
+            g.setColour (route.enabled ? accent.withAlpha (0.78f) : PatchCraftLookAndFeel::textDim());
+            g.setFont (juce::Font (8.8f, juce::Font::bold));
+            g.drawText (route.sourceId + " -> " + route.targetId, row.removeFromLeft (juce::jmax (80, row.getWidth() - 52)).reduced (6, 0),
+                        juce::Justification::centredLeft, true);
+            g.drawText (juce::String (route.amount, 2), row.reduced (4, 0), juce::Justification::centredRight, true);
+        }
+    }
+
     static void drawCanvasVerticalSlider (juce::Graphics& g, juce::Rectangle<int> r,
                                           const LayoutElement& e)
     {
@@ -525,6 +1363,123 @@ namespace patchcraft
                 g.setColour (c.withAlpha (alpha));
                 g.fillRect (sx, inner.getY(), sw, inner.getHeight());
             }
+        }
+    }
+
+    static float eqFrequencyToX01 (float frequency)
+    {
+        const float f = juce::jlimit (20.0f, 20000.0f, frequency);
+        return juce::jlimit (0.0f, 1.0f,
+            std::log (f / 20.0f) / std::log (20000.0f / 20.0f));
+    }
+
+    static float eqGainToY01 (float gainDb)
+    {
+        return juce::jlimit (0.0f, 1.0f, juce::jmap (gainDb, 24.0f, -24.0f, 0.0f, 1.0f));
+    }
+
+    static void drawEqCurveElement (juce::Graphics& g, juce::Rectangle<int> r, const LayoutElement& e,
+                                    const DspGraph& graph)
+    {
+        const auto bg = e.backgroundColour.isTransparent() ? PatchCraftLookAndFeel::panelAlt() : e.backgroundColour;
+        const auto border = e.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : e.borderColour;
+        const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
+        g.setColour (bg);
+        g.fillRoundedRectangle (r.toFloat(), juce::jmax (6.0f, e.cornerRadius));
+        g.setColour (border);
+        g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (6.0f, e.cornerRadius), 1.0f);
+
+        auto area = r.reduced (10, 8);
+        auto header = area.removeFromTop (20);
+        g.setColour (accent);
+        g.setFont (juce::Font (11.0f, juce::Font::bold));
+        g.drawText (e.label.isNotEmpty() ? e.label.toUpperCase() : "EQ CURVE", header.removeFromLeft (130),
+                    juce::Justification::centredLeft, true);
+        g.setColour (PatchCraftLookAndFeel::textDim());
+        g.setFont (9.0f);
+        g.drawText ("live patch EQ", header, juce::Justification::centredRight, true);
+
+        auto graphArea = area.reduced (2, 4);
+        g.setColour (PatchCraftLookAndFeel::bg().withAlpha (0.55f));
+        g.fillRoundedRectangle (graphArea.toFloat(), 5.0f);
+        g.setColour (border.withAlpha (0.22f));
+        for (int i = 1; i < 5; ++i)
+        {
+            const int x = graphArea.getX() + (graphArea.getWidth() * i) / 5;
+            const int y = graphArea.getY() + (graphArea.getHeight() * i) / 5;
+            g.drawVerticalLine (x, (float) graphArea.getY(), (float) graphArea.getBottom());
+            g.drawHorizontalLine (y, (float) graphArea.getX(), (float) graphArea.getRight());
+        }
+
+        juce::Path curve;
+        for (int i = 0; i < 96; ++i)
+        {
+            const float x01 = (float) i / 95.0f;
+            float y = (float) graphArea.getCentreY();
+            for (const auto& block : graph.blocks)
+            {
+                if (block.section != "filter" || ! block.type.containsIgnoreCase ("eq") || ! block.enabled)
+                    continue;
+                const float freqX = eqFrequencyToX01 (blockValue (block, "eqFreq", 1000.0f));
+                const float gain = blockValue (block, "eqGainDb", 0.0f);
+                const float q = juce::jlimit (0.15f, 18.0f, blockValue (block, "eqQ", 1.0f));
+                const float width = juce::jlimit (0.025f, 0.22f, 0.11f / std::sqrt (q));
+                const float influence = std::exp (-std::pow ((x01 - freqX) / width, 2.0f));
+                y -= (gain / 24.0f) * influence * (float) graphArea.getHeight() * 0.44f;
+            }
+            const float x = (float) graphArea.getX() + x01 * (float) graphArea.getWidth();
+            y = juce::jlimit ((float) graphArea.getY(), (float) graphArea.getBottom(), y);
+            if (i == 0) curve.startNewSubPath (x, y);
+            else        curve.lineTo (x, y);
+        }
+        g.setColour (accent.withAlpha (0.92f));
+        g.strokePath (curve, juce::PathStrokeType (2.0f));
+
+        for (const auto& block : graph.blocks)
+        {
+            if (block.section != "filter" || ! block.type.containsIgnoreCase ("eq") || ! block.enabled)
+                continue;
+            const float x = (float) graphArea.getX() + eqFrequencyToX01 (blockValue (block, "eqFreq", 1000.0f)) * (float) graphArea.getWidth();
+            const float y = (float) graphArea.getY() + eqGainToY01 (blockValue (block, "eqGainDb", 0.0f)) * (float) graphArea.getHeight();
+            g.setColour (accent);
+            g.fillEllipse (x - 4.0f, y - 4.0f, 8.0f, 8.0f);
+        }
+    }
+
+    static void drawSpectrumElement (juce::Graphics& g, juce::Rectangle<int> r, const LayoutElement& e)
+    {
+        const auto bg = e.backgroundColour.isTransparent() ? PatchCraftLookAndFeel::panelAlt() : e.backgroundColour;
+        const auto border = e.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : e.borderColour;
+        const auto accent = e.accentColour.isTransparent() ? juce::Colour (0xff20d6ff) : e.accentColour;
+        g.setColour (bg);
+        g.fillRoundedRectangle (r.toFloat(), juce::jmax (6.0f, e.cornerRadius));
+        g.setColour (border);
+        g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (6.0f, e.cornerRadius), 1.0f);
+
+        auto area = r.reduced (10, 8);
+        auto header = area.removeFromTop (20);
+        g.setColour (accent);
+        g.setFont (juce::Font (11.0f, juce::Font::bold));
+        g.drawText (e.label.isNotEmpty() ? e.label.toUpperCase() : "SPECTRUM", header.removeFromLeft (130),
+                    juce::Justification::centredLeft, true);
+        g.setColour (PatchCraftLookAndFeel::textDim());
+        g.setFont (9.0f);
+        g.drawText ("runtime analyzer", header, juce::Justification::centredRight, true);
+        auto graphArea = area.reduced (2, 4);
+        g.setColour (PatchCraftLookAndFeel::bg().withAlpha (0.55f));
+        g.fillRoundedRectangle (graphArea.toFloat(), 5.0f);
+
+        constexpr int bars = 36;
+        for (int i = 0; i < bars; ++i)
+        {
+            const float x01 = (float) i / (float) (bars - 1);
+            const float h01 = 0.18f + 0.72f * std::abs (std::sin (x01 * 9.0f + (float) i * 0.37f));
+            const int barW = juce::jmax (2, graphArea.getWidth() / bars - 2);
+            const int x = graphArea.getX() + i * graphArea.getWidth() / bars;
+            const int h = juce::roundToInt (h01 * (float) graphArea.getHeight());
+            g.setColour (accent.interpolatedWith (PatchCraftLookAndFeel::accent(), x01).withAlpha (0.78f));
+            g.fillRoundedRectangle ((float) x, (float) graphArea.getBottom() - (float) h,
+                                    (float) barW, (float) h, 2.0f);
         }
     }
 
@@ -886,6 +1841,14 @@ namespace patchcraft
         {
             drawCanvasMeter (g, r);
         }
+        else if (e.type == ElementType::EqCurve)
+        {
+            drawEqCurveElement (g, r, e, owner.getProject().getDspGraph());
+        }
+        else if (e.type == ElementType::SpectrumAnalyzer)
+        {
+            drawSpectrumElement (g, r, e);
+        }
         else if (e.type == ElementType::Keyboard)
         {
             drawCanvasKeyboard (g, r);
@@ -1006,6 +1969,152 @@ namespace patchcraft
         {
             drawTabPanel (g, e, r, selected);
         }
+        else if (e.type == ElementType::GranularField)
+        {
+            const auto bg = e.backgroundColour.isTransparent() ? PatchCraftLookAndFeel::panelAlt() : e.backgroundColour;
+            const auto border = e.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : e.borderColour;
+            const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
+            g.setColour (bg);
+            g.fillRoundedRectangle (r.toFloat(), juce::jmax (6.0f, e.cornerRadius));
+            g.setColour (border);
+            g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (6.0f, e.cornerRadius), 1.0f);
+
+            auto area = r.reduced (10, 8);
+            auto header = area.removeFromTop (22);
+            g.setColour (accent);
+            g.setFont (juce::Font (12.0f, juce::Font::bold));
+            g.drawText (e.label.isNotEmpty() ? e.label.toUpperCase() : "GRANULAR FIELD",
+                        header.removeFromLeft (160), juce::Justification::centredLeft, true);
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (juce::Font (10.0f));
+            g.drawText ("sample position / length / slice / glitch",
+                        header, juce::Justification::centredRight, true);
+            area.removeFromTop (4);
+
+            g.setColour (border.withAlpha (0.22f));
+            for (int i = 1; i < 6; ++i)
+            {
+                const float x = (float) area.getX() + (float) area.getWidth() * (float) i / 6.0f;
+                g.drawVerticalLine (juce::roundToInt (x), (float) area.getY(), (float) area.getBottom());
+            }
+
+            const float centreX = (float) area.getX() + (float) area.getWidth() * 0.38f;
+            const float span = (float) area.getWidth() * 0.34f;
+            g.setColour (accent.withAlpha (0.25f));
+            g.fillEllipse (centreX - span * 0.45f, (float) area.getCentreY() - (float) area.getHeight() * 0.28f,
+                           span * 0.9f, (float) area.getHeight() * 0.56f);
+            g.setColour (accent.withAlpha (0.9f));
+            g.drawLine (centreX, (float) area.getY(), centreX, (float) area.getBottom(), 1.4f);
+            for (int i = 0; i < 42; ++i)
+            {
+                const float phase = (float) i * 0.71f;
+                const float x = centreX + std::sin (phase * 1.3f) * span * 0.48f;
+                const float y = (float) area.getCentreY() + std::cos (phase * 0.9f) * (float) area.getHeight() * 0.23f;
+                const float size = 2.0f + (float) (i % 4);
+                g.fillEllipse (x - size * 0.5f, y - size * 0.5f, size, size);
+            }
+        }
+        else if (e.type == ElementType::MacroControl)
+        {
+            drawMacroControlElement (g, r, e, owner.getProject());
+        }
+        else if (e.type == ElementType::ModMatrix)
+        {
+            drawModMatrixElement (g, r, e, owner.getProject());
+        }
+        else if (e.type == ElementType::DrumGrid)
+        {
+            drawDrumGridPreview (g, r, e, owner.getProject().getDspGraph());
+        }
+        else if (e.type == ElementType::Mixer)
+        {
+            const auto bg = e.backgroundColour.isTransparent() ? juce::Colour (0xff15171b) : e.backgroundColour;
+            const auto border = e.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : e.borderColour;
+            const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
+            const int channels = juce::jlimit (1, 16, e.mixerChannels);
+
+            g.setColour (bg);
+            g.fillRoundedRectangle (r.toFloat(), juce::jmax (5.0f, e.cornerRadius));
+            g.setColour (border);
+            g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (5.0f, e.cornerRadius), 1.0f);
+
+            auto area = r.reduced (10, 8);
+            auto header = area.removeFromTop (22);
+            g.setColour (accent);
+            g.setFont (juce::Font (12.0f, juce::Font::bold));
+            g.drawText (e.label.isNotEmpty() ? e.label.toUpperCase() : "MIXER",
+                        header.removeFromLeft (160), juce::Justification::centredLeft, true);
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (juce::Font (10.0f));
+            g.drawText ("Auto layer / parameter mixer",
+                        header, juce::Justification::centredRight, true);
+            area.removeFromTop (6);
+
+            const int stripW = juce::jmax (38, area.getWidth() / channels);
+            for (int channel = 0; channel < channels; ++channel)
+            {
+                auto strip = juce::Rectangle<int> (area.getX() + channel * stripW,
+                                                   area.getY(),
+                                                   channel == channels - 1
+                                                        ? area.getRight() - (area.getX() + channel * stripW)
+                                                        : stripW,
+                                                   area.getHeight()).reduced (3, 0);
+                if (strip.getWidth() <= 10)
+                    continue;
+
+                const auto label = stringAtOr (e.mixerChannelLabels, channel,
+                                               channel == 0 ? "Main" : "Bus " + juce::String (channel + 1));
+                g.setColour (juce::Colour (0xaa0b0f14));
+                g.fillRoundedRectangle (strip.toFloat(), 5.0f);
+                g.setColour (border.withAlpha (0.75f));
+                g.drawRoundedRectangle (strip.toFloat().reduced (0.5f), 5.0f, 1.0f);
+                g.setColour (PatchCraftLookAndFeel::text());
+                g.setFont (juce::Font (10.0f, juce::Font::bold));
+                g.drawText (label, strip.removeFromTop (20), juce::Justification::centred, true);
+
+                auto buttons = strip.removeFromBottom (22).reduced (2, 2);
+                auto pan = strip.removeFromBottom (22).reduced (5, 5);
+                auto value = strip.removeFromBottom (14);
+                auto fader = strip.reduced (5, 6);
+                const int centre = fader.getCentreX();
+                const auto track = juce::Rectangle<int> (centre - 4, fader.getY() + 2,
+                                                         8, juce::jmax (12, fader.getHeight() - 4));
+                const float level = channel == 0 ? 0.78f : 0.55f - (float) channel * 0.06f;
+                const int thumbY = juce::roundToInt (juce::jmap (juce::jlimit (0.15f, 0.90f, level),
+                                                                  0.0f, 1.0f,
+                                                                  (float) track.getBottom(),
+                                                                  (float) track.getY()));
+                g.setColour (PatchCraftLookAndFeel::bg().withAlpha (0.72f));
+                g.fillRoundedRectangle (track.toFloat(), 4.0f);
+                g.setColour (accent.withAlpha (0.72f));
+                g.fillRoundedRectangle (juce::Rectangle<int>::leftTopRightBottom (track.getX(), thumbY,
+                                                                                  track.getRight(), track.getBottom()).toFloat(), 4.0f);
+                g.setColour (PatchCraftLookAndFeel::text());
+                g.fillRoundedRectangle (juce::Rectangle<float> ((float) centre - 11.0f,
+                                                                (float) thumbY - 4.0f,
+                                                                22.0f, 8.0f), 3.0f);
+
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (juce::Font (9.0f));
+                g.drawText (juce::String (juce::roundToInt (level * 100.0f)),
+                            value, juce::Justification::centred, true);
+                g.setColour (PatchCraftLookAndFeel::bg().withAlpha (0.72f));
+                g.fillRoundedRectangle (pan.toFloat(), 3.0f);
+                g.setColour (accent.withAlpha (0.45f));
+                g.drawLine ((float) pan.getX(), (float) pan.getCentreY(),
+                            (float) pan.getRight(), (float) pan.getCentreY(), 2.0f);
+
+                auto mute = buttons.removeFromLeft (buttons.getWidth() / 2).reduced (1, 0);
+                auto solo = buttons.reduced (1, 0);
+                g.setColour (PatchCraftLookAndFeel::bg().brighter (0.08f));
+                g.fillRoundedRectangle (mute.toFloat(), 3.0f);
+                g.fillRoundedRectangle (solo.toFloat(), 3.0f);
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (juce::Font (9.0f, juce::Font::bold));
+                g.drawText ("M", mute, juce::Justification::centred, true);
+                g.drawText ("S", solo, juce::Justification::centred, true);
+            }
+        }
         else if (e.type == ElementType::DrumPad || e.type == ElementType::PadGrid)
         {
             const int rows = e.type == ElementType::DrumPad ? 1 : juce::jlimit (1, 8, e.padRows);
@@ -1088,12 +2197,15 @@ namespace patchcraft
                                            juce::Point<int> p) const
     {
         if (el.parameterId.isEmpty()) return false;
-        if (el.type == ElementType::Knob)
+        if (el.type == ElementType::Knob || el.type == ElementType::MacroControl)
         {
             // Use a circle inside r (matching how the knob is drawn).
-            const float cx = r.getCentreX();
-            const float cy = r.getCentreY() - r.getHeight() * 0.12f;
-            const float rad = juce::jmin (r.getWidth(), (int) (r.getHeight() * 0.7f)) * 0.5f;
+            auto body = r;
+            if (el.type == ElementType::MacroControl)
+                body = r.reduced (9, 7).withTrimmedTop (18).withTrimmedRight (juce::jmax (0, r.getWidth() - 92));
+            const float cx = body.getCentreX();
+            const float cy = body.getCentreY() - body.getHeight() * 0.12f;
+            const float rad = juce::jmin (body.getWidth(), (int) (body.getHeight() * 0.7f)) * 0.5f;
             const float dx = p.x - cx, dy = p.y - cy;
             return dx * dx + dy * dy <= rad * rad;
         }
@@ -1102,10 +2214,125 @@ namespace patchcraft
         return false;
     }
 
+    bool CanvasEditor::drumCellAt (const LayoutElement& element, juce::Rectangle<int> r,
+                                   juce::Point<int> p, int& pattern, int& track,
+                                   int& step, float& velocity) const
+    {
+        const auto* block = findDrumMachineBlock (owner.getProject().getDspGraph());
+        const int tracks = block != nullptr
+            ? juce::jlimit (1, 16, juce::roundToInt (blockValue (*block, "dmTracks", (float) element.drumTracks)))
+            : juce::jlimit (1, 16, element.drumTracks);
+        const int steps = block != nullptr
+            ? juce::jlimit (1, 64, juce::roundToInt (blockValue (*block, "dmSteps", (float) element.drumSteps)))
+            : juce::jlimit (1, 64, element.drumSteps);
+        pattern = block != nullptr
+            ? juce::jlimit (0, 7, juce::roundToInt (blockValue (*block, "dmPattern", (float) element.drumPattern)))
+            : juce::jlimit (0, 7, element.drumPattern);
+
+        auto area = r.reduced (8);
+        if (area.getHeight() <= 28 || area.getWidth() <= 80)
+            return false;
+        area.removeFromTop (20);
+        area.removeFromTop (4);
+
+        const int labelW = juce::jlimit (42, 86, area.getWidth() / 5);
+        auto grid = area.withTrimmedLeft (labelW);
+        if (! grid.contains (p))
+            return false;
+
+        const float cellW = (float) grid.getWidth() / (float) steps;
+        const float cellH = (float) area.getHeight() / (float) tracks;
+        if (cellW <= 0.0f || cellH <= 0.0f)
+            return false;
+
+        step = juce::jlimit (0, steps - 1, (int) ((float) (p.x - grid.getX()) / cellW));
+        track = juce::jlimit (0, tracks - 1, (int) ((float) (p.y - area.getY()) / cellH));
+        const float localY = (float) p.y - ((float) area.getY() + (float) track * cellH);
+        velocity = juce::jlimit (0.08f, 1.0f, 1.0f - (localY / cellH));
+        return true;
+    }
+
+    bool CanvasEditor::editDrumGridCellAt (const LayoutElement& element, juce::Rectangle<int> r,
+                                           juce::Point<int> p, const juce::ModifierKeys& mods,
+                                           bool startGesture)
+    {
+        if (! (mods.isAltDown() || mods.isShiftDown() || mods.isCtrlDown() || mods.isCommandDown()))
+            return false;
+
+        int pattern = 0, track = 0, step = 0;
+        float velocity = 0.8f;
+        if (! drumCellAt (element, r, p, pattern, track, step, velocity))
+            return false;
+
+        if (! startGesture && track == lastDrumGridTrack && step == lastDrumGridStep)
+            return true;
+
+        auto& graph = owner.getProject().getDspGraph();
+        auto& block = ensureDrumMachineBlock (graph);
+        const auto prefix = "dmP" + juce::String (pattern)
+                          + "T" + juce::String (track)
+                          + "S" + juce::String (step);
+        const bool wasOn = blockValue (block, prefix + "On", 0.0f) >= 0.5f;
+
+        if (auto* mutableElement = owner.getProject().getLayout().find (element.id))
+        {
+            mutableElement->drumPattern = pattern;
+            if (block.values.find ("dmTracks") == block.values.end())
+                block.values["dmTracks"] = (float) juce::jlimit (1, 16, mutableElement->drumTracks);
+            if (block.values.find ("dmSteps") == block.values.end())
+                block.values["dmSteps"] = (float) juce::jlimit (1, 64, mutableElement->drumSteps);
+        }
+        block.values["dmPattern"] = (float) pattern;
+        block.values["dmTransport"] = 1.0f;
+
+        if (mods.isCtrlDown() || mods.isCommandDown())
+        {
+            const int current = juce::jlimit (1, 4, juce::roundToInt (blockValue (block, prefix + "Div", 1.0f)));
+            block.values[prefix + "On"] = 1.0f;
+            block.values[prefix + "Vel"] = velocity;
+            block.values[prefix + "Gate"] = blockValue (block, prefix + "Gate", 0.42f);
+            block.values[prefix + "Prob"] = blockValue (block, prefix + "Prob", 1.0f);
+            block.values[prefix + "Div"] = (float) (current >= 4 ? 1 : current + 1);
+            drumGridPaintState = true;
+        }
+        else if (mods.isShiftDown() && ! mods.isAltDown())
+        {
+            block.values[prefix + "On"] = 1.0f;
+            block.values[prefix + "Vel"] = velocity;
+            block.values[prefix + "Gate"] = blockValue (block, prefix + "Gate", 0.55f);
+            block.values[prefix + "Prob"] = blockValue (block, prefix + "Prob", 1.0f);
+            block.values[prefix + "Div"] = blockValue (block, prefix + "Div", 1.0f);
+            drumGridPaintState = true;
+        }
+        else
+        {
+            if (startGesture)
+                drumGridPaintState = ! wasOn;
+            block.values[prefix + "On"] = drumGridPaintState ? 1.0f : 0.0f;
+            if (drumGridPaintState)
+            {
+                block.values[prefix + "Vel"] = velocity;
+                block.values[prefix + "Gate"] = blockValue (block, prefix + "Gate", 0.55f);
+                block.values[prefix + "Prob"] = blockValue (block, prefix + "Prob", 1.0f);
+                block.values[prefix + "Div"] = blockValue (block, prefix + "Div", 1.0f);
+            }
+        }
+
+        graph.userConfigured = true;
+        owner.getProject().markDirty();
+        layoutChangedDuringDrag = true;
+        lastDrumGridTrack = track;
+        lastDrumGridStep = step;
+        repaint (r.expanded (8));
+        return true;
+    }
+
     void CanvasEditor::mouseDown (const juce::MouseEvent& e)
     {
         grabKeyboardFocus();
         layoutChangedDuringDrag = false;
+        dragLayoutBefore.clear();
+        dragActionName.clear();
         if (e.mods.isPopupMenu())
         {
             showContextMenu (e.getPosition());
@@ -1113,30 +2340,49 @@ namespace patchcraft
         }
         const auto& elements = owner.getProject().getLayout().getAll();
 
-        // 0. TabPanel tabs: clicking a tab swaps the current page. Done before
-        // selection so users don't have to fiddle with edit mode to switch tabs.
-        for (auto it = elements.rbegin(); it != elements.rend(); ++it)
+        // 0. TabPanel tabs: normal click swaps the current page. Holding Shift
+        // bypasses navigation so the tab strip itself can be selected/moved.
+        if (! e.mods.isShiftDown())
         {
-            if (! it->visible) continue;
-            if (it->type != ElementType::TabPanel) continue;
-            if (! isElementOnCurrentTab (*it)) continue;
-            auto r = elementScreenRect (*it);
-            const int tabIdx = hitTabIndex (*it, r, e.getPosition());
-            if (tabIdx >= 0 && tabIdx < it->tabs.size())
+            for (auto it = elements.rbegin(); it != elements.rend(); ++it)
             {
-                const auto targetGroup = scopedTabGroupId (*it, it->tabs[tabIdx]);
-                if (it->id == "tabs")
-                    setCurrentTabGroup (targetGroup);
-                else
+                if (! it->visible) continue;
+                if (it->type != ElementType::TabPanel) continue;
+                if (! isElementOnCurrentTab (*it)) continue;
+                auto r = elementScreenRect (*it);
+                const int tabIdx = hitTabIndex (*it, r, e.getPosition());
+                if (tabIdx >= 0 && tabIdx < it->tabs.size())
                 {
-                    activeTabGroupsByPanel[it->id] = targetGroup;
-                    repaint();
+                    const auto targetGroup = scopedTabGroupId (*it, it->tabs[tabIdx]);
+                    if (it->id == "tabs")
+                        setCurrentTabGroup (targetGroup);
+                    else
+                    {
+                        activeTabGroupsByPanel[it->id] = targetGroup;
+                        repaint();
+                    }
+                    if (e.mods.isCommandDown() || e.mods.isCtrlDown())
+                        owner.toggleSelectedElementId (it->id);
+                    else
+                        owner.setSelectedElementId (it->id);
+                    return;
                 }
-                if (e.mods.isCommandDown() || e.mods.isCtrlDown())
-                    owner.toggleSelectedElementId (it->id);
-                else
+            }
+
+            ensureManualContainerDefaults();
+            for (auto it = elements.rbegin(); it != elements.rend(); ++it)
+            {
+                if (! it->visible) continue;
+                if (it->type != ElementType::Button && it->type != ElementType::Toggle
+                    && it->type != ElementType::Label && it->type != ElementType::Image)
+                    continue;
+                if (! isElementOnCurrentTab (*it)) continue;
+                if (! elementScreenRect (*it).contains (e.getPosition())) continue;
+                if (triggerManualContainer (*it))
+                {
                     owner.setSelectedElementId (it->id);
-                return;
+                    return;
+                }
             }
         }
 
@@ -1151,6 +2397,8 @@ namespace patchcraft
             {
                 dragStart    = e.getPosition();
                 dragOriginal = *sel;
+                dragLayoutBefore = owner.getProject().getLayout().getAll();
+                dragActionName = "Resize element";
                 mode = DragMode::ResizeBR;
                 return;
             }
@@ -1165,6 +2413,18 @@ namespace patchcraft
             auto r = elementScreenRect (*it);
             if (! r.contains (e.getPosition())) continue;
 
+            const auto canvas = owner.getProject().getCanvasSize();
+            const bool passiveLockedBackground =
+                it->locked
+                && (it->id == "background"
+                    || (it->type == ElementType::Image
+                        && it->x <= 0
+                        && it->y <= 0
+                        && it->width >= canvas.width - 4
+                        && it->height >= canvas.height - 4));
+            if (passiveLockedBackground && ! (e.mods.isCommandDown() || e.mods.isCtrlDown()))
+                continue;
+
             // Locked elements (e.g. background artwork): selectable so the
             // inspector's Asset/Browse field is accessible, but no move/resize.
             if (it->locked)
@@ -1177,12 +2437,26 @@ namespace patchcraft
                 return;
             }
 
+            if (it->type == ElementType::DrumGrid
+                && owner.isElementSelected (it->id)
+                && (e.mods.isAltDown() || e.mods.isShiftDown() || e.mods.isCtrlDown() || e.mods.isCommandDown())
+                && editDrumGridCellAt (*it, r, e.getPosition(), e.mods, true))
+            {
+                drumGridEditElementId = it->id;
+                dragStart = e.getPosition();
+                mode = DragMode::DrumGridEdit;
+                owner.refreshAllPanels();
+                return;
+            }
+
             const bool isInteractiveControl = it->type == ElementType::Knob || it->type == ElementType::Slider
                                            || it->type == ElementType::Toggle || it->type == ElementType::Dropdown
-                                           || it->type == ElementType::ValueDisplay;
+                                           || it->type == ElementType::ValueDisplay
+                                           || it->type == ElementType::MacroControl;
             if (! e.mods.isShiftDown() && owner.getProject().getManifest().playerShowParameterGuidance && isInteractiveControl)
             {
-                const bool attemptedControlUse = (it->type == ElementType::Knob || it->type == ElementType::Slider)
+                const bool attemptedControlUse = (it->type == ElementType::Knob || it->type == ElementType::Slider
+                                               || it->type == ElementType::MacroControl)
                     ? hitTestControlBody (*it, r, e.getPosition())
                     : r.contains (e.getPosition());
                 if (attemptedControlUse)
@@ -1286,10 +2560,9 @@ namespace patchcraft
                 owner.setSelectedElementId (it->id);
             dragStart    = e.getPosition();
             dragOriginal = *it;
-            multiDragOrigins.clear();
-            for (const auto& id : owner.getSelectedElementIds())
-                if (auto* selected = owner.getProject().getLayout().find (id))
-                    multiDragOrigins[id] = { selected->x, selected->y };
+            dragLayoutBefore = owner.getProject().getLayout().getAll();
+            dragActionName = "Move selection";
+            captureMoveOriginsForSelection();
             mode = DragMode::Move;
             return;
         }
@@ -1310,12 +2583,26 @@ namespace patchcraft
         el.width = (type == ElementType::Panel) ? 320
                  : type == ElementType::Shape ? 180
                  : type == ElementType::TabPanel ? 420
+                 : type == ElementType::GranularField ? 440
+                 : type == ElementType::EqCurve ? 460
+                 : type == ElementType::SpectrumAnalyzer ? 460
+                 : type == ElementType::DrumGrid ? 560
+                 : type == ElementType::Mixer ? 520
+                 : type == ElementType::MacroControl ? 190
+                 : type == ElementType::ModMatrix ? 420
                  : type == ElementType::PadGrid ? 360
                  : type == ElementType::DrumPad ? 80
                  : type == ElementType::Toggle ? 128 : 96;
         el.height = (type == ElementType::Panel) ? 180
                   : type == ElementType::Shape ? 120
                   : type == ElementType::TabPanel ? 44
+                  : type == ElementType::GranularField ? 220
+                  : type == ElementType::EqCurve ? 180
+                  : type == ElementType::SpectrumAnalyzer ? 160
+                  : type == ElementType::DrumGrid ? 220
+                  : type == ElementType::Mixer ? 260
+                  : type == ElementType::MacroControl ? 132
+                  : type == ElementType::ModMatrix ? 220
                   : type == ElementType::PadGrid ? 360
                   : type == ElementType::DrumPad ? 80
                   : type == ElementType::Toggle ? 54 : 96;
@@ -1389,16 +2676,363 @@ namespace patchcraft
             el.accentColour = PatchCraftLookAndFeel::accent();
             el.backgroundColour = juce::Colour (0x33141822);
         }
+        if (type == ElementType::DrumGrid)
+        {
+            el.label = "Drum Pattern";
+            el.drumTracks = 8;
+            el.drumSteps = 16;
+            el.drumPattern = 0;
+            el.cornerRadius = 8.0f;
+            el.accentColour = PatchCraftLookAndFeel::accent();
+            el.backgroundColour = juce::Colour (0x33141822);
+        }
+        if (type == ElementType::GranularField)
+        {
+            el.label = "Granular Field";
+            el.parameterId = el.parameterId.isNotEmpty() ? el.parameterId : "sampleStart";
+            el.cornerRadius = 10.0f;
+            el.accentColour = PatchCraftLookAndFeel::accent();
+            el.backgroundColour = juce::Colour (0x33141822);
+            el.borderColour = PatchCraftLookAndFeel::border();
+        }
+        if (type == ElementType::EqCurve)
+        {
+            el.label = "EQ Curve";
+            el.parameterId.clear();
+            el.cornerRadius = 8.0f;
+            el.accentColour = PatchCraftLookAndFeel::accent();
+            el.backgroundColour = juce::Colour (0x33141822);
+            el.borderColour = PatchCraftLookAndFeel::border();
+        }
+        if (type == ElementType::SpectrumAnalyzer)
+        {
+            el.label = "Spectrum";
+            el.parameterId.clear();
+            el.cornerRadius = 8.0f;
+            el.accentColour = juce::Colour (0xff20d6ff);
+            el.backgroundColour = juce::Colour (0x33141822);
+            el.borderColour = PatchCraftLookAndFeel::border();
+        }
+        if (type == ElementType::Mixer)
+        {
+            el.label = "Mixer";
+            el.labelPosition = "hidden";
+            el.mixerMode = "auto";
+            el.mixerChannels = 4;
+            el.mixerChannelLabels.add ("Main");
+            el.mixerChannelLabels.add ("Bus 2");
+            el.mixerChannelLabels.add ("Bus 3");
+            el.mixerChannelLabels.add ("Bus 4");
+            el.mixerVolumeParams.add ("volume");
+            el.mixerPanParams.add ("pan");
+            el.cornerRadius = 8.0f;
+            el.accentColour = PatchCraftLookAndFeel::accent();
+            el.backgroundColour = juce::Colour (0x33141822);
+            el.borderColour = PatchCraftLookAndFeel::border();
+        }
+        if (type == ElementType::MacroControl)
+        {
+            el.label = "Macro 1";
+            if (el.parameterId.isEmpty())
+            {
+                auto idExists = [this] (const juce::String& id)
+                {
+                    if (owner.getProject().getParameters().find (id) != nullptr)
+                        return true;
+                    for (const auto& block : owner.getProject().getDspGraph().blocks)
+                        if (block.id == id)
+                            return true;
+                    return false;
+                };
+                int suffix = 1;
+                do
+                {
+                    el.parameterId = "macro_" + juce::String (suffix++);
+                }
+                while (idExists (el.parameterId));
+            }
+            el.cornerRadius = 8.0f;
+            el.accentColour = PatchCraftLookAndFeel::accent();
+            el.backgroundColour = juce::Colour (0x33141822);
+            el.borderColour = PatchCraftLookAndFeel::border();
 
-        auto& added = owner.getProject().getLayout().add (el);
-        owner.setSelectedElementId (added.id);
-        owner.getProject().notifyChanged();
+            auto& graph = owner.getProject().getDspGraph();
+            bool hasMacroBlock = false;
+            for (const auto& block : graph.blocks)
+                if (block.id == el.parameterId)
+                    hasMacroBlock = true;
+
+            if (! hasMacroBlock)
+            {
+                DspBlock block;
+                block.id = el.parameterId;
+                block.section = "mod";
+                block.type = "macro";
+                block.name = el.label;
+                block.enabled = true;
+                block.values["value"] = 0.5f;
+                graph.blocks.push_back (std::move (block));
+                graph.userConfigured = true;
+            }
+        }
+        if (type == ElementType::ModMatrix)
+        {
+            el.label = "Mod Matrix";
+            el.cornerRadius = 8.0f;
+            el.accentColour = PatchCraftLookAndFeel::accent();
+            el.backgroundColour = juce::Colour (0x33141822);
+            el.borderColour = PatchCraftLookAndFeel::border();
+        }
+
+        juce::String addedId;
+        owner.getProject().performLayoutEdit ("Add " + elementTypeDisplayName (type),
+            [&] (LayoutModel& m)
+            {
+                auto copy = el;
+                auto& added = m.add (copy);
+                addedId = added.id;
+            });
+        if (addedId.isNotEmpty())
+            owner.setSelectedElementId (addedId);
+    }
+
+    void CanvasEditor::addMixerChannelAt (juce::Point<int> canvasPos)
+    {
+        LayoutElement el;
+        el.type = ElementType::Mixer;
+        el.x = canvasPos.x;
+        el.y = canvasPos.y;
+        el.width = 116;
+        el.height = 260;
+        el.label = "Main";
+        el.labelPosition = "hidden";
+        el.style = "Modern Dark";
+        el.groupId = currentTabGroup == "main" ? juce::String() : currentTabGroup;
+        el.mixerMode = "parameters";
+        el.mixerChannels = 1;
+        el.mixerChannelLabels.add ("Main");
+        el.mixerVolumeParams.add ("volume");
+        el.mixerPanParams.add ("pan");
+        el.cornerRadius = 8.0f;
+        el.accentColour = PatchCraftLookAndFeel::accent();
+        el.backgroundColour = juce::Colour (0x33141822);
+        el.borderColour = PatchCraftLookAndFeel::border();
+
+        juce::String addedId;
+        owner.getProject().performLayoutEdit ("Add mixer channel",
+            [&] (LayoutModel& m)
+            {
+                auto& added = m.add (el);
+                addedId = added.id;
+            });
+
+        if (addedId.isNotEmpty())
+            owner.setSelectedElementId (addedId);
+    }
+
+    bool CanvasEditor::selectionContainsMixer() const
+    {
+        for (const auto& id : owner.getSelectedElementIds())
+            if (auto* el = owner.getProject().getLayout().find (id))
+                if (el->type == ElementType::Mixer)
+                    return true;
+
+        return false;
+    }
+
+    void CanvasEditor::explodeSelectedMixers()
+    {
+        struct SourceMixer
+        {
+            LayoutElement element;
+        };
+
+        std::vector<SourceMixer> mixers;
+        for (const auto& id : owner.getSelectedElementIds())
+            if (auto* el = owner.getProject().getLayout().find (id))
+                if (el->type == ElementType::Mixer)
+                    mixers.push_back ({ *el });
+
+        if (mixers.empty())
+            return;
+
+        juce::StringArray newIds;
+        owner.getProject().performLayoutEdit ("Break mixer into channel strips",
+            [&] (LayoutModel& layout)
+            {
+                for (const auto& source : mixers)
+                {
+                    const auto& src = source.element;
+                    const int channels = juce::jlimit (1, 16, src.mixerChannels);
+                    const int stripW = juce::jmax (92, juce::jmin (140, src.width / channels));
+                    const int gap = 10;
+
+                    for (int channel = 0; channel < channels; ++channel)
+                    {
+                        LayoutElement strip = src;
+                        strip.id.clear();
+                        strip.x = src.x + channel * (stripW + gap);
+                        strip.y = src.y;
+                        strip.width = stripW;
+                        strip.height = src.height;
+                        strip.label = mixerSlotAt (src.mixerChannelLabels, channel,
+                                                   channel == 0 ? juce::String ("Main")
+                                                                : "Bus " + juce::String (channel + 1));
+                        strip.labelPosition = "hidden";
+                        strip.mixerMode = "parameters";
+                        strip.mixerChannels = 1;
+                        strip.mixerChannelLabels.clear();
+                        strip.mixerChannelLabels.add (strip.label);
+                        strip.mixerVolumeParams.clear();
+                        strip.mixerPanParams.clear();
+                        strip.mixerMuteParams.clear();
+                        strip.mixerSoloParams.clear();
+                        strip.mixerVolumeParams.add (mixerSlotAt (src.mixerVolumeParams, channel,
+                                                                  channel == 0 ? juce::String ("volume") : juce::String()));
+                        strip.mixerPanParams.add (mixerSlotAt (src.mixerPanParams, channel,
+                                                               channel == 0 ? juce::String ("pan") : juce::String()));
+                        strip.mixerMuteParams.add (mixerSlotAt (src.mixerMuteParams, channel));
+                        strip.mixerSoloParams.add (mixerSlotAt (src.mixerSoloParams, channel));
+                        auto& added = layout.add (strip);
+                        newIds.add (added.id);
+                    }
+
+                    layout.remove (src.id);
+                }
+            });
+
+        if (! newIds.isEmpty())
+            owner.setSelectedElementIds (newIds);
+    }
+
+    void CanvasEditor::addDrumMachineControlLayout (juce::Point<int> canvasPos)
+    {
+        auto& graph = owner.getProject().getDspGraph();
+        ensureDrumMachineBlock (graph);
+
+        const auto tabGroup = currentTabGroup == "main" ? juce::String() : currentTabGroup;
+        juce::StringArray addedIds;
+
+        owner.getProject().performLayoutEdit ("Add Drum Machine Control Surface",
+            [&] (LayoutModel& layout)
+            {
+                LayoutElement panel;
+                panel.type = ElementType::Panel;
+                panel.label = "Drum Machine Surface";
+                panel.x = canvasPos.x;
+                panel.y = canvasPos.y;
+                panel.width = 1080;
+                panel.height = 420;
+                panel.groupId = tabGroup;
+                panel.cornerRadius = 18.0f;
+                panel.strokeWidth = 2.0f;
+                panel.backgroundColour = juce::Colour (0xcc070a0f);
+                panel.borderColour = PatchCraftLookAndFeel::accent();
+                panel.accentColour = PatchCraftLookAndFeel::accent();
+                auto& addedPanel = layout.add (panel);
+                const auto panelId = addedPanel.id;
+                addedIds.add (panelId);
+
+                auto addChild = [&] (LayoutElement child, const juce::String& prefix)
+                {
+                    child.containerId = panelId;
+                    child.groupId = tabGroup;
+                    if (child.id.isEmpty())
+                        child.id = layout.generateUniqueId (prefix);
+                    auto& added = layout.add (child);
+                    addedIds.add (added.id);
+                };
+
+                LayoutElement title;
+                title.type = ElementType::Label;
+                title.label = "DRUM MACHINE BUILDER";
+                title.x = canvasPos.x + 20;
+                title.y = canvasPos.y + 14;
+                title.width = 360;
+                title.height = 24;
+                title.labelSize = 16.0f;
+                title.textColour = PatchCraftLookAndFeel::textBright();
+                title.accentColour = PatchCraftLookAndFeel::accent();
+                addChild (title, "label_");
+
+                LayoutElement help;
+                help.type = ElementType::Label;
+                help.label = "Pads trigger mapped one-shots. The pattern grid drives playback. Pad level knobs are live per-pad controls.";
+                help.x = canvasPos.x + 392;
+                help.y = canvasPos.y + 16;
+                help.width = 650;
+                help.height = 22;
+                help.labelSize = 11.0f;
+                help.textColour = PatchCraftLookAndFeel::textDim();
+                addChild (help, "label_");
+
+                LayoutElement pads;
+                pads.type = ElementType::PadGrid;
+                pads.label = "Performance Pads";
+                pads.x = canvasPos.x + 20;
+                pads.y = canvasPos.y + 58;
+                pads.width = 300;
+                pads.height = 300;
+                pads.padRows = 4;
+                pads.padCols = 4;
+                pads.padBaseNote = 36;
+                pads.cornerRadius = 10.0f;
+                pads.backgroundColour = juce::Colour (0x55111822);
+                pads.borderColour = PatchCraftLookAndFeel::border();
+                pads.accentColour = PatchCraftLookAndFeel::accent();
+                addChild (pads, "padGrid_");
+
+                LayoutElement grid;
+                grid.type = ElementType::DrumGrid;
+                grid.label = "Pattern Sequencer";
+                grid.x = canvasPos.x + 340;
+                grid.y = canvasPos.y + 58;
+                grid.width = 700;
+                grid.height = 210;
+                grid.drumTracks = 8;
+                grid.drumSteps = 16;
+                grid.drumPattern = 0;
+                grid.cornerRadius = 10.0f;
+                grid.backgroundColour = juce::Colour (0x55111822);
+                grid.borderColour = PatchCraftLookAndFeel::border();
+                grid.accentColour = PatchCraftLookAndFeel::accent();
+                addChild (grid, "drumGrid_");
+
+                for (int pad = 0; pad < 16; ++pad)
+                {
+                    const int row = pad / 8;
+                    const int col = pad % 8;
+
+                    LayoutElement knob;
+                    knob.type = ElementType::Knob;
+                    knob.parameterId = "pad" + juce::String (pad + 1) + "Volume";
+                    knob.label = "P" + juce::String (pad + 1);
+                    knob.x = canvasPos.x + 346 + col * 86;
+                    knob.y = canvasPos.y + 292 + row * 56;
+                    knob.width = 58;
+                    knob.height = 50;
+                    knob.labelPosition = "bottom";
+                    knob.labelSpacing = 3.0f;
+                    knob.labelSize = 9.0f;
+                    knob.backgroundColour = juce::Colour (0x33141822);
+                    knob.borderColour = PatchCraftLookAndFeel::border();
+                    knob.accentColour = PatchCraftLookAndFeel::accent();
+                    addChild (knob, "knob_");
+                }
+            });
+
+        if (! addedIds.isEmpty())
+            owner.setSelectedElementIds (addedIds);
+
+        repaint();
     }
 
     void CanvasEditor::showContextMenu (juce::Point<int> screenPos)
     {
         const auto canvasPos = screenToCanvas (screenPos);
         juce::PopupMenu menu;
+        menu.addItem (99, "Search Canvas Actions...");
+        menu.addSeparator();
         menu.addSectionHeader ("Add Container");
         menu.addItem (1, "Panel / Container");
         menu.addItem (2, "Folder Group");
@@ -1412,6 +3046,16 @@ namespace patchcraft
         menu.addItem (9, "Line");
         menu.addSeparator();
         menu.addSectionHeader ("Add DSP Control");
+        menu.addItem (11, "Find Parameter...");
+        menu.addItem (12, "Add Arpeggiator (MIDI Playground)...");
+        menu.addItem (14, "Add Mixer");
+        menu.addItem (24, "Add Single Mixer Channel");
+        menu.addItem (25, "Break Selected Mixer Into Channels", selectionContainsMixer());
+        menu.addItem (20, "Add Macro Control");
+        menu.addItem (21, "Add Mod Matrix");
+        menu.addItem (22, "Add Granular Field");
+        menu.addItem (23, "Add Drum Machine Surface");
+        menu.addSeparator();
 
         // Group parameters by ParameterDef::category so the menu doesn't dump
         // every parameter as a flat 50-row wall of text. Each category becomes
@@ -1444,6 +3088,8 @@ namespace patchcraft
         if (! owner.getSelectedElementIds().isEmpty())
         {
             juce::PopupMenu assignMenu;
+            assignMenu.addItem (13, "Find Parameter...");
+            assignMenu.addSeparator();
             int assignItemId = 10000;
             for (const auto& cat : categoryOrder)
             {
@@ -1480,7 +3126,31 @@ namespace patchcraft
             }
         }
         menu.addSeparator();
+        bool canDetachLabels = false;
+        for (const auto& id : owner.getSelectedElementIds())
+            if (auto* selected = owner.getProject().getLayout().find (id))
+                if (isRuntimeControlElement (selected->type)
+                    && selected->labelPosition != "hidden"
+                    && (selected->label.isNotEmpty() || selected->parameterId.isNotEmpty()))
+                {
+                    canDetachLabels = true;
+                    break;
+        }
+        menu.addItem (15, "Detach Labels From Selection", canDetachLabels);
+        menu.addItem (16, "Copy Selection", ! owner.getSelectedElementIds().isEmpty());
+        menu.addItem (17, "Copy Selection Without Parameters", ! owner.getSelectedElementIds().isEmpty());
+        menu.addItem (18, "Paste Elements", owner.hasCopiedElements());
+        menu.addItem (19, "Copy Selection To All Tabs", ! owner.getSelectedElementIds().isEmpty());
         menu.addItem (4, "Create Group From Selection", ! owner.getSelectedElementIds().isEmpty());
+        menu.addSeparator();
+        juce::PopupMenu animationMenu;
+        animationMenu.addItem (401, "None");
+        animationMenu.addItem (402, "Breathe");
+        animationMenu.addItem (403, "Pulse");
+        animationMenu.addItem (404, "Glow");
+        animationMenu.addItem (405, "Shake");
+        animationMenu.addItem (406, "Audio Reactive Glow");
+        menu.addSubMenu ("Assign Visual Automation", animationMenu, ! owner.getSelectedElementIds().isEmpty());
         menu.addSeparator();
         juce::PopupMenu alignMenu;
         alignMenu.addItem (201, "Left", owner.getSelectedElementIds().size() >= 2);
@@ -1502,40 +3172,222 @@ namespace patchcraft
         menu.addSubMenu ("Arrange Order", orderMenu);
 
         menu.showMenuAsync (juce::PopupMenu::Options(),
-            [this, canvasPos, paramByItem, assignParamByItem, prerequisiteId, prerequisiteValue] (int result)
+            [this, canvasPos, screenPos, paramByItem, assignParamByItem, prerequisiteId, prerequisiteValue] (int result)
             {
                 if (result == 1) addElementAt (ElementType::Panel, canvasPos);
                 else if (result == 2) addElementAt (ElementType::Group, canvasPos);
                 else if (result == 3) addElementAt (ElementType::TabPanel, canvasPos);
+                else if (result == 99)
+                {
+                    const juce::Rectangle<int> anchor (screenPos.x, screenPos.y, 1, 1);
+                    juce::Component::SafePointer<CanvasEditor> safe (this);
+                    launchCanvasActionPicker (this, anchor,
+                        [safe, canvasPos, screenPos] (const juce::String& actionId)
+                        {
+                            auto* c = safe.getComponent();
+                            if (c == nullptr) return;
+
+                            if (actionId == "findParameter")
+                            {
+                                auto entries = collectParameterEntries (c->owner.getProject());
+                                const juce::Rectangle<int> parameterAnchor (screenPos.x, screenPos.y, 1, 1);
+                                launchParameterPicker (c, parameterAnchor, std::move (entries),
+                                    [safe, canvasPos] (const juce::String& paramId)
+                                    {
+                                        if (auto* canvas = safe.getComponent())
+                                            canvas->addElementAt (ElementType::Knob, canvasPos, paramId);
+                                    });
+                            }
+                            else if (actionId == "panel") c->addElementAt (ElementType::Panel, canvasPos);
+                            else if (actionId == "tabPanel") c->addElementAt (ElementType::TabPanel, canvasPos);
+                            else if (actionId == "roundedRect") c->addElementAt (ElementType::Shape, canvasPos);
+                            else if (actionId == "ellipse")
+                            {
+                                c->addElementAt (ElementType::Shape, canvasPos);
+                                const auto id = c->owner.getSelectedElementId();
+                                c->owner.getProject().performLayoutEdit ("Set shape kind",
+                                    [id] (LayoutModel& m)
+                                    {
+                                        if (auto* el = m.find (id))
+                                            el->shapeKind = "ellipse";
+                                    });
+                            }
+                            else if (actionId == "mixer") c->addElementAt (ElementType::Mixer, canvasPos);
+                            else if (actionId == "mixerChannel") c->addMixerChannelAt (canvasPos);
+                            else if (actionId == "explodeMixer") c->explodeSelectedMixers();
+                            else if (actionId == "macro") c->addElementAt (ElementType::MacroControl, canvasPos);
+                            else if (actionId == "modMatrix") c->addElementAt (ElementType::ModMatrix, canvasPos);
+                            else if (actionId == "granular") c->addElementAt (ElementType::GranularField, canvasPos);
+                            else if (actionId == "drumMachine") c->addDrumMachineControlLayout (canvasPos);
+                            else if (actionId == "bpm") c->addElementAt (ElementType::Knob, canvasPos, "projectBpm");
+                            else if (actionId == "bpmSync") c->addElementAt (ElementType::Toggle, canvasPos, "bpmSync");
+                            else if (actionId == "retrigger") c->addElementAt (ElementType::Toggle, canvasPos, "retrigger");
+                            else if (actionId == "copy") c->owner.copySelectedElements (true);
+                            else if (actionId == "copyNoParams") c->owner.copySelectedElements (false);
+                            else if (actionId == "paste") c->owner.pasteCopiedElements();
+                            else if (actionId == "copyTabs") c->owner.copySelectedToAllTabs();
+                            else if (actionId == "group") c->owner.groupSelectedElements();
+                        });
+                }
+                else if (result == 11)
+                {
+                    // Search-driven "Add DSP Control": one popup with a text
+                    // filter instead of cascading category submenus.
+                    auto entries = collectParameterEntries (owner.getProject());
+                    const juce::Rectangle<int> anchor (screenPos.x, screenPos.y, 1, 1);
+                    juce::Component::SafePointer<CanvasEditor> safe (this);
+                    launchParameterPicker (this, anchor, std::move (entries),
+                        [safe, canvasPos] (const juce::String& paramId)
+                        {
+                            if (auto* c = safe.getComponent())
+                                c->addElementAt (ElementType::Knob, canvasPos, paramId);
+                        });
+                }
+                else if (result == 12)
+                {
+                    // One-click: switch to the DSP builder's MIDI tab and
+                    // drop in an arpeggiator block ready for editing.
+                    owner.addArpBlock();
+                }
+                else if (result == 14)
+                {
+                    addElementAt (ElementType::Mixer, canvasPos);
+                }
+                else if (result == 24)
+                {
+                    addMixerChannelAt (canvasPos);
+                }
+                else if (result == 25)
+                {
+                    explodeSelectedMixers();
+                }
+                else if (result == 20)
+                {
+                    addElementAt (ElementType::MacroControl, canvasPos);
+                }
+                else if (result == 21)
+                {
+                    addElementAt (ElementType::ModMatrix, canvasPos);
+                }
+                else if (result == 22)
+                {
+                    addElementAt (ElementType::GranularField, canvasPos);
+                }
+                else if (result == 23)
+                {
+                    addDrumMachineControlLayout (canvasPos);
+                }
+                else if (result == 15)
+                {
+                    owner.detachLabelsFromSelectedControls();
+                }
+                else if (result == 16)
+                {
+                    owner.copySelectedElements (true);
+                }
+                else if (result == 17)
+                {
+                    owner.copySelectedElements (false);
+                }
+                else if (result == 18)
+                {
+                    owner.pasteCopiedElements();
+                }
+                else if (result == 19)
+                {
+                    owner.copySelectedToAllTabs();
+                }
+                else if (result == 13)
+                {
+                    // Searchable "Assign Selected To Parameter".
+                    auto entries = collectParameterEntries (owner.getProject());
+                    const juce::Rectangle<int> anchor (screenPos.x, screenPos.y, 1, 1);
+                    juce::Component::SafePointer<CanvasEditor> safe (this);
+                    launchParameterPicker (this, anchor, std::move (entries),
+                        [safe] (const juce::String& paramId)
+                        {
+                            auto* c = safe.getComponent();
+                            if (c == nullptr) return;
+                            const auto ids = c->owner.getSelectedElementIds();
+                            const auto label = c->owner.getProject().getParameters().find (paramId) != nullptr
+                                ? c->owner.getProject().getParameters().find (paramId)->name
+                                : juce::String();
+                            c->owner.getProject().performLayoutEdit ("Assign parameter",
+                                [ids, paramId, label] (LayoutModel& m)
+                                {
+                                    for (const auto& id : ids)
+                                    {
+                                        if (auto* el = m.find (id))
+                                        {
+                                            const bool assignable = el->type == ElementType::Knob
+                                                || el->type == ElementType::Slider
+                                                || el->type == ElementType::Button
+                                                || el->type == ElementType::Toggle
+                                                || el->type == ElementType::Dropdown
+                                                || el->type == ElementType::ValueDisplay
+                                                || el->type == ElementType::MacroControl;
+                                            if (! assignable) continue;
+                                            el->parameterId = paramId;
+                                            if (el->label.isEmpty() && label.isNotEmpty())
+                                                el->label = label;
+                                        }
+                                    }
+                                });
+                            c->repaint();
+                        });
+                }
                 else if (result >= 5 && result <= 9)
                 {
                     addElementAt (ElementType::Shape, canvasPos);
-                    if (auto* el = owner.getProject().getLayout().find (owner.getSelectedElementId()))
-                    {
-                        if (result == 6) el->shapeKind = "ellipse";
-                        if (result == 7) el->shapeKind = "triangle";
-                        if (result == 8) el->shapeKind = "diamond";
-                        if (result == 9) el->shapeKind = "line";
-                        owner.getProject().notifyChanged();
-                    }
+                    const auto id = owner.getSelectedElementId();
+                    juce::String shapeKind;
+                    if (result == 6) shapeKind = "ellipse";
+                    if (result == 7) shapeKind = "triangle";
+                    if (result == 8) shapeKind = "diamond";
+                    if (result == 9) shapeKind = "line";
+                    if (shapeKind.isNotEmpty())
+                        owner.getProject().performLayoutEdit ("Set shape kind",
+                            [id, shapeKind] (LayoutModel& m)
+                            {
+                                if (auto* el = m.find (id))
+                                    el->shapeKind = shapeKind;
+                            });
                 }
                 else if (result == 4)
                 {
-                    LayoutElement group;
-                    group.type = ElementType::Group;
-                    group.label = "New Group";
-                    group.id = owner.getProject().getLayout().generateUniqueId ("group_");
-                    auto& added = owner.getProject().getLayout().add (group);
-                    for (const auto& id : owner.getSelectedElementIds())
-                        if (auto* el = owner.getProject().getLayout().find (id))
-                            el->containerId = added.id;
-                    owner.setSelectedElementId (added.id);
-                    owner.getProject().notifyChanged();
+                    owner.groupSelectedElements();
                 }
                 else if (result == 10 && prerequisiteId.isNotEmpty())
                 {
                     owner.getProject().getLiveValues().setValue (prerequisiteId, prerequisiteValue);
                     owner.getProject().notifyChanged();
+                    repaint();
+                }
+                else if (result >= 401 && result <= 406)
+                {
+                    const auto ids = owner.getSelectedElementIds();
+                    owner.getProject().performLayoutEdit ("Assign visual automation",
+                        [ids, result] (LayoutModel& m)
+                        {
+                            for (const auto& id : ids)
+                            {
+                                if (auto* el = m.find (id))
+                                {
+                                    el->animationRate = result == 405 ? 2.0f
+                                                       : result == 402 ? 0.55f
+                                                       : 1.0f;
+                                    el->audioReactive = result == 406;
+                                    el->audioReactiveMode = "level";
+                                    el->audioReactiveAmount = result == 406 ? 0.85f : 0.35f;
+                                    el->animationMode = result == 401 ? "none"
+                                                      : result == 402 ? "breathe"
+                                                      : result == 403 ? "pulse"
+                                                      : result == 404 ? "glow"
+                                                      : result == 405 ? "shake"
+                                                      : "glow";
+                                }
+                            }
+                        });
                     repaint();
                 }
                 else if (result == 201) owner.alignSelected ("left");
@@ -1552,25 +3404,32 @@ namespace patchcraft
                 else if (result == 304) owner.orderSelected ("back");
                 else if (auto it = assignParamByItem.find (result); it != assignParamByItem.end())
                 {
-                    const auto* def = owner.getProject().getParameters().find (it->second);
-                    for (const auto& id : owner.getSelectedElementIds())
-                    {
-                        if (auto* el = owner.getProject().getLayout().find (id))
+                    const auto paramId = it->second;
+                    const auto ids = owner.getSelectedElementIds();
+                    const auto* def = owner.getProject().getParameters().find (paramId);
+                    const auto label = def != nullptr ? def->name : juce::String();
+                    owner.getProject().performLayoutEdit ("Assign parameter",
+                        [ids, paramId, label] (LayoutModel& m)
                         {
-                            const bool assignable = el->type == ElementType::Knob
-                                || el->type == ElementType::Slider
-                                || el->type == ElementType::Button
-                                || el->type == ElementType::Toggle
-                                || el->type == ElementType::Dropdown
-                                || el->type == ElementType::ValueDisplay;
-                            if (! assignable)
-                                continue;
-                            el->parameterId = it->second;
-                            if (el->label.isEmpty() && def != nullptr)
-                                el->label = def->name;
-                        }
-                    }
-                    owner.getProject().notifyChanged();
+                            for (const auto& id : ids)
+                            {
+                                if (auto* el = m.find (id))
+                                {
+                                    const bool assignable = el->type == ElementType::Knob
+                                        || el->type == ElementType::Slider
+                                        || el->type == ElementType::Button
+                                        || el->type == ElementType::Toggle
+                                        || el->type == ElementType::Dropdown
+                                        || el->type == ElementType::ValueDisplay
+                                        || el->type == ElementType::MacroControl;
+                                    if (! assignable)
+                                        continue;
+                                    el->parameterId = paramId;
+                                    if (el->label.isEmpty() && label.isNotEmpty())
+                                        el->label = label;
+                                }
+                            }
+                        });
                     repaint();
                 }
                 else if (auto it = paramByItem.find (result); it != paramByItem.end())
@@ -1584,7 +3443,7 @@ namespace patchcraft
 
         auto snap = [this] (int v) -> int
         {
-            if (snapGrid <= 1) return v;
+            if (! snapEnabled || snapGrid <= 1) return v;
             return juce::roundToInt ((float) v / snapGrid) * snapGrid;
         };
 
@@ -1607,6 +3466,14 @@ namespace patchcraft
             return;
         }
 
+        if (mode == DragMode::DrumGridEdit)
+        {
+            if (auto* grid = owner.getProject().getLayout().find (drumGridEditElementId);
+                grid != nullptr && grid->type == ElementType::DrumGrid)
+                editDrumGridCellAt (*grid, elementScreenRect (*grid), e.getPosition(), e.mods, false);
+            return;
+        }
+
         auto* el = owner.getProject().getLayout().find (owner.getSelectedElementId());
 
         const auto deltaCanvas = juce::Point<float> (
@@ -1620,6 +3487,7 @@ namespace patchcraft
                 {
                     selected->x = snap (kv.second.x + (int) deltaCanvas.x);
                     selected->y = snap (kv.second.y + (int) deltaCanvas.y);
+                    owner.propagateLinkedElementChange (selected->id);
                 }
             layoutChangedDuringDrag = true;
             owner.getProject().markDirty();
@@ -1629,6 +3497,7 @@ namespace patchcraft
             if (el == nullptr) return;
             el->width  = juce::jmax (8, snap (dragOriginal.width  + (int) deltaCanvas.x));
             el->height = juce::jmax (8, snap (dragOriginal.height + (int) deltaCanvas.y));
+            owner.propagateLinkedElementChange (el->id);
             layoutChangedDuringDrag = true;
             owner.getProject().markDirty();
         }
@@ -1641,7 +3510,7 @@ namespace patchcraft
                 juce::jmax (dragStart.y, e.getPosition().y));
             juce::StringArray ids;
             for (const auto& item : owner.getProject().getLayout().getAll())
-                if (item.visible && item.type != ElementType::Group && isElementOnCurrentTab (item)
+                if (item.visible && ! item.locked && item.type != ElementType::Group && isElementOnCurrentTab (item)
                     && marqueeRect.intersects (elementScreenRect (item)))
                     ids.add (item.id);
             owner.setSelectedElementIds (ids);
@@ -1653,16 +3522,44 @@ namespace patchcraft
 
     void CanvasEditor::mouseUp (const juce::MouseEvent&)
     {
+        const bool wasMarquee = mode == DragMode::Marquee;
+        const auto previousMarquee = marqueeRect;
         const bool shouldNotify = layoutChangedDuringDrag;
+        const bool shouldCommitLayoutUndo = layoutChangedDuringDrag
+                                         && ! dragLayoutBefore.empty()
+                                         && (mode == DragMode::Move || mode == DragMode::ResizeBR);
+        const auto afterLayout = shouldCommitLayoutUndo
+            ? owner.getProject().getLayout().getAll()
+            : std::vector<LayoutElement>();
+        const auto beforeLayout = dragLayoutBefore;
+        const auto actionName = dragActionName.isNotEmpty() ? dragActionName : juce::String ("Edit layout");
         mode = DragMode::None;
         dragParameterId.clear();
         dragValueElementId.clear();
+        drumGridEditElementId.clear();
+        lastDrumGridTrack = -1;
+        lastDrumGridStep = -1;
         marqueeRect = {};
         multiDragOrigins.clear();
+        dragLayoutBefore.clear();
+        dragActionName.clear();
         layoutChangedDuringDrag = false;
         setMouseCursor (juce::MouseCursor::NormalCursor);
-        if (shouldNotify)
+        if (shouldCommitLayoutUndo)
+        {
+            owner.getProject().getLayout().getAll() = beforeLayout;
+            owner.getProject().performLayoutEdit (actionName,
+                [afterLayout] (LayoutModel& m)
+                {
+                    m.getAll() = afterLayout;
+                });
+            owner.refreshAllPanels();
+        }
+        else if (shouldNotify)
             owner.getProject().notifyChanged();
+
+        if (wasMarquee)
+            repaint (previousMarquee.expanded (3));
     }
 
     void CanvasEditor::mouseMove (const juce::MouseEvent& e)
@@ -1684,7 +3581,8 @@ namespace patchcraft
                 const bool isInteractiveControl = it->type == ElementType::Knob || it->type == ElementType::Slider
                                                || it->type == ElementType::Button || it->type == ElementType::Toggle
                                                || it->type == ElementType::Dropdown
-                                               || it->type == ElementType::ValueDisplay;
+                                               || it->type == ElementType::ValueDisplay
+                                               || it->type == ElementType::MacroControl;
                 if (! isInteractiveControl)
                     continue;
 
@@ -1692,7 +3590,8 @@ namespace patchcraft
                 if (! r.contains (e.getPosition()))
                     continue;
 
-                const bool overControl = (it->type == ElementType::Knob || it->type == ElementType::Slider)
+                const bool overControl = (it->type == ElementType::Knob || it->type == ElementType::Slider
+                                       || it->type == ElementType::MacroControl)
                     ? hitTestControlBody (*it, r, e.getPosition())
                     : true;
                 if (! overControl)
@@ -1733,6 +3632,18 @@ namespace patchcraft
                 .contains (e.getPosition()))
             {
                 setMouseCursor (juce::MouseCursor::BottomRightCornerResizeCursor);
+                return;
+            }
+        }
+
+        if (sel != nullptr && sel->type == ElementType::DrumGrid && owner.isElementSelected (sel->id)
+            && (e.mods.isAltDown() || e.mods.isShiftDown() || e.mods.isCtrlDown() || e.mods.isCommandDown()))
+        {
+            int pattern = 0, track = 0, step = 0;
+            float velocity = 0.0f;
+            if (drumCellAt (*sel, elementScreenRect (*sel), e.getPosition(), pattern, track, step, velocity))
+            {
+                setMouseCursor (juce::MouseCursor::CrosshairCursor);
                 return;
             }
         }
@@ -1873,18 +3784,32 @@ namespace patchcraft
             || key.isKeyCode (juce::KeyPress::downKey))
         {
             const int step = key.getModifiers().isShiftDown() ? 10 : 1;
-            bool moved = false;
-            for (const auto& id : owner.getSelectedElementIds())
+            const auto ids = owner.getSelectedElementIds();
+            bool hasMovable = false;
+            for (const auto& id : ids)
                 if (auto* el = owner.getProject().getLayout().find (id); el != nullptr && ! el->locked)
                 {
-                    if (key.isKeyCode (juce::KeyPress::leftKey))  el->x -= step;
-                    if (key.isKeyCode (juce::KeyPress::rightKey)) el->x += step;
-                    if (key.isKeyCode (juce::KeyPress::upKey))    el->y -= step;
-                    if (key.isKeyCode (juce::KeyPress::downKey))  el->y += step;
-                    moved = true;
+                    hasMovable = true;
+                    break;
                 }
-            if (! moved) return false;
-            owner.getProject().notifyChanged();
+            if (! hasMovable) return false;
+
+            const bool left = key.isKeyCode (juce::KeyPress::leftKey);
+            const bool right = key.isKeyCode (juce::KeyPress::rightKey);
+            const bool up = key.isKeyCode (juce::KeyPress::upKey);
+            const bool down = key.isKeyCode (juce::KeyPress::downKey);
+            owner.getProject().performLayoutEdit ("Nudge selection",
+                [ids, step, left, right, up, down] (LayoutModel& m)
+                {
+                    for (const auto& id : ids)
+                        if (auto* el = m.find (id); el != nullptr && ! el->locked)
+                        {
+                            if (left)  el->x -= step;
+                            if (right) el->x += step;
+                            if (up)    el->y -= step;
+                            if (down)  el->y += step;
+                        }
+                });
             repaint();
             return true;
         }

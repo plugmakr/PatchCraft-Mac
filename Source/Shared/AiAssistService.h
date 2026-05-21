@@ -69,6 +69,12 @@ namespace patchcraft
             LocalLlamaServer
         };
 
+        enum class ImageProviderMode
+        {
+            BuiltInRenderer,
+            OpenAIImages
+        };
+
         struct LocalLlmConfig
         {
             ProviderMode provider = ProviderMode::BuiltInTemplates;
@@ -83,6 +89,24 @@ namespace patchcraft
             static LocalLlmConfig fromVar (const juce::var&);
         };
 
+        struct CloudIntegrationConfig
+        {
+            ImageProviderMode imageProvider = ImageProviderMode::BuiltInRenderer;
+            juce::String imageEndpoint { "https://api.openai.com/v1/images/generations" };
+            juce::String imageModel { "gpt-image-1" };
+            juce::String imageApiKey;
+            juce::String murekaEndpoint { "https://api.mureka.ai" };
+            juce::String murekaApiKey;
+            juce::String pluginClubEndpoint { "https://plugin.club/functions" };
+            juce::String pluginClubApiKey;
+            juce::String licenseEndpoint;
+            juce::String licensePublicKey;
+            int cloudTimeoutMs = 60000;
+
+            juce::var toVar() const;
+            static CloudIntegrationConfig fromVar (const juce::var&);
+        };
+
         juce::String run (TaskType, const juce::String& instrumentName) const;
         Suggestion run (TaskType, const PatchCraftProject&) const;
         Suggestion run (TaskType, const ProjectContextPack&) const;
@@ -93,8 +117,13 @@ namespace patchcraft
         static LocalLlmConfig loadLocalLlmConfig();
         static void saveLocalLlmConfig (const LocalLlmConfig&);
         static juce::File localLlmConfigFile();
+        static CloudIntegrationConfig loadCloudIntegrationConfig();
+        static void saveCloudIntegrationConfig (const CloudIntegrationConfig&);
+        static juce::File cloudIntegrationConfigFile();
         static juce::String providerModeToString (ProviderMode);
         static ProviderMode providerModeFromString (const juce::String&);
+        static juce::String imageProviderModeToString (ImageProviderMode);
+        static ImageProviderMode imageProviderModeFromString (const juce::String&);
         static juce::String providerStatusText();
     };
 

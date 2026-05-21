@@ -1,0 +1,22 @@
+{
+  "formatVersion": 1,
+  "instrumentName": "Aurora Arp Synth",
+  "creator": "PatchCraft",
+  "description": "A bright playable arpeggiated synth demo with fast envelopes, tempo echoes, and musical motion.",
+  "category": "Arp Synth",
+  "engine": "synth",
+  "backgroundImage": "assets/background.png",
+  "libraryThumbnail": "assets/thumbnail.png",
+  "defaultPreset": "Aurora Steps",
+  "createdWith": "PatchCraft Studio",
+  "version": "1.0",
+  "playerDisplayName": "Aurora Arp Synth",
+  "playerTagline": "Factory demo template",
+  "playerAccentColour": "ff73ffb7",
+  "tags": [
+    "factory-demo",
+    "arp",
+    "synth",
+    "arp synth"
+  ]
+}

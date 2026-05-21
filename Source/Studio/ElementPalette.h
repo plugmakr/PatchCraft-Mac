@@ -21,6 +21,9 @@ namespace patchcraft
     private:
         StudioMainComponent& owner;
 
+        juce::Viewport viewport;
+        juce::Component scrollContent;
+
         struct Row : public juce::Component
         {
             Row (juce::String text, juce::String iconKey,
@@ -41,16 +44,21 @@ namespace patchcraft
             Section (juce::String title);
             void paint (juce::Graphics&) override;
             void resized() override;
+            void mouseUp (const juce::MouseEvent&) override;
             void addRow (std::unique_ptr<Row>);
             int  getNeededHeight() const;
 
             juce::String title;
             juce::OwnedArray<Row> rows;
+            std::function<void()> onToggle;
+            bool open = true;
         };
 
-        Section addSection { "Add Element" };
-        Section performanceSection { "Performance" };
-        Section componentsSection { "Components" };
+        Section controlSection { "Sound + Control Elements" };
+        Section analysisSection { "EQ + Analysis" };
+        Section uiSection { "Visual UI Elements" };
+        Section performanceSection { "MIDI + Performance" };
+        Section containerSection { "Containers + Layout" };
 
         juce::TextButton trashBtn  { "Del" };
         juce::TextButton copyBtn   { "Dup" };

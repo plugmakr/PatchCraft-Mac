@@ -16,6 +16,7 @@ namespace patchcraft
         juce::String creator;
         juce::String description;
         juce::String category;
+        juce::String engineId;
         juce::String libraryThumbnail;  // Relative path within pack
         juce::StringArray tags;
         juce::String version;
@@ -78,6 +79,7 @@ namespace patchcraft
 
         // Scan a single directory
         void scanDirectory (const juce::File& dir);
+        void scanPackFolder (const juce::File& packFolder);
 
         // Load metadata from a pack folder
         bool loadPackMetadata (const juce::File& packFolder, LibraryEntry& entry);

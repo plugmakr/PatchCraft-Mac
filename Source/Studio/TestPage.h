@@ -33,6 +33,7 @@ namespace patchcraft
                      public juce::AudioIODeviceCallback,
                      public juce::MidiInputCallback,
                      private juce::MidiKeyboardStateListener,
+                     public juce::KeyListener,
                      public juce::Timer,
                      private LiveValueStore::Listener,
                      private PatchCraftProject::Listener
@@ -48,6 +49,17 @@ namespace patchcraft
         void activate();    // called when user switches TO this tab
         void deactivate();  // called when user switches AWAY
         bool isAudioRunning() const noexcept { return audioRunning; }
+        void setBrandLabPreviewMode (bool shouldUse);
+        juce::Rectangle<int> getBrandPreviewInstrumentBounds() const noexcept { return brandPreviewInstrumentBounds; }
+        void showMidiClipEditor();
+        void startPreviewPlayback();
+        void stopPreviewPlayback();
+        void togglePreviewPlayback();
+        bool isTransportPlaying() const noexcept { return playing.load(); }
+        double getSequencerPlaybackPosition01 (int steps) const noexcept;
+        bool setDrumActivePatternFromUi (int pattern);
+        bool setDrumPatternCellFromUi (int pattern, int track, int step, bool active,
+                                       float velocity, float gate, float probability, int divisions);
 
         struct ClipEvent
         {
@@ -83,11 +95,12 @@ namespace patchcraft
 
         // PatchCraftProject::Listener -> rebuild engine if type changed
         void projectChanged() override;
+        void projectChanged (PatchCraftProject::ChangeScope scope) override;
 
         // ---- Helpers ---------------------------------------------------------
         void ensureEngineMatchesProject();
         void syncAllValuesToEngine();
-        void syncRoutingFromProject();
+        void syncRoutingFromProject (bool preserveActiveNotes = false);
         void pushSpectrumSample (float sample);
         void clearClip();
         void hardStop();
@@ -118,6 +131,8 @@ namespace patchcraft
         int    currentBlockSize  = 512;
         int    currentNumChans   = 2;
         bool   audioRunning      = false;
+        bool   brandLabPreviewMode = false;
+        juce::Rectangle<int> brandPreviewInstrumentBounds;
 
         // MIDI
         juce::MidiKeyboardState keyboardState;

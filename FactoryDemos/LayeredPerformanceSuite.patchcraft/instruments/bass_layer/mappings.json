@@ -1,0 +1,34 @@
+{
+  "zones": [
+    {
+      "sample": "samples/SubBassline_C4.wav",
+      "rootNote": 60,
+      "lowNote": 48,
+      "highNote": 72,
+      "lowVelocity": 1,
+      "highVelocity": 127,
+      "gainDb": -3.0,
+      "pan": 0.0,
+      "loopEnabled": true,
+      "loopStart": 0,
+      "loopEnd": 384000,
+      "roundRobinGroup": 0,
+      "roundRobinIndex": 0,
+      "sampleStart": 0,
+      "sampleEnd": 384000,
+      "fadeInStart": 0,
+      "fadeInLength": 512,
+      "fadeOutStart": 382976,
+      "fadeOutLength": 1024,
+      "pitchOffset": 0.0,
+      "velocityLowerVelXFade": 0.0,
+      "velocityUpperVelXFade": 0.0,
+      "reverse": false,
+      "priority": 0,
+      "group": "Sub Bassline",
+      "bpm": 120,
+      "oneShot": false,
+      "triggerProbability": 100
+    }
+  ]
+}

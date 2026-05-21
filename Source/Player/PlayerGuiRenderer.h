@@ -5,7 +5,9 @@
 #include "PatchCraftPackFormat.h"
 #include "AssetManager.h"
 
+#include <functional>
 #include <map>
+#include <vector>
 
 namespace patchcraft
 {
@@ -25,19 +27,27 @@ namespace patchcraft
             Dropdown id="presets" -> show preset menu.
     */
     class PlayerGuiRenderer : public juce::Component,
+                              public juce::FileDragAndDropTarget,
+                              public juce::TooltipClient,
                               private juce::Timer
     {
     public:
         PlayerGuiRenderer (PlayerProcessor& proc, AssetManager& assets);
         ~PlayerGuiRenderer() override;
 
+        std::function<void (const juce::String& report)> onRuntimeImportReport;
+
         void rebuild();
 
         void paint (juce::Graphics&) override;
+        void paintOverChildren (juce::Graphics&) override;
         void resized() override;
         void mouseDown (const juce::MouseEvent&) override;
         void mouseDrag (const juce::MouseEvent&) override;
         void mouseUp (const juce::MouseEvent&) override;
+        bool isInterestedInFileDrag (const juce::StringArray&) override;
+        void filesDropped (const juce::StringArray&, int, int) override;
+        juce::String getTooltip() override;
         void timerCallback() override;
 
     private:
@@ -53,18 +63,28 @@ namespace patchcraft
 
         juce::String currentTabGroup { "main" };
         std::map<juce::String, juce::String> activeTabGroupsByPanel;
+        std::map<juce::String, bool> manualContainerOpen;
+        juce::StringArray manualContainerOrder;
         int lastPlayedNote = -1;
         int activePadNote = -1;
         juce::String activeMomentaryParameter;
         float lastOutputPeak = 0.0f;
         bool hasMeterOrReactiveElement = false;
         juce::String lastPendingMidiLearn;
+        bool drumGridDragActive = false;
+        bool drumGridPaintValue = false;
+        int lastDrumGridPattern = -1;
+        int lastDrumGridTrack = -1;
+        int lastDrumGridStep = -1;
 
         // Geometry helpers
         struct CanvasMetrics { float scale; juce::Rectangle<int> canvas; };
         CanvasMetrics metrics() const;
         juce::Rectangle<int> elementRect (const LayoutElement&, const CanvasMetrics&) const;
         bool isElementOnCurrentTab (const LayoutElement&) const;
+        bool isManualContainerGroup (const juce::String& groupId) const;
+        bool triggerManualContainer (const LayoutElement& element);
+        void initialiseManualContainers();
         int parameterIndexForId (const juce::String&) const;
         const ParameterDef* parameterForId (const juce::String&) const;
         bool parameterIsEnabled (const ParameterDef&) const;
@@ -72,10 +92,17 @@ namespace patchcraft
         float parameterValueForElement (const LayoutElement&, float fallback = 0.0f) const;
         juce::String formattedParameterValue (const LayoutElement&) const;
         juce::Rectangle<int> animatedElementRect (const LayoutElement&, juce::Rectangle<int>) const;
+        juce::Rectangle<int> tabBounds (juce::Rectangle<int>, int tabIndex, int tabCount) const;
+        void drawLabelElement (juce::Graphics&, const LayoutElement&, juce::Rectangle<int>) const;
+        void drawControlLabelOverlay (juce::Graphics&, const LayoutElement&, juce::Rectangle<int>) const;
+        juce::Rectangle<int> controlBodyRect (const LayoutElement&, juce::Rectangle<int>) const;
+        void drawRuntimeControl (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
 
         // Per-type drawing
         void drawHeroPlaceholder (juce::Graphics&, juce::Rectangle<int>) const;
         void drawMeter   (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
+        void drawEqCurve (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
+        void drawSpectrumAnalyzer (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
         void drawPanel   (juce::Graphics&, juce::Rectangle<int>, const juce::String& label) const;
         void drawButton  (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
         void drawValueDisplay (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
@@ -83,7 +110,13 @@ namespace patchcraft
         void drawKeyboard(juce::Graphics&, juce::Rectangle<int>) const;
         void drawTabPanel(juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
         void drawXYPad  (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
+        void drawGranularField (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
         void drawPadGrid(juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
+        void drawDrumGrid(juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
+        void drawMixer  (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
+        void drawMultiLayerDock (juce::Graphics&, juce::Rectangle<int>);
+        juce::String tabTargetGroup (const LayoutElement&, const juce::String& label) const;
+        bool tabTargetIsGlobal (const LayoutElement&, const juce::String& targetGroup) const;
 
         int hitTabIndex (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>) const;
         const Manifest* manifest() const;
@@ -98,10 +131,35 @@ namespace patchcraft
         void showControlContextMenu (const LayoutElement&, const juce::Point<int>& screenPos);
         void showPresetMenu (const juce::Point<int>& screenPos);
         void showParameterMenu (const LayoutElement&, const juce::Point<int>& screenPos);
+        int noteForKeyboardPosition (juce::Rectangle<int> r, juce::Point<int> pos) const;
         void handleKeyboardClick (juce::Rectangle<int> r, juce::Point<int> pos);
+        bool handleMultiLayerDockClick (juce::Point<int>);
         bool handleXYPadGesture (const juce::MouseEvent&);
+        bool handleGranularGesture (const juce::MouseEvent&);
+        bool advanceGranularFields();
         bool handlePadClick (const juce::MouseEvent&);
+        bool handleDrumGridGesture (const juce::MouseEvent&, bool drag);
+        bool handleMixerGesture (const juce::MouseEvent&, bool drag);
         int  padNoteAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>) const;
+        bool drumCellAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>,
+                         int& pattern, int& track, int& step, float& velocity,
+                         float& gate, float& probability, bool& active,
+                         int& note, int& divisions) const;
+
+        bool multiLayerDockCollapsed = true;
+        bool mixerDragActive = false;
+        double lastGranularAdvanceSeconds = 0.0;
+        int mixerDragChannel = -1;
+        juce::String mixerDragElementId;
+        juce::String mixerDragKind;
+        juce::Rectangle<int> multiLayerDockBounds;
+        juce::Rectangle<int> multiLayerToggleBounds;
+        std::vector<juce::Rectangle<int>> multiLayerMuteBounds;
+        std::vector<juce::Rectangle<int>> multiLayerSoloBounds;
+        std::vector<juce::Rectangle<int>> multiLayerVolumeBounds;
+        std::vector<juce::Rectangle<int>> multiLayerPanBounds;
+        std::vector<juce::Rectangle<int>> multiLayerCollapseBounds;
+        std::vector<bool> multiLayerRowCollapsed;
     };
 
 } // namespace patchcraft

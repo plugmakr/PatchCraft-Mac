@@ -53,6 +53,20 @@ namespace patchcraft
         popOutBtn.onClick = [this] { owner.togglePanelFloat (this, "Layers"); };
         addAndMakeVisible (popOutBtn);
 
+        searchBox.setTextToShowWhenEmpty ("Search layers, ids, params...", PatchCraftLookAndFeel::textDim());
+        searchBox.setTooltip ("Filter layers by label, id, type, parameter, group, or container.");
+        searchBox.onTextChange = [this] { refresh(); };
+        addAndMakeVisible (searchBox);
+
+        clearSearchButton.getProperties().set ("smallButton", true);
+        clearSearchButton.setTooltip ("Clear the layer search filter.");
+        clearSearchButton.onClick = [this]
+        {
+            searchBox.clear();
+            refresh();
+        };
+        addAndMakeVisible (clearSearchButton);
+
         addAndMakeVisible (listBox);
         listBox.setRowHeight (30);
         listBox.setMultipleSelectionEnabled (true);
@@ -72,11 +86,15 @@ namespace patchcraft
     {
         auto r = getLocalBounds().reduced (4);
         auto top = r.removeFromTop (30);
-        popOutBtn.setBounds (top.removeFromRight (28).reduced (2));
+        popOutBtn.setBounds (top.removeFromRight (38).reduced (2));
         top.removeFromRight (4);
         addGroupButton.setBounds (top.removeFromLeft (70).reduced (2));
         groupSelectedButton.setBounds (top.removeFromLeft (82).reduced (2));
         ungroupButton.setBounds (top.removeFromLeft (74).reduced (2));
+        r.removeFromTop (4);
+        auto search = r.removeFromTop (28);
+        clearSearchButton.setBounds (search.removeFromRight (52).reduced (2));
+        searchBox.setBounds (search.reduced (2));
         r.removeFromTop (4);
         listBox.setBounds (r);
     }
@@ -103,6 +121,7 @@ namespace patchcraft
     {
         rows.clear();
         const auto& list = owner.getProject().getLayout().getAll();
+        const auto query = searchBox.getText().trim().toLowerCase();
 
         auto parentFor = [&list] (const LayoutElement& el)
         {
@@ -115,6 +134,28 @@ namespace patchcraft
             return juce::String();
         };
 
+        auto matches = [&] (const LayoutElement& el)
+        {
+            if (query.isEmpty())
+                return true;
+
+            juce::String haystack;
+            haystack << el.id << " " << el.label << " " << elementTypeDisplayName (el.type)
+                     << " " << el.parameterId << " " << el.groupId << " " << el.containerId;
+            return haystack.toLowerCase().contains (query);
+        };
+
+        std::function<bool (juce::String)> hasMatchingDescendant;
+        hasMatchingDescendant = [&] (juce::String parentId)
+        {
+            for (const auto& el : list)
+                if (parentFor (el) == parentId)
+                    if (matches (el) || hasMatchingDescendant (el.id))
+                        return true;
+
+            return false;
+        };
+
         std::function<void (juce::String, int)> addRowsForParent;
         addRowsForParent = [&] (juce::String parentId, int depth)
         {
@@ -125,13 +166,29 @@ namespace patchcraft
                     continue;
 
                 const bool isGroup = el.type == ElementType::Group || el.type == ElementType::Panel;
+                const bool include = query.isEmpty() || matches (el) || (isGroup && hasMatchingDescendant (el.id));
+                if (! include)
+                    continue;
+
                 rows.push_back ({ i, depth, isGroup });
-                if (isGroup && ! collapsedGroups.contains (el.id))
+                if (isGroup && (query.isNotEmpty() || ! collapsedGroups.contains (el.id)))
                     addRowsForParent (el.id, depth + 1);
             }
         };
 
         addRowsForParent ({}, 0);
+    }
+
+    bool LayersPanel::rowMatchesSearch (const LayoutElement& el) const
+    {
+        const auto query = searchBox.getText().trim().toLowerCase();
+        if (query.isEmpty())
+            return true;
+
+        juce::String haystack;
+        haystack << el.id << " " << el.label << " " << elementTypeDisplayName (el.type)
+                 << " " << el.parameterId << " " << el.groupId << " " << el.containerId;
+        return haystack.toLowerCase().contains (query);
     }
     int LayersPanel::rowToLayoutIndex (int row) const
     {
@@ -208,38 +265,54 @@ namespace patchcraft
         if (x >= 4 + indent && x < 26 + indent)
         {
             const bool newVisible = ! el.visible;
-            auto isDescendantOf = [&list] (const LayoutElement& candidate, const juce::String& parentId)
-            {
-                juce::String current = candidate.containerId;
-                if (current.isEmpty())
-                    current = candidate.groupId;
-                for (int guard = 0; guard < 64 && current.isNotEmpty(); ++guard)
+            const bool isGroup = rows[(size_t) row].isGroup;
+            const auto id = el.id;
+            owner.getProject().performLayoutEdit (newVisible ? "Show layer" : "Hide layer",
+                [id, isGroup, newVisible] (LayoutModel& m)
                 {
-                    if (current == parentId)
-                        return true;
-                    juce::String next;
-                    for (const auto& possibleParent : list)
-                        if (possibleParent.id == current)
+                    auto& items = m.getAll();
+                    auto isDescendantOf = [&items] (const LayoutElement& candidate, const juce::String& parentId)
+                    {
+                        juce::String current = candidate.containerId;
+                        if (current.isEmpty())
+                            current = candidate.groupId;
+                        for (int guard = 0; guard < 64 && current.isNotEmpty(); ++guard)
                         {
-                            next = possibleParent.containerId.isNotEmpty() ? possibleParent.containerId : possibleParent.groupId;
-                            break;
+                            if (current == parentId)
+                                return true;
+                            juce::String next;
+                            for (const auto& possibleParent : items)
+                                if (possibleParent.id == current)
+                                {
+                                    next = possibleParent.containerId.isNotEmpty() ? possibleParent.containerId : possibleParent.groupId;
+                                    break;
+                                }
+                            current = next;
                         }
-                    current = next;
-                }
-                return false;
-            };
-            el.visible = newVisible;
-            if (rows[(size_t) row].isGroup)
-                for (auto& child : list)
-                    if (isDescendantOf (child, el.id))
-                        child.visible = newVisible;
-            owner.getProject().notifyChanged();
+                        return false;
+                    };
+
+                    if (auto* item = m.find (id))
+                        item->visible = newVisible;
+                    if (isGroup)
+                        for (auto& child : items)
+                            if (isDescendantOf (child, id))
+                                child.visible = newVisible;
+                });
+            refresh();
             return;
         }
         if (x >= 26 + indent && x < 46 + indent)
         {
-            el.locked = ! el.locked;
-            owner.getProject().notifyChanged();
+            const auto id = el.id;
+            const bool locked = ! el.locked;
+            owner.getProject().performLayoutEdit (locked ? "Lock layer" : "Unlock layer",
+                [id, locked] (LayoutModel& m)
+                {
+                    if (auto* item = m.find (id))
+                        item->locked = locked;
+                });
+            refresh();
             return;
         }
         if (rows[(size_t) row].isGroup && x >= 46 + indent && x < 64 + indent)
@@ -251,10 +324,17 @@ namespace patchcraft
         }
         if (x >= listBox.getWidth() - 92 && x <= listBox.getWidth() - 54)
         {
-            el.opacity = e.mods.isShiftDown()
+            const auto id = el.id;
+            const float opacity = e.mods.isShiftDown()
                 ? juce::jmax (0.0f, el.opacity - 0.1f)
                 : (el.opacity >= 1.0f ? 0.25f : juce::jmin (1.0f, el.opacity + 0.25f));
-            owner.getProject().notifyChanged();
+            owner.getProject().performLayoutEdit ("Adjust layer opacity",
+                [id, opacity] (LayoutModel& m)
+                {
+                    if (auto* item = m.find (id))
+                        item->opacity = opacity;
+                });
+            refresh();
             return;
         }
 
@@ -467,29 +547,75 @@ namespace patchcraft
         {
             std::unique_ptr<juce::AlertWindow> owned (alert);
             if (result != 1) return;
-            if (auto* item = owner.getProject().getLayout().find (id))
-            {
-                item->label = alert->getTextEditorContents ("name").trim();
-                owner.getProject().notifyChanged();
-            }
+            const auto name = alert->getTextEditorContents ("name").trim();
+            owner.getProject().performLayoutEdit ("Rename layer",
+                [id, name] (LayoutModel& m)
+                {
+                    if (auto* item = m.find (id))
+                        item->label = name;
+                });
+            refresh();
         }), true);
     }
 
     void LayersPanel::createGroupFromSelection()
     {
-        LayoutElement group;
-        group.type = ElementType::Group;
-        group.label = "New Group";
-        group.id = owner.getProject().getLayout().generateUniqueId ("group_");
-        group.x = 40; group.y = 40; group.width = 240; group.height = 160;
-        auto& added = owner.getProject().getLayout().add (group);
-        for (const auto& id : owner.getSelectedElementIds())
-            if (auto* el = owner.getProject().getLayout().find (id))
-                el->containerId = added.id;
-        owner.setSelectedElementId (added.id);
-        owner.getProject().notifyChanged();
-        if (shouldShowGroupDialog())
-            showGroupNameModal (added.id);
+        const auto ids = owner.getSelectedElementIds();
+        juce::String groupId;
+        owner.getProject().performLayoutEdit ("Create layer group",
+            [&] (LayoutModel& m)
+            {
+                juce::Rectangle<int> bounds;
+                juce::String commonContainer;
+                juce::String commonGroup;
+                bool first = true;
+
+                for (const auto& id : ids)
+                    if (auto* el = m.find (id); el != nullptr && el->type != ElementType::Group && ! el->locked)
+                    {
+                        const auto r = juce::Rectangle<int> (el->x, el->y, el->width, el->height);
+                        bounds = bounds.isEmpty() ? r : bounds.getUnion (r);
+                        if (first)
+                        {
+                            commonContainer = el->containerId;
+                            commonGroup = el->groupId;
+                            first = false;
+                        }
+                        else
+                        {
+                            if (commonContainer != el->containerId) commonContainer.clear();
+                            if (commonGroup != el->groupId) commonGroup.clear();
+                        }
+                    }
+
+                LayoutElement group;
+                group.type = ElementType::Group;
+                group.label = "New Group";
+                group.id = m.generateUniqueId ("group_");
+                group.x = bounds.isEmpty() ? 40 : bounds.getX();
+                group.y = bounds.isEmpty() ? 40 : bounds.getY();
+                group.width = bounds.isEmpty() ? 240 : juce::jmax (32, bounds.getWidth());
+                group.height = bounds.isEmpty() ? 160 : juce::jmax (32, bounds.getHeight());
+                group.containerId = commonContainer;
+                group.groupId = commonGroup;
+                groupId = group.id;
+                m.add (group);
+
+                for (const auto& id : ids)
+                    if (auto* el = m.find (id); el != nullptr && el->id != groupId && ! el->locked)
+                    {
+                        el->containerId = groupId;
+                        el->groupId.clear();
+                    }
+            });
+
+        if (groupId.isNotEmpty())
+        {
+            owner.setSelectedElementId (groupId);
+            if (shouldShowGroupDialog())
+                showGroupNameModal (groupId);
+        }
+        refresh();
     }
 
     void LayersPanel::showGroupNameModal (const juce::String& groupId)
@@ -530,14 +656,18 @@ namespace patchcraft
                     if (result != 1)
                         return;
 
-                    if (auto* item = owner.getProject().getLayout().find (groupId))
+                    if (owner.getProject().getLayout().find (groupId) != nullptr)
                     {
-                        item->label = name.isNotEmpty() ? name : "New Group";
                         if (shouldAutoOpen)
                             collapsedGroups.removeString (groupId);
                         else
                             collapsedGroups.addIfNotAlreadyThere (groupId);
-                        owner.getProject().notifyChanged();
+                        owner.getProject().performLayoutEdit ("Rename layer group",
+                            [groupId, label = (name.isNotEmpty() ? name : juce::String ("New Group"))] (LayoutModel& m)
+                            {
+                                if (auto* group = m.find (groupId))
+                                    group->label = label;
+                            });
                         refresh();
                     }
                 }), true);
@@ -545,10 +675,15 @@ namespace patchcraft
 
     void LayersPanel::ungroupSelection()
     {
-        for (const auto& id : owner.getSelectedElementIds())
-            if (auto* el = owner.getProject().getLayout().find (id))
-                el->containerId.clear();
-        owner.getProject().notifyChanged();
+        const auto ids = owner.getSelectedElementIds();
+        owner.getProject().performLayoutEdit ("Ungroup layers",
+            [ids] (LayoutModel& m)
+            {
+                for (const auto& id : ids)
+                    if (auto* el = m.find (id))
+                        el->containerId.clear();
+            });
+        refresh();
     }
 
 } // namespace patchcraft

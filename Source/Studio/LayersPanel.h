@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_gui_extra/juce_gui_extra.h>
+#include "PatchCraftTypes.h"
 
 namespace patchcraft
 {
@@ -48,10 +49,13 @@ namespace patchcraft
         juce::TextButton addGroupButton { "+ Group" };
         juce::TextButton groupSelectedButton { "Group Sel" };
         juce::TextButton ungroupButton { "Ungroup" };
-        juce::TextButton popOutBtn      { "\xe2\xa4\xa2" };
+        juce::TextButton popOutBtn      { "Pop" };
+        juce::TextEditor searchBox;
+        juce::TextButton clearSearchButton { "Clear" };
         int lastClickedRow = -1;
 
         void rebuildRows();
+        bool rowMatchesSearch (const LayoutElement&) const;
         void renameRow (int row);
         void createGroupFromSelection();
         void showGroupNameModal (const juce::String& groupId);

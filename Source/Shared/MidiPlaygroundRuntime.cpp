@@ -11,6 +11,7 @@ namespace patchcraft
             0.0f, 4.0f, 7.0f, 12.0f, 7.0f, 4.0f, 10.0f, 14.0f,
             12.0f, 7.0f, 4.0f, 0.0f, 5.0f, 9.0f, 12.0f, 16.0f
         };
+        constexpr int kDrumFxTargetCountLocal = 9;
 
         int positiveMod (int value, int modulus)
         {
@@ -42,6 +43,34 @@ namespace patchcraft
                     return true;
             }
             return false;
+        }
+
+        juce::String drumFxParameterIdForTarget (int target)
+        {
+            switch (juce::jlimit (0, kDrumFxTargetCountLocal - 1, target))
+            {
+                case 1:  return "filterCutoff";
+                case 2:  return "resonance";
+                case 3:  return "drive";
+                case 4:  return "delayMix";
+                case 5:  return "reverbMix";
+                case 6:  return "tapeMix";
+                case 7:  return "lofiMix";
+                case 8:  return "granularTexture";
+                default: break;
+            }
+            return {};
+        }
+
+        float drumFxEngineValueForTarget (int target, float amount)
+        {
+            amount = juce::jlimit (0.0f, 1.0f, amount);
+            switch (juce::jlimit (0, kDrumFxTargetCountLocal - 1, target))
+            {
+                case 1:  return 200.0f + amount * 11800.0f;
+                case 2:  return amount * 0.95f;
+                default: return amount;
+            }
         }
     }
 
@@ -124,6 +153,12 @@ namespace patchcraft
         settings.drumVelocities.fill (1.0f);
         settings.drumGates.fill (0.40f);
         settings.drumProbabilities.fill (1.0f);
+        settings.drumDivisions.fill (1.0f);
+        settings.drumFxTargets.fill (0.0f);
+        settings.drumFxAmounts.fill (0.0f);
+        settings.drumTrackFxTargets.fill (0.0f);
+        settings.drumTrackFxAmounts.fill (0.0f);
+        drumFxState.fill (0.0f);
 
         for (const auto& block : graph.blocks)
         {
@@ -157,6 +192,10 @@ namespace patchcraft
                     settings.drumNotes[(size_t) track] = juce::jlimit (0, 127,
                         juce::roundToInt (valueForKey (block, "dmTrack" + juce::String (track) + "Note",
                                                        (float) defaultNotes[(size_t) track])));
+                    settings.drumTrackFxTargets[(size_t) track] = (float) juce::jlimit (0, kDrumFxTargetCount - 1,
+                        juce::roundToInt (valueForKey (block, "dmTrack" + juce::String (track) + "FxTarget", 0.0f)));
+                    settings.drumTrackFxAmounts[(size_t) track] = juce::jlimit (0.0f, 1.0f,
+                        valueForKey (block, "dmTrack" + juce::String (track) + "FxAmount", 0.0f));
 
                     for (int pattern = 0; pattern < kMaxDrumPatterns; ++pattern)
                         for (int step = 0; step < kMaxDrumSteps; ++step)
@@ -174,6 +213,16 @@ namespace patchcraft
                                 valueForKey (block, directPrefix + "Gate", 0.36f)));
                             settings.drumProbabilities[index] = juce::jlimit (0.0f, 1.0f, valueForKey (block, patternPrefix + "Prob",
                                 valueForKey (block, directPrefix + "Prob", 1.0f)));
+                            settings.drumDivisions[index] = (float) juce::jlimit (1, 4, juce::roundToInt (valueForKey (block, patternPrefix + "Div",
+                                valueForKey (block, directPrefix + "Div", 1.0f))));
+                            settings.drumFxTargets[index] = (float) juce::jlimit (0, kDrumFxTargetCount - 1,
+                                juce::roundToInt (valueForKey (block, patternPrefix + "FxTarget",
+                                    valueForKey (block, directPrefix + "FxTarget",
+                                        settings.drumTrackFxTargets[(size_t) track]))));
+                            settings.drumFxAmounts[index] = juce::jlimit (0.0f, 1.0f,
+                                valueForKey (block, patternPrefix + "FxAmount",
+                                    valueForKey (block, directPrefix + "FxAmount",
+                                        settings.drumTrackFxAmounts[(size_t) track])));
                         }
                 }
 
@@ -320,6 +369,8 @@ namespace patchcraft
         pendingStep = -1;
         activeDrumNotes.fill (-1);
         activeDrumGateEnds.fill (0.0);
+        activeDrumSubSlots.fill (-1);
+        drumFxState.fill (0.0f);
     }
 
     void MidiPlaygroundRuntime::allNotesOff (IInstrumentEngine& engine)
@@ -329,12 +380,26 @@ namespace patchcraft
         reset();
     }
 
-    bool MidiPlaygroundRuntime::handleNoteOn (IInstrumentEngine&, int midiNote, float velocity)
+    bool MidiPlaygroundRuntime::handleNoteOn (IInstrumentEngine& engine, int midiNote, float velocity)
     {
         if (! enabled)
             return false;
         if (settings.drumMachine)
+        {
+            const int note = juce::jlimit (0, 127, midiNote);
+            for (int track = 0; track < settings.drumTracks; ++track)
+            {
+                if (settings.drumNotes[(size_t) track] != note)
+                    continue;
+
+                triggerDrumFx (engine,
+                               juce::roundToInt (settings.drumTrackFxTargets[(size_t) track]),
+                               settings.drumTrackFxAmounts[(size_t) track],
+                               velocity);
+                break;
+            }
             return false;
+        }
 
         const int note = juce::jlimit (0, 127, midiNote);
         if (settings.keySwitchEnabled
@@ -815,11 +880,50 @@ namespace patchcraft
         }
 
         activeDrumGateEnds.fill (0.0);
+        activeDrumSubSlots.fill (-1);
+    }
+
+    void MidiPlaygroundRuntime::triggerDrumFx (IInstrumentEngine& engine,
+                                               int target,
+                                               float amount,
+                                               float velocity)
+    {
+        target = juce::jlimit (0, kDrumFxTargetCount - 1, target);
+        if (target <= 0)
+            return;
+
+        const float hit = juce::jlimit (0.0f, 1.0f, amount) * juce::jlimit (0.01f, 1.0f, velocity);
+        if (hit <= 0.001f)
+            return;
+
+        auto& state = drumFxState[(size_t) target];
+        state = juce::jmax (state, hit);
+        applyDrumFxState (engine);
+    }
+
+    void MidiPlaygroundRuntime::applyDrumFxState (IInstrumentEngine& engine)
+    {
+        for (int target = 1; target < kDrumFxTargetCount; ++target)
+        {
+            auto& amount = drumFxState[(size_t) target];
+            if (amount <= 0.001f)
+                continue;
+
+            const auto parameterId = drumFxParameterIdForTarget (target);
+            if (parameterId.isNotEmpty())
+                engine.setParameter (parameterId, drumFxEngineValueForTarget (target, amount));
+
+            amount *= 0.88f;
+            if (amount <= 0.001f)
+                amount = 0.0f;
+        }
     }
 
     void MidiPlaygroundRuntime::processDrumMachine (IInstrumentEngine& engine,
                                                     const RenderContext& context)
     {
+        applyDrumFxState (engine);
+
         if (settings.drumTransport && ! context.isPlaying)
         {
             stopActiveDrums (engine);
@@ -842,42 +946,139 @@ namespace patchcraft
         {
             stopActiveDrums (engine);
             currentStep = step;
+            activeDrumSubSlots.fill (-1);
             const int pattern = activeDrumPattern();
 
-            for (int track = 0; track < tracks; ++track)
+            auto triggerDrum = [&] (int track, size_t index, int subSlot)
             {
-                const auto index = (size_t) drumPatternIndex (pattern, track, step);
-                if (settings.drumActive[index] < 0.5f)
-                    continue;
-
+                activeDrumSubSlots[(size_t) track] = subSlot;
                 const float probability = juce::jlimit (0.0f, 1.0f,
                     settings.probability * settings.drumProbabilities[index]);
                 if (probability <= 0.001f)
-                    continue;
+                    return;
                 if (probability < 0.999f)
                 {
                     const auto h = hash (settings.seed
                                        ^ (uint32_t) (pattern + 1) * 0x9e3779b9u
                                        ^ (uint32_t) track * 0x85ebca6bu
                                        ^ (uint32_t) step * 0xc2b2ae35u
+                                       ^ (uint32_t) subSlot * 0x27d4eb2du
                                        ^ cycleCounter * 7919u);
                     const float roll = (float) (h & 0x00ffffffu) / (float) 0x01000000u;
                     if (roll > probability)
-                        continue;
+                        return;
                 }
 
+                auto& activeNote = activeDrumNotes[(size_t) track];
+                if (activeNote >= 0)
+                    engine.noteOff (activeNote);
+
+                const int divisions = juce::jlimit (1, 4, juce::roundToInt (settings.drumDivisions[index]));
                 const int note = juce::jlimit (0, 127, settings.drumNotes[(size_t) track]);
-                const float velocity = juce::jlimit (0.01f, 1.0f, settings.drumVelocities[index]);
+                const float baseVelocity = juce::jlimit (0.01f, 1.0f, settings.drumVelocities[index]);
+                const float velocity = juce::jlimit (0.01f, 1.0f,
+                    baseVelocity * (subSlot == 0 ? 1.0f : juce::jmax (0.40f, 1.0f - 0.12f * (float) subSlot)));
                 const float gate = juce::jlimit (0.05f, 1.0f, settings.drumGates[index]);
-                activeDrumNotes[(size_t) track] = note;
-                activeDrumGateEnds[(size_t) track] = gate;
+                const double subStart = (double) subSlot / (double) divisions;
+                const double subLength = 1.0 / (double) divisions;
+                activeNote = note;
+                activeDrumSubSlots[(size_t) track] = subSlot;
+                activeDrumGateEnds[(size_t) track] = juce::jmin (1.0, subStart + subLength * (double) gate);
+                triggerDrumFx (engine,
+                               juce::roundToInt (settings.drumFxTargets[index]),
+                               settings.drumFxAmounts[index],
+                               velocity);
                 engine.noteOn (note, velocity);
+            };
+
+            for (int track = 0; track < tracks; ++track)
+            {
+                const auto index = (size_t) drumPatternIndex (pattern, track, step);
+                if (settings.drumActive[index] < 0.5f)
+                    continue;
+                triggerDrum (track, index, 0);
             }
         }
         else
         {
+            const int pattern = activeDrumPattern();
             for (int track = 0; track < tracks; ++track)
             {
+                const auto index = (size_t) drumPatternIndex (pattern, track, step);
+                if (settings.drumActive[index] >= 0.5f)
+                {
+                    const int divisions = juce::jlimit (1, 4, juce::roundToInt (settings.drumDivisions[index]));
+                    if (divisions > 1)
+                    {
+                        const int subSlot = juce::jlimit (0, divisions - 1, (int) std::floor (stepPhase * (double) divisions));
+                        if (subSlot != activeDrumSubSlots[(size_t) track])
+                        {
+                            activeDrumSubSlots[(size_t) track] = subSlot;
+                            const float probability = juce::jlimit (0.0f, 1.0f,
+                                settings.probability * settings.drumProbabilities[index]);
+                            if (probability > 0.001f)
+                            {
+                                if (probability >= 0.999f)
+                                {
+                                    auto& activeNote = activeDrumNotes[(size_t) track];
+                                    if (activeNote >= 0)
+                                        engine.noteOff (activeNote);
+
+                                    const int note = juce::jlimit (0, 127, settings.drumNotes[(size_t) track]);
+                                    const float baseVelocity = juce::jlimit (0.01f, 1.0f, settings.drumVelocities[index]);
+                                    const float velocity = juce::jlimit (0.01f, 1.0f,
+                                        baseVelocity * (subSlot == 0 ? 1.0f : juce::jmax (0.40f, 1.0f - 0.12f * (float) subSlot)));
+                                    const float gate = juce::jlimit (0.05f, 1.0f, settings.drumGates[index]);
+                                    const double subStart = (double) subSlot / (double) divisions;
+                                    const double subLength = 1.0 / (double) divisions;
+                                    activeNote = note;
+                                    activeDrumGateEnds[(size_t) track] = juce::jmin (1.0, subStart + subLength * (double) gate);
+                                    triggerDrumFx (engine,
+                                                   juce::roundToInt (settings.drumFxTargets[index]),
+                                                   settings.drumFxAmounts[index],
+                                                   velocity);
+                                    engine.noteOn (note, velocity);
+                                }
+                                else
+                                {
+                                    const auto h = hash (settings.seed
+                                                       ^ (uint32_t) (pattern + 1) * 0x9e3779b9u
+                                                       ^ (uint32_t) track * 0x85ebca6bu
+                                                       ^ (uint32_t) step * 0xc2b2ae35u
+                                                       ^ (uint32_t) subSlot * 0x27d4eb2du
+                                                       ^ cycleCounter * 7919u);
+                                    const float roll = (float) (h & 0x00ffffffu) / (float) 0x01000000u;
+                                    if (roll <= probability)
+                                    {
+                                        auto& activeNote = activeDrumNotes[(size_t) track];
+                                        if (activeNote >= 0)
+                                            engine.noteOff (activeNote);
+
+                                        const int note = juce::jlimit (0, 127, settings.drumNotes[(size_t) track]);
+                                        const float baseVelocity = juce::jlimit (0.01f, 1.0f, settings.drumVelocities[index]);
+                                        const float velocity = juce::jlimit (0.01f, 1.0f,
+                                            baseVelocity * (subSlot == 0 ? 1.0f : juce::jmax (0.40f, 1.0f - 0.12f * (float) subSlot)));
+                                        const float gate = juce::jlimit (0.05f, 1.0f, settings.drumGates[index]);
+                                        const double subStart = (double) subSlot / (double) divisions;
+                                        const double subLength = 1.0 / (double) divisions;
+                                        activeNote = note;
+                                        activeDrumGateEnds[(size_t) track] = juce::jmin (1.0, subStart + subLength * (double) gate);
+                                        triggerDrumFx (engine,
+                                                       juce::roundToInt (settings.drumFxTargets[index]),
+                                                       settings.drumFxAmounts[index],
+                                                       velocity);
+                                        engine.noteOn (note, velocity);
+                                    }
+                                    else
+                                    {
+                                        activeDrumSubSlots[(size_t) track] = subSlot;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 auto& note = activeDrumNotes[(size_t) track];
                 if (note >= 0 && stepPhase >= activeDrumGateEnds[(size_t) track])
                 {

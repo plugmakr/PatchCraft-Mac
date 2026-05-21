@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>3 — Design canvas · PatchCraft Tutorial</title>
+    <link rel="stylesheet" href="assets/css/main.css"/>
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo.svg"/>
+</head>
+<body>
+<header class="topbar">
+    <div class="topbar-logo"><img src="assets/img/logo.svg" alt="" class="hex"/>PATCHCRAFT</div>
+    <span class="topbar-tagline">Instrument Builder Tutorial</span>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-actions">
+        <a href="index.html">Home</a>
+        <a href="10-glossary.html">Glossary</a>
+        <a class="cta" href="PatchCraftTutorial.zip">Download</a>
+    </div>
+</header>
+
+<div class="shell">
+    <nav class="sidebar">
+        <div class="sidebar-section"><h5>Tutorial</h5>
+            <ul>
+                <li><a href="index.html">Overview</a></li>
+                <li><a href="01-overview.html">1 — What is PatchCraft</a></li>
+                <li><a href="02-getting-started.html">2 — Getting started</a></li>
+                <li><a href="03-design.html">3 — Design canvas</a></li>
+                <li><a href="04-sample-mapper.html">4 — Sample mapper</a></li>
+                <li><a href="05-midi-playground.html">5 — MIDI playground</a></li>
+                <li><a href="06-dsp-builder.html">6 — DSP builder</a></li>
+                <li><a href="07-brand-lab.html">7 — Brand Lab</a></li>
+                <li><a href="08-presets-expansions.html">8 — Presets &amp; expansions</a></li>
+                <li><a href="09-export-distribute.html">9 — Export &amp; ship</a></li>
+                <li><a href="10-glossary.html">10 — Glossary</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="content">
+        <h1>3 — The Design canvas</h1>
+        <p class="lede" style="color:var(--text-mid);font-size:1.1rem;">The Design tab is where the GUI you ship to end users gets shaped. Drag elements onto a canvas, bind them to parameters, and arrange them visually.</p>
+
+        <h2>Canvas anatomy</h2>
+        <p>The canvas is a fixed-size virtual surface (default 1280×800). Whatever you put on it is exactly what your end user sees in the Player. Pick a canvas size from the toolbar dropdown — common pack sizes match standard plugin window sizes.</p>
+
+        <h2>The Elements palette</h2>
+        <p>Open the left sidebar's <strong>Elements</strong> tab. You can drag any of these onto the canvas:</p>
+
+        <div class="card-grid">
+            <div class="card"><h3>Knob</h3><p>The most common control. Bind to a parameter, choose a style preset (Vintage Gold, Modern Dark, etc.), or import a custom filmstrip PNG.</p></div>
+            <div class="card"><h3>Slider</h3><p>Vertical or horizontal. Same parameter binding system as knobs.</p></div>
+            <div class="card"><h3>Button / Toggle / Dropdown</h3><p>Discrete controls. Toggles work for stepped parameters; dropdowns surface enumerated values.</p></div>
+            <div class="card"><h3>Drum Pad / Pad Grid</h3><p>Single pad or 4×4 grid. Click triggers a MIDI note (default C1 + pad index). Velocity comes from click-Y position.</p></div>
+            <div class="card"><h3>Keyboard</h3><p>On-screen MIDI keyboard. Click to play.</p></div>
+            <div class="card"><h3>Meter / Waveform</h3><p>Live audio readouts driven by the engine's output peak.</p></div>
+            <div class="card"><h3>XY Pad</h3><p>2D control surface — bind X and Y to two parameters.</p></div>
+            <div class="card"><h3>Tab Panel</h3><p>Switches the canvas between sub-pages (e.g. Main / Amp / Filter / Mod). Each tab activates a named group.</p></div>
+            <div class="card"><h3>Panel / Group / Shape / Image / Label</h3><p>Visual grouping and chrome. Panels are containers; Groups are logical collections; Shapes are decorative; Image renders artwork; Label is text.</p></div>
+        </div>
+
+        <h2>Drop, position, bind</h2>
+        <ol class="steps">
+            <li><h3>Drag from the palette</h3><p>The element lands at the canvas centre. Move it by dragging the body.</p></li>
+            <li><h3>Resize</h3><p>Drag the bottom-right corner of the selection. Hold ⇧ to constrain proportions.</p></li>
+            <li><h3>Bind to a parameter</h3><p>Right-click the element → <strong>Bind Parameter</strong>, or pick from the Inspector's <em>Parameter</em> dropdown.
+                Right-click on empty canvas → <strong>Add DSP Control → [category] → [parameter]</strong> drops a knob already bound.</p></li>
+            <li><h3>Style</h3><p>Inspector lets you set knob style, label position, accent colour, filmstrip override.</p></li>
+        </ol>
+
+        <h2>Selection &amp; alignment</h2>
+        <p>Select multiple elements with <kbd>Shift</kbd>+click or marquee-drag. The canvas toolbar's alignment cluster activates whenever 2+ are selected:</p>
+        <table>
+            <thead><tr><th>Button</th><th>Action</th></tr></thead>
+            <tbody>
+                <tr><td><strong>L / C / R</strong></td><td>Align left / horizontal centre / right</td></tr>
+                <tr><td><strong>T / M / B</strong></td><td>Align top / vertical middle / bottom</td></tr>
+                <tr><td><strong>DH / DV</strong></td><td>Distribute horizontally / vertically (3+ selected)</td></tr>
+                <tr><td><strong>Order</strong></td><td>Bring forward / send back (z-order)</td></tr>
+            </tbody>
+        </table>
+        <p>While 2+ elements are selected, the canvas overlays dashed alignment guides at top / middle / bottom edges plus pixel-distance labels for adjacent elements.</p>
+
+        <h2>The Layers panel</h2>
+        <p>Right sidebar → <strong>Layers</strong> tab. Lists every element in z-order. Use it to:</p>
+        <ul>
+            <li><kbd>Shift</kbd>-click for range select; <kbd>Ctrl/⌘</kbd>-click for toggle</li>
+            <li><kbd>Delete</kbd> deletes the selected layers</li>
+            <li>Drag a layer onto a Group / Panel / TabPanel to re-parent</li>
+            <li>Drag between rows to reorder z-order</li>
+            <li>Toggle visibility with the eye icon, lock with the lock icon, opacity with the percentage</li>
+            <li>The <code>⤢</code> button pops the panel into a free-floating window so you can move it anywhere</li>
+        </ul>
+
+        <h2>Tab pages (multi-page layouts)</h2>
+        <ol class="steps">
+            <li><h3>Drop a TabPanel</h3><p>Add a TabPanel element. The Inspector shows a <em>Tabs</em> list — add labels like Main / Amp / Filter / Mod.</p></li>
+            <li><h3>Group elements per tab</h3><p>Select the controls you want on the Amp tab. Set their <em>Group ID</em> in the Inspector to <code>amp</code> (or click the matching tab in the canvas first — newly-added elements inherit the active tab's group).</p></li>
+            <li><h3>Click a tab to test</h3><p>Tabs in the canvas behave just like they will in the Player. Switching tabs hides the elements not on that group.</p></li>
+        </ol>
+
+        <h2>The Inspector</h2>
+        <p>The right sidebar's <strong>Inspector</strong> tab shows the properties of whatever is selected. Common fields:</p>
+        <ul>
+            <li><strong>Label</strong> — visible text on knobs / labels</li>
+            <li><strong>Parameter</strong> — which DSP value this control drives</li>
+            <li><strong>Style</strong> / <strong>Knob Style</strong> — visual preset</li>
+            <li><strong>Accent / Border / Background colour</strong> — per-element colour overrides</li>
+            <li><strong>Position / Size / Opacity</strong> — exact numeric edits</li>
+            <li><strong>Animation</strong> + <strong>Audio Reactive</strong> — make elements pulse/wobble in response to live audio</li>
+        </ul>
+
+        <h2>Right-click anywhere</h2>
+        <p>The canvas right-click menu is the fastest way to add bound controls:</p>
+        <ul>
+            <li><strong>Add Container</strong> — Panel / Group / Tab Panel</li>
+            <li><strong>Add Shape</strong> — Rectangle, Ellipse, Triangle, Diamond, Line</li>
+            <li><strong>Add DSP Control</strong> — categorized submenus (Source, Filter, Amp, Mod, FX, Output) with every parameter the current engine exposes</li>
+            <li><strong>Assign Selected To Parameter</strong> — same categorized list, applied to current selection</li>
+            <li><strong>Align / Distribute</strong>, <strong>Arrange Order</strong></li>
+        </ul>
+
+        <div class="callout tip">
+            <strong>Tip</strong>
+            Make heavy use of Groups + tab-pages. A 30-knob layout is exhausting for users; tabs of 6–8 knobs each with clear sections (Amp / Filter / Mod / FX) feel professional.
+        </div>
+
+        <div class="section-nav">
+            <a href="02-getting-started.html"><strong>Back</strong><span>2 — Getting started</span></a>
+            <a class="next" href="04-sample-mapper.html"><strong>Up next</strong><span>4 — Sample mapper</span></a>
+        </div>
+    </main>
+</div>
+
+<footer class="footer">PatchCraft · Tutorial bundle</footer>
+<script src="assets/js/nav.js"></script>
+</body>
+</html>

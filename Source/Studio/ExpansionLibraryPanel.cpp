@@ -46,9 +46,9 @@ namespace patchcraft
         refreshButton.onClick = [this] { refresh(); };
         addAndMakeVisible (refreshButton);
 
-        popOutBtn.setTooltip ("Pop the expansion library into a free-floating window. Click again to dock.");
+        popOutBtn.setTooltip ("Pop the expansion pack library into a free-floating window. Click again to dock.");
         popOutBtn.getProperties().set ("smallButton", true);
-        popOutBtn.onClick = [this] { owner.togglePanelFloat (this, "Expansions"); };
+        popOutBtn.onClick = [this] { owner.togglePanelFloat (this, "Expansion Packs"); };
         addAndMakeVisible (popOutBtn);
 
         refresh();
@@ -87,7 +87,7 @@ namespace patchcraft
     {
         auto r = getLocalBounds().reduced (8);
         auto top = r.removeFromTop (kHeaderHeight);
-        popOutBtn.setBounds (top.removeFromRight (28).reduced (2));
+        popOutBtn.setBounds (top.removeFromRight (38).reduced (2));
         top.removeFromRight (4);
         header.setBounds (top.removeFromLeft (180));
         newExpansionButton.setBounds (top.removeFromLeft (60).reduced (2));

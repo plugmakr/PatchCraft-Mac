@@ -1,6 +1,8 @@
 #pragma once
 
 #include <juce_audio_utils/juce_audio_utils.h>
+#include "PcexpManager.h"
+#include "PatchCraftProject.h"
 
 namespace patchcraft
 {
@@ -15,7 +17,7 @@ namespace patchcraft
     class SettingsDialogContent : public juce::Component
     {
     public:
-        SettingsDialogContent (StudioAudioService& svc, AiAssistService& aiService);
+        SettingsDialogContent (StudioAudioService& svc, AiAssistService& aiService, PatchCraftProject& projectToEdit);
         ~SettingsDialogContent() override;
 
         void paint (juce::Graphics&) override;
@@ -26,11 +28,31 @@ namespace patchcraft
         void saveAiSettings();
         void refreshAiEnabledState();
         void resetAiDefaults();
+        void loadCloudSettings();
+        void saveCloudSettings();
+        void refreshCloudEnabledState();
+        void refreshExpansionList();
+        void installExpansionPackage();
+        void loadUiSettings();
+        void saveUiSettings();
 
         StudioAudioService& service;
         AiAssistService& ai;
+        PatchCraftProject& project;
+        PcexpManager expansionManager;
+        juce::Component hardwareTab;
+        juce::Component uiTab;
+        juce::Component aiTab;
+        juce::Component cloudTab;
+        juce::Component expansionsTab;
+        juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };
         juce::AudioDeviceSelectorComponent selector;
         juce::Label header;
+        juce::Label uiHeader;
+        juce::Label uiHelp;
+        juce::ToggleButton showTooltipsToggle { "Show mouseover help and guidance" };
+        juce::ToggleButton showTutorialsToggle { "Auto-show guided tutorials" };
+        juce::TextButton uiSaveButton { "Save UI" };
         juce::Label aiHeader;
         juce::Label aiHelp;
         juce::ComboBox aiProviderBox;
@@ -47,12 +69,41 @@ namespace patchcraft
         juce::ToggleButton aiIncludeContextToggle { "Include project context" };
         juce::TextButton aiSaveButton { "Save AI" };
         juce::TextButton aiResetButton { "Reset AI" };
+
+        juce::Label cloudHeader;
+        juce::Label cloudHelp;
+        juce::TextEditor cloudGuideText;
+        juce::ComboBox imageProviderBox;
+        juce::Label imageProviderLabel;
+        juce::Label imageApiKeyLabel;
+        juce::TextEditor imageApiKeyEditor;
+        juce::Label imageModelLabel;
+        juce::TextEditor imageModelEditor;
+        juce::Label murekaApiKeyLabel;
+        juce::TextEditor murekaApiKeyEditor;
+        juce::Label pluginEndpointLabel;
+        juce::TextEditor pluginEndpointEditor;
+        juce::Label pluginApiKeyLabel;
+        juce::TextEditor pluginApiKeyEditor;
+        juce::Label licenseEndpointLabel;
+        juce::TextEditor licenseEndpointEditor;
+        juce::Label licensePublicKeyLabel;
+        juce::TextEditor licensePublicKeyEditor;
+        juce::TextButton cloudSaveButton { "Save Cloud" };
+
+        juce::Label expansionsHeader;
+        juce::Label expansionsHelp;
+        juce::TextEditor expansionsList;
+        juce::TextButton installExpansionButton { "Install .pcexp" };
+        juce::TextButton refreshExpansionButton { "Refresh" };
+        juce::TextButton openExpansionFolderButton { "Open Folder" };
+        std::unique_ptr<juce::FileChooser> expansionChooser;
     };
 
     class SettingsWindow : public juce::DocumentWindow
     {
     public:
-        SettingsWindow (StudioAudioService& svc, AiAssistService& aiService, std::function<void()> onClose);
+        SettingsWindow (StudioAudioService& svc, AiAssistService& aiService, PatchCraftProject& projectToEdit, std::function<void()> onClose);
         ~SettingsWindow() override;
         void closeButtonPressed() override;
 

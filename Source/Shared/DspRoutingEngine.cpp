@@ -575,6 +575,24 @@ namespace patchcraft
                 if (block.block.values.count ("convolutionMix") != 0) setValue ("convolutionMix", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "convolutionMix", 0.0f)));
                 if (block.block.values.count ("spectralTilt") != 0) setValue ("spectralTilt", juce::jlimit (-1.0f, 1.0f, valueForKey (block.block, "spectralTilt", 0.0f)));
                 if (block.block.values.count ("spectralMix") != 0) setValue ("spectralMix", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "spectralMix", 0.0f)));
+                if (block.block.values.count ("tapeDrive") != 0) setValue ("tapeDrive", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "tapeDrive", 0.25f)));
+                if (block.block.values.count ("tapeTone") != 0) setValue ("tapeTone", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "tapeTone", 0.55f)));
+                if (block.block.values.count ("tapeFlutter") != 0) setValue ("tapeFlutter", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "tapeFlutter", 0.12f)));
+                if (block.block.values.count ("tapeMix") != 0) setValue ("tapeMix", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "tapeMix", 0.0f)));
+                if (block.block.values.count ("vinylAge") != 0) setValue ("vinylAge", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "vinylAge", 0.35f)));
+                if (block.block.values.count ("vinylDust") != 0) setValue ("vinylDust", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "vinylDust", 0.08f)));
+                if (block.block.values.count ("vinylWarp") != 0) setValue ("vinylWarp", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "vinylWarp", 0.12f)));
+                if (block.block.values.count ("vinylMix") != 0) setValue ("vinylMix", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "vinylMix", 0.0f)));
+                if (block.block.values.count ("lofiBits") != 0) setValue ("lofiBits", juce::jlimit (4.0f, 16.0f, valueForKey (block.block, "lofiBits", 12.0f)));
+                if (block.block.values.count ("lofiRate") != 0) setValue ("lofiRate", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "lofiRate", 0.20f)));
+                if (block.block.values.count ("lofiMix") != 0) setValue ("lofiMix", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "lofiMix", 0.0f)));
+                if (block.block.values.count ("vocalFormant") != 0) setValue ("vocalFormant", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "vocalFormant", 0.40f)));
+                if (block.block.values.count ("vocalBody") != 0) setValue ("vocalBody", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "vocalBody", 0.35f)));
+                if (block.block.values.count ("vocalMix") != 0) setValue ("vocalMix", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "vocalMix", 0.0f)));
+                if (block.block.values.count ("multiTapTime") != 0) setValue ("multiTapTime", juce::jlimit (0.02f, 2.0f, valueForKey (block.block, "multiTapTime", 0.375f)));
+                if (block.block.values.count ("multiTapFeedback") != 0) setValue ("multiTapFeedback", juce::jlimit (0.0f, 0.92f, valueForKey (block.block, "multiTapFeedback", 0.35f)));
+                if (block.block.values.count ("multiTapSpread") != 0) setValue ("multiTapSpread", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "multiTapSpread", 0.45f)));
+                if (block.block.values.count ("multiTapMix") != 0) setValue ("multiTapMix", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "multiTapMix", 0.0f)));
             }
             else if (nodeKind == DspNodeKind::source)
             {
@@ -623,6 +641,20 @@ namespace patchcraft
                 if (block.block.values.count ("sampleSliceCount") != 0) setValue ("sampleSliceCount", juce::jlimit (1.0f, 64.0f, valueForKey (block.block, "sampleSliceCount", 1.0f)));
                 if (block.block.values.count ("samplePitch") != 0) setValue ("samplePitch", juce::jlimit (-48.0f, 48.0f, valueForKey (block.block, "samplePitch", 0.0f)));
                 if (block.block.values.count ("sampleReverse") != 0) setValue ("sampleReverse", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "sampleReverse", 0.0f)));
+                if (block.block.values.count ("granularOn") != 0) setValue ("granularOn", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "granularOn", 0.0f)));
+                if (block.block.values.count ("granularDensity") != 0) setValue ("granularDensity", juce::jlimit (0.5f, 220.0f, valueForKey (block.block, "granularDensity", 24.0f)));
+                if (block.block.values.count ("granularSizeMs") != 0) setValue ("granularSizeMs", juce::jlimit (2.0f, 1000.0f, valueForKey (block.block, "granularSizeMs", 90.0f)));
+                if (block.block.values.count ("granularSizeRandom") != 0) setValue ("granularSizeRandom", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "granularSizeRandom", 0.25f)));
+                if (block.block.values.count ("granularSpread") != 0) setValue ("granularSpread", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "granularSpread", 0.18f)));
+                if (block.block.values.count ("granularScan") != 0) setValue ("granularScan", juce::jlimit (-3.0f, 3.0f, valueForKey (block.block, "granularScan", 0.0f)));
+                if (block.block.values.count ("granularPitchSpread") != 0) setValue ("granularPitchSpread", juce::jlimit (0.0f, 36.0f, valueForKey (block.block, "granularPitchSpread", 0.0f)));
+                if (block.block.values.count ("granularPanSpread") != 0) setValue ("granularPanSpread", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "granularPanSpread", 0.45f)));
+                if (block.block.values.count ("granularReverse") != 0) setValue ("granularReverse", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "granularReverse", 0.0f)));
+                if (block.block.values.count ("granularTexture") != 0) setValue ("granularTexture", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "granularTexture", 0.20f)));
+                if (block.block.values.count ("granularMaxGrains") != 0) setValue ("granularMaxGrains", juce::jlimit (1.0f, 32.0f, valueForKey (block.block, "granularMaxGrains", 16.0f)));
+                if (block.block.values.count ("granularDirection") != 0) setValue ("granularDirection", juce::jlimit (0.0f, 3.0f, valueForKey (block.block, "granularDirection", 3.0f)));
+                if (block.block.values.count ("granularWindow") != 0) setValue ("granularWindow", juce::jlimit (0.0f, 3.0f, valueForKey (block.block, "granularWindow", 0.0f)));
+                if (block.block.values.count ("granularFreeze") != 0) setValue ("granularFreeze", juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "granularFreeze", 0.0f)));
                 if (block.block.values.count ("octave") != 0) setNorm ("octave", valueForKey (block.block, "octave", 0.5f));
                 if (block.block.values.count ("detune") != 0) setNorm ("detune", valueForKey (block.block, "detune", 0.5f));
                 if (block.block.values.count ("osc2Detune") != 0) setNorm ("osc2Detune", valueForKey (block.block, "osc2Detune", 0.535f));

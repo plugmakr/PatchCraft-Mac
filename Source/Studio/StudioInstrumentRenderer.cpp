@@ -21,6 +21,34 @@ namespace patchcraft
             return gate != nullptr && gate->displayMode == "toggle" ? value >= 0.5f : value > 0.0001f;
         }
 
+        constexpr int kPianoFirstMidiNote = 21;  // A0
+        constexpr int kPianoLastMidiNote  = 108; // C8
+
+        static bool isBlackPianoKey (int midiNote)
+        {
+            const int semitone = ((midiNote % 12) + 12) % 12;
+            return semitone == 1 || semitone == 3 || semitone == 6 || semitone == 8 || semitone == 10;
+        }
+
+        static std::vector<int> pianoWhiteNotes()
+        {
+            std::vector<int> notes;
+            notes.reserve (52);
+            for (int note = kPianoFirstMidiNote; note <= kPianoLastMidiNote; ++note)
+                if (! isBlackPianoKey (note))
+                    notes.push_back (note);
+            return notes;
+        }
+
+        static int whiteNotesBefore (int midiNote)
+        {
+            int count = 0;
+            for (int note = kPianoFirstMidiNote; note < midiNote; ++note)
+                if (! isBlackPianoKey (note))
+                    ++count;
+            return count;
+        }
+
         static juce::String disconnectedControlMessage (const PatchCraftProject& project,
                                                         const LayoutElement& element,
                                                         const ParameterDef* parameter)
@@ -38,6 +66,286 @@ namespace patchcraft
                     + "\nConnect or raise the enabling parameter, then this control will move and affect sound.";
 
             return parameter->name + " (" + parameter->id + ")\nConnected and active.";
+        }
+
+        static float blockValue (const DspBlock& block, const juce::String& key, float fallback)
+        {
+            const auto it = block.values.find (key);
+            return it != block.values.end() ? it->second : fallback;
+        }
+
+        static float eqFrequencyToX01 (float frequency)
+        {
+            const float f = juce::jlimit (20.0f, 20000.0f, frequency);
+            return juce::jlimit (0.0f, 1.0f,
+                std::log (f / 20.0f) / std::log (20000.0f / 20.0f));
+        }
+
+        static float eqGainToY01 (float gainDb)
+        {
+            return juce::jlimit (0.0f, 1.0f, juce::jmap (gainDb, 24.0f, -24.0f, 0.0f, 1.0f));
+        }
+
+        static void drawEqCurveElement (juce::Graphics& g, juce::Rectangle<int> r, const LayoutElement& element,
+                                        const DspGraph& graph)
+        {
+            const auto bg = element.backgroundColour.isTransparent() ? PatchCraftLookAndFeel::panelAlt() : element.backgroundColour;
+            const auto border = element.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : element.borderColour;
+            const auto accent = element.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : element.accentColour;
+            g.setColour (bg);
+            g.fillRoundedRectangle (r.toFloat(), juce::jmax (6.0f, element.cornerRadius));
+            g.setColour (border);
+            g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (6.0f, element.cornerRadius), 1.0f);
+
+            auto area = r.reduced (10, 8);
+            auto header = area.removeFromTop (20);
+            g.setColour (accent);
+            g.setFont (juce::Font (11.0f, juce::Font::bold));
+            g.drawText (element.label.isNotEmpty() ? element.label.toUpperCase() : "EQ CURVE",
+                        header.removeFromLeft (130), juce::Justification::centredLeft, true);
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (9.0f);
+            g.drawText ("live patch EQ", header, juce::Justification::centredRight, true);
+
+            auto graphArea = area.reduced (2, 4);
+            g.setColour (PatchCraftLookAndFeel::bg().withAlpha (0.55f));
+            g.fillRoundedRectangle (graphArea.toFloat(), 5.0f);
+            g.setColour (border.withAlpha (0.22f));
+            for (int i = 1; i < 5; ++i)
+            {
+                const int x = graphArea.getX() + (graphArea.getWidth() * i) / 5;
+                const int y = graphArea.getY() + (graphArea.getHeight() * i) / 5;
+                g.drawVerticalLine (x, (float) graphArea.getY(), (float) graphArea.getBottom());
+                g.drawHorizontalLine (y, (float) graphArea.getX(), (float) graphArea.getRight());
+            }
+
+            juce::Path curve;
+            for (int i = 0; i < 96; ++i)
+            {
+                const float x01 = (float) i / 95.0f;
+                float y = (float) graphArea.getCentreY();
+                for (const auto& block : graph.blocks)
+                {
+                    if (block.section != "filter" || ! block.type.containsIgnoreCase ("eq") || ! block.enabled)
+                        continue;
+                    const float freqX = eqFrequencyToX01 (blockValue (block, "eqFreq", 1000.0f));
+                    const float gain = blockValue (block, "eqGainDb", 0.0f);
+                    const float q = juce::jlimit (0.15f, 18.0f, blockValue (block, "eqQ", 1.0f));
+                    const float width = juce::jlimit (0.025f, 0.22f, 0.11f / std::sqrt (q));
+                    const float influence = std::exp (-std::pow ((x01 - freqX) / width, 2.0f));
+                    y -= (gain / 24.0f) * influence * (float) graphArea.getHeight() * 0.44f;
+                }
+                const float x = (float) graphArea.getX() + x01 * (float) graphArea.getWidth();
+                y = juce::jlimit ((float) graphArea.getY(), (float) graphArea.getBottom(), y);
+                if (i == 0) curve.startNewSubPath (x, y);
+                else        curve.lineTo (x, y);
+            }
+            g.setColour (accent.withAlpha (0.92f));
+            g.strokePath (curve, juce::PathStrokeType (2.0f));
+
+            for (const auto& block : graph.blocks)
+            {
+                if (block.section != "filter" || ! block.type.containsIgnoreCase ("eq") || ! block.enabled)
+                    continue;
+                const float x = (float) graphArea.getX() + eqFrequencyToX01 (blockValue (block, "eqFreq", 1000.0f)) * (float) graphArea.getWidth();
+                const float y = (float) graphArea.getY() + eqGainToY01 (blockValue (block, "eqGainDb", 0.0f)) * (float) graphArea.getHeight();
+                g.setColour (accent);
+                g.fillEllipse (x - 4.0f, y - 4.0f, 8.0f, 8.0f);
+            }
+        }
+
+        static void drawSpectrumElement (juce::Graphics& g, juce::Rectangle<int> r, const LayoutElement& element,
+                                         float outputPeak)
+        {
+            const auto bg = element.backgroundColour.isTransparent() ? PatchCraftLookAndFeel::panelAlt() : element.backgroundColour;
+            const auto border = element.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : element.borderColour;
+            const auto accent = element.accentColour.isTransparent() ? juce::Colour (0xff20d6ff) : element.accentColour;
+            g.setColour (bg);
+            g.fillRoundedRectangle (r.toFloat(), juce::jmax (6.0f, element.cornerRadius));
+            g.setColour (border);
+            g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (6.0f, element.cornerRadius), 1.0f);
+
+            auto area = r.reduced (10, 8);
+            auto header = area.removeFromTop (20);
+            g.setColour (accent);
+            g.setFont (juce::Font (11.0f, juce::Font::bold));
+            g.drawText (element.label.isNotEmpty() ? element.label.toUpperCase() : "SPECTRUM",
+                        header.removeFromLeft (130), juce::Justification::centredLeft, true);
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (9.0f);
+            g.drawText ("runtime analyzer", header, juce::Justification::centredRight, true);
+            auto graphArea = area.reduced (2, 4);
+            g.setColour (PatchCraftLookAndFeel::bg().withAlpha (0.55f));
+            g.fillRoundedRectangle (graphArea.toFloat(), 5.0f);
+            const float level = juce::jlimit (0.08f, 1.0f, outputPeak + 0.14f);
+            constexpr int bars = 36;
+            for (int i = 0; i < bars; ++i)
+            {
+                const float x01 = (float) i / (float) (bars - 1);
+                const float h01 = level * (0.18f + 0.72f * std::abs (std::sin (x01 * 9.0f + (float) i * 0.37f)));
+                const int barW = juce::jmax (2, graphArea.getWidth() / bars - 2);
+                const int x = graphArea.getX() + i * graphArea.getWidth() / bars;
+                const int h = juce::roundToInt (h01 * (float) graphArea.getHeight());
+                g.setColour (accent.interpolatedWith (PatchCraftLookAndFeel::accent(), x01).withAlpha (0.78f));
+                g.fillRoundedRectangle ((float) x, (float) graphArea.getBottom() - (float) h,
+                                        (float) barW, (float) h, 2.0f);
+            }
+        }
+
+        static const DspBlock* findDrumMachineBlock (const DspGraph& graph)
+        {
+            for (const auto& block : graph.blocks)
+                if (block.type.containsIgnoreCase ("drum") || block.values.find ("dmTracks") != block.values.end())
+                    return &block;
+            return nullptr;
+        }
+
+        static void drawDrumGridPreview (juce::Graphics& g,
+                                         juce::Rectangle<int> r,
+                                         const LayoutElement& element,
+                                         const DspGraph& graph,
+                                         bool transportPlaying,
+                                         double playback01)
+        {
+            const auto* block = findDrumMachineBlock (graph);
+            const int tracks = block != nullptr
+                ? juce::jlimit (1, 16, juce::roundToInt (blockValue (*block, "dmTracks", (float) element.drumTracks)))
+                : juce::jlimit (1, 16, element.drumTracks);
+            const int steps = block != nullptr
+                ? juce::jlimit (1, 64, juce::roundToInt (blockValue (*block, "dmSteps", (float) element.drumSteps)))
+                : juce::jlimit (1, 64, element.drumSteps);
+            const int pattern = block != nullptr
+                ? juce::jlimit (0, 7, juce::roundToInt (blockValue (*block, "dmPattern", (float) element.drumPattern)))
+                : juce::jlimit (0, 7, element.drumPattern);
+
+            const auto bg = element.backgroundColour.isTransparent() ? PatchCraftLookAndFeel::panelAlt() : element.backgroundColour;
+            const auto border = element.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : element.borderColour;
+            const auto accent = element.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : element.accentColour;
+
+            g.setColour (bg);
+            g.fillRoundedRectangle (r.toFloat(), juce::jmax (4.0f, element.cornerRadius));
+            g.setColour (border);
+            g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (4.0f, element.cornerRadius), 1.0f);
+
+            auto area = r.reduced (8);
+            auto header = area.removeFromTop (28);
+            auto playButton = header.removeFromRight (58).reduced (2);
+            auto bankStrip = header.removeFromRight (juce::jmin (224, header.getWidth() / 2)).reduced (2);
+            g.setColour (accent);
+            g.setFont (juce::Font (11.0f, juce::Font::bold));
+            g.drawText ((element.label.isNotEmpty() ? element.label : "DRUM GRID")
+                            + "  P" + juce::String (pattern + 1),
+                        header, juce::Justification::centredLeft, true);
+
+            g.setColour (transportPlaying ? accent : PatchCraftLookAndFeel::panel().brighter (0.08f));
+            g.fillRoundedRectangle (playButton.toFloat(), 5.0f);
+            g.setColour (transportPlaying ? juce::Colour (0xff071014) : border);
+            g.drawRoundedRectangle (playButton.toFloat().reduced (0.5f), 5.0f, 1.0f);
+            g.setColour (transportPlaying ? juce::Colour (0xff071014) : PatchCraftLookAndFeel::text().withAlpha (0.92f));
+            g.setFont (juce::Font (10.0f, juce::Font::bold));
+            g.drawText (transportPlaying ? "STOP" : "PLAY", playButton, juce::Justification::centred, true);
+
+            constexpr int bankCount = 8;
+            constexpr int bankGap = 3;
+            const int bankW = juce::jmax (16, (bankStrip.getWidth() - bankGap * (bankCount - 1)) / bankCount);
+            for (int bank = 0; bank < bankCount; ++bank)
+            {
+                auto chip = juce::Rectangle<int> (bankStrip.getX() + bank * (bankW + bankGap),
+                                                  bankStrip.getY(),
+                                                  bankW,
+                                                  bankStrip.getHeight()).reduced (0, 2);
+                const bool activeBank = bank == pattern;
+                g.setColour (activeBank ? accent.withAlpha (0.92f) : PatchCraftLookAndFeel::panel().brighter (0.05f));
+                g.fillRoundedRectangle (chip.toFloat(), 4.0f);
+                g.setColour (activeBank ? juce::Colour (0xff071014) : PatchCraftLookAndFeel::textDim());
+                g.setFont (juce::Font (8.5f, juce::Font::bold));
+                g.drawText (juce::String (bank + 1), chip, juce::Justification::centred, true);
+            }
+
+            area.removeFromTop (4);
+            if (area.isEmpty())
+                return;
+
+            const int labelW = juce::jlimit (42, 86, area.getWidth() / 5);
+            auto grid = area.withTrimmedLeft (labelW);
+            const float cellW = (float) grid.getWidth() / (float) steps;
+            const float cellH = (float) area.getHeight() / (float) tracks;
+            const int playbackStep = playback01 >= 0.0
+                ? juce::jlimit (0, steps - 1, (int) std::floor (playback01 * (double) steps))
+                : -1;
+            static const char* names[] = { "Kick", "Snare", "Hat", "Clap", "Tom", "Perc", "Ride", "Crash" };
+
+            for (int track = 0; track < tracks; ++track)
+            {
+                const int y = area.getY() + juce::roundToInt ((float) track * cellH);
+                const int h = juce::roundToInt (cellH);
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (juce::Font (juce::jlimit (8.0f, 10.5f, cellH * 0.40f), juce::Font::bold));
+                const juce::String trackLabel = track < 8 ? juce::String (names[track]) : "T" + juce::String (track + 1);
+                g.drawText (trackLabel, area.getX(), y, labelW - 5, h, juce::Justification::centredLeft, true);
+
+                for (int step = 0; step < steps; ++step)
+                {
+                    const int x = grid.getX() + juce::roundToInt ((float) step * cellW);
+                    const auto cell = juce::Rectangle<float> ((float) x + 1.0f,
+                                                              (float) y + 1.0f,
+                                                              juce::jmax (1.0f, cellW - 2.0f),
+                                                              juce::jmax (1.0f, cellH - 2.0f));
+                    if (step == playbackStep)
+                    {
+                        g.setColour (accent.withAlpha (0.13f));
+                        g.fillRoundedRectangle (cell.expanded (0.5f, 0.0f), 2.5f);
+                    }
+                    const auto prefix = "dmP" + juce::String (pattern)
+                                      + "T" + juce::String (track)
+                                      + "S" + juce::String (step);
+                    const bool active = block != nullptr && blockValue (*block, prefix + "On", 0.0f) >= 0.5f;
+                    const float velocity = block != nullptr
+                        ? juce::jlimit (0.1f, 1.0f, blockValue (*block, prefix + "Vel", 0.8f))
+                        : 0.75f;
+                    const int divisions = block != nullptr
+                        ? juce::jlimit (1, 4, juce::roundToInt (blockValue (*block, prefix + "Div", 1.0f)))
+                        : 1;
+                    g.setColour ((step % 4 == 0 ? PatchCraftLookAndFeel::panel().brighter (0.08f)
+                                                 : PatchCraftLookAndFeel::panel())
+                                     .withAlpha (0.86f));
+                    g.fillRoundedRectangle (cell, 2.5f);
+                    if (divisions > 1)
+                    {
+                        g.setColour (border.brighter (0.25f).withAlpha (0.70f));
+                        for (int division = 1; division < divisions; ++division)
+                        {
+                            const float divX = cell.getX() + cell.getWidth() * (float) division / (float) divisions;
+                            g.drawVerticalLine (juce::roundToInt (divX), cell.getY() + 2.0f, cell.getBottom() - 2.0f);
+                        }
+                    }
+                    if (active)
+                    {
+                        auto hit = cell.reduced (2.0f);
+                        hit.removeFromTop (hit.getHeight() * (1.0f - velocity));
+                        g.setColour (accent.withAlpha (0.68f + velocity * 0.28f));
+                        g.fillRoundedRectangle (hit, 2.0f);
+                        if (divisions > 1 && cell.getWidth() >= 14.0f && cell.getHeight() >= 12.0f)
+                        {
+                            g.setColour (juce::Colour (0xff0a0c10));
+                            g.setFont (juce::Font (juce::jmin (9.0f, cell.getHeight() * 0.48f), juce::Font::bold));
+                            g.drawText ("x" + juce::String (divisions), cell.toNearestInt().reduced (1),
+                                        juce::Justification::centred, true);
+                        }
+                    }
+                }
+            }
+
+            if (playback01 >= 0.0)
+            {
+                const float playheadX = (float) grid.getX()
+                    + (float) playback01 * (float) grid.getWidth();
+                g.setColour (accent.withAlpha (0.95f));
+                g.drawLine (playheadX, (float) grid.getY(), playheadX, (float) grid.getBottom(), 2.0f);
+                g.setColour (accent.withAlpha (0.28f));
+                g.fillRoundedRectangle (playheadX - 4.0f, (float) header.getY(), 8.0f,
+                                        (float) (grid.getBottom() - header.getY()), 4.0f);
+            }
         }
     }
 
@@ -207,12 +515,12 @@ namespace patchcraft
                 continue;
             }
 
-            if (e.type == ElementType::Knob || e.type == ElementType::Slider)
+            if (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::MacroControl)
             {
                 auto slider = std::make_unique<juce::Slider>();
-                slider->setSliderStyle (e.type == ElementType::Knob
-                    ? juce::Slider::RotaryHorizontalVerticalDrag
-                    : juce::Slider::LinearVertical);
+                slider->setSliderStyle (e.type == ElementType::Slider
+                    ? juce::Slider::LinearVertical
+                    : juce::Slider::RotaryHorizontalVerticalDrag);
                 slider->setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
                 slider->setColour (juce::Slider::rotarySliderFillColourId, e.accentColour);
                 slider->setColour (juce::Slider::thumbColourId, e.accentColour);
@@ -287,6 +595,18 @@ namespace patchcraft
         rebuild();
     }
 
+    void StudioInstrumentRenderer::projectChanged (PatchCraftProject::ChangeScope scope)
+    {
+        if (scope == PatchCraftProject::ChangeScope::dspRealtime)
+        {
+            syncKnobsToLiveValues();
+            repaint();
+            return;
+        }
+
+        projectChanged();
+    }
+
     void StudioInstrumentRenderer::syncKnobsToLiveValues()
     {
         for (int i = 0; i < knobs.size(); ++i)
@@ -330,7 +650,9 @@ namespace patchcraft
     juce::Rectangle<int> StudioInstrumentRenderer::animatedElementRect (const LayoutElement& element,
                                                                         juce::Rectangle<int> rect) const
     {
-        float amount = element.audioReactive ? juce::jmax (0.08f, element.audioReactiveAmount) * 0.35f : 0.0f;
+        float amount = element.audioReactive
+            ? audioReactiveLevel.load (std::memory_order_relaxed) * juce::jmax (0.08f, element.audioReactiveAmount)
+            : 0.0f;
         if (element.animationMode != "none")
         {
             const auto seconds = juce::Time::getMillisecondCounterHiRes() * 0.001;
@@ -458,9 +780,22 @@ namespace patchcraft
                     drawMeter (g, r);
                     break;
 
+                case ElementType::EqCurve:
+                    drawEqCurveElement (g, r, e, project.getDspGraph());
+                    break;
+
+                case ElementType::SpectrumAnalyzer:
+                    drawSpectrumElement (g, r, e, audioReactiveLevel.load (std::memory_order_relaxed));
+                    break;
+
                 case ElementType::Knob:
                 case ElementType::Slider:
-                    drawRuntimeControl (g, r.withTrimmedBottom (juce::jmax (20, r.getHeight() / 4)), e);
+                case ElementType::MacroControl:
+                    drawRuntimeControl (g,
+                                        e.labelPosition == "hidden"
+                                            ? r.reduced (2)
+                                            : r.withTrimmedBottom (juce::jmax (20, r.getHeight() / 4)),
+                                        e);
                     break;
 
                 case ElementType::Button:
@@ -554,6 +889,132 @@ namespace patchcraft
                     break;
                 }
 
+                case ElementType::GranularField:
+                {
+                    const auto bg = e.backgroundColour.isTransparent() ? PatchCraftLookAndFeel::panelAlt() : e.backgroundColour;
+                    const auto border = e.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : e.borderColour;
+                    const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
+                    auto normalized = [this] (const juce::String& parameterId, float fallback)
+                    {
+                        const auto* def = project.getParameters().find (parameterId);
+                        if (def == nullptr)
+                            return fallback;
+
+                        const auto value = project.getLiveValues().getValue (parameterId, def->defaultValue);
+                        return juce::jlimit (0.0f, 1.0f,
+                            (value - def->min) / juce::jmax (0.0001f, def->max - def->min));
+                    };
+                    auto raw = [this] (const juce::String& parameterId, float fallback)
+                    {
+                        const auto* def = project.getParameters().find (parameterId);
+                        return def != nullptr ? project.getLiveValues().getValue (parameterId, def->defaultValue) : fallback;
+                    };
+                    auto directionName = [] (int direction)
+                    {
+                        switch (juce::jlimit (0, 3, direction))
+                        {
+                            case 0:  return juce::String ("Forward");
+                            case 1:  return juce::String ("Reverse");
+                            case 2:  return juce::String ("Ping-Pong");
+                            default: return juce::String ("Multi");
+                        }
+                    };
+
+                    g.setColour (bg);
+                    g.fillRoundedRectangle (r.toFloat(), juce::jmax (6.0f, e.cornerRadius));
+                    g.setColour (border);
+                    g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (6.0f, e.cornerRadius), 1.0f);
+
+                    auto area = r.reduced (10, 8);
+                    auto header = area.removeFromTop (22);
+                    g.setColour (accent);
+                    g.setFont (juce::Font (12.0f, juce::Font::bold));
+                    if (e.label.isNotEmpty())
+                        g.drawText (e.label.toUpperCase(),
+                                    header.removeFromLeft (160), juce::Justification::centredLeft, true);
+                    area.removeFromTop (4);
+
+                    if (area.getHeight() < 60 || area.getWidth() < 160)
+                        break;
+
+                    auto chipArea = area.removeFromBottom (24);
+                    area.removeFromBottom (4);
+
+                    const float start = normalized ("sampleStart", 0.35f);
+                    const float length = normalized ("sampleLength", 0.65f);
+                    const float density = raw ("granularDensity", 24.0f);
+                    const float scan = raw ("granularScan", 0.0f);
+                    const float spread = normalized ("granularSpread", 0.18f);
+                    const float reverse = normalized ("granularReverse", 0.0f);
+                    const float texture = normalized ("granularTexture", 0.20f);
+                    const int direction = juce::roundToInt (raw ("granularDirection", 3.0f));
+                    const bool frozen = raw ("granularFreeze", 0.0f) >= 0.5f;
+                    const bool granularOn = raw ("granularOn", 0.0f) >= 0.5f;
+                    const double seconds = juce::Time::getMillisecondCounterHiRes() * 0.001;
+                    float visualPosition = start;
+                    if (granularOn && ! frozen)
+                    {
+                        visualPosition += (float) seconds * scan * 0.055f;
+                        visualPosition -= std::floor (visualPosition);
+                    }
+                    const float centreX = juce::jmap (visualPosition, 0.0f, 1.0f, (float) area.getX(), (float) area.getRight());
+                    const float span = juce::jmap (length, 0.0f, 1.0f, 14.0f, (float) area.getWidth() * 0.54f);
+                    g.setColour (border.withAlpha (0.22f));
+                    for (int i = 1; i < 6; ++i)
+                        g.drawVerticalLine (area.getX() + (area.getWidth() * i) / 6, (float) area.getY(), (float) area.getBottom());
+                    g.setColour (accent.withAlpha (0.25f));
+                    g.fillEllipse (centreX - span * 0.45f, (float) area.getCentreY() - (float) area.getHeight() * 0.28f,
+                                   span * 0.9f, (float) area.getHeight() * 0.56f);
+                    g.setColour (accent.withAlpha (0.9f));
+                    g.drawLine (centreX, (float) area.getY(), centreX, (float) area.getBottom(), 1.4f);
+                    const int grainDots = juce::jlimit (18, 72, juce::roundToInt (juce::jmap (density, 0.5f, 220.0f, 18.0f, 72.0f)));
+                    const float motionPhase = granularOn && ! frozen ? (float) seconds * (0.50f + std::abs (scan) * 0.72f) : 0.0f;
+                    for (int i = 0; i < grainDots; ++i)
+                    {
+                        const float phase = (float) i * 0.71f + motionPhase;
+                        const float spray = 0.16f + spread * 0.42f + texture * 0.16f;
+                        const float directionSign = direction == 1 ? -1.0f
+                                                  : direction == 2 ? std::sin (motionPhase * 0.75f) >= 0.0f ? 1.0f : -1.0f
+                                                  : scan < 0.0f ? -1.0f : 1.0f;
+                        const float x = centreX
+                            + std::sin (phase * 1.3f) * span * (0.18f + spray)
+                            + directionSign * std::cos (phase * 0.67f) * span * (0.10f + reverse * 0.16f);
+                        const float y = (float) area.getCentreY() + std::cos (phase * 0.9f) * (float) area.getHeight() * (0.10f + spray * 0.32f);
+                        const float size = 2.0f + (float) (i % 4);
+                        g.fillEllipse (x - size * 0.5f, y - size * 0.5f, size, size);
+                    }
+
+                    juce::Path arrow;
+                    const float arrowY = (float) area.getBottom() - 13.0f;
+                    const float arrowW = juce::jmin (70.0f, (float) area.getWidth() * 0.16f);
+                    const float arrowStart = direction == 1 ? centreX + arrowW * 0.5f : centreX - arrowW * 0.5f;
+                    const float arrowEnd = direction == 1 ? centreX - arrowW * 0.5f : centreX + arrowW * 0.5f;
+                    g.setColour (accent.withAlpha (granularOn ? 0.88f : 0.38f));
+                    g.drawArrow ({ arrowStart, arrowY, arrowEnd, arrowY }, 1.8f, 9.0f, 7.0f);
+                    if (direction == 2 || direction == 3)
+                        g.drawArrow ({ arrowEnd, arrowY - 9.0f, arrowStart, arrowY - 9.0f }, 1.4f, 8.0f, 6.0f);
+
+                    const juce::StringArray chips { "FWD", "REV", "PING", "MULTI", frozen ? "UNFREEZE" : "FREEZE" };
+                    const int chipGap = 5;
+                    const int chipW = juce::jmax (48, (chipArea.getWidth() - chipGap * (chips.size() - 1)) / chips.size());
+                    for (int i = 0; i < chips.size(); ++i)
+                    {
+                        auto chip = juce::Rectangle<int> (chipArea.getX() + i * (chipW + chipGap),
+                                                          chipArea.getY(), chipW, chipArea.getHeight()).reduced (1);
+                        const bool active = (i < 4 && i == juce::jlimit (0, 3, direction)) || (i == 4 && frozen);
+                        g.setColour (active ? accent.withAlpha (0.85f) : bg.brighter (0.08f));
+                        g.fillRoundedRectangle (chip.toFloat(), 5.0f);
+                        g.setColour (active ? accent : border.withAlpha (0.74f));
+                        g.drawRoundedRectangle (chip.toFloat().reduced (0.5f), 5.0f, active ? 1.4f : 1.0f);
+                        g.setColour (active ? juce::Colour (0xff080a0f) : PatchCraftLookAndFeel::textDim());
+                        g.setFont (juce::Font (9.0f, juce::Font::bold));
+                        g.drawText (chips[i], chip, juce::Justification::centred, true);
+                    }
+
+                    juce::ignoreUnused (directionName, scan, density, granularOn);
+                    break;
+                }
+
                 case ElementType::ScrollPanel:
                     drawPanel (g, r, e.label);
                     break;
@@ -565,6 +1026,141 @@ namespace patchcraft
                     g.setColour (e.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : e.borderColour);
                     g.drawLine ((float) r.getX(), (float) r.getCentreY(), (float) r.getRight(), (float) r.getCentreY(), juce::jmax (1.0f, e.strokeWidth));
                     break;
+
+                case ElementType::DrumGrid:
+                    drawDrumGridPreview (g, r, e, project.getDspGraph(),
+                                         isTransportPlaying != nullptr && isTransportPlaying(),
+                                         getSequencerPlaybackPosition01 != nullptr
+                                            ? getSequencerPlaybackPosition01 (juce::jlimit (1, 64, e.drumSteps))
+                                            : -1.0);
+                    break;
+
+                case ElementType::Mixer:
+                {
+                    const auto bg = e.backgroundColour.isTransparent() ? PatchCraftLookAndFeel::panelAlt() : e.backgroundColour;
+                    const auto borderC = e.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : e.borderColour;
+                    const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
+                    const int channels = juce::jlimit (1, 16, e.mixerChannels);
+                    g.setColour (bg);
+                    g.fillRoundedRectangle (r.toFloat(), juce::jmax (5.0f, e.cornerRadius));
+                    g.setColour (borderC);
+                    g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (5.0f, e.cornerRadius), 1.0f);
+
+                    auto area = r.reduced (10, 8);
+                    if (e.labelPosition != "hidden")
+                    {
+                        auto header = area.removeFromTop (22);
+                        g.setColour (accent);
+                        g.setFont (juce::Font (12.0f, juce::Font::bold));
+                        g.drawText (e.label.isNotEmpty() ? e.label.toUpperCase() : "MIXER",
+                                    header.removeFromLeft (150), juce::Justification::centredLeft, true);
+                        g.setColour (PatchCraftLookAndFeel::textDim());
+                        g.setFont (juce::Font (10.0f));
+                        g.drawText ("Runtime mixer", header, juce::Justification::centredRight, true);
+                        area.removeFromTop (6);
+                    }
+
+                    const int stripW = juce::jmax (38, area.getWidth() / channels);
+                    for (int channel = 0; channel < channels; ++channel)
+                    {
+                        auto strip = juce::Rectangle<int> (area.getX() + channel * stripW,
+                                                           area.getY(),
+                                                           channel == channels - 1
+                                                                ? area.getRight() - (area.getX() + channel * stripW)
+                                                                : stripW,
+                                                           area.getHeight()).reduced (3, 0);
+                        const juce::String label = channel < e.mixerChannelLabels.size()
+                            ? e.mixerChannelLabels[channel]
+                            : (channel == 0 ? "Main" : "Bus " + juce::String (channel + 1));
+                        g.setColour (PatchCraftLookAndFeel::bg().withAlpha (0.72f));
+                        g.fillRoundedRectangle (strip.toFloat(), 5.0f);
+                        g.setColour (borderC.withAlpha (0.65f));
+                        g.drawRoundedRectangle (strip.toFloat().reduced (0.5f), 5.0f, 1.0f);
+                        g.setColour (PatchCraftLookAndFeel::text());
+                        g.setFont (juce::Font (10.0f, juce::Font::bold));
+                        g.drawText (label, strip.removeFromTop (20), juce::Justification::centred, true);
+
+                        auto buttons = strip.removeFromBottom (22).reduced (2, 2);
+                        auto pan = strip.removeFromBottom (22).reduced (5, 5);
+                        auto value = strip.removeFromBottom (14);
+                        auto fader = strip.reduced (5, 6);
+                        const int centre = fader.getCentreX();
+                        const auto track = juce::Rectangle<int> (centre - 4, fader.getY() + 2,
+                                                                 8, juce::jmax (12, fader.getHeight() - 4));
+                        const float level = channel == 0 ? 0.80f : 0.56f;
+                        const int thumbY = juce::roundToInt (juce::jmap (level, 0.0f, 1.0f,
+                                                                          (float) track.getBottom(),
+                                                                          (float) track.getY()));
+                        g.setColour (PatchCraftLookAndFeel::bg().brighter (0.08f));
+                        g.fillRoundedRectangle (track.toFloat(), 4.0f);
+                        g.setColour (accent.withAlpha (0.72f));
+                        g.fillRoundedRectangle (juce::Rectangle<int>::leftTopRightBottom (track.getX(), thumbY,
+                                                                                          track.getRight(), track.getBottom()).toFloat(), 4.0f);
+                        g.setColour (PatchCraftLookAndFeel::text());
+                        g.fillRoundedRectangle (juce::Rectangle<float> ((float) centre - 11.0f, (float) thumbY - 4.0f,
+                                                                        22.0f, 8.0f), 3.0f);
+                        g.setColour (PatchCraftLookAndFeel::textDim());
+                        g.setFont (juce::Font (9.0f));
+                        g.drawText (juce::String (juce::roundToInt (level * 100.0f)),
+                                    value, juce::Justification::centred, true);
+                        g.setColour (PatchCraftLookAndFeel::bg().brighter (0.08f));
+                        g.fillRoundedRectangle (pan.toFloat(), 3.0f);
+                        auto mute = buttons.removeFromLeft (buttons.getWidth() / 2).reduced (1, 0);
+                        auto solo = buttons.reduced (1, 0);
+                        g.fillRoundedRectangle (mute.toFloat(), 3.0f);
+                        g.fillRoundedRectangle (solo.toFloat(), 3.0f);
+                        g.setColour (PatchCraftLookAndFeel::textDim());
+                        g.setFont (juce::Font (9.0f, juce::Font::bold));
+                        g.drawText ("M", mute, juce::Justification::centred, true);
+                        g.drawText ("S", solo, juce::Justification::centred, true);
+                    }
+                    break;
+                }
+
+                case ElementType::ModMatrix:
+                {
+                    const auto bg = e.backgroundColour.isTransparent() ? PatchCraftLookAndFeel::panelAlt() : e.backgroundColour;
+                    const auto borderC = e.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : e.borderColour;
+                    const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
+                    g.setColour (bg);
+                    g.fillRoundedRectangle (r.toFloat(), juce::jmax (5.0f, e.cornerRadius));
+                    g.setColour (borderC);
+                    g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (5.0f, e.cornerRadius), 1.0f);
+                    auto area = r.reduced (10, 8);
+                    auto header = area.removeFromTop (20);
+                    g.setColour (accent);
+                    g.setFont (juce::Font (11.0f, juce::Font::bold));
+                    g.drawText (e.label.isNotEmpty() ? e.label.toUpperCase() : "MOD MATRIX",
+                                header.removeFromLeft (130), juce::Justification::centredLeft, true);
+                    g.setColour (PatchCraftLookAndFeel::textDim());
+                    g.setFont (9.0f);
+                    g.drawText ("performable routing", header, juce::Justification::centredRight, true);
+                    auto list = area.reduced (2, 6);
+                    const auto& routes = project.getDspGraph().modulation;
+                    if (routes.empty())
+                    {
+                        g.setColour (PatchCraftLookAndFeel::textDim());
+                        g.setFont (juce::Font (10.0f, juce::Font::bold));
+                        g.drawFittedText ("No modulation routes. Select in Inspector to add source -> target rows.",
+                                          list, juce::Justification::centred, 3);
+                        break;
+                    }
+                    const int maxRows = juce::jmin (6, (int) routes.size());
+                    for (int i = 0; i < maxRows; ++i)
+                    {
+                        const auto& route = routes[(size_t) i];
+                        auto row = list.removeFromTop (juce::jmax (18, list.getHeight() / (maxRows - i))).reduced (0, 2);
+                        g.setColour (route.enabled ? accent.withAlpha (0.16f) : PatchCraftLookAndFeel::bg().withAlpha (0.72f));
+                        g.fillRoundedRectangle (row.toFloat(), 4.0f);
+                        g.setColour (route.enabled ? accent.withAlpha (0.78f) : PatchCraftLookAndFeel::textDim());
+                        g.setFont (juce::Font (8.8f, juce::Font::bold));
+                        g.drawText (route.sourceId + " -> " + route.targetId,
+                                    row.removeFromLeft (juce::jmax (80, row.getWidth() - 52)).reduced (6, 0),
+                                    juce::Justification::centredLeft, true);
+                        g.drawText (juce::String (route.amount, 2), row.reduced (4, 0), juce::Justification::centredRight, true);
+                    }
+                    break;
+                }
 
                 case ElementType::DrumPad:
                 case ElementType::PadGrid:
@@ -593,7 +1189,15 @@ namespace patchcraft
                                 g.drawRoundedRectangle (pad.reduced (0.5f), juce::jmax (3.0f, e.cornerRadius * 0.6f), 1.0f);
                                 const int padIdx = row * cols + col;
                                 const int note = juce::jlimit (0, 127, e.padBaseNote + padIdx);
-                                g.setColour (PatchCraftLookAndFeel::text().withAlpha (0.85f));
+                                const bool active = note == lastPlayedNote;
+                                if (active)
+                                {
+                                    g.setColour (accent.withAlpha (0.82f));
+                                    g.fillRoundedRectangle (pad.reduced (1.5f), juce::jmax (3.0f, e.cornerRadius * 0.6f));
+                                    g.setColour (accent);
+                                    g.drawRoundedRectangle (pad.reduced (0.5f), juce::jmax (3.0f, e.cornerRadius * 0.6f), 1.8f);
+                                }
+                                g.setColour ((active ? juce::Colour (0xff0a0c10) : PatchCraftLookAndFeel::text()).withAlpha (0.85f));
                                 g.setFont (juce::Font (juce::jmin (12.0f, padH * 0.28f), juce::Font::bold));
                                 const juce::String label = e.type == ElementType::DrumPad && e.label.isNotEmpty()
                                     ? e.label : juce::String (padIdx + 1);
@@ -615,7 +1219,7 @@ namespace patchcraft
                     break;
             }
 
-            if (e.type == ElementType::Knob || e.type == ElementType::Slider)
+            if (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::MacroControl)
             {
                 const auto* def = project.getParameters().find (e.parameterId);
                 juce::String valueText;
@@ -642,16 +1246,265 @@ namespace patchcraft
             if (knobs[(int) i] != nullptr && e.visible && isElementOnCurrentTab (e))
             {
                 auto bounds = elementRect (e, m);
-                if (e.type == ElementType::Knob || e.type == ElementType::Slider)
+                if (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::MacroControl)
                     bounds.removeFromBottom (juce::jmax (20, bounds.getHeight() / 4));
+                bounds = animatedElementRect (e, bounds);
                 knobs[(int) i]->setBounds (bounds.reduced (2));
             }
         }
     }
 
+    bool StudioInstrumentRenderer::drumCellAt (const LayoutElement& element,
+                                               juce::Rectangle<int> r,
+                                               juce::Point<int> pos,
+                                               int& pattern,
+                                               int& track,
+                                               int& step,
+                                               float& velocity,
+                                               float& gate,
+                                               float& probability,
+                                               bool& active,
+                                               int& note,
+                                               int& divisions) const
+    {
+        const auto* block = findDrumMachineBlock (project.getDspGraph());
+        const int tracks = block != nullptr
+            ? juce::jlimit (1, 16, juce::roundToInt (blockValue (*block, "dmTracks", (float) element.drumTracks)))
+            : juce::jlimit (1, 16, element.drumTracks);
+        const int steps = block != nullptr
+            ? juce::jlimit (1, 64, juce::roundToInt (blockValue (*block, "dmSteps", (float) element.drumSteps)))
+            : juce::jlimit (1, 64, element.drumSteps);
+        pattern = block != nullptr
+            ? juce::jlimit (0, 7, juce::roundToInt (blockValue (*block, "dmPattern", (float) element.drumPattern)))
+            : juce::jlimit (0, 7, element.drumPattern);
+
+        auto area = r.reduced (8);
+        area.removeFromTop (28);
+        area.removeFromTop (4);
+        if (area.isEmpty())
+            return false;
+
+        const int labelW = juce::jlimit (42, 86, area.getWidth() / 5);
+        auto grid = area.withTrimmedLeft (labelW);
+        if (grid.isEmpty() || ! grid.contains (pos))
+            return false;
+
+        const float cellW = (float) grid.getWidth() / (float) steps;
+        const float cellH = (float) area.getHeight() / (float) tracks;
+        if (cellW <= 0.0f || cellH <= 0.0f)
+            return false;
+
+        step = juce::jlimit (0, steps - 1, (int) ((pos.x - grid.getX()) / cellW));
+        track = juce::jlimit (0, tracks - 1, (int) ((pos.y - area.getY()) / cellH));
+
+        const auto prefix = "dmP" + juce::String (pattern)
+                          + "T" + juce::String (track)
+                          + "S" + juce::String (step);
+        active = block != nullptr && blockValue (*block, prefix + "On", 0.0f) >= 0.5f;
+        gate = block != nullptr ? juce::jlimit (0.05f, 1.0f, blockValue (*block, prefix + "Gate", 0.35f)) : 0.35f;
+        probability = block != nullptr ? juce::jlimit (0.0f, 1.0f, blockValue (*block, prefix + "Prob", 1.0f)) : 1.0f;
+        divisions = block != nullptr
+            ? juce::jlimit (1, 4, juce::roundToInt (blockValue (*block, prefix + "Div", 1.0f)))
+            : 1;
+        note = block != nullptr
+            ? juce::jlimit (0, 127, juce::roundToInt (blockValue (*block, "dmTrack" + juce::String (track) + "Note", (float) (36 + track))))
+            : juce::jlimit (0, 127, 36 + track);
+
+        const auto trackTop = (float) area.getY() + (float) track * cellH;
+        const float localY = juce::jlimit (0.0f, 1.0f, ((float) pos.y - trackTop) / cellH);
+        velocity = juce::jlimit (0.08f, 1.0f, 1.0f - localY);
+        return true;
+    }
+
+    bool StudioInstrumentRenderer::handleDrumGridGesture (const juce::MouseEvent& event, bool drag)
+    {
+        const auto m = metrics();
+        const auto pos = event.getPosition();
+        for (auto it = elementsCopy.rbegin(); it != elementsCopy.rend(); ++it)
+        {
+            const auto& element = *it;
+            if (! element.visible || element.type != ElementType::DrumGrid || ! isElementOnCurrentTab (element))
+                continue;
+
+            const auto r = animatedElementRect (element, elementRect (element, m));
+            if (! r.contains (pos))
+                continue;
+
+            auto area = r.reduced (8);
+            auto header = area.removeFromTop (28);
+            auto playButton = header.removeFromRight (58).reduced (2);
+            auto bankStrip = header.removeFromRight (juce::jmin (224, header.getWidth() / 2)).reduced (2);
+
+            if (! drag && playButton.contains (pos))
+            {
+                if (onToggleTransport)
+                    onToggleTransport();
+                repaint (r);
+                return true;
+            }
+
+            if (! drag && bankStrip.contains (pos))
+            {
+                constexpr int bankCount = 8;
+                constexpr int bankGap = 3;
+                const int bankW = juce::jmax (16, (bankStrip.getWidth() - bankGap * (bankCount - 1)) / bankCount);
+                for (int bank = 0; bank < bankCount; ++bank)
+                {
+                    const auto chip = juce::Rectangle<int> (bankStrip.getX() + bank * (bankW + bankGap),
+                                                            bankStrip.getY(),
+                                                            bankW,
+                                                            bankStrip.getHeight()).reduced (0, 2);
+                    if (chip.contains (pos))
+                    {
+                        if (onSetDrumActivePattern)
+                            onSetDrumActivePattern (bank);
+                        repaint (r);
+                        return true;
+                    }
+                }
+            }
+
+            int pattern = -1;
+            int track = -1;
+            int step = -1;
+            int note = -1;
+            int divisions = 1;
+            float velocity = 0.8f;
+            float gate = 0.35f;
+            float probability = 1.0f;
+            bool active = false;
+            if (! drumCellAt (element, r, pos, pattern, track, step, velocity, gate, probability, active, note, divisions))
+                return true;
+
+            const bool cycleDivisions = event.mods.isCtrlDown() || event.mods.isCommandDown();
+            if (drag && ! drumGridDragActive)
+                return true;
+            if (drag
+                && pattern == lastDrumGridPattern
+                && track == lastDrumGridTrack
+                && step == lastDrumGridStep)
+                return true;
+
+            const bool newValue = cycleDivisions ? true : (drag ? drumGridPaintValue : ! active);
+            const int newDivisions = cycleDivisions ? (active ? (divisions >= 4 ? 1 : divisions + 1) : 2) : divisions;
+            drumGridDragActive = true;
+            drumGridPaintValue = newValue;
+            lastDrumGridPattern = pattern;
+            lastDrumGridTrack = track;
+            lastDrumGridStep = step;
+
+            if (onSetDrumPatternCell
+                && onSetDrumPatternCell (pattern, track, step, newValue, velocity, gate, probability, newDivisions))
+            {
+                if (newValue && note >= 0)
+                {
+                    if (onNoteOn)
+                        onNoteOn (note, velocity);
+                    juce::Timer::callAfterDelay (90,
+                        [safe = juce::Component::SafePointer<StudioInstrumentRenderer> (this), note]
+                        {
+                            if (auto* self = safe.getComponent())
+                                if (self->onNoteOff)
+                                    self->onNoteOff (note);
+                        });
+                }
+                repaint (r);
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    const LayoutElement* StudioInstrumentRenderer::findElementAt (juce::Point<int> position) const
+    {
+        const auto m = metrics();
+        for (auto it = elementsCopy.rbegin(); it != elementsCopy.rend(); ++it)
+        {
+            const auto& element = *it;
+            if (! element.visible || element.type == ElementType::Group)
+                continue;
+            if (! isElementOnCurrentTab (element))
+                continue;
+            if (animatedElementRect (element, elementRect (element, m)).contains (position))
+                return &element;
+        }
+
+        return nullptr;
+    }
+
+    void StudioInstrumentRenderer::showElementAnimationMenu (const LayoutElement& element,
+                                                             const juce::Point<int>& screenPos)
+    {
+        juce::PopupMenu menu;
+        menu.addSectionHeader (element.label.isNotEmpty() ? element.label : element.id);
+        menu.addItem (1, "None");
+        menu.addItem (2, "Breathe");
+        menu.addItem (3, "Pulse");
+        menu.addItem (4, "Glow");
+        menu.addItem (5, "Shake");
+        menu.addItem (6, "Audio Reactive Glow");
+
+        menu.showMenuAsync (juce::PopupMenu::Options()
+                                .withMinimumWidth (220)
+                                .withTargetScreenArea ({ screenPos.x, screenPos.y, 1, 1 }),
+            [this, elementId = element.id] (int result)
+            {
+                if (result < 1 || result > 6)
+                    return;
+
+                const auto apply = [result] (LayoutElement& el)
+                {
+                    el.animationRate = result == 5 ? 2.0f
+                                     : result == 2 ? 0.55f
+                                     : 1.0f;
+                    el.audioReactive = result == 6;
+                    el.audioReactiveMode = "level";
+                    el.audioReactiveAmount = result == 6 ? 0.85f : 0.35f;
+                    el.animationMode = result == 1 ? "none"
+                                     : result == 2 ? "breathe"
+                                     : result == 3 ? "pulse"
+                                     : result == 4 ? "glow"
+                                     : result == 5 ? "shake"
+                                     : "glow";
+                };
+
+                project.performLayoutEdit ("Assign visual automation",
+                    [elementId, apply] (LayoutModel& layout)
+                    {
+                        if (auto* el = layout.find (elementId))
+                            apply (*el);
+                    });
+
+                for (auto& el : elementsCopy)
+                    if (el.id == elementId)
+                    {
+                        apply (el);
+                        break;
+                    }
+
+                resized();
+                repaint();
+            });
+    }
+
     void StudioInstrumentRenderer::mouseDown (const juce::MouseEvent& e)
     {
+        if (e.mods.isPopupMenu())
+        {
+            if (const auto* element = findElementAt (e.getPosition()))
+                showElementAnimationMenu (*element, e.getScreenPosition());
+            return;
+        }
+
+        if (handleGranularGesture (e))
+            return;
+
         if (handleXYPadGesture (e))
+            return;
+
+        if (handleDrumGridGesture (e, false))
             return;
 
         auto m = metrics();
@@ -684,7 +1537,7 @@ namespace patchcraft
             auto& el = elementsCopy[i];
             if (! el.visible || ! isElementOnCurrentTab (el)) continue;
 
-            auto r = elementRect (el, m);
+            auto r = animatedElementRect (el, elementRect (el, m));
             if (! r.contains (e.getPosition())) continue;
 
             if (el.type == ElementType::TabPanel)
@@ -759,12 +1612,47 @@ namespace patchcraft
                     repaint (r);
                 }
             }
+            else if (el.type == ElementType::DrumPad || el.type == ElementType::PadGrid)
+            {
+                const int rows = el.type == ElementType::DrumPad ? 1 : juce::jlimit (1, 8, el.padRows);
+                const int cols = el.type == ElementType::DrumPad ? 1 : juce::jlimit (1, 8, el.padCols);
+                const int gap = el.type == ElementType::DrumPad ? 0 : 4;
+                const auto inner = el.type == ElementType::PadGrid ? r.reduced (4) : r;
+                if (inner.isEmpty() || ! inner.contains (e.getPosition()))
+                    return;
+
+                const float padW = (float) (inner.getWidth() - gap * (cols - 1)) / (float) cols;
+                const float padH = (float) (inner.getHeight() - gap * (rows - 1)) / (float) rows;
+                if (padW <= 0.0f || padH <= 0.0f)
+                    return;
+
+                const int col = juce::jlimit (0, cols - 1, (int) ((e.x - inner.getX()) / (padW + gap)));
+                const int row = juce::jlimit (0, rows - 1, (int) ((e.y - inner.getY()) / (padH + gap)));
+                const int note = juce::jlimit (0, 127, el.padBaseNote + row * cols + col);
+                const float yNorm = juce::jlimit (0.0f, 1.0f,
+                    (float) (e.y - inner.getY()) / (float) juce::jmax (1, inner.getHeight()));
+                const float velocity = juce::jlimit (0.2f, 1.0f, 0.4f + yNorm * 0.6f);
+
+                if (lastPlayedNote >= 0 && lastPlayedNote != note && onNoteOff)
+                    onNoteOff (lastPlayedNote);
+                lastPlayedNote = note;
+                if (onNoteOn)
+                    onNoteOn (note, velocity);
+                repaint (r);
+                return;
+            }
         }
     }
 
     void StudioInstrumentRenderer::mouseDrag (const juce::MouseEvent& e)
     {
+        if (handleGranularGesture (e))
+            return;
+
         if (handleXYPadGesture (e))
+            return;
+
+        if (handleDrumGridGesture (e, true))
             return;
 
         if (lastPlayedNote < 0) return;
@@ -773,11 +1661,37 @@ namespace patchcraft
         for (size_t i = 0; i < elementsCopy.size(); ++i)
         {
             auto& el = elementsCopy[i];
-            if (el.type != ElementType::Keyboard) continue;
+            if (el.type != ElementType::Keyboard
+                && el.type != ElementType::DrumPad
+                && el.type != ElementType::PadGrid) continue;
             if (! el.visible || ! isElementOnCurrentTab (el)) continue;
 
-            auto r = elementRect (el, m);
-            int note = hitKeyboardNote (r, e.getPosition());
+            auto r = animatedElementRect (el, elementRect (el, m));
+            int note = -1;
+            float velocity = 0.8f;
+            if (el.type == ElementType::Keyboard)
+            {
+                note = hitKeyboardNote (r, e.getPosition());
+            }
+            else
+            {
+                const int rows = el.type == ElementType::DrumPad ? 1 : juce::jlimit (1, 8, el.padRows);
+                const int cols = el.type == ElementType::DrumPad ? 1 : juce::jlimit (1, 8, el.padCols);
+                const int gap = el.type == ElementType::DrumPad ? 0 : 4;
+                const auto inner = el.type == ElementType::PadGrid ? r.reduced (4) : r;
+                if (! inner.contains (e.getPosition()))
+                    continue;
+                const float padW = (float) (inner.getWidth() - gap * (cols - 1)) / (float) cols;
+                const float padH = (float) (inner.getHeight() - gap * (rows - 1)) / (float) rows;
+                if (padW <= 0.0f || padH <= 0.0f)
+                    continue;
+                const int col = juce::jlimit (0, cols - 1, (int) ((e.x - inner.getX()) / (padW + gap)));
+                const int row = juce::jlimit (0, rows - 1, (int) ((e.y - inner.getY()) / (padH + gap)));
+                note = juce::jlimit (0, 127, el.padBaseNote + row * cols + col);
+                const float yNorm = juce::jlimit (0.0f, 1.0f,
+                    (float) (e.y - inner.getY()) / (float) juce::jmax (1, inner.getHeight()));
+                velocity = juce::jlimit (0.2f, 1.0f, 0.4f + yNorm * 0.6f);
+            }
             if (note >= 0 && note != lastPlayedNote)
             {
                 // Release previous note
@@ -786,7 +1700,7 @@ namespace patchcraft
 
                 lastPlayedNote = note;
                 if (onNoteOn)
-                    onNoteOn (note, 0.8f);
+                    onNoteOn (note, velocity);
                 repaint (r);
             }
         }
@@ -800,6 +1714,11 @@ namespace patchcraft
             lastPlayedNote = -1;
             repaint();
         }
+
+        drumGridDragActive = false;
+        lastDrumGridPattern = -1;
+        lastDrumGridTrack = -1;
+        lastDrumGridStep = -1;
     }
 
     bool StudioInstrumentRenderer::handleXYPadGesture (const juce::MouseEvent& e)
@@ -829,15 +1748,166 @@ namespace patchcraft
         return false;
     }
 
+    bool StudioInstrumentRenderer::handleGranularGesture (const juce::MouseEvent& e)
+    {
+        auto m = metrics();
+        const auto position = e.getPosition();
+        for (auto it = elementsCopy.rbegin(); it != elementsCopy.rend(); ++it)
+        {
+            auto& el = *it;
+            if (! el.visible || el.type != ElementType::GranularField || ! isElementOnCurrentTab (el))
+                continue;
+
+            auto r = animatedElementRect (el, elementRect (el, m));
+            if (! r.contains (position))
+                continue;
+
+            auto setParameter = [this] (const juce::String& parameterId, float value)
+            {
+                auto* def = project.getParameters().find (parameterId);
+                if (def == nullptr)
+                    return false;
+
+                if (def->enabledBy == "granularOn")
+                {
+                    if (auto* gate = project.getParameters().find ("granularOn"))
+                        project.getLiveValues().setValue ("granularOn", gate->max);
+                }
+
+                project.getLiveValues().setValue (parameterId, juce::jlimit (def->min, def->max, value));
+                return true;
+            };
+
+            bool changed = false;
+            if (project.getParameters().find ("granularOn") != nullptr)
+                changed = setParameter ("granularOn", 1.0f) || changed;
+
+            auto controlArea = r.reduced (12, 10);
+            controlArea.removeFromTop (22);
+            controlArea.removeFromTop (4);
+            if (controlArea.getHeight() < 60 || controlArea.getWidth() < 160)
+                return true;
+
+            auto chipArea = controlArea.removeFromBottom (24);
+            controlArea.removeFromBottom (4);
+            const juce::StringArray chips { "FWD", "REV", "PING", "MULTI", "FREEZE" };
+            if (chipArea.contains (position))
+            {
+                const int chipGap = 5;
+                const int chipW = juce::jmax (48, (chipArea.getWidth() - chipGap * (chips.size() - 1)) / chips.size());
+                for (int chipIndex = 0; chipIndex < chips.size(); ++chipIndex)
+                {
+                    auto chip = juce::Rectangle<int> (chipArea.getX() + chipIndex * (chipW + chipGap),
+                                                      chipArea.getY(), chipW, chipArea.getHeight()).reduced (1);
+                    if (! chip.contains (position))
+                        continue;
+
+                    if (chipIndex < 4)
+                        changed = setParameter ("granularDirection", (float) chipIndex) || changed;
+                    else
+                    {
+                        const auto current = project.getLiveValues().getValue ("granularFreeze", 0.0f);
+                        changed = setParameter ("granularFreeze", current >= 0.5f ? 0.0f : 1.0f) || changed;
+                    }
+
+                    if (changed)
+                        repaint (r.expanded (2));
+                    return true;
+                }
+            }
+
+            const auto inner = controlArea;
+            const float x = juce::jlimit (0.0f, 1.0f,
+                (float) (position.x - inner.getX()) / (float) juce::jmax (1, inner.getWidth()));
+            const float y = juce::jlimit (0.0f, 1.0f,
+                (float) (position.y - inner.getY()) / (float) juce::jmax (1, inner.getHeight()));
+
+            if (e.mods.isShiftDown())
+            {
+                changed = setParameter ("granularScan", juce::jmap (x, 0.0f, 1.0f, -3.0f, 3.0f)) || changed;
+                changed = setParameter ("granularSpread", 1.0f - y) || changed;
+            }
+            else if (e.mods.isCommandDown() || e.mods.isCtrlDown())
+            {
+                changed = setParameter ("granularDirection", (float) juce::jlimit (0, 3, (int) std::floor (x * 4.0f))) || changed;
+                changed = setParameter ("granularReverse", 1.0f - y) || changed;
+            }
+            else if (e.mods.isAltDown())
+            {
+                changed = setParameter ("granularPitchSpread", juce::jmap (x, 0.0f, 1.0f, 0.0f, 36.0f)) || changed;
+                changed = setParameter ("granularPanSpread", 1.0f - y) || changed;
+            }
+            else
+            {
+                changed = setParameter ("sampleStart", x) || changed;
+                changed = setParameter ("sampleLength", juce::jmap (1.0f - y, 0.0f, 1.0f, 0.01f, 1.0f)) || changed;
+            }
+
+            if (changed)
+                repaint (r.expanded (2));
+            return true;
+        }
+        return false;
+    }
+
+    bool StudioInstrumentRenderer::advanceGranularFields()
+    {
+        const double now = juce::Time::getMillisecondCounterHiRes() * 0.001;
+        if (lastGranularAdvanceSeconds <= 0.0)
+        {
+            lastGranularAdvanceSeconds = now;
+            return false;
+        }
+
+        const float dt = juce::jlimit (0.0f, 0.10f, (float) (now - lastGranularAdvanceSeconds));
+        lastGranularAdvanceSeconds = now;
+        if (dt <= 0.0f)
+            return false;
+
+        bool changed = false;
+        for (const auto& element : elementsCopy)
+        {
+            if (! element.visible || element.type != ElementType::GranularField || ! isElementOnCurrentTab (element))
+                continue;
+
+            const auto* startDef = project.getParameters().find ("sampleStart");
+            if (startDef == nullptr)
+                continue;
+
+            const float on = project.getLiveValues().getValue ("granularOn", 0.0f);
+            const float freeze = project.getLiveValues().getValue ("granularFreeze", 0.0f);
+            const float scan = project.getLiveValues().getValue ("granularScan", 0.0f);
+            if (on < 0.5f || freeze >= 0.5f || std::abs (scan) < 0.0001f)
+                continue;
+
+            float next = project.getLiveValues().getValue ("sampleStart", startDef->defaultValue)
+                       + scan * dt * 0.055f;
+            next -= std::floor (next);
+            project.getLiveValues().setValue ("sampleStart", juce::jlimit (startDef->min, startDef->max, next));
+            changed = true;
+        }
+        return changed;
+    }
+
     void StudioInstrumentRenderer::timerCallback()
     {
+        if (advanceGranularFields())
+        {
+            repaint();
+            return;
+        }
+
         for (const auto& item : elementsCopy)
         {
             if (! item.visible || ! isElementOnCurrentTab (item))
                 continue;
             if ((item.animationMode.isNotEmpty() && item.animationMode != "none")
-                || item.audioReactive)
+                || item.audioReactive
+                || item.type == ElementType::GranularField
+                || item.type == ElementType::SpectrumAnalyzer)
             {
+                if (item.animationMode.isNotEmpty() && item.animationMode != "none")
+                    resized();
                 repaint();
                 return;
             }
@@ -846,41 +1916,30 @@ namespace patchcraft
 
     int StudioInstrumentRenderer::hitKeyboardNote (juce::Rectangle<int> r, juce::Point<int> p) const
     {
-        // Check black keys first (they're on top)
-        int numWhiteKeys = 28;
-        int whiteKeyW = r.getWidth() / numWhiteKeys;
-        int blackKeyW = (int)(whiteKeyW * 0.6f);
-        int blackKeyH = (int)(r.getHeight() * 0.65f);
+        const auto whiteNotes = pianoWhiteNotes();
+        const auto bounds = r.reduced (6, 6).toFloat();
+        const float whiteKeyW = bounds.getWidth() / (float) whiteNotes.size();
+        const float blackKeyW = whiteKeyW * 0.62f;
+        const float blackKeyH = bounds.getHeight() * 0.62f;
 
-        // Check black keys
-        int note = 0;
-        for (int i = 0; i < numWhiteKeys; ++i)
+        for (int midiNote = kPianoFirstMidiNote; midiNote <= kPianoLastMidiNote; ++midiNote)
         {
-            int n = note % 12;
-            if (n == 1 || n == 3 || n == 6 || n == 8 || n == 10)
-            {
-                int x = r.getX() + i * whiteKeyW - blackKeyW / 2;
-                juce::Rectangle<int> blackKey (x, r.getY(), blackKeyW, blackKeyH);
-                if (blackKey.contains (p))
-                    return 48 + note; // Start at C3 (MIDI note 48)
-            }
-            if (n == 3 || n == 10)
-                note += 2;
-            else
-                note += 1;
+            if (! isBlackPianoKey (midiNote))
+                continue;
+
+            const float x = bounds.getX() + (float) whiteNotesBefore (midiNote) * whiteKeyW - blackKeyW * 0.5f;
+            if (x < bounds.getX() - 1.0f || x + blackKeyW > bounds.getRight() + 1.0f)
+                continue;
+
+            if (juce::Rectangle<float> (x, bounds.getY(), blackKeyW, blackKeyH).contains (p.toFloat()))
+                return midiNote;
         }
 
-        // Check white keys
-        int whiteKeyIdx = (p.x - r.getX()) / whiteKeyW;
-        if (whiteKeyIdx >= 0 && whiteKeyIdx < numWhiteKeys)
-        {
-            // Calculate MIDI note from white key index
-            // White keys are: C, D, E, F, G, A, B (0, 2, 4, 5, 7, 9, 11 in semitones)
-            int octave = whiteKeyIdx / 7;
-            int whiteInOctave = whiteKeyIdx % 7;
-            int whiteOffsets[] = { 0, 2, 4, 5, 7, 9, 11 };
-            return 48 + octave * 12 + whiteOffsets[whiteInOctave];
-        }
+        for (int i = 0; i < (int) whiteNotes.size(); ++i)
+            if (juce::Rectangle<float> (bounds.getX() + (float) i * whiteKeyW, bounds.getY(),
+                                        whiteKeyW - 1.0f, bounds.getHeight()).contains (p.toFloat()))
+                return whiteNotes[(size_t) i];
+
         return -1;
     }
 
@@ -903,14 +1962,15 @@ namespace patchcraft
 
     void StudioInstrumentRenderer::drawMeter (juce::Graphics& g, juce::Rectangle<int> r) const
     {
+        const auto bounds = r;
         g.setColour (PatchCraftLookAndFeel::panel());
-        g.fillRect (r);
+        g.fillRect (bounds);
         g.setColour (PatchCraftLookAndFeel::accent());
-        float level = 0.7f; // TODO: Connect to actual audio level
-        int fillH = (int) (r.getHeight() * level);
+        const float level = audioReactiveLevel.load (std::memory_order_relaxed);
+        int fillH = (int) (bounds.getHeight() * level);
         g.fillRect (r.removeFromBottom (fillH));
         g.setColour (PatchCraftLookAndFeel::text());
-        g.drawRect (r, 1);
+        g.drawRect (bounds, 1);
     }
 
     void StudioInstrumentRenderer::drawPanel (juce::Graphics& g, juce::Rectangle<int> r, const juce::String& label) const
@@ -934,63 +1994,82 @@ namespace patchcraft
         g.drawRect (r, 1);
         g.setFont (12.0f);
         g.drawText (display, r.reduced (4), juce::Justification::centredLeft, true);
-        g.drawText ("\u25BC", r.reduced (4), juce::Justification::centredRight, true); // Down arrow
+        g.drawText ("v", r.reduced (4), juce::Justification::centredRight, true);
     }
 
     void StudioInstrumentRenderer::drawKeyboard (juce::Graphics& g, juce::Rectangle<int> r) const
     {
-        // Draw simple piano keyboard visualization
-        int numWhiteKeys = 28;
-        int whiteKeyW = r.getWidth() / numWhiteKeys;
-        int blackKeyW = whiteKeyW * 0.6f;
-        int blackKeyH = r.getHeight() * 0.65f;
+        const auto whiteNotes = pianoWhiteNotes();
+        const auto body = r.toFloat();
+        const auto bounds = r.reduced (6, 6).toFloat();
+        const float whiteKeyW = bounds.getWidth() / (float) whiteNotes.size();
+        const float blackKeyW = whiteKeyW * 0.62f;
+        const float blackKeyH = bounds.getHeight() * 0.62f;
 
-        g.setColour (juce::Colours::white);
-        for (int i = 0; i < numWhiteKeys; ++i)
+        g.setColour (juce::Colour (0xff05060a).withAlpha (0.94f));
+        g.fillRoundedRectangle (body, 8.0f);
+        g.setColour (PatchCraftLookAndFeel::border().withAlpha (0.78f));
+        g.drawRoundedRectangle (body.reduced (0.5f), 8.0f, 1.0f);
+
+        for (int i = 0; i < (int) whiteNotes.size(); ++i)
         {
-            int x = r.getX() + i * whiteKeyW;
-            g.fillRect (x, r.getY(), whiteKeyW - 1, r.getHeight());
+            const auto key = juce::Rectangle<float> (bounds.getX() + (float) i * whiteKeyW,
+                                                     bounds.getY(),
+                                                     whiteKeyW - 1.0f,
+                                                     bounds.getHeight());
+            g.setGradientFill (juce::ColourGradient (juce::Colour (0xfff2ead9), key.getX(), key.getY(),
+                                                     juce::Colour (0xffd8c8aa), key.getX(), key.getBottom(), false));
+            g.fillRoundedRectangle (key, 1.2f);
+            g.setColour (juce::Colour (0xff7d705d));
+            g.drawRoundedRectangle (key, 1.2f, 0.45f);
         }
 
-        // Black keys
-        g.setColour (juce::Colours::black);
-        int note = 0;
-        for (int i = 0; i < numWhiteKeys; ++i)
+        for (int midiNote = kPianoFirstMidiNote; midiNote <= kPianoLastMidiNote; ++midiNote)
         {
-            int n = note % 12;
-            if (n == 1 || n == 3 || n == 6 || n == 8 || n == 10)
-            {
-                int x = r.getX() + i * whiteKeyW - blackKeyW / 2;
-                g.fillRect (x, r.getY(), blackKeyW, blackKeyH);
-            }
-            if (n == 3 || n == 10)
-                note += 2; // Skip C# and F#
-            else
-                note += 1;
+            if (! isBlackPianoKey (midiNote))
+                continue;
+
+            const float x = bounds.getX() + (float) whiteNotesBefore (midiNote) * whiteKeyW - blackKeyW * 0.5f;
+            if (x < bounds.getX() - 1.0f || x + blackKeyW > bounds.getRight() + 1.0f)
+                continue;
+
+            const auto key = juce::Rectangle<float> (x, bounds.getY(), blackKeyW, blackKeyH);
+            g.setGradientFill (juce::ColourGradient (juce::Colour (0xff202226), key.getX(), key.getY(),
+                                                     juce::Colour (0xff050507), key.getX(), key.getBottom(), false));
+            g.fillRoundedRectangle (key, 1.4f);
+            g.setColour (juce::Colour (0xff050505));
+            g.drawRoundedRectangle (key, 1.4f, 0.55f);
         }
     }
 
     void StudioInstrumentRenderer::drawTabPanel (juce::Graphics& g, juce::Rectangle<int> r, const LayoutElement& e) const
     {
-        if (e.tabs.isEmpty()) return;
+        const int n = juce::jmax (1, e.tabs.size());
+        const float tabW = (float) r.getWidth() / (float) n;
 
-        int tabW = r.getWidth() / (int) e.tabs.size();
-        for (int i = 0; i < e.tabs.size(); ++i)
+        for (int i = 0; i < n; ++i)
         {
-            auto tabR = r.removeFromLeft (tabW);
-            const auto group = scopedTabGroupId (e, e.tabs[i]);
+            const auto label = i < e.tabs.size() ? e.tabs[i] : juce::String ("Tab");
+            const auto group = scopedTabGroupId (e, label);
             const auto found = activeTabGroupsByPanel.find (e.id);
             const auto activeGroup = found != activeTabGroupsByPanel.end()
                 ? found->second
                 : (e.id == "tabs" ? currentTabGroup
-                                   : scopedTabGroupId (e, e.tabs[0]));
-            bool active = (group == activeGroup);
-            g.setColour (active ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::panel());
-            g.fillRect (tabR);
-            g.setColour (PatchCraftLookAndFeel::text());
-            g.drawRect (tabR, 1);
-            g.setFont (12.0f);
-            g.drawText (e.tabs[i], tabR, juce::Justification::centred, true);
+                                   : (e.tabs.isEmpty() ? juce::String() : scopedTabGroupId (e, e.tabs[0])));
+            const bool active = (group == activeGroup);
+            const float x = r.getX() + (float) i * tabW;
+            juce::Rectangle<float> tabRect (x, (float) r.getY(), tabW, (float) r.getHeight());
+
+            g.setColour (active ? PatchCraftLookAndFeel::textBright()
+                                : juce::Colour (0xffb8bcc4));
+            g.setFont (juce::Font (juce::jmax (10.0f, tabRect.getHeight() * 0.42f), juce::Font::bold));
+            g.drawText (label.toUpperCase(), tabRect.toNearestInt(), juce::Justification::centred, true);
+
+            if (active)
+            {
+                g.setColour (PatchCraftLookAndFeel::accent());
+                g.fillRect (tabRect.removeFromBottom (2.0f).toNearestInt());
+            }
         }
     }
 
@@ -1027,6 +2106,25 @@ namespace patchcraft
             return;
         }
 
+        if (e.type == ElementType::MacroControl)
+        {
+            g.setColour (fill);
+            g.fillRoundedRectangle (r.toFloat(), juce::jmax (5.0f, e.cornerRadius));
+            g.setColour (border);
+            g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (5.0f, e.cornerRadius), 1.0f);
+            r = r.reduced (8, 6);
+            auto title = r.removeFromTop (18);
+            g.setColour (accent);
+            g.setFont (juce::Font (10.5f, juce::Font::bold));
+            g.drawText ((e.label.isNotEmpty() ? e.label : "Macro").toUpperCase(),
+                        title, juce::Justification::centredLeft, true);
+            r.removeFromTop (2);
+        }
+
+        juce::Rectangle<int> macroLanes;
+        if (e.type == ElementType::MacroControl && r.getWidth() > 118)
+            macroLanes = r.removeFromRight (juce::jmax (58, r.getWidth() / 2)).reduced (4, 2);
+
         auto dial = r.withSizeKeepingCentre (juce::jmin (r.getWidth(), r.getHeight()),
                                              juce::jmin (r.getWidth(), r.getHeight())).toFloat().reduced (3.0f);
         g.setColour (juce::Colours::black.withAlpha (0.25f));
@@ -1054,6 +2152,29 @@ namespace patchcraft
                     centre.x + std::cos (angle) * radius,
                     centre.y + std::sin (angle) * radius,
                     juce::jmax (1.0f, dial.getWidth() * 0.04f));
+
+        if (e.type == ElementType::MacroControl && ! macroLanes.isEmpty())
+        {
+            juce::StringArray targets;
+            for (const auto& macro : project.getDspGraph().macros)
+                if (macro.macroId == e.parameterId)
+                    targets.add (macro.targetId);
+
+            if (targets.isEmpty())
+                targets.addArray ({ "No routes", "Select in Inspector", "Add target", "Apply" });
+
+            for (int i = 0; i < juce::jmin (4, targets.size()); ++i)
+            {
+                auto row = macroLanes.removeFromTop (juce::jmax (14, macroLanes.getHeight() / (4 - i))).reduced (0, 2);
+                g.setColour (PatchCraftLookAndFeel::bg().withAlpha (0.72f));
+                g.fillRoundedRectangle (row.toFloat(), 3.0f);
+                g.setColour (targets[i] == "No routes" ? border.withAlpha (0.35f) : accent.withAlpha (0.62f));
+                g.fillRoundedRectangle (row.withWidth (juce::roundToInt ((float) row.getWidth() * norm)).toFloat(), 3.0f);
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (juce::Font (8.0f, juce::Font::bold));
+                g.drawText (targets[i], row.reduced (4, 0), juce::Justification::centredLeft, true);
+            }
+        }
     }
 
     int StudioInstrumentRenderer::hitTabIndex (const LayoutElement& e, juce::Rectangle<int> r, juce::Point<int> p) const

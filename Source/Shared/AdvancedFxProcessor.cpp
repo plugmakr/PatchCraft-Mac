@@ -17,6 +17,20 @@ namespace patchcraft
         {
             return juce::jlimit (-4.0f, 4.0f, x) / (1.0f + std::abs (x) * 0.15f);
         }
+
+        static float nextSignedNoise (std::uint32_t& state)
+        {
+            state = state * 1664525u + 1013904223u;
+            return ((float) ((state >> 8) & 0x00ffffffu) / 8388607.5f) - 1.0f;
+        }
+
+        static float onePoleAlpha (float frequency, double sampleRate)
+        {
+            const auto sr = RenderContext::sanitiseSampleRate (sampleRate);
+            return juce::jlimit (0.001f, 0.99f,
+                                 1.0f - (float) std::exp (-2.0 * juce::MathConstants<double>::pi
+                                                          * (double) juce::jlimit (20.0f, 20000.0f, frequency) / sr));
+        }
     }
 
     void AdvancedFxProcessor::prepare (double sr, int maxBlockSize, int numChannels)
@@ -25,20 +39,33 @@ namespace patchcraft
         blockSize = juce::jmax (1, maxBlockSize);
         channels = juce::jmax (1, numChannels);
         maxCombDelaySamples = juce::jmax (64, (int) sampleRate);
+        maxMultiTapDelaySamples = juce::jmax (512, (int) (sampleRate * 2.0));
 
         juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) blockSize, (juce::uint32) channels };
         chorus.prepare (spec);
         phaser.prepare (spec);
         resonator.prepare (spec);
         resonator.setType (juce::dsp::StateVariableTPTFilterType::bandpass);
+        vocalFormantA.prepare (spec);
+        vocalFormantB.prepare (spec);
+        vocalFormantA.setType (juce::dsp::StateVariableTPTFilterType::bandpass);
+        vocalFormantB.setType (juce::dsp::StateVariableTPTFilterType::bandpass);
 
         scratchBuffer.setSize (channels, blockSize, false, false, true);
+        formantScratchBuffer.setSize (channels, blockSize, false, false, true);
         dynamicsEnvelope.assign ((size_t) channels, 0.0f);
         spectralLowState.assign ((size_t) channels, 0.0f);
+        tapeToneState.assign ((size_t) channels, 0.0f);
+        vinylToneState.assign ((size_t) channels, 0.0f);
+        lofiHeld.assign ((size_t) channels, 0.0f);
+        lofiCounters.assign ((size_t) channels, 0);
         combLines.assign ((size_t) channels, std::vector<float> ((size_t) maxCombDelaySamples, 0.0f));
         combWriteIndices.assign ((size_t) channels, 0);
+        multiTapLines.assign ((size_t) channels, std::vector<float> ((size_t) maxMultiTapDelaySamples, 0.0f));
+        multiTapWriteIndices.assign ((size_t) channels, 0);
         convolutionState.assign ((size_t) channels, {});
         convolutionWriteIndices.assign ((size_t) channels, 0);
+        modulationPhase = 0.0;
     }
 
     void AdvancedFxProcessor::reset()
@@ -46,14 +73,24 @@ namespace patchcraft
         chorus.reset();
         phaser.reset();
         resonator.reset();
+        vocalFormantA.reset();
+        vocalFormantB.reset();
         std::fill (dynamicsEnvelope.begin(), dynamicsEnvelope.end(), 0.0f);
         std::fill (spectralLowState.begin(), spectralLowState.end(), 0.0f);
+        std::fill (tapeToneState.begin(), tapeToneState.end(), 0.0f);
+        std::fill (vinylToneState.begin(), vinylToneState.end(), 0.0f);
+        std::fill (lofiHeld.begin(), lofiHeld.end(), 0.0f);
+        std::fill (lofiCounters.begin(), lofiCounters.end(), 0);
         for (auto& line : combLines)
             std::fill (line.begin(), line.end(), 0.0f);
         std::fill (combWriteIndices.begin(), combWriteIndices.end(), 0);
+        for (auto& line : multiTapLines)
+            std::fill (line.begin(), line.end(), 0.0f);
+        std::fill (multiTapWriteIndices.begin(), multiTapWriteIndices.end(), 0);
         for (auto& state : convolutionState)
             state.fill (0.0f);
         std::fill (convolutionWriteIndices.begin(), convolutionWriteIndices.end(), 0);
+        modulationPhase = 0.0;
     }
 
     bool AdvancedFxProcessor::setParameter (const juce::String& id, float value)
@@ -82,6 +119,24 @@ namespace patchcraft
         else if (id == "convolutionMix") atomics.convolutionMix      = value;
         else if (id == "spectralTilt")   atomics.spectralTilt        = value;
         else if (id == "spectralMix")    atomics.spectralMix         = value;
+        else if (id == "tapeDrive")      atomics.tapeDrive           = value;
+        else if (id == "tapeTone")       atomics.tapeTone            = value;
+        else if (id == "tapeFlutter")    atomics.tapeFlutter         = value;
+        else if (id == "tapeMix")        atomics.tapeMix             = value;
+        else if (id == "vinylAge")       atomics.vinylAge            = value;
+        else if (id == "vinylDust")      atomics.vinylDust           = value;
+        else if (id == "vinylWarp")      atomics.vinylWarp           = value;
+        else if (id == "vinylMix")       atomics.vinylMix            = value;
+        else if (id == "lofiBits")       atomics.lofiBits            = value;
+        else if (id == "lofiRate")       atomics.lofiRate            = value;
+        else if (id == "lofiMix")        atomics.lofiMix             = value;
+        else if (id == "vocalFormant")   atomics.vocalFormant        = value;
+        else if (id == "vocalBody")      atomics.vocalBody           = value;
+        else if (id == "vocalMix")       atomics.vocalMix            = value;
+        else if (id == "multiTapTime")   atomics.multiTapTime        = value;
+        else if (id == "multiTapFeedback") atomics.multiTapFeedback  = value;
+        else if (id == "multiTapSpread") atomics.multiTapSpread      = value;
+        else if (id == "multiTapMix")    atomics.multiTapMix         = value;
         else return false;
 
         return true;
@@ -95,17 +150,28 @@ namespace patchcraft
         const int numChans = buffer.getNumChannels();
         if (scratchBuffer.getNumChannels() < numChans || scratchBuffer.getNumSamples() < numSamples)
             scratchBuffer.setSize (numChans, juce::jmax (numSamples, blockSize), false, false, true);
+        if (formantScratchBuffer.getNumChannels() < numChans || formantScratchBuffer.getNumSamples() < numSamples)
+            formantScratchBuffer.setSize (numChans, juce::jmax (numSamples, blockSize), false, false, true);
         if ((int) dynamicsEnvelope.size() < numChans)
         {
             dynamicsEnvelope.resize ((size_t) numChans, 0.0f);
             spectralLowState.resize ((size_t) numChans, 0.0f);
+            tapeToneState.resize ((size_t) numChans, 0.0f);
+            vinylToneState.resize ((size_t) numChans, 0.0f);
+            lofiHeld.resize ((size_t) numChans, 0.0f);
+            lofiCounters.resize ((size_t) numChans, 0);
             combLines.resize ((size_t) numChans);
             combWriteIndices.resize ((size_t) numChans, 0);
+            multiTapLines.resize ((size_t) numChans);
+            multiTapWriteIndices.resize ((size_t) numChans, 0);
             convolutionState.resize ((size_t) numChans);
             convolutionWriteIndices.resize ((size_t) numChans, 0);
             for (auto& line : combLines)
                 if ((int) line.size() < maxCombDelaySamples)
                     line.assign ((size_t) maxCombDelaySamples, 0.0f);
+            for (auto& line : multiTapLines)
+                if ((int) line.size() < maxMultiTapDelaySamples)
+                    line.assign ((size_t) maxMultiTapDelaySamples, 0.0f);
         }
 
         const float dynMix = juce::jlimit (0.0f, 1.0f, atomics.dynamicsMix.load());
@@ -136,6 +202,100 @@ namespace patchcraft
             }
         }
 
+        const float tapeMix = juce::jlimit (0.0f, 1.0f, atomics.tapeMix.load());
+        if (tapeMix > 0.0001f)
+        {
+            const float drive = 1.0f + juce::jlimit (0.0f, 1.0f, atomics.tapeDrive.load()) * 7.0f;
+            const float tone = juce::jlimit (0.0f, 1.0f, atomics.tapeTone.load());
+            const float alpha = onePoleAlpha (900.0f + tone * 15000.0f, sampleRate);
+            const float flutterDepth = juce::jlimit (0.0f, 1.0f, atomics.tapeFlutter.load()) * 0.018f;
+            const double phaseDelta = 2.0 * juce::MathConstants<double>::pi * 0.43 / sampleRate;
+            const float norm = juce::jmax (0.2f, std::tanh (drive));
+
+            for (int ch = 0; ch < numChans; ++ch)
+            {
+                auto* data = buffer.getWritePointer (ch, startSample);
+                auto& toneState = tapeToneState[(size_t) ch];
+                double localPhase = modulationPhase + (double) ch * 0.37;
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    const float input = data[i];
+                    const float flutter = 1.0f + flutterDepth * ((float) std::sin (localPhase)
+                                                                 + 0.45f * (float) std::sin (localPhase * 2.31 + 1.7));
+                    const float saturated = std::tanh (input * drive * flutter) / norm;
+                    toneState += alpha * (saturated - toneState);
+                    const float wet = toneState + (saturated - toneState) * (0.30f + tone * 0.70f);
+                    data[i] = input * (1.0f - tapeMix) + wet * tapeMix;
+                    localPhase += phaseDelta;
+                    if (localPhase > juce::MathConstants<double>::twoPi)
+                        localPhase -= juce::MathConstants<double>::twoPi;
+                }
+            }
+            modulationPhase += phaseDelta * (double) numSamples;
+            while (modulationPhase > juce::MathConstants<double>::twoPi)
+                modulationPhase -= juce::MathConstants<double>::twoPi;
+        }
+
+        const float vinylMix = juce::jlimit (0.0f, 1.0f, atomics.vinylMix.load());
+        if (vinylMix > 0.0001f)
+        {
+            const float age = juce::jlimit (0.0f, 1.0f, atomics.vinylAge.load());
+            const float dust = juce::jlimit (0.0f, 1.0f, atomics.vinylDust.load());
+            const float warp = juce::jlimit (0.0f, 1.0f, atomics.vinylWarp.load());
+            const float alpha = onePoleAlpha (18000.0f - age * 14500.0f, sampleRate);
+            const double phaseDelta = 2.0 * juce::MathConstants<double>::pi * (0.18 + warp * 0.55) / sampleRate;
+
+            for (int ch = 0; ch < numChans; ++ch)
+            {
+                auto* data = buffer.getWritePointer (ch, startSample);
+                auto& toneState = vinylToneState[(size_t) ch];
+                double localPhase = modulationPhase + (double) ch * 0.19;
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    const float input = data[i];
+                    toneState += alpha * (input - toneState);
+                    float crackle = nextSignedNoise (randomState) * dust * 0.006f;
+                    const float impulseGate = (nextSignedNoise (randomState) + 1.0f) * 0.5f;
+                    if (impulseGate > 1.0f - dust * dust * 0.020f)
+                        crackle += nextSignedNoise (randomState) * dust * 0.12f;
+                    const float wobble = 1.0f + warp * 0.045f * (float) std::sin (localPhase);
+                    const float wet = softLimit (toneState * wobble * (1.0f - age * 0.10f) + crackle);
+                    data[i] = input * (1.0f - vinylMix) + wet * vinylMix;
+                    localPhase += phaseDelta;
+                    if (localPhase > juce::MathConstants<double>::twoPi)
+                        localPhase -= juce::MathConstants<double>::twoPi;
+                }
+            }
+            modulationPhase += phaseDelta * (double) numSamples;
+            while (modulationPhase > juce::MathConstants<double>::twoPi)
+                modulationPhase -= juce::MathConstants<double>::twoPi;
+        }
+
+        const float lofiMix = juce::jlimit (0.0f, 1.0f, atomics.lofiMix.load());
+        if (lofiMix > 0.0001f)
+        {
+            const float bits = juce::jlimit (4.0f, 16.0f, atomics.lofiBits.load());
+            const int holdSamples = juce::jlimit (1, 128, 1 + juce::roundToInt (juce::jlimit (0.0f, 1.0f, atomics.lofiRate.load()) * 96.0f));
+            const float levels = std::pow (2.0f, bits - 1.0f);
+            for (int ch = 0; ch < numChans; ++ch)
+            {
+                auto* data = buffer.getWritePointer (ch, startSample);
+                auto& held = lofiHeld[(size_t) ch];
+                auto& counter = lofiCounters[(size_t) ch];
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    const float input = data[i];
+                    if (counter <= 0)
+                    {
+                        held = std::round (juce::jlimit (-1.5f, 1.5f, input) * levels) / levels;
+                        counter = holdSamples;
+                    }
+                    --counter;
+                    data[i] = input * (1.0f - lofiMix) + held * lofiMix;
+                }
+            }
+        }
+
         const float chorusMix = juce::jlimit (0.0f, 1.0f, atomics.chorusMix.load());
         if (chorusMix > 0.0001f)
         {
@@ -158,6 +318,38 @@ namespace patchcraft
             juce::dsp::AudioBlock<float> block (buffer.getArrayOfWritePointers(), (size_t) numChans,
                                                 (size_t) startSample, (size_t) numSamples);
             phaser.process (juce::dsp::ProcessContextReplacing<float> (block));
+        }
+
+        const float multiTapMix = juce::jlimit (0.0f, 1.0f, atomics.multiTapMix.load());
+        if (multiTapMix > 0.0001f)
+        {
+            const int baseDelay = juce::jlimit (1, maxMultiTapDelaySamples - 1,
+                juce::roundToInt (juce::jlimit (0.02f, 2.0f, atomics.multiTapTime.load()) * (float) sampleRate));
+            const float feedback = juce::jlimit (0.0f, 0.92f, atomics.multiTapFeedback.load());
+            const float spread = juce::jlimit (0.0f, 1.0f, atomics.multiTapSpread.load());
+            const int tapA = juce::jlimit (1, maxMultiTapDelaySamples - 1, baseDelay);
+            const int tapB = juce::jlimit (1, maxMultiTapDelaySamples - 1, juce::roundToInt ((float) baseDelay * (0.50f + spread * 0.45f)));
+            const int tapC = juce::jlimit (1, maxMultiTapDelaySamples - 1, juce::roundToInt ((float) baseDelay * (1.25f + spread * 0.70f)));
+
+            for (int ch = 0; ch < numChans; ++ch)
+            {
+                auto& line = multiTapLines[(size_t) ch];
+                auto& writeIndex = multiTapWriteIndices[(size_t) ch];
+                auto* data = buffer.getWritePointer (ch, startSample);
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    const float input = data[i];
+                    const int readA = (writeIndex - tapA + maxMultiTapDelaySamples) % maxMultiTapDelaySamples;
+                    const int readB = (writeIndex - tapB + maxMultiTapDelaySamples) % maxMultiTapDelaySamples;
+                    const int readC = (writeIndex - tapC + maxMultiTapDelaySamples) % maxMultiTapDelaySamples;
+                    const float wet = line[(size_t) readA] * 0.55f
+                                    + line[(size_t) readB] * (0.35f + spread * 0.20f)
+                                    + line[(size_t) readC] * 0.25f;
+                    line[(size_t) writeIndex] = softLimit (input + wet * feedback);
+                    writeIndex = (writeIndex + 1) % maxMultiTapDelaySamples;
+                    data[i] = input * (1.0f - multiTapMix) + softLimit (wet) * multiTapMix;
+                }
+            }
         }
 
         const float combMix = juce::jlimit (0.0f, 1.0f, atomics.combMix.load());
@@ -245,6 +437,41 @@ namespace patchcraft
                         ? data[i] + high * tilt - low * tilt * 0.25f
                         : data[i] + low * (-tilt) - high * (-tilt) * 0.25f;
                     data[i] = data[i] * (1.0f - spectralMix) + softLimit (tilted) * spectralMix;
+                }
+            }
+        }
+
+        const float vocalMix = juce::jlimit (0.0f, 1.0f, atomics.vocalMix.load());
+        if (vocalMix > 0.0001f)
+        {
+            for (int ch = 0; ch < numChans; ++ch)
+            {
+                scratchBuffer.copyFrom (ch, 0, buffer, ch, startSample, numSamples);
+                formantScratchBuffer.copyFrom (ch, 0, buffer, ch, startSample, numSamples);
+            }
+
+            const float formant = juce::jlimit (0.0f, 1.0f, atomics.vocalFormant.load());
+            const float body = juce::jlimit (0.0f, 1.0f, atomics.vocalBody.load());
+            vocalFormantA.setCutoffFrequency (juce::jlimit (180.0f, 2600.0f, 420.0f + formant * 1850.0f));
+            vocalFormantB.setCutoffFrequency (juce::jlimit (600.0f, 6000.0f, 1100.0f + formant * 4100.0f));
+            vocalFormantA.setResonance (juce::jlimit (0.20f, 10.0f, 2.0f + body * 7.0f));
+            vocalFormantB.setResonance (juce::jlimit (0.20f, 10.0f, 1.4f + body * 5.0f));
+
+            juce::dsp::AudioBlock<float> blockA (scratchBuffer.getArrayOfWritePointers(), (size_t) numChans, 0, (size_t) numSamples);
+            juce::dsp::AudioBlock<float> blockB (formantScratchBuffer.getArrayOfWritePointers(), (size_t) numChans, 0, (size_t) numSamples);
+            vocalFormantA.process (juce::dsp::ProcessContextReplacing<float> (blockA));
+            vocalFormantB.process (juce::dsp::ProcessContextReplacing<float> (blockB));
+
+            for (int ch = 0; ch < numChans; ++ch)
+            {
+                auto* data = buffer.getWritePointer (ch, startSample);
+                const auto* vowelA = scratchBuffer.getReadPointer (ch);
+                const auto* vowelB = formantScratchBuffer.getReadPointer (ch);
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    const float input = data[i];
+                    const float wet = softLimit ((vowelA[i] * (0.95f + body) + vowelB[i] * (0.65f + formant * 0.35f)) * 1.8f);
+                    data[i] = input * (1.0f - vocalMix) + wet * vocalMix;
                 }
             }
         }

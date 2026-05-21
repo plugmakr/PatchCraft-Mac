@@ -258,6 +258,23 @@ namespace patchcraft
         return ProviderMode::BuiltInTemplates;
     }
 
+    juce::String AiAssistService::imageProviderModeToString (ImageProviderMode provider)
+    {
+        switch (provider)
+        {
+            case ImageProviderMode::BuiltInRenderer: return "builtInRenderer";
+            case ImageProviderMode::OpenAIImages:    return "openAIImages";
+        }
+        return "builtInRenderer";
+    }
+
+    AiAssistService::ImageProviderMode AiAssistService::imageProviderModeFromString (const juce::String& value)
+    {
+        if (value == "openAIImages")
+            return ImageProviderMode::OpenAIImages;
+        return ImageProviderMode::BuiltInRenderer;
+    }
+
     juce::var AiAssistService::LocalLlmConfig::toVar() const
     {
         auto* object = new juce::DynamicObject();
@@ -287,11 +304,55 @@ namespace patchcraft
         return config;
     }
 
+    juce::var AiAssistService::CloudIntegrationConfig::toVar() const
+    {
+        auto* object = new juce::DynamicObject();
+        object->setProperty ("imageProvider", imageProviderModeToString (imageProvider));
+        object->setProperty ("imageEndpoint", imageEndpoint);
+        object->setProperty ("imageModel", imageModel);
+        object->setProperty ("imageApiKey", imageApiKey);
+        object->setProperty ("murekaEndpoint", murekaEndpoint);
+        object->setProperty ("murekaApiKey", murekaApiKey);
+        object->setProperty ("pluginClubEndpoint", pluginClubEndpoint);
+        object->setProperty ("pluginClubApiKey", pluginClubApiKey);
+        object->setProperty ("licenseEndpoint", licenseEndpoint);
+        object->setProperty ("licensePublicKey", licensePublicKey);
+        object->setProperty ("cloudTimeoutMs", cloudTimeoutMs);
+        return juce::var (object);
+    }
+
+    AiAssistService::CloudIntegrationConfig AiAssistService::CloudIntegrationConfig::fromVar (const juce::var& value)
+    {
+        CloudIntegrationConfig config;
+        if (auto* object = value.getDynamicObject())
+        {
+            config.imageProvider = imageProviderModeFromString (object->getProperty ("imageProvider").toString());
+            if (object->hasProperty ("imageEndpoint")) config.imageEndpoint = object->getProperty ("imageEndpoint").toString();
+            if (object->hasProperty ("imageModel")) config.imageModel = object->getProperty ("imageModel").toString();
+            if (object->hasProperty ("imageApiKey")) config.imageApiKey = object->getProperty ("imageApiKey").toString();
+            if (object->hasProperty ("murekaEndpoint")) config.murekaEndpoint = object->getProperty ("murekaEndpoint").toString();
+            if (object->hasProperty ("murekaApiKey")) config.murekaApiKey = object->getProperty ("murekaApiKey").toString();
+            if (object->hasProperty ("pluginClubEndpoint")) config.pluginClubEndpoint = object->getProperty ("pluginClubEndpoint").toString();
+            if (object->hasProperty ("pluginClubApiKey")) config.pluginClubApiKey = object->getProperty ("pluginClubApiKey").toString();
+            if (object->hasProperty ("licenseEndpoint")) config.licenseEndpoint = object->getProperty ("licenseEndpoint").toString();
+            if (object->hasProperty ("licensePublicKey")) config.licensePublicKey = object->getProperty ("licensePublicKey").toString();
+            if (object->hasProperty ("cloudTimeoutMs")) config.cloudTimeoutMs = juce::jlimit (3000, 120000, (int) object->getProperty ("cloudTimeoutMs"));
+        }
+        return config;
+    }
+
     juce::File AiAssistService::localLlmConfigFile()
     {
         return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
             .getChildFile ("PatchCraft")
             .getChildFile ("ai-copilot.json");
+    }
+
+    juce::File AiAssistService::cloudIntegrationConfigFile()
+    {
+        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+            .getChildFile ("PatchCraft")
+            .getChildFile ("cloud-integrations.json");
     }
 
     AiAssistService::LocalLlmConfig AiAssistService::loadLocalLlmConfig()
@@ -311,12 +372,33 @@ namespace patchcraft
         file.replaceWithText (juce::JSON::toString (config.toVar(), true));
     }
 
+    AiAssistService::CloudIntegrationConfig AiAssistService::loadCloudIntegrationConfig()
+    {
+        const auto file = cloudIntegrationConfigFile();
+        if (! file.existsAsFile())
+            return {};
+
+        return CloudIntegrationConfig::fromVar (juce::JSON::parse (file));
+    }
+
+    void AiAssistService::saveCloudIntegrationConfig (const CloudIntegrationConfig& config)
+    {
+        auto file = cloudIntegrationConfigFile();
+        if (! file.getParentDirectory().createDirectory())
+            return;
+        file.replaceWithText (juce::JSON::toString (config.toVar(), true));
+    }
+
     juce::String AiAssistService::providerStatusText()
     {
         const auto config = loadLocalLlmConfig();
         if (config.provider == ProviderMode::LocalLlamaServer)
             return "Local AI: llama.cpp server -> " + config.model + " @ " + config.endpoint;
-        return "Local AI: built-in templates only. Enable llama.cpp in Settings for model-backed suggestions.";
+        const auto cloud = loadCloudIntegrationConfig();
+        const auto imageStatus = cloud.imageProvider == ImageProviderMode::OpenAIImages
+            ? juce::String (" Image: OpenAI.")
+            : juce::String (" Image: local fallback.");
+        return "Local AI: built-in templates only. Enable llama.cpp in Settings for model-backed suggestions." + imageStatus;
     }
 
     juce::String AiAssistService::ProjectContextPack::toSummaryText() const

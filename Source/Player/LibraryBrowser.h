@@ -17,6 +17,8 @@ namespace patchcraft
 
         void paint (juce::Graphics&) override;
         void mouseUp (const juce::MouseEvent&) override;
+        void mouseEnter (const juce::MouseEvent&) override;
+        void mouseExit (const juce::MouseEvent&) override;
 
         std::function<void()> onLoadClicked;
 
@@ -35,11 +37,19 @@ namespace patchcraft
                           public LibraryScanner::Listener
     {
     public:
-        LibraryBrowser (LibraryScanner& scanner);
+        enum class PackFilter
+        {
+            Any,
+            InstrumentsOnly,
+            EffectsOnly
+        };
+
+        LibraryBrowser (LibraryScanner& scanner, PackFilter filter = PackFilter::Any);
         ~LibraryBrowser() override;
 
         void paint (juce::Graphics&) override;
         void resized() override;
+        bool keyPressed (const juce::KeyPress& key) override;
 
         void textEditorTextChanged (juce::TextEditor&) override;
         void libraryChanged() override;
@@ -57,16 +67,21 @@ namespace patchcraft
         // UI components
         std::unique_ptr<juce::TextEditor> searchBox;
         std::unique_ptr<juce::TextButton> categoryButton;
+        std::unique_ptr<juce::TextButton> refreshButton;
         std::unique_ptr<juce::TextButton> closeButton;
         std::unique_ptr<juce::Viewport> viewport;
         std::unique_ptr<juce::Component> gridContainer;
 
         // Category filter
         juce::String currentCategory = "All";
-        juce::StringArray categories = { "All", "Sample Instrument", "Synth", "FX" };
+        juce::StringArray categories = { "All", "Instruments", "Synth", "Samples", "Drums", "FX", "Factory Demos" };
+        PackFilter packFilter = PackFilter::Any;
 
         void refreshGrid();
         void applyFilters();
+        bool entryMatchesCategory (const LibraryEntry&) const;
+        bool entryMatchesPackFilter (const LibraryEntry&) const;
+        void rebuildCategories();
         void showCategoryMenu();
     };
 

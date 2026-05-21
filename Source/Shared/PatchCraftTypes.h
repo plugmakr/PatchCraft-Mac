@@ -26,6 +26,15 @@ namespace patchcraft
         juce::StringArray instrumentIds;      // List of instrument IDs in this pack
         juce::StringArray instrumentNames;    // Display names for each instrument
         juce::StringArray instrumentFiles;   // Relative paths to instrument definition files
+        juce::Array<float> instrumentVolumes;
+        juce::Array<float> instrumentPans;
+        juce::Array<int> instrumentMidiChannels;
+        juce::Array<int> instrumentOutputRoutes;
+        juce::Array<int> instrumentTransposeSemitones;
+        juce::Array<int> instrumentEnabled;
+        juce::Array<int> instrumentAutoPlay;
+        juce::Array<int> instrumentAutoPlayNotes;
+        juce::Array<float> instrumentAutoPlayVelocities;
         bool multiInstrumentMode = false;        // true if pack contains multiple instruments
 
         // Library metadata for browser display
@@ -38,6 +47,25 @@ namespace patchcraft
         juce::String playerDisplayName;
         juce::String playerTagline;
         juce::String playerLogoImage;
+        juce::String playerClientName;
+        juce::String playerSupportEmail;
+        juce::String playerSupportUrl;
+        juce::String playerManualUrl;
+        juce::String playerStoreUrl;
+        juce::String playerCopyright;
+        juce::String playerLegalText;
+        juce::String salesHeadline;
+        juce::String salesSubheadline;
+        juce::String salesCtaText { "Buy Now" };
+        juce::String salesCheckoutUrl;
+        juce::String salesDemoVideoUrl;
+        juce::String salesAudioDemoUrl;
+        juce::String salesCurrency { "USD" };
+        double salesPrice = 0.0;
+        double salesCompareAtPrice = 0.0;
+        juce::StringArray salesHighlights;
+        juce::StringArray salesIncludes;
+        juce::StringArray salesFaq;
         juce::Colour playerBackgroundColour { 0xff0b0d10 };
         juce::Colour playerPanelColour      { 0xff15171b };
         juce::Colour playerAccentColour     { 0xfff5a623 };
@@ -50,15 +78,39 @@ namespace patchcraft
         bool playerAllowMidiLearn = true;
         bool playerShowAbout = true;
         bool playerShowParameterGuidance = true;
+        bool playerShowPatchCraftBranding = true;
         bool studioShowTutorials = true;
+
+        // White-label packaging / installer metadata for client-ready Player products.
+        juce::String whiteLabelPackageName;
+        juce::String whiteLabelPublisher;
+        juce::String whiteLabelProductCode;
+        juce::String whiteLabelBundleIdentifier;
+        juce::String whiteLabelInstallerId;
+        juce::String whiteLabelInstallerIcon;
+        juce::String whiteLabelEulaPath;
+        juce::String whiteLabelPrivacyUrl;
+        juce::String whiteLabelInstallNotes;
+        juce::String whiteLabelWindowsVst3Path { R"(CommonFilesFolder\VST3)" };
+        juce::String whiteLabelMacVst3Path { "/Library/Audio/Plug-Ins/VST3" };
+        bool whiteLabelRequireLicenseOnFirstRun = false;
+        bool whiteLabelIncludeStandalone = true;
+        bool whiteLabelIncludeVst3 = true;
 
         // Licensing / copy protection
         bool licenseRequired = false;
         juce::String licenseKey;
+        juce::String licenseProductId;
+        juce::String licenseServerUrl;
+        juce::String licensePublicKey;
+        juce::String licensePolicy { "online-or-offline-grace" };
         int  trialDays = 0;               // 0 = no trial, >0 = trial mode
         bool isTrial = false;
         juce::String trialExpiryDate;     // ISO 8601
         juce::String licenseOwner;
+        int  licenseOfflineGraceDays = 14;
+        bool licenseBindToMachine = true;
+        bool licenseAllowTrialConversion = true;
 
         juce::var toVar() const;
         static Manifest fromVar (const juce::var&);
@@ -88,12 +140,19 @@ namespace patchcraft
         Panel,
         Shape,
         XYPad,
+        GranularField,
         TabPanel,
         ScrollPanel,
         Group,
         Separator,
         DrumPad,
-        PadGrid
+        PadGrid,
+        DrumGrid,
+        Mixer,
+        MacroControl,
+        ModMatrix,
+        EqCurve,
+        SpectrumAnalyzer
     };
 
     juce::String elementTypeToString (ElementType);
@@ -112,9 +171,11 @@ namespace patchcraft
         juce::String knobStyle { "Vintage 01" };
         juce::String valueFormat { "Auto" };
         juce::String asset;
+        juce::String action;
         juce::String shapeKind { "roundedRect" };
         juce::String labelPosition { "bottom" };
         juce::String containerId;
+        juce::String linkedCopyGroupId;
 
         int x = 100, y = 100, width = 90, height = 90;
         bool visible = true;
@@ -167,6 +228,25 @@ namespace patchcraft
         int  padRows     = 4;
         int  padCols     = 4;
         int  padBaseNote = 36;          // C1 — matches autoMapDrumPads default
+
+        // Drum-machine pattern UI (DrumGrid only).
+        // This mirrors the MIDI Playground drum-machine block: rows are tracks,
+        // columns are sequencer steps, and drumPattern selects the visible bank.
+        int drumTracks = 8;
+        int drumSteps = 16;
+        int drumPattern = 0;
+
+        // Runtime mixer UI (Mixer only).
+        // auto: multi-instrument layers when present, otherwise main output.
+        // layers: force multi-layer mixer behaviour.
+        // parameters: use explicit channel parameter assignments below.
+        int mixerChannels = 4;
+        juce::String mixerMode { "auto" };
+        juce::StringArray mixerChannelLabels;
+        juce::StringArray mixerVolumeParams;
+        juce::StringArray mixerPanParams;
+        juce::StringArray mixerMuteParams;
+        juce::StringArray mixerSoloParams;
 
         juce::var toVar() const;
         static LayoutElement fromVar (const juce::var&);
@@ -245,6 +325,7 @@ namespace patchcraft
         int  fadeOutStart   = 0;        // Fade out start (samples)
         int  fadeOutLength  = 0;        // Fade out length (samples)
         float pitchOffset   = 0.0f;     // Pitch offset in semitones
+        float keyTracking   = 1.0f;     // 0 = fixed pitch, 1 = normal keyboard tracking, 2 = exaggerated tracking
         float velocityLowerVelXFade = 0; // Velocity crossfade lower zone
         float velocityUpperVelXFade = 0; // Velocity crossfade upper zone
         bool reverse        = false;    // Play sample in reverse
@@ -257,6 +338,7 @@ namespace patchcraft
         int  chokeGroup     = 0;        // 0 = no choke, 1+ = mutually exclusive group
         bool oneShot        = false;    // Ignore note-off and play until sample end
         int  triggerProbability = 100;  // Percent chance a note-on will trigger this zone
+        float bpm           = 120.0f;   // BPM for sample playback (120 = default)
 
         juce::var toVar() const;
         static SampleZoneDef fromVar (const juce::var&);

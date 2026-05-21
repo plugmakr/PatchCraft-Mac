@@ -1,0 +1,74 @@
+{
+  "blocks": [
+    {
+      "id": "source_main",
+      "section": "source",
+      "type": "oscillator",
+      "name": "Main Source",
+      "enabled": true,
+      "targetId": "oscBlend",
+      "values": {}
+    },
+    {
+      "id": "filter_tone",
+      "section": "filter",
+      "type": "filter",
+      "name": "Tone Filter",
+      "enabled": true,
+      "targetId": "filterCutoff",
+      "values": {}
+    },
+    {
+      "id": "amp_shape",
+      "section": "amp",
+      "type": "amp",
+      "name": "Amplitude Shape",
+      "enabled": true,
+      "targetId": "attack",
+      "values": {}
+    },
+    {
+      "id": "mod_motion",
+      "section": "mod",
+      "type": "lfo",
+      "name": "Motion LFO",
+      "enabled": true,
+      "targetId": "filterCutoff",
+      "values": {}
+    },
+    {
+      "id": "fx_delay",
+      "section": "fx",
+      "type": "delay",
+      "name": "Tempo Delay",
+      "enabled": true,
+      "targetId": "delayMix",
+      "values": {}
+    },
+    {
+      "id": "fx_reverb",
+      "section": "fx",
+      "type": "reverb",
+      "name": "Space Reverb",
+      "enabled": true,
+      "targetId": "reverbMix",
+      "values": {}
+    },
+    {
+      "id": "out_safe",
+      "section": "out",
+      "type": "output",
+      "name": "Safe Output",
+      "enabled": true,
+      "targetId": "outputGainDb",
+      "values": {}
+    }
+  ],
+  "edges": [],
+  "macros": [],
+  "modulation": [],
+  "automation": [],
+  "typedNodes": [],
+  "userConfigured": true,
+  "quickEditControls": {}
+}

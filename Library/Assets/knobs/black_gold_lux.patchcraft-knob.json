@@ -1,0 +1,11 @@
+{
+  "format": "PatchCraft Knob",
+  "frames": 31,
+  "stripVertical": true,
+  "style": {
+    "name": "Black Gold Lux",
+    "frames": 31,
+    "outputMode": "vertical",
+    "category": "factory"
+  }
+}

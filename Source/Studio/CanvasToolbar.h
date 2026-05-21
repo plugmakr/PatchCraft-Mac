@@ -41,6 +41,7 @@ namespace patchcraft
         juce::ComboBox sizeBox;
         juce::ComboBox snapBox;
         juce::ComboBox zoomBox;
+        juce::TextButton canvasPropsBtn { "Canvas" };
         juce::TextButton fitBtn   { "Fit" };
         juce::TextButton fillBtn  { "100%" };
         juce::Label    snapLabel;
@@ -62,12 +63,15 @@ namespace patchcraft
 
         // Section tab strip - sits to the right of the engine dropdown and
         // controls which page the bottom panel shows.
+        juce::TextButton tabWorkflow { "Workflow" };
         juce::TextButton tabDesign { "Design" };
-        juce::TextButton tabMapper { "Sample Mapper" };
-        juce::TextButton tabMidi   { "MIDI Playground" };
-        juce::TextButton tabDSP    { "DSP Builder" };
+        juce::TextButton tabMapper { "Samples" };
+        juce::TextButton tabOneShot { "One Shot" };
+        juce::TextButton tabMidi   { "MIDI" };
+        juce::TextButton tabDSP    { "DSP" };
         juce::TextButton tabBuild  { "Build" };
         juce::TextButton tabBranding { "Brand Lab" };
+        juce::TextButton tabLaunch { "Launch" };
         juce::Label      patchSeparator;
         juce::TextButton savePatchBtn   { "Save Patch" };
         juce::TextButton savePatchAsBtn { "Save Patch As" };
@@ -81,6 +85,9 @@ namespace patchcraft
         void applySelectedSize();
         void applySelectedZoom();
         void applySelectedSnap();
+        void showCanvasProperties();
+        void showCanvasSizeDialog();
+        void showCanvasColourMenu (bool gridColour);
 
         // Find the dropdown index that matches the current canvas size, or -1.
         int presetIndexFor (int w, int h) const;

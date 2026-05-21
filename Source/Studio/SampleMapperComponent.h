@@ -36,9 +36,9 @@ namespace patchcraft
 
         // Zone fields
         juce::Label  rootLbl, lowLbl, highLbl, lowVelLbl, highVelLbl, gainLbl, panLbl,
-                     loopLbl, startLbl, endLbl;
+                     loopLbl, startLbl, endLbl, bpmLbl;
         juce::ComboBox rootBox, lowBox, highBox;
-        juce::TextEditor lowVelEdit, highVelEdit, gainEdit, panEdit, startEdit, endEdit;
+        juce::TextEditor lowVelEdit, highVelEdit, gainEdit, panEdit, startEdit, endEdit, bpmEdit;
         juce::ToggleButton loopToggle { "" };
 
         // HISE-style advanced fields

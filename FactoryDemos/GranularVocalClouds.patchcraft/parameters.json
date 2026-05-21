@@ -1,0 +1,391 @@
+{
+  "parameters": [
+    {
+      "id": "attack",
+      "name": "Attack",
+      "type": "float",
+      "min": 0.001,
+      "max": 5.0,
+      "default": 1.2,
+      "unit": "s"
+    },
+    {
+      "id": "decay",
+      "name": "Decay",
+      "type": "float",
+      "min": 0.001,
+      "max": 5.0,
+      "default": 2.8,
+      "unit": "s"
+    },
+    {
+      "id": "sustain",
+      "name": "Sustain",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.74,
+      "unit": ""
+    },
+    {
+      "id": "release",
+      "name": "Release",
+      "type": "float",
+      "min": 0.01,
+      "max": 10.0,
+      "default": 5.8,
+      "unit": "s"
+    },
+    {
+      "id": "filterCutoff",
+      "name": "Cutoff",
+      "type": "float",
+      "min": 20.0,
+      "max": 20000.0,
+      "default": 5200,
+      "unit": "Hz"
+    },
+    {
+      "id": "filterResonance",
+      "name": "Resonance",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.18,
+      "unit": ""
+    },
+    {
+      "id": "reverbMix",
+      "name": "Reverb",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.76,
+      "unit": "%"
+    },
+    {
+      "id": "delayTime",
+      "name": "Delay Time",
+      "type": "float",
+      "min": 0.0,
+      "max": 2.0,
+      "default": 0.5,
+      "unit": "s"
+    },
+    {
+      "id": "delayFeedback",
+      "name": "Delay Feedback",
+      "type": "float",
+      "min": 0.0,
+      "max": 0.95,
+      "default": 0.34,
+      "unit": ""
+    },
+    {
+      "id": "delayMix",
+      "name": "Delay Mix",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.22,
+      "unit": "%"
+    },
+    {
+      "id": "vibratoDepth",
+      "name": "Vibrato Depth",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.35,
+      "unit": "%"
+    },
+    {
+      "id": "vibratoRate",
+      "name": "Vibrato Rate",
+      "type": "float",
+      "min": 0.1,
+      "max": 12.0,
+      "default": 4.8,
+      "unit": "Hz"
+    },
+    {
+      "id": "volume",
+      "name": "Volume",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.5,
+      "default": 0.7,
+      "unit": ""
+    },
+    {
+      "id": "pan",
+      "name": "Pan",
+      "type": "float",
+      "min": -1.0,
+      "max": 1.0,
+      "default": 0,
+      "unit": ""
+    },
+    {
+      "id": "stereoWidth",
+      "name": "Width",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 1.7,
+      "unit": ""
+    },
+    {
+      "id": "outputGainDb",
+      "name": "Output",
+      "type": "float",
+      "min": -24.0,
+      "max": 12.0,
+      "default": 0.0,
+      "unit": "dB"
+    },
+    {
+      "id": "modWheel",
+      "name": "Mod Wheel",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.0,
+      "unit": ""
+    },
+    {
+      "id": "expression",
+      "name": "Expression",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 1.0,
+      "unit": ""
+    },
+    {
+      "id": "macro_motion",
+      "name": "Motion",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.48,
+      "unit": ""
+    },
+    {
+      "id": "macro_tone",
+      "name": "Tone",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.55,
+      "unit": ""
+    },
+    {
+      "id": "macro_character",
+      "name": "Character",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.5,
+      "unit": ""
+    },
+    {
+      "id": "macro_space",
+      "name": "Space",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.42,
+      "unit": ""
+    },
+    {
+      "id": "samplePitch",
+      "name": "Pitch",
+      "type": "float",
+      "min": -24.0,
+      "max": 24.0,
+      "default": 7,
+      "unit": "st"
+    },
+    {
+      "id": "sampleStart",
+      "name": "Start",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.22,
+      "unit": ""
+    },
+    {
+      "id": "sampleLength",
+      "name": "Length",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.65,
+      "unit": ""
+    },
+    {
+      "id": "sampleSlice",
+      "name": "Slice",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 1,
+      "unit": ""
+    },
+    {
+      "id": "sampleGlitch",
+      "name": "Glitch",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.1,
+      "unit": ""
+    },
+    {
+      "id": "sampleSliceCount",
+      "name": "Slices",
+      "type": "float",
+      "min": 1.0,
+      "max": 64.0,
+      "default": 8.0,
+      "unit": ""
+    },
+    {
+      "id": "sampleReverse",
+      "name": "Reverse",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.0,
+      "unit": ""
+    },
+    {
+      "id": "granularOn",
+      "name": "Granular Engine",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 1.0,
+      "unit": ""
+    },
+    {
+      "id": "granularDensity",
+      "name": "Density",
+      "type": "float",
+      "min": 0.5,
+      "max": 220.0,
+      "default": 38.0,
+      "unit": "g/s"
+    },
+    {
+      "id": "granularSizeMs",
+      "name": "Grain Size",
+      "type": "float",
+      "min": 2.0,
+      "max": 1000.0,
+      "default": 130.0,
+      "unit": "ms"
+    },
+    {
+      "id": "granularSizeRandom",
+      "name": "Size Chaos",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.32,
+      "unit": ""
+    },
+    {
+      "id": "granularSpread",
+      "name": "Position Spray",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.28,
+      "unit": ""
+    },
+    {
+      "id": "granularScan",
+      "name": "Scan Motion",
+      "type": "float",
+      "min": -3.0,
+      "max": 3.0,
+      "default": 0.18,
+      "unit": "x"
+    },
+    {
+      "id": "granularPitchSpread",
+      "name": "Pitch Spray",
+      "type": "float",
+      "min": 0.0,
+      "max": 36.0,
+      "default": 5.0,
+      "unit": "st"
+    },
+    {
+      "id": "granularPanSpread",
+      "name": "Pan Spray",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.85,
+      "unit": ""
+    },
+    {
+      "id": "granularReverse",
+      "name": "Reverse Chance",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.35,
+      "unit": ""
+    },
+    {
+      "id": "granularTexture",
+      "name": "Texture",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.42,
+      "unit": ""
+    },
+    {
+      "id": "granularMaxGrains",
+      "name": "Max Grains",
+      "type": "float",
+      "min": 1.0,
+      "max": 32.0,
+      "default": 18.0,
+      "unit": ""
+    },
+    {
+      "id": "granularDirection",
+      "name": "Direction",
+      "type": "float",
+      "min": 0.0,
+      "max": 3.0,
+      "default": 3.0,
+      "unit": ""
+    },
+    {
+      "id": "granularWindow",
+      "name": "Window",
+      "type": "float",
+      "min": 0.0,
+      "max": 3.0,
+      "default": 0.0,
+      "unit": ""
+    },
+    {
+      "id": "granularFreeze",
+      "name": "Freeze",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.0,
+      "unit": ""
+    }
+  ]
+}

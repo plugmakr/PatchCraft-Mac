@@ -3,6 +3,9 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "PatchCraftProject.h"
 
+#include <array>
+#include <map>
+
 namespace patchcraft
 {
     class StudioMainComponent;
@@ -21,6 +24,7 @@ namespace patchcraft
 
         void paint (juce::Graphics&) override;
         void resized() override;
+        void mouseDown (const juce::MouseEvent&) override;
 
         void selectionChanged();
         void refresh();
@@ -46,6 +50,7 @@ namespace patchcraft
         juce::ComboBox  parameterBox;
         juce::TextButton midiLearnButton { "Learn" };
         juce::TextEditor labelEdit;
+        juce::TextEditor actionEdit;
         juce::ComboBox  valueFormatBox;
         juce::ComboBox  styleBox;
         juce::ComboBox  knobStyleBox;
@@ -79,6 +84,11 @@ namespace patchcraft
         juce::Slider    smoothingSlider;
 
         juce::TextButton btnDuplicate { "Duplicate" };
+        juce::TextButton btnCopy      { "Copy" };
+        juce::TextButton btnCopyNoParams { "Copy -P" };
+        juce::TextButton btnPaste     { "Paste" };
+        juce::TextButton btnAllTabs   { "All Tabs" };
+        juce::ToggleButton copyTabsAsReferenceToggle { "Copy as linked reference" };
         juce::TextButton btnDelete    { "Delete" };
         juce::TextButton btnForward   { "Forward" };
         juce::TextButton btnBackward  { "Backward" };
@@ -112,7 +122,100 @@ namespace patchcraft
         juce::Label      lblFilmstripPath;
         juce::Label      lblFilmstripFrames;
 
+        // Drum Grid editor. A Drum Grid on the canvas is a visual/editor
+        // surface for the project's drum-machine DSP block.
+        juce::Label lblDrumGrid, lblDrumPattern, lblDrumTracks, lblDrumSteps,
+                    lblDrumCell, lblDrumVelocity, lblDrumGate, lblDrumProbability,
+                    lblDrumDivision, lblDrumPadFxTarget, lblDrumPadFxAmount,
+                    lblDrumCellFxTarget, lblDrumCellFxAmount;
+        juce::ComboBox drumPatternBox;
+        juce::ComboBox drumTrackBox;
+        juce::ComboBox drumStepBox;
+        juce::ComboBox drumDivisionBox;
+        juce::ComboBox drumPadFxTargetBox;
+        juce::ComboBox drumCellFxTargetBox;
+        juce::Slider drumTracksSlider;
+        juce::Slider drumStepsSlider;
+        juce::Slider drumVelocitySlider;
+        juce::Slider drumGateSlider;
+        juce::Slider drumProbabilitySlider;
+        juce::Slider drumPadFxAmountSlider;
+        juce::Slider drumCellFxAmountSlider;
+        juce::ToggleButton drumCellEnabledToggle { "Hit On" };
+        juce::TextButton drumApplyTrapRollBtn { "Trap Roll" };
+        juce::TextButton drumClearPatternBtn { "Clear" };
+        juce::TextButton drumCopyPatternBtn { "Copy" };
+        juce::TextButton drumPastePatternBtn { "Paste" };
+        juce::TextButton drumDuplicatePatternBtn { "Dup Next" };
+        juce::TextButton drumOpenPerformanceBtn { "Full Editor" };
+
+        // Mixer authoring (Mixer only).
+        juce::Label lblMixer, lblMixerMode, lblMixerChannels, lblMixerLabels,
+                    lblMixerVolumes, lblMixerPans, lblMixerMutes, lblMixerSolos;
+        juce::ComboBox mixerModeBox;
+        juce::Slider mixerChannelsSlider;
+        juce::TextEditor mixerLabelsEdit;
+        juce::TextEditor mixerVolumeParamsEdit;
+        juce::TextEditor mixerPanParamsEdit;
+        juce::TextEditor mixerMuteParamsEdit;
+        juce::TextEditor mixerSoloParamsEdit;
+        juce::Label mixerHelpLabel;
+
+        // Macro / modulation authoring.
+        juce::Label lblMacroEditor, lblMacroTargets, lblModMatrixEditor, lblModRoutes;
+        juce::TextEditor macroTargetsEdit;
+        juce::TextButton macroApplyBtn { "Apply" };
+        juce::TextButton macroClearBtn { "Clear" };
+        juce::TextEditor modRoutesEdit;
+        juce::TextButton modApplyBtn { "Apply" };
+        juce::TextButton modClearBtn { "Clear" };
+
+        juce::Label lblGranularEditor, lblGranularDirection, lblGranularDensity,
+                    lblGranularSize, lblGranularRandom, lblGranularSpread,
+                    lblGranularScan, lblGranularPitch, lblGranularPan,
+                    lblGranularTexture;
+        juce::ToggleButton granularOnToggle { "Enabled" };
+        juce::ToggleButton granularFreezeToggle { "Freeze" };
+        juce::ToggleButton granularReverseToggle { "Reverse" };
+        juce::ComboBox granularDirectionBox;
+        juce::Slider granularDensitySlider;
+        juce::Slider granularSizeSlider;
+        juce::Slider granularRandomSlider;
+        juce::Slider granularSpreadSlider;
+        juce::Slider granularScanSlider;
+        juce::Slider granularPitchSlider;
+        juce::Slider granularPanSlider;
+        juce::Slider granularTextureSlider;
+
+        bool hasDrumPatternClipboard = false;
+        int drumPatternClipboardTracks = 0;
+        int drumPatternClipboardSteps = 0;
+        std::map<juce::String, float> drumPatternClipboard;
+
         bool inhibitCallbacks = false;
+
+        enum class InspectorSection
+        {
+            Layout = 0,
+            Parameter,
+            Style,
+            Advanced,
+            Actions,
+            DrumGrid,
+            Mixer,
+            Macro,
+            ModMatrix,
+            Granular,
+            Container,
+            Count
+        };
+
+        std::array<bool, (size_t) InspectorSection::Count> sectionOpen {{
+            true, true, true, true, true, true, true, true, true, true, true
+        }};
+        std::array<juce::Rectangle<int>, (size_t) InspectorSection::Count> sectionHeaderBounds {};
+
+        bool isSectionOpen (InspectorSection section) const;
 
         void hookEdit (juce::TextEditor& e, std::function<void (const juce::String&)>);
         void hookCombo (juce::ComboBox& c, std::function<void (int)>);
@@ -128,9 +231,34 @@ namespace patchcraft
                               juce::Label& l2, juce::Component& c2,
                               int height = 26);
 
+        DspBlock* findDrumMachineBlock();
+        const DspBlock* findDrumMachineBlock() const;
+        DspBlock& ensureDrumMachineBlock();
+        juce::String drumPrefix (int pattern, int track, int step) const;
+        float drumValue (const juce::String& key, float fallback) const;
+        void setDrumValue (const juce::String& key, float value, bool notify = true);
+        void refreshDrumControls();
+        void writeDrumGridElementFromUi();
+        void writeDrumTrackFxFromUi();
+        void writeDrumCellFromUi();
+        void clearCurrentDrumPattern();
+        void copyCurrentDrumPattern();
+        void pasteCurrentDrumPattern();
+        void duplicateCurrentDrumPatternToNext();
+        void applyTrapRollToCurrentPattern();
+        void refreshMacroControls();
+        void writeMacroTargetsFromUi();
+        void refreshModMatrixControls();
+        void writeModRoutesFromUi();
+        float granularValue (const juce::String& parameterId, float fallback) const;
+        void setGranularValue (const juce::String& parameterId, float value, bool notify = true);
+        void refreshGranularControls();
+        void writeGranularControlsFromUi();
+
         // Persistent labels (rebuilt at construction)
-        juce::Label lblType, lblId, lblPos, lblSize, lblParam, lblLabel,
+        juce::Label lblType, lblId, lblPos, lblSize, lblParam, lblLabel, lblAction,
                     lblValFmt, lblStyle, lblKnobStyle, lblMin, lblMax,
+                    lblLayoutSection, lblParameterSection, lblStyleSection, lblSpecialSection,
                     lblOpacity, lblState, lblShapeKind, lblCorner, lblStroke,
                     lblShadow, lblGlow, lblBlur, lblAudioReactive, lblAudioReactiveMode,
                     lblAudioReactiveAmount, lblAnimationMode, lblAnimationRate,

@@ -37,7 +37,7 @@ namespace patchcraft
         juce::TextButton saveBtn  { "Save" };
         juce::TextButton saveAsBtn{ "Save As..." };
         juce::TextButton generateBtn { "Generate" };
-        juce::TextButton popOutBtn   { "\xe2\xa4\xa2" };
+        juce::TextButton popOutBtn   { "Pop" };
 
         int  getNumRows() override;
         void paintListBoxItem (int row, juce::Graphics&, int w, int h, bool selected) override;

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>1 — What is PatchCraft · PatchCraft Tutorial</title>
+    <link rel="stylesheet" href="assets/css/main.css"/>
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo.svg"/>
+</head>
+<body>
+<header class="topbar">
+    <div class="topbar-logo"><img src="assets/img/logo.svg" alt="" class="hex"/>PATCHCRAFT</div>
+    <span class="topbar-tagline">Instrument Builder Tutorial</span>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-actions">
+        <a href="index.html">Home</a>
+        <a href="10-glossary.html">Glossary</a>
+        <a class="cta" href="PatchCraftTutorial.zip">Download</a>
+    </div>
+</header>
+
+<div class="shell">
+    <nav class="sidebar">
+        <div class="sidebar-section">
+            <h5>Tutorial</h5>
+            <ul>
+                <li><a href="index.html">Overview</a></li>
+                <li><a href="01-overview.html">1 — What is PatchCraft</a></li>
+                <li><a href="02-getting-started.html">2 — Getting started</a></li>
+                <li><a href="03-design.html">3 — Design canvas</a></li>
+                <li><a href="04-sample-mapper.html">4 — Sample mapper</a></li>
+                <li><a href="05-midi-playground.html">5 — MIDI playground</a></li>
+                <li><a href="06-dsp-builder.html">6 — DSP builder</a></li>
+                <li><a href="07-brand-lab.html">7 — Brand Lab</a></li>
+                <li><a href="08-presets-expansions.html">8 — Presets &amp; expansions</a></li>
+                <li><a href="09-export-distribute.html">9 — Export &amp; ship</a></li>
+                <li><a href="10-glossary.html">10 — Glossary</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="content">
+        <h1>1 — What is PatchCraft</h1>
+        <p class="lede" style="color:var(--text-mid);font-size:1.1rem;">PatchCraft is a two-app system for building, branding and selling
+            virtual instruments. The Studio is where authoring happens; the Player is the runtime your end users load in their DAW.</p>
+
+        <h2>The two halves</h2>
+        <div class="card-grid">
+            <div class="card">
+                <h3>PatchCraft Studio</h3>
+                <p>Desktop authoring app. Engineers a custom instrument from scratch — sound design, GUI design, sample mapping, MIDI sequencing, branding and packaging.
+                    Output: a <code>.patchcraft</code> pack folder.</p>
+            </div>
+            <div class="card">
+                <h3>PatchCraft Player</h3>
+                <p>VST3 / standalone runtime. Loads a <code>.patchcraft</code> pack and renders the layout the Studio designed, complete with live audio engine, MIDI input, host automation, MIDI Learn, and library browsing for expansion packs.</p>
+            </div>
+        </div>
+
+        <h2>Engines</h2>
+        <p>Every instrument is built on one of four engines. The engine determines what kinds of sounds the instrument can make and which parameters are available:</p>
+
+        <table>
+            <thead>
+                <tr><th>Engine</th><th>Best for</th><th>Notable controls</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>Sampler</strong></td><td>Multisample instruments, cinematic, orchestral, vocal</td><td>Key zones, velocity layers, sample start/end, loop, fades</td></tr>
+                <tr><td><strong>Synth</strong></td><td>Subtractive + wavetable synthesis. 50 trance/electronic presets ship.</td><td>2 oscillators, sub, noise, wavetable, filter, ADSR, LFO</td></tr>
+                <tr><td><strong>Drum Machine</strong></td><td>Pad-grid samplers, MPC-style kits</td><td>16-pad grid, choke groups, one-shot, round robin</td></tr>
+                <tr><td><strong>FX</strong></td><td>Audio effect plugins (delay, reverb, drive)</td><td>Drive, filter, delay, reverb, mix</td></tr>
+            </tbody>
+        </table>
+
+        <div class="callout info">
+            <strong>Why pick the engine first?</strong>
+            Switching engines wipes the layout because the parameter palette changes. Decide early.
+        </div>
+
+        <h2>The Studio's six tabs</h2>
+        <p>Once a project is open you'll spend your time across these tabs. Each one is covered in detail in the upcoming sections:</p>
+
+        <ul>
+            <li><strong>Design</strong> — visual GUI layout + parameter list + preset bank</li>
+            <li><strong>Sample Mapper</strong> — keyboard / velocity / pad mapping for sampled sounds</li>
+            <li><strong>MIDI Playground</strong> — phrase tools, deterministic transforms, piano roll</li>
+            <li><strong>DSP Builder</strong> — advanced patch builder for chained DSP blocks</li>
+            <li><strong>Build</strong> — knob/slider/meter image builder for custom looks</li>
+            <li><strong>Brand Lab</strong> — Player white-labeling + live preview + audio testing</li>
+        </ul>
+
+        <h2>The two side panels</h2>
+        <p>Permanent on either side of the canvas:</p>
+        <ul>
+            <li><strong>Left sidebar</strong> — Elements (drag-to-canvas), Library (your knob/slider images), Expansions (card grid of packs).</li>
+            <li><strong>Right sidebar</strong> — Inspector (selected element properties) and Layers (z-order tree). All panels are dock/undock-able.</li>
+        </ul>
+
+        <div class="callout tip">
+            <strong>Tip</strong>
+            Click the <code>⤢</code> icon in any panel header to pop it out into a free-floating window you can move anywhere on screen.
+        </div>
+
+        <h2>The end-user loop</h2>
+        <ol class="steps">
+            <li><h3>Customer installs your branded Player VST3</h3><p>The same binary, but the manifest replaces the title bar, logo, accent colour and tagline.</p></li>
+            <li><h3>Player auto-loads the bundled pack</h3><p>The instrument appears with your custom layout and presets.</p></li>
+            <li><h3>They play, sweep knobs, MIDI Learn, automate</h3><p>Standard DAW workflows. Every visible control is host-automatable.</p></li>
+            <li><h3>They drop in expansion packs to grow the library</h3><p>Each new <code>.patchcraft</code> folder shows up in the library browser — sell more sounds, no code change.</p></li>
+        </ol>
+
+        <div class="section-nav">
+            <a href="index.html"><strong>Back</strong><span>Home</span></a>
+            <a class="next" href="02-getting-started.html"><strong>Up next</strong><span>2 — Getting started</span></a>
+        </div>
+    </main>
+</div>
+
+<footer class="footer">PatchCraft · Tutorial bundle</footer>
+<script src="assets/js/nav.js"></script>
+</body>
+</html>

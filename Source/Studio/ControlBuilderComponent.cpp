@@ -14,7 +14,7 @@ namespace patchcraft
         title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
         addAndMakeVisible (title);
 
-        subtitle.setText ("Build production-ready knobs, sliders, meters, switches, and filmstrips for instrument GUIs.", juce::dontSendNotification);
+        subtitle.setText ("Build production-ready knobs, sliders, meters, and filmstrips for instrument GUIs.", juce::dontSendNotification);
         subtitle.setFont (juce::Font (11.5f));
         subtitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
         addAndMakeVisible (subtitle);
@@ -27,18 +27,15 @@ namespace patchcraft
         kindBox.addItem ("Knob",   1);
         kindBox.addItem ("Slider", 2);
         kindBox.addItem ("Meter",  3);
-        kindBox.addSeparator();
-        kindBox.addItem ("Switch / Button", 4);
-        kindBox.addItem ("XY Pad", 5);
         kindBox.setSelectedId (1, juce::dontSendNotification);
         kindBox.onChange = [this] { rebuildVisibility(); };
         addAndMakeVisible (kindBox);
 
+        newAssetButton.setTooltip ("Reset the active builder to a clean default asset.");
+        duplicateButton.setTooltip ("Duplicate the current builder asset into the Design page Library.");
+        exportButton.setTooltip ("Render the current builder asset into the Design page Library.");
         for (auto* button : { &newAssetButton, &duplicateButton, &exportButton })
-        {
-            button->setTooltip ("Project asset library actions will be connected after the editor surface is locked.");
             addAndMakeVisible (*button);
-        }
         exportButton.getProperties().set ("accent", true);
 
         knobBuilder   = std::make_unique<KnobBuilderComponent> (owner);
@@ -48,11 +45,41 @@ namespace patchcraft
         addChildComponent (*sliderBuilder);
         addChildComponent (*meterBuilder);
 
-        exportButton.setTooltip ("Render the current builder asset into the Design page Library.");
-        exportButton.onClick = [this]
+        auto addCurrentAssetToLibrary = [this]
         {
             if (kindBox.getSelectedId() == 1 && knobBuilder != nullptr)
                 knobBuilder->addKnobToLibrary();
+            else if (kindBox.getSelectedId() == 2 && sliderBuilder != nullptr)
+                sliderBuilder->addSliderToLibrary();
+            else if (kindBox.getSelectedId() == 3 && meterBuilder != nullptr)
+                meterBuilder->addMeterToLibrary();
+        };
+        exportButton.onClick = addCurrentAssetToLibrary;
+        duplicateButton.onClick = addCurrentAssetToLibrary;
+
+        newAssetButton.onClick = [this]
+        {
+            const auto selected = kindBox.getSelectedId();
+            if (selected == 1)
+            {
+                removeChildComponent (knobBuilder.get());
+                knobBuilder = std::make_unique<KnobBuilderComponent> (owner);
+                addAndMakeVisible (*knobBuilder);
+            }
+            else if (selected == 2)
+            {
+                removeChildComponent (sliderBuilder.get());
+                sliderBuilder = std::make_unique<SliderBuilderComponent> (owner);
+                addChildComponent (*sliderBuilder);
+            }
+            else if (selected == 3)
+            {
+                removeChildComponent (meterBuilder.get());
+                meterBuilder = std::make_unique<MeterBuilderComponent> (owner);
+                addChildComponent (*meterBuilder);
+            }
+
+            rebuildVisibility();
         };
     }
 
@@ -60,7 +87,7 @@ namespace patchcraft
 
     void ControlBuilderComponent::rebuildVisibility()
     {
-        knobBuilder->setVisible   (kindBox.getSelectedId() == 1 || kindBox.getSelectedId() > 3);
+        knobBuilder->setVisible   (kindBox.getSelectedId() == 1);
         sliderBuilder->setVisible (kindBox.getSelectedId() == 2);
         meterBuilder->setVisible  (kindBox.getSelectedId() == 3);
         resized();

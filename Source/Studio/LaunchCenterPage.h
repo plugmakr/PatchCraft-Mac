@@ -1,0 +1,108 @@
+#pragma once
+
+#include <juce_gui_extra/juce_gui_extra.h>
+
+#include <functional>
+#include <memory>
+#include <vector>
+
+namespace patchcraft
+{
+    class StudioMainComponent;
+
+    class LaunchCenterPage final : public juce::Component
+    {
+    public:
+        enum class Severity { Pass, Warning, Error, Info };
+
+        explicit LaunchCenterPage (StudioMainComponent& owner);
+        ~LaunchCenterPage() override;
+
+        void paint (juce::Graphics&) override;
+        void resized() override;
+
+        void refresh();
+
+    private:
+        struct CheckItem
+        {
+            Severity severity = Severity::Info;
+            juce::String title;
+            juce::String detail;
+            juce::String actionLabel;
+            std::function<void()> action;
+        };
+
+        class CheckRow;
+
+        StudioMainComponent& owner;
+
+        juce::Label title;
+        juce::Label subtitle;
+        juce::Label statusBadge;
+        juce::Label summaryLabel;
+
+        juce::TextButton refreshButton { "Run Launch Doctor" };
+        juce::TextButton outputFolderButton { "Output Folder" };
+        juce::TextButton bundleButton { "Create Launch Bundle" };
+        juce::TextButton customerWizardButton { "Customer Kit" };
+        juce::TextButton productPageButton { "Product Page" };
+        juce::TextButton testButton { "Test Runtime" };
+        juce::TextButton exportPackButton { "Export Pack" };
+        juce::TextButton exportVstButton { "Export VST3" };
+        juce::TextButton publishButton { "Publish Draft" };
+        juce::Label outputFolderLabel;
+
+        juce::Viewport checksViewport;
+        juce::Component checksContent;
+        std::vector<std::unique_ptr<CheckRow>> checkRows;
+        std::unique_ptr<juce::FileChooser> outputFolderChooser;
+        juce::File selectedLaunchRoot;
+
+        juce::String launchSummary;
+        int errorCount = 0;
+        int warningCount = 0;
+        int passCount = 0;
+
+        std::vector<CheckItem> buildChecks();
+        void rebuildRows();
+        void chooseOutputFolder();
+        void createLaunchBundle();
+        void showCustomerPackageWizard();
+        void showProductPagePreview();
+        void showSalesPageBuilder();
+        void writeProductPageOnly();
+        void writeSalesPageOnly();
+
+        juce::String buildReadinessMarkdown();
+        juce::String buildProductPageMarkdown() const;
+        juce::String buildSalesPageMarkdown() const;
+        juce::String buildSalesPageHtml() const;
+        juce::String buildTestPlanMarkdown() const;
+        juce::String buildInstallerChecklistMarkdown() const;
+        juce::String buildClientDeliveryMarkdown() const;
+        juce::String buildCustomerPackageWizardMarkdown() const;
+        juce::String buildSellerLaunchPlaybookMarkdown() const;
+        juce::String buildBuyerQuickStartMarkdown() const;
+        juce::String buildMarketplaceAssetChecklistMarkdown() const;
+        juce::String buildInstallerReadmeMarkdown() const;
+        juce::String buildWindowsInstallerScript() const;
+        juce::String buildMacInstallerNotes() const;
+        juce::String buildActivationFlowMarkdown() const;
+        juce::var buildPluginClubMetadataPreview() const;
+        juce::var buildWhiteLabelProductManifest() const;
+        juce::var buildReleaseManifest() const;
+
+        juce::File defaultLaunchRoot() const;
+        juce::File launchRoot() const;
+        juce::File createLaunchFolder (juce::String& error) const;
+        void updateOutputFolderLabel();
+        bool writeTextFile (const juce::File& file, const juce::String& text, juce::String& error) const;
+        void showMessage (const juce::String& titleText,
+                          const juce::String& message,
+                          juce::MessageBoxIconType icon) const;
+        void styleActionButton (juce::TextButton& button, bool primary);
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LaunchCenterPage)
+    };
+}

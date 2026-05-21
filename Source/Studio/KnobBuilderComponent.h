@@ -23,6 +23,7 @@ namespace patchcraft
         void mouseDown (const juce::MouseEvent&) override;
         void mouseDrag (const juce::MouseEvent&) override;
         void mouseUp (const juce::MouseEvent&) override;
+        void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
         void addKnobToLibrary();
 
     private:
@@ -30,26 +31,34 @@ namespace patchcraft
 
         struct Style
         {
-            int   size = 112;
-            int   frames = 64;
+            int   size = 132;
+            int   frames = 96;
             float previewValue = 0.62f;
             float startAngle = -135.0f;
             float endAngle = 135.0f;
-            float ringThickness = 7.0f;
-            float pointerWidth = 3.0f;
-            float bevel = 0.35f;
-            float glow = 0.22f;
+            float ringThickness = 9.0f;
+            float pointerWidth = 4.0f;
+            float bevel = 0.52f;
+            float glow = 0.38f;
             float importedBaseOpacity = 1.0f;
             float overlayOpacity = 1.0f;
+            float imageScale = 1.0f;
+            float imageRotation = 0.0f;
+            float animationDepth = 0.35f;
+            float surfaceTexture = 0.16f;
+            float lightAngle = -45.0f;
+            float ringInset = 0.0f;
+            float pointerLength = 0.82f;
+            float motionCurve = 0.50f;
             bool  ring = true;
             bool  ticks = true;
             bool  shadow = true;
-            bool  label = true;
+            bool  label = false;
             juce::Colour indicator { 0xfff5a623 };
             juce::Colour ringColour { 0xfff5a623 };
             juce::Colour backgroundColour { 0xff1a1c20 };
             juce::Colour borderColour { 0xff080a0d };
-            juce::Colour tickColour { 0xff7a8088 };
+            juce::Colour tickColour { 0xff64d8ff };
             juce::String name { "PatchCraft Pro Knob" };
         } style;
 
@@ -62,16 +71,20 @@ namespace patchcraft
         juce::TextEditor nameEdit;
         juce::Slider sizeSlider, valueSlider, startSlider, endSlider, ringWidthSlider,
                      pointerWidthSlider, bevelSlider, glowSlider, framesSlider,
-                     importedBaseOpacitySlider, overlayOpacitySlider;
+                     importedBaseOpacitySlider, overlayOpacitySlider,
+                     imageScaleSlider, imageRotationSlider, animationDepthSlider,
+                     surfaceTextureSlider, lightAngleSlider, ringInsetSlider,
+                     pointerLengthSlider, motionCurveSlider;
         juce::ToggleButton ringToggle { "Ring" };
         juce::ToggleButton ticksToggle { "Tick Marks" };
         juce::ToggleButton shadowToggle { "Shadow" };
         juce::ToggleButton labelToggle { "Text Label" };
         juce::ToggleButton importedBaseToggle { "Use Imported Base" };
         juce::ToggleButton overlayToggle { "Overlay Edits" };
-        juce::ComboBox styleBox, indicatorBox, outputBox;
+        juce::ComboBox styleBox, indicatorBox, outputBox, imageRoleBox, imageFitBox, animationBox;
         juce::TextButton importBtn { "Import Knob..." };
         juce::TextButton clearImportBtn { "Clear Import" };
+        juce::TextButton proDemoBtn { "Load Pro Demo" };
         juce::TextButton indicatorColourBtn { "Indicator" };
         juce::TextButton ringColourBtn { "Ring" };
         juce::TextButton backgroundColourBtn { "Face" };
@@ -80,6 +93,7 @@ namespace patchcraft
         juce::TextButton   exportBtn { "Export Knob..." };
         juce::TextButton   exportJsonBtn { "Export JSON" };
         juce::TextButton   addToProjectBtn { "Add To Project" };
+        juce::TextButton   publishBtn { "Publish" };
 
         juce::Label assetLbl, importLbl, geometryLbl, paintLbl, behaviorLbl, exportLbl;
 
@@ -91,6 +105,13 @@ namespace patchcraft
         std::vector<BuildLayer> buildLayers;
         std::vector<juce::Rectangle<int>> buildLayerRows;
         std::vector<int> buildLayerRowIndices;
+        struct WorkbenchCard
+        {
+            juce::Rectangle<int> bounds;
+            juce::String actionId;
+        };
+        std::vector<WorkbenchCard> workbenchCards;
+        std::vector<std::pair<juce::Rectangle<int>, juce::String>> sliderLabelRects;
         int selectedBuildLayer = 1;
         juce::Rectangle<int> previewKnobBounds;
         bool draggingPreviewKnob = false;
@@ -98,15 +119,23 @@ namespace patchcraft
         enum SectionIndex { AssetSection = 0, ImportSection, GeometrySection, PaintSection, BehaviorSection, OutputSection, SectionCount };
         std::array<bool, SectionCount> sectionOpen {{ true, true, false, false, false, true }};
         std::array<juce::Rectangle<int>, SectionCount> sectionHeaderBounds {};
+        juce::Rectangle<int> rightPanelViewportBounds;
+        int rightPanelScrollOffset = 0;
+        int rightPanelContentHeight = 0;
+        int rightPanelMaxScroll = 0;
 
         void exportKnobFilmstrip();
         void exportKnobSourceJson();
         juce::var buildKnobSourceVar() const;
         bool writeKnobSourceJson (const juce::File& destination, juce::String& error) const;
         bool loadKnobSourceJson (const juce::File& source, juce::String& error);
+        bool loadKnobManFile (const juce::File& source, juce::String& error);
+        bool writeKnobAssetPackage (const juce::File& folder, juce::File& renderedPng, juce::String& error);
         void syncControlsFromStyle();
         void importExistingKnob();
         void clearImportedKnob();
+        void loadProDemoKnob();
+        void publishKnobToPluginClub();
         void detectImportedFilmstripLayout();
         bool hasImportedKnob() const noexcept;
         juce::Image getImportedFrame (float position) const;
@@ -114,6 +143,10 @@ namespace patchcraft
         void updatePreviewValueFromPoint (juce::Point<int> point);
         void openSectionForLayer (const juce::String& layerName);
         bool isBuildLayerVisible (const juce::String& layerName) const;
+        void applyWorkbenchAction (const juce::String& actionId);
+        void drawWorkbenchCard (juce::Graphics&, juce::Rectangle<int>, const juce::String& title,
+                                const juce::String& body, const juce::String& actionId,
+                                juce::Colour accent);
         void configureSlider (juce::Slider&, double min, double max, double step, double value, juce::String suffix = {});
         void drawKnob (juce::Graphics&, juce::Rectangle<float>, float position, bool compact);
         void drawSection (juce::Graphics&, juce::Rectangle<int>, const juce::String&);

@@ -10,7 +10,7 @@ namespace patchcraft
         Full-width top toolbar that mirrors the reference image:
 
         [LOGO + PATCHCRAFT / INSTRUMENT BUILDER]
-        [New] [Open] [Save] | [Import Samples] [Import BG] [AI Assist]
+        [New] [Open] [Save] | [Import Samples] [Import BG] [AI Assist when enabled]
                                                    [Preview] [Export Pack]
         [Project name + Unsaved Changes] [Settings]
     */
@@ -45,6 +45,8 @@ namespace patchcraft
 
         juce::Label projectNameLabel;
         juce::Label projectStatusLabel;
+        juce::Label bpmLabel;
+        juce::Slider bpmSlider;
         juce::TextButton settingsBtn;
 
         bool previewActive = false;

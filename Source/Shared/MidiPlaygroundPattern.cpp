@@ -305,11 +305,21 @@ namespace patchcraft
                             valueFor (block, prefix + "Vel", valueFor (block, directPrefix + "Vel", track == 0 ? 1.0f : 0.75f)));
                         const float gate = juce::jlimit (0.05f, 1.0f,
                             valueFor (block, prefix + "Gate", valueFor (block, directPrefix + "Gate", track == 2 ? 0.16f : 0.36f)));
-                        const auto startTick = (double) (patternOffsetTicks + step * stepTicks);
-                        const auto durationTicks = (double) juce::jmax (1, juce::roundToInt ((float) stepTicks * gate));
-                        sequence.addEvent (juce::MidiMessage::noteOn (10, note, velocity), startTick);
-                        sequence.addEvent (juce::MidiMessage::noteOff (10, note), startTick + durationTicks);
-                        ++eventCount;
+                        const int divisions = juce::jlimit (1, 4, juce::roundToInt (
+                            valueFor (block, prefix + "Div", valueFor (block, directPrefix + "Div", 1.0f))));
+
+                        for (int division = 0; division < divisions; ++division)
+                        {
+                            const auto startTick = (double) (patternOffsetTicks + step * stepTicks)
+                                                 + (double) division * (double) stepTicks / (double) divisions;
+                            const auto durationTicks = (double) juce::jmax (1,
+                                juce::roundToInt ((float) stepTicks * gate / (float) divisions));
+                            const float divisionVelocity = juce::jlimit (0.01f, 1.0f,
+                                velocity * (division == 0 ? 1.0f : juce::jmax (0.40f, 1.0f - 0.12f * (float) division)));
+                            sequence.addEvent (juce::MidiMessage::noteOn (10, note, divisionVelocity), startTick);
+                            sequence.addEvent (juce::MidiMessage::noteOff (10, note), startTick + durationTicks);
+                            ++eventCount;
+                        }
                     }
             }
 
@@ -331,18 +341,35 @@ namespace patchcraft
             float chordSpread;
             std::array<float, 4> roots;
             std::array<float, 4> colourTones;
+            int patternStyle = 0;
+            float gate = 0.72f;
+            float swing = 0.0f;
+            float strum = 0.08f;
+            float humanize = 0.02f;
         };
 
-        static const std::array<ProgressionPreset, 7>& progressionPresets()
+        static const std::vector<ProgressionPreset>& progressionPresets()
         {
-            static const std::array<ProgressionPreset, 7> presets {{
+            static const std::vector<ProgressionPreset> presets {{
                 { "I - V - vi - IV", 1, 1, 3, 0.28f, {{ 0.0f, 7.0f, 9.0f, 5.0f }}, {{ 4.0f, 11.0f, 12.0f, 9.0f }} },
                 { "i - VI - III - VII", 2, 1, 3, 0.32f, {{ 0.0f, 8.0f, 3.0f, 10.0f }}, {{ 3.0f, 12.0f, 7.0f, 14.0f }} },
                 { "ii - V - I - I", 1, 1, 4, 0.38f, {{ 2.0f, 7.0f, 0.0f, 0.0f }}, {{ 5.0f, 11.0f, 4.0f, 7.0f }} },
                 { "I - vi - IV - V", 1, 1, 3, 0.24f, {{ 0.0f, 9.0f, 5.0f, 7.0f }}, {{ 4.0f, 12.0f, 9.0f, 11.0f }} },
                 { "i - iv - VII - III", 2, 1, 3, 0.30f, {{ 0.0f, 5.0f, 10.0f, 3.0f }}, {{ 3.0f, 8.0f, 14.0f, 7.0f }} },
                 { "Dorian Pedal Lift", 3, 2, 3, 0.34f, {{ 0.0f, 2.0f, 5.0f, 7.0f }}, {{ 7.0f, 9.0f, 12.0f, 14.0f }} },
-                { "Phrygian Dark Steps", 4, 3, 3, 0.36f, {{ 0.0f, 1.0f, 5.0f, 8.0f }}, {{ 7.0f, 6.0f, 10.0f, 13.0f }} }
+                { "Phrygian Dark Steps", 4, 3, 3, 0.36f, {{ 0.0f, 1.0f, 5.0f, 8.0f }}, {{ 7.0f, 6.0f, 10.0f, 13.0f }} },
+                { "Cinematic Lift", 1, 16, 4, 0.62f, {{ 0.0f, 5.0f, 9.0f, 7.0f }}, {{ 11.0f, 12.0f, 16.0f, 14.0f }}, 1, 0.58f, 0.04f, 0.16f, 0.03f },
+                { "Neo Soul Glow", 1, 21, 4, 0.68f, {{ 0.0f, 4.0f, 9.0f, 2.0f }}, {{ 14.0f, 16.0f, 21.0f, 17.0f }}, 2, 0.64f, 0.12f, 0.20f, 0.05f },
+                { "Ambient Glass Drift", 1, 11, 4, 0.72f, {{ 0.0f, 2.0f, 7.0f, 9.0f }}, {{ 14.0f, 16.0f, 19.0f, 21.0f }}, 3, 0.96f, 0.00f, 0.28f, 0.04f },
+                { "Dark Trailer Resolve", 2, 17, 4, 0.58f, {{ 0.0f, 10.0f, 8.0f, 7.0f }}, {{ 12.0f, 15.0f, 13.0f, 14.0f }}, 6, 0.52f, 0.03f, 0.10f, 0.02f },
+                { "Future Bass Anthem", 1, 23, 5, 0.74f, {{ 0.0f, 7.0f, 9.0f, 5.0f }}, {{ 14.0f, 18.0f, 21.0f, 17.0f }}, 4, 0.44f, 0.08f, 0.06f, 0.03f },
+                { "Dream Pop Suspended", 1, 12, 4, 0.70f, {{ 0.0f, 5.0f, 2.0f, 7.0f }}, {{ 14.0f, 17.0f, 16.0f, 19.0f }}, 3, 0.92f, 0.02f, 0.22f, 0.05f },
+                { "Lo-Fi Late Night", 2, 22, 4, 0.48f, {{ 0.0f, 3.0f, 8.0f, 10.0f }}, {{ 14.0f, 15.0f, 20.0f, 22.0f }}, 2, 0.54f, 0.18f, 0.14f, 0.08f },
+                { "Melodic Techno Pulse", 3, 1, 3, 0.40f, {{ 0.0f, 2.0f, 7.0f, 5.0f }}, {{ 7.0f, 9.0f, 14.0f, 12.0f }}, 5, 0.36f, 0.04f, 0.00f, 0.01f },
+                { "Gospel Passing Clouds", 1, 25, 6, 0.76f, {{ 0.0f, 4.0f, 5.0f, 7.0f }}, {{ 14.0f, 16.0f, 17.0f, 21.0f }}, 2, 0.82f, 0.10f, 0.26f, 0.05f },
+                { "Cyberpunk Tension", 4, 28, 4, 0.52f, {{ 0.0f, 1.0f, 6.0f, 8.0f }}, {{ 10.0f, 13.0f, 18.0f, 20.0f }}, 6, 0.34f, 0.06f, 0.02f, 0.02f },
+                { "Nordic Minor Bloom", 2, 20, 4, 0.66f, {{ 0.0f, 7.0f, 3.0f, 10.0f }}, {{ 14.0f, 19.0f, 15.0f, 22.0f }}, 1, 0.68f, 0.02f, 0.18f, 0.04f },
+                { "Minimal Glass Arp", 1, 0, 1, 0.44f, {{ 0.0f, 7.0f, 2.0f, 9.0f }}, {{ 12.0f, 19.0f, 14.0f, 21.0f }}, 5, 0.42f, 0.00f, 0.00f, 0.03f }
             }};
             return presets;
         }
@@ -460,22 +487,22 @@ namespace patchcraft
 
         block.values["arpSteps"] = 16.0f;
         block.values["arpPattern"] = 0.0f;
-        block.values["arpGate"] = 0.92f;
+        block.values["arpGate"] = preset.gate;
         block.values["arpOctaves"] = 1.0f;
-        block.values["arpSwing"] = 0.0f;
+        block.values["arpSwing"] = preset.swing;
         block.values["mpScaleType"] = (float) preset.scaleType;
         block.values["mpChordMode"] = (float) preset.chordMode;
         block.values["mpChordSize"] = (float) preset.chordSize;
         block.values["mpChordSpread"] = preset.chordSpread;
         block.values["mpProbability"] = 1.0f;
-        block.values["mpHumanize"] = 0.02f;
+        block.values["mpHumanize"] = preset.humanize;
         block.values["mpMutation"] = 0.0f;
         block.values["mpRatchet"] = 1.0f;
         block.values["mpVelocityCurve"] = -0.05f;
         block.values["mpOctaveFold"] = 1.0f;
         block.values["mpSampleControl"] = 0.0f;
         block.values["mpProgressionPreset"] = (float) progressionIndex;
-        block.values["mpStrum"] = 0.18f;
+        block.values["mpStrum"] = preset.strum;
         block.values["mpFlam"] = 0.0f;
         block.values["mpEuclideanPulses"] = 0.0f;
         block.values["mpEuclideanRotate"] = 0.0f;
@@ -487,19 +514,92 @@ namespace patchcraft
             const bool chordStart = localStep == 0;
             const auto suffix = juce::String (step);
 
-            float note = preset.roots[(size_t) chord];
-            if (localStep == 1)
-                note = preset.colourTones[(size_t) chord];
-            else if (localStep == 2)
-                note = preset.roots[(size_t) chord] + 12.0f;
-            else if (localStep == 3)
-                note = preset.colourTones[(size_t) chord] + 7.0f;
+            const auto root = preset.roots[(size_t) chord];
+            const auto colour = preset.colourTones[(size_t) chord];
+            float note = root;
+            float velocity = chordStart ? 0.94f : 0.58f;
+            float gate = chordStart ? 0.92f : 0.35f;
+            float probability = chordStart ? 1.0f : 0.0f;
+            bool active = chordStart;
+
+            switch (preset.patternStyle)
+            {
+                case 1:
+                {
+                    static constexpr std::array<float, 4> offsets {{ 0.0f, 7.0f, 12.0f, 19.0f }};
+                    note = root + offsets[(size_t) localStep];
+                    active = true;
+                    velocity = localStep == 0 ? 0.96f : (localStep == 2 ? 0.82f : 0.70f);
+                    gate = localStep == 3 ? 0.46f : 0.58f;
+                    probability = localStep == 3 ? 0.92f : 1.0f;
+                    break;
+                }
+                case 2:
+                {
+                    static constexpr std::array<float, 4> offsets {{ 0.0f, 14.0f, 7.0f, 12.0f }};
+                    note = (localStep == 1 || localStep == 3) ? colour : root + offsets[(size_t) localStep];
+                    active = localStep != 2 || (step % 8) == 6;
+                    velocity = localStep == 0 ? 0.90f : (localStep == 1 ? 0.66f : 0.74f);
+                    gate = localStep == 0 ? 0.72f : 0.48f;
+                    probability = localStep == 3 ? 0.88f : 1.0f;
+                    break;
+                }
+                case 3:
+                {
+                    note = localStep == 0 ? root : (localStep == 2 ? colour + 7.0f : colour);
+                    active = localStep == 0 || localStep == 2;
+                    velocity = localStep == 0 ? 0.86f : 0.64f;
+                    gate = localStep == 0 ? 0.96f : 0.78f;
+                    probability = localStep == 2 ? 0.86f : 1.0f;
+                    break;
+                }
+                case 4:
+                {
+                    static constexpr std::array<float, 4> offsets {{ 0.0f, 12.0f, 19.0f, 24.0f }};
+                    note = localStep == 2 ? colour + 7.0f : root + offsets[(size_t) localStep];
+                    active = localStep != 3 || (chord % 2) == 0;
+                    velocity = localStep == 0 ? 0.98f : 0.76f;
+                    gate = localStep == 0 ? 0.44f : 0.32f;
+                    probability = localStep == 3 ? 0.78f : 1.0f;
+                    break;
+                }
+                case 5:
+                {
+                    static constexpr std::array<float, 4> offsets {{ 0.0f, 12.0f, 7.0f, 19.0f }};
+                    note = preset.chordMode == 0 ? root + offsets[(size_t) localStep]
+                                                 : (localStep == 2 ? colour : root + offsets[(size_t) localStep]);
+                    active = true;
+                    velocity = (step % 4) == 0 ? 0.92f : ((step % 2) == 0 ? 0.72f : 0.56f);
+                    gate = 0.34f;
+                    probability = (step % 8) == 7 ? 0.80f : 1.0f;
+                    break;
+                }
+                case 6:
+                {
+                    note = localStep == 0 ? root : (localStep == 1 ? colour : (localStep == 2 ? root + 12.0f : colour + 1.0f));
+                    active = localStep != 1 || (chord % 2) == 0;
+                    velocity = localStep == 0 ? 0.98f : (localStep == 3 ? 0.62f : 0.78f);
+                    gate = localStep == 3 ? 0.26f : 0.40f;
+                    probability = localStep == 3 ? 0.76f : 1.0f;
+                    break;
+                }
+                default:
+                {
+                    if (localStep == 1)
+                        note = colour;
+                    else if (localStep == 2)
+                        note = root + 12.0f;
+                    else if (localStep == 3)
+                        note = colour + 7.0f;
+                    break;
+                }
+            }
 
             block.values["arpNote" + suffix] = note;
-            block.values["mpStep" + suffix + "On"] = chordStart ? 1.0f : 0.0f;
-            block.values["mpVelocity" + suffix] = chordStart ? 0.94f : 0.58f;
-            block.values["mpGate" + suffix] = chordStart ? 0.92f : 0.35f;
-            block.values["mpStepProb" + suffix] = chordStart ? 1.0f : 0.0f;
+            block.values["mpStep" + suffix + "On"] = active ? 1.0f : 0.0f;
+            block.values["mpVelocity" + suffix] = juce::jlimit (0.01f, 1.0f, velocity);
+            block.values["mpGate" + suffix] = juce::jlimit (0.05f, 1.0f, gate);
+            block.values["mpStepProb" + suffix] = active ? juce::jlimit (0.0f, 1.0f, probability) : 0.0f;
             block.values["mpSampleSlice" + suffix] = -1.0f;
         }
 

@@ -19,6 +19,15 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 
 option(PATCHCRAFT_BUILD_STUDIO "Build PatchCraft Studio standalone app" ON)
 option(PATCHCRAFT_BUILD_PLAYER "Build PatchCraft Player VST3 plugin"   ON)
+option(PATCHCRAFT_BUILD_PLAYER_FX "Build PatchCraft Player FX VST3 (audio effect)" ON)
+option(PATCHCRAFT_STAGE_VST_EXPANSION "Stage the paid VST Expansion templates inside the Studio runtime" OFF)
+option(PATCHCRAFT_ENABLE_AI_STUDIO "Enable the future paid AI Studio expansion UI surfaces" OFF)
+
+if(PATCHCRAFT_ENABLE_AI_STUDIO)
+    set(PATCHCRAFT_ENABLE_AI_STUDIO_VALUE 1)
+else()
+    set(PATCHCRAFT_ENABLE_AI_STUDIO_VALUE 0)
+endif()
 
 # ---------------------------------------------------------------------------
 # Locate JUCE
@@ -57,16 +66,20 @@ add_library(PatchCraftCore STATIC
     Source/Shared/MidiPlaygroundRuntime.cpp
     Source/Shared/MidiPlaygroundPattern.cpp
     Source/Shared/EngineFactory.cpp
+    Source/Shared/MultiInstrumentEngine.cpp
     Source/Shared/InstrumentTemplates.cpp
     Source/Shared/ParameterModel.cpp
     Source/Shared/PresetGenerator.cpp
     Source/Shared/LayoutModel.cpp
     Source/Shared/LiveValueStore.cpp
     Source/Shared/AssetManager.cpp
+    Source/Shared/PcexpManager.cpp
     Source/Shared/AiAssistService.cpp
+    Source/Shared/AiImageService.cpp
     Source/Shared/LibraryScanner.cpp
     Source/Shared/SfzImporter.cpp
     Source/Shared/LicenseValidator.cpp
+    Source/Shared/PluginClubPublisher.cpp
 )
 
 target_include_directories(PatchCraftCore PUBLIC Source/Shared)
@@ -95,8 +108,10 @@ target_compile_definitions(PatchCraftCore
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
+        JUCE_PLUGINHOST_VST3=1
         JUCE_DISPLAY_SPLASH_SCREEN=0
-        JUCE_REPORT_APP_USAGE=0)
+        JUCE_REPORT_APP_USAGE=0
+        PATCHCRAFT_ENABLE_AI_STUDIO=${PATCHCRAFT_ENABLE_AI_STUDIO_VALUE})
 
 # ---------------------------------------------------------------------------
 # Automated engine smoke tests
@@ -104,6 +119,27 @@ target_compile_definitions(PatchCraftCore
 add_executable(PatchCraftAudioSmokeTests
     Source/Tests/AudioSmokeTests.cpp)
 target_link_libraries(PatchCraftAudioSmokeTests PRIVATE PatchCraftCore)
+
+# ---------------------------------------------------------------------------
+# VST export smoke test
+#
+# Exercises VstExportModule::exportPlugin headlessly and verifies the
+# produced .vst3 bundle has the structure a host expects. Skipped at
+# runtime if the PatchCraft Player VST3 template isn't built yet.
+# ---------------------------------------------------------------------------
+add_executable(PatchCraftVstExportSmokeTest
+    Source/Tests/VstExportSmokeTest.cpp
+    Source/Studio/VstExportModule.cpp)
+target_include_directories(PatchCraftVstExportSmokeTest PRIVATE Source/Studio)
+target_link_libraries(PatchCraftVstExportSmokeTest PRIVATE PatchCraftCore)
+# After the test exe is built, point it at the freshly-built Player VST3
+# template via an env var so the harness doesn't need to know paths.
+if(PATCHCRAFT_BUILD_PLAYER)
+    add_dependencies(PatchCraftVstExportSmokeTest PatchCraftPlayer_VST3)
+endif()
+if(PATCHCRAFT_BUILD_PLAYER_FX)
+    add_dependencies(PatchCraftVstExportSmokeTest PatchCraftPlayerFX_VST3)
+endif()
 
 # ---------------------------------------------------------------------------
 # Studio standalone app
@@ -116,11 +152,16 @@ if(PATCHCRAFT_BUILD_STUDIO)
         VERSION "0.1.0")
 
     juce_generate_juce_header(PatchCraftStudio)
+    set_target_properties(PatchCraftStudio PROPERTIES OUTPUT_NAME "PatchCraftStudio")
 
     target_sources(PatchCraftStudio PRIVATE
         Source/Studio/Main.cpp
         Source/Studio/StudioApplication.cpp
         Source/Studio/StudioMainComponent.cpp
+        Source/Player/PluginProcessor.cpp
+        Source/Player/PluginEditor.cpp
+        Source/Player/PlayerGuiRenderer.cpp
+        Source/Player/LibraryBrowser.cpp
         Source/Studio/TopToolbar.cpp
         Source/Studio/ElementPalette.cpp
         Source/Studio/BrandingLabPage.cpp
@@ -128,6 +169,8 @@ if(PATCHCRAFT_BUILD_STUDIO)
         Source/Studio/ExpansionLibraryPanel.cpp
         Source/Studio/LayersPanel.cpp
         Source/Studio/CanvasEditor.cpp
+        Source/Studio/WorkflowPage.cpp
+        Source/Studio/LaunchCenterPage.cpp
         Source/Studio/InspectorPanel.cpp
         Source/Studio/BottomPanel.cpp
         Source/Studio/SampleMapperComponent.cpp
@@ -140,6 +183,7 @@ if(PATCHCRAFT_BUILD_STUDIO)
         Source/Studio/InstrumentPreviewComponent.cpp
         Source/Studio/StudioInstrumentRenderer.cpp
         Source/Studio/TestPage.cpp
+        Source/Studio/OneShotMakerPage.cpp
         Source/Studio/MidiPlaygroundPage.cpp
         Source/Studio/DspPage.cpp
         Source/Studio/CanvasToolbar.cpp
@@ -149,9 +193,91 @@ if(PATCHCRAFT_BUILD_STUDIO)
         Source/Studio/LibraryMetadataComponent.cpp
         Source/Studio/SampleWaveformViewer.cpp
         Source/Studio/VelocityMapViewer.cpp
-        Source/Studio/SampleMapEditor.cpp)
+        Source/Studio/SampleMapEditor.cpp
+        Source/Studio/VstExportModule.cpp)
 
     target_link_libraries(PatchCraftStudio PRIVATE PatchCraftCore)
+
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/FactoryDemos")
+        add_custom_command(TARGET PatchCraftStudio POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/FactoryDemos"
+                "$<TARGET_FILE_DIR:PatchCraftStudio>/FactoryDemos"
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:PatchCraftStudio>/Library/Backgrounds"
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:PatchCraftStudio>/Library/Templates"
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:PatchCraftStudio>/Library/Assets/knobs"
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:PatchCraftStudio>/Library/Assets/sliders"
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:PatchCraftStudio>/Library/Assets/meters"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/Library"
+                "$<TARGET_FILE_DIR:PatchCraftStudio>/Library"
+            COMMENT "Staging PatchCraft factory demo instruments"
+            VERBATIM)
+    endif()
+
+    # Base runtime: installable PatchCraft Player plugins are part of the
+    # Studio/Player system. They are staged separately from PluginTemplate so
+    # the paid VST Expansion exporter can be packaged/unlocked independently.
+    if(PATCHCRAFT_BUILD_PLAYER)
+        add_dependencies(PatchCraftStudio PatchCraftPlayer_VST3)
+        add_custom_command(TARGET PatchCraftStudio POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:PatchCraftStudio>/PlayerPlugins"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "$<GENEX_EVAL:$<TARGET_PROPERTY:PatchCraftPlayer_VST3,JUCE_PLUGIN_ARTEFACT_FILE>>"
+                "$<TARGET_FILE_DIR:PatchCraftStudio>/PlayerPlugins/PatchCraft Player.vst3"
+            COMMENT "Staging PatchCraft Player VST3 for the base Studio/Player installer"
+            VERBATIM)
+    endif()
+    if(PATCHCRAFT_BUILD_PLAYER_FX)
+        add_dependencies(PatchCraftStudio PatchCraftPlayerFX_VST3)
+        add_custom_command(TARGET PatchCraftStudio POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:PatchCraftStudio>/PlayerPlugins"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "$<GENEX_EVAL:$<TARGET_PROPERTY:PatchCraftPlayerFX_VST3,JUCE_PLUGIN_ARTEFACT_FILE>>"
+                "$<TARGET_FILE_DIR:PatchCraftStudio>/PlayerPlugins/PatchCraft Player FX.vst3"
+            COMMENT "Staging PatchCraft Player FX VST3 for the base Studio/Player installer"
+            VERBATIM)
+    endif()
+
+    # Paid VST Expansion addon: only staged into the app runtime when this
+    # option is enabled. Release builds keep these templates out of the base
+    # installer and ship them via the separate PatchCraftVstExpansionPackage.
+    if(PATCHCRAFT_STAGE_VST_EXPANSION AND PATCHCRAFT_BUILD_PLAYER)
+        add_custom_command(TARGET PatchCraftStudio POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E rm -rf
+                "$<TARGET_FILE_DIR:PatchCraftStudio>/PluginTemplate"
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:PatchCraftStudio>/PluginTemplate"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "$<GENEX_EVAL:$<TARGET_PROPERTY:PatchCraftPlayer_VST3,JUCE_PLUGIN_ARTEFACT_FILE>>"
+                "$<TARGET_FILE_DIR:PatchCraftStudio>/PluginTemplate/PatchCraft Player.vst3"
+            COMMENT "Staging paid VST Expansion instrument template"
+            VERBATIM)
+    endif()
+    if(PATCHCRAFT_STAGE_VST_EXPANSION AND PATCHCRAFT_BUILD_PLAYER_FX)
+        add_custom_command(TARGET PatchCraftStudio POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:PatchCraftStudio>/PluginTemplate"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "$<GENEX_EVAL:$<TARGET_PROPERTY:PatchCraftPlayerFX_VST3,JUCE_PLUGIN_ARTEFACT_FILE>>"
+                "$<TARGET_FILE_DIR:PatchCraftStudio>/PluginTemplate/PatchCraft Player FX.vst3"
+            COMMENT "Staging paid VST Expansion FX template"
+            VERBATIM)
+    endif()
+    if(NOT PATCHCRAFT_STAGE_VST_EXPANSION)
+        add_custom_command(TARGET PatchCraftStudio POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E rm -rf
+                "$<TARGET_FILE_DIR:PatchCraftStudio>/PluginTemplate"
+            COMMENT "Removing paid VST Expansion templates from the base Studio runtime"
+            VERBATIM)
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------
@@ -188,7 +314,6 @@ endif()
 # ---------------------------------------------------------------------------
 # Player FX VST3 audio effect plugin (effect packs)
 # ---------------------------------------------------------------------------
-option(PATCHCRAFT_BUILD_PLAYER_FX "Build PatchCraft Player FX VST3 (audio effect)" ON)
 if(PATCHCRAFT_BUILD_PLAYER_FX)
     juce_add_plugin(PatchCraftPlayerFX
         PRODUCT_NAME "PatchCraft Player FX"
@@ -226,6 +351,9 @@ endif()
 # Release checklist target
 # ---------------------------------------------------------------------------
 set(PATCHCRAFT_RELEASE_CHECK_TARGETS PatchCraftAudioSmokeTests)
+if(PATCHCRAFT_STAGE_VST_EXPANSION)
+    list(APPEND PATCHCRAFT_RELEASE_CHECK_TARGETS PatchCraftVstExportSmokeTest)
+endif()
 if(PATCHCRAFT_BUILD_STUDIO)
     list(APPEND PATCHCRAFT_RELEASE_CHECK_TARGETS PatchCraftStudio)
 endif()
@@ -238,3 +366,28 @@ endif()
 
 add_custom_target(PatchCraftReleaseChecklist
     DEPENDS ${PATCHCRAFT_RELEASE_CHECK_TARGETS})
+
+if(PATCHCRAFT_BUILD_STUDIO)
+    add_custom_target(PatchCraftRcBundle
+        DEPENDS PatchCraftReleaseChecklist
+        COMMAND ${CMAKE_COMMAND}
+            -D SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+            -D STUDIO_EXE="$<TARGET_FILE:PatchCraftStudio>"
+            -D STUDIO_DIR="$<TARGET_FILE_DIR:PatchCraftStudio>"
+            -D OUTPUT_DIR="${CMAKE_BINARY_DIR}/dist/PatchCraftStudio-RC"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CreatePatchCraftRcBundle.cmake"
+        COMMENT "Creating PatchCraft Studio release-candidate bundle"
+        VERBATIM)
+endif()
+
+if(PATCHCRAFT_BUILD_PLAYER AND PATCHCRAFT_BUILD_PLAYER_FX)
+    add_custom_target(PatchCraftVstExpansionPackage
+        DEPENDS PatchCraftPlayer_VST3 PatchCraftPlayerFX_VST3
+        COMMAND ${CMAKE_COMMAND}
+            -D PLAYER_VST3="$<GENEX_EVAL:$<TARGET_PROPERTY:PatchCraftPlayer_VST3,JUCE_PLUGIN_ARTEFACT_FILE>>"
+            -D PLAYER_FX_VST3="$<GENEX_EVAL:$<TARGET_PROPERTY:PatchCraftPlayerFX_VST3,JUCE_PLUGIN_ARTEFACT_FILE>>"
+            -D OUTPUT_DIR="${CMAKE_BINARY_DIR}/dist/PatchCraftVstExpansion"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CreatePatchCraftVstExpansionPackage.cmake"
+        COMMENT "Creating separate paid PatchCraft VST Expansion installer package"
+        VERBATIM)
+endif()

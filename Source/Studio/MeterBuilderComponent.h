@@ -13,6 +13,7 @@ namespace patchcraft
 
         void paint (juce::Graphics&) override;
         void resized() override;
+        void addMeterToLibrary();
 
     private:
         StudioMainComponent& owner;
@@ -42,7 +43,6 @@ namespace patchcraft
         bool writeMeterSourceJson (const juce::File&, bool verticalStrip, juce::String& error) const;
         void exportMeterFilmstrip();
         void exportMeterSourceJson();
-        void addMeterToLibrary();
     };
 
 } // namespace patchcraft

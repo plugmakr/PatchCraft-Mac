@@ -31,7 +31,10 @@ namespace patchcraft
                 "One", "Pulse", "Glass", "Wide", "Dark", "Bright", "Deep", "Air",
                 "Edge", "Bloom", "Shift", "Lift", "Night", "Spark", "Drive", "Drift"
             };
-            return theme + " " + suffixes[(size_t) index % std::size (suffixes)];
+            juce::String name = theme + " " + suffixes[(size_t) index % std::size (suffixes)];
+            if (index >= (int) std::size (suffixes))
+                name << " " << juce::String (index + 1);
+            return name;
         }
 
         static bool isWavetableTheme (const juce::String& theme)
@@ -55,7 +58,10 @@ namespace patchcraft
                 "WT Custom Fold",
                 "WT Sub Motion"
             };
-            return names[(size_t) index % std::size (names)];
+            juce::String name = names[(size_t) index % std::size (names)];
+            if (index >= (int) std::size (names))
+                name << " " << juce::String (index + 1);
+            return name;
         }
 
         static void setWavetableShape (Preset& preset, const ParameterModel& model, int shapeKind)
@@ -227,7 +233,8 @@ namespace patchcraft
         {
             const auto lower = theme.toLowerCase();
 
-            setNorm (preset, model, "volume", value01 (rng, 0.72f, 0.12f));
+            setNorm (preset, model, "volume", lower.contains ("arp") ? value01 (rng, 0.58f, 0.08f)
+                                                                     : value01 (rng, 0.66f, 0.10f));
             setNorm (preset, model, "pan", value01 (rng, 0.50f, 0.18f));
             setValue (preset, model, "bpmSync", 1.0f);
             setValue (preset, model, "retrigger", lower.contains ("arp") || lower.contains ("pluck") ? 1.0f : 0.0f);
@@ -240,17 +247,31 @@ namespace patchcraft
 
             if (lower.contains ("arp"))
             {
+                // Generate actual arpeggio patterns instead of random patches
                 setNorm (preset, model, "attack", 0.02f);
-                setNorm (preset, model, "decay", value01 (rng, 0.16f, 0.10f));
-                setNorm (preset, model, "sustain", value01 (rng, 0.18f, 0.12f));
-                setNorm (preset, model, "release", value01 (rng, 0.16f, 0.08f));
-                setNorm (preset, model, "filterCutoff", value01 (rng, 0.45f, 0.18f));
-                setNorm (preset, model, "filterResonance", value01 (rng, 0.38f, 0.22f));
-                setValue (preset, model, "lfoRate", (index % 4) + 1.0f);
-                setNorm (preset, model, "lfoAmount", value01 (rng, 0.28f, 0.14f));
-                setNorm (preset, model, "delayMix", value01 (rng, 0.28f, 0.16f));
-                setNorm (preset, model, "delayFeedback", value01 (rng, 0.38f, 0.18f));
-                setNorm (preset, model, "reverbMix", value01 (rng, 0.20f, 0.14f));
+                setNorm (preset, model, "decay", 0.16f);
+                setNorm (preset, model, "sustain", 0.18f);
+                setNorm (preset, model, "release", 0.16f);
+                setNorm (preset, model, "filterCutoff", 0.45f);
+                setNorm (preset, model, "filterResonance", 0.38f);
+                setNorm (preset, model, "lfoRate", (index % 4) + 1.0f);
+                setNorm (preset, model, "lfoAmount", 0.28f);
+                setNorm (preset, model, "delayMix", 0.28f);
+                setNorm (preset, model, "delayFeedback", 0.38f);
+                setNorm (preset, model, "reverbMix", 0.20f);
+                
+                // Set arpeggio-specific parameters
+                setValue (preset, model, "arpMode", (float) (index % 4)); // Different arpeggio modes
+                setValue (preset, model, "arpSpeed", 0.5f + (index % 3) * 0.5f); // Varied speeds
+                setValue (preset, model, "arpOctave", 1.0f + (index % 2)); // Octave variations
+                setValue (preset, model, "arpGate", 0.8f); // Consistent gate
+                
+                preset.description = "Generated Arpeggio preset: " + juce::String (index + 1) + ". "
+                    + juce::String ((index % 4) == 0 ? "Up" : 
+                    ((index % 4) == 1 ? "Down" : 
+                    ((index % 4) == 2 ? "Random" : "Alternating"))) + " pattern.";
+                preset.tags.addIfNotAlreadyThere ("arpeggio");
+                preset.tags.addIfNotAlreadyThere ("ARP");
             }
             else if (lower.contains ("pluck"))
             {
@@ -288,29 +309,144 @@ namespace patchcraft
                 setNorm (preset, model, "delayMix", value01 (rng, 0.32f, 0.24f));
                 setNorm (preset, model, "reverbMix", value01 (rng, 0.35f, 0.22f));
             }
+            else if (lower.contains ("pad"))
+            {
+                // Pads: slow attack, long release, lots of space, wide stereo.
+                // The index biases each preset toward a different character
+                // (airy, dark, evolving, hollow) so a row of generated pads
+                // doesn't all sound like one big drone.
+                const int variant = index % 4;
+                setNorm (preset, model, "attack",          0.45f + 0.15f * variant);
+                setNorm (preset, model, "decay",           value01 (rng, 0.55f, 0.20f));
+                setNorm (preset, model, "sustain",         value01 (rng, 0.82f, 0.10f));
+                setNorm (preset, model, "release",         0.55f + 0.20f * variant);
+                setNorm (preset, model, "filterCutoff",    variant == 1 ? 0.28f
+                                                          : variant == 3 ? 0.65f
+                                                          : value01 (rng, 0.45f, 0.18f));
+                setNorm (preset, model, "filterResonance", value01 (rng, 0.10f, 0.10f));
+                setNorm (preset, model, "delayMix",        value01 (rng, 0.22f, 0.14f));
+                setNorm (preset, model, "reverbMix",       0.55f + 0.10f * variant);
+            }
+            else if (lower.contains ("bass"))
+            {
+                // Bass: punchy attack, short-to-medium release, low cutoff,
+                // pronounced sub. Variant flips between mono/sub/reese/wobble.
+                const int variant = index % 4;
+                setNorm (preset, model, "attack",          0.02f);
+                setNorm (preset, model, "decay",           value01 (rng, 0.25f, 0.12f));
+                setNorm (preset, model, "sustain",         variant == 2 ? 0.90f : value01 (rng, 0.55f, 0.20f));
+                setNorm (preset, model, "release",         variant == 0 ? 0.18f : value01 (rng, 0.30f, 0.15f));
+                setNorm (preset, model, "filterCutoff",    variant == 3 ? 0.55f : 0.22f + 0.10f * variant);
+                setNorm (preset, model, "filterResonance", variant == 3 ? 0.55f : value01 (rng, 0.25f, 0.15f));
+                setNorm (preset, model, "delayMix",        variant == 3 ? value01 (rng, 0.20f, 0.10f) : 0.05f);
+                setNorm (preset, model, "reverbMix",       value01 (rng, 0.12f, 0.08f));
+            }
+            else if (lower.contains ("choir") || lower.contains ("vocal"))
+            {
+                // Choirs are formant-heavy slow-attack pads with vibrato.
+                setNorm (preset, model, "attack",          value01 (rng, 0.40f, 0.12f));
+                setNorm (preset, model, "decay",           value01 (rng, 0.45f, 0.15f));
+                setNorm (preset, model, "sustain",         value01 (rng, 0.88f, 0.06f));
+                setNorm (preset, model, "release",         value01 (rng, 0.65f, 0.15f));
+                setNorm (preset, model, "filterCutoff",    value01 (rng, 0.55f, 0.10f));
+                setNorm (preset, model, "filterResonance", value01 (rng, 0.30f, 0.10f));
+                setNorm (preset, model, "delayMix",        value01 (rng, 0.18f, 0.10f));
+                setNorm (preset, model, "reverbMix",       value01 (rng, 0.65f, 0.10f));
+                setNorm (preset, model, "vibratoDepth",    value01 (rng, 0.30f, 0.10f));
+                setValue (preset, model, "vibratoRate",    value01 (rng, 0.45f, 0.10f) * 6.0f);
+                setNorm (preset, model, "vocalMix",        value01 (rng, 0.26f, 0.14f));
+                setNorm (preset, model, "vocalFormant",    value01 (rng, 0.45f, 0.18f));
+                setNorm (preset, model, "vocalBody",       value01 (rng, 0.58f, 0.22f));
+            }
+            else if (lower.contains ("fx"))
+            {
+                // FX presets sweep the filter and lean on time-based effects.
+                const int variant = index % 5;
+                setNorm (preset, model, "attack",          variant == 0 ? 0.00f : value01 (rng, 0.10f, 0.10f));
+                setNorm (preset, model, "decay",           value01 (rng, 0.40f, 0.20f));
+                setNorm (preset, model, "sustain",         variant == 1 ? 0.10f : value01 (rng, 0.55f, 0.25f));
+                setNorm (preset, model, "release",         value01 (rng, 0.45f, 0.20f));
+                setNorm (preset, model, "filterCutoff",    juce::jlimit (0.05f, 0.95f, 0.18f + 0.18f * variant));
+                setNorm (preset, model, "filterResonance", value01 (rng, 0.55f, 0.20f));
+                setNorm (preset, model, "delayMix",        0.30f + 0.10f * variant);
+                setNorm (preset, model, "reverbMix",       0.40f + 0.08f * variant);
+                setNorm (preset, model, "lfoAmount",       0.40f + 0.12f * variant);
+                setValue (preset, model, "lfoRate",        juce::jmax (0.25f, 0.5f + (float) variant));
+                setValue (preset, model, "drive",          value01 (rng, 0.30f, 0.20f));
+                setNorm (preset, model, "multiTapMix",     value01 (rng, 0.26f + 0.06f * variant, 0.10f));
+                setValue (preset, model, "multiTapTime",   0.12f + 0.08f * (float) variant);
+                setNorm (preset, model, "multiTapFeedback", value01 (rng, 0.34f, 0.22f));
+                setNorm (preset, model, "multiTapSpread",  value01 (rng, 0.60f, 0.24f));
+                if (variant == 0 || variant == 4)
+                {
+                    setNorm (preset, model, "tapeMix",     value01 (rng, 0.30f, 0.18f));
+                    setNorm (preset, model, "tapeDrive",   value01 (rng, 0.36f, 0.24f));
+                    setNorm (preset, model, "tapeFlutter", value01 (rng, 0.12f, 0.12f));
+                }
+                if (variant == 1 || variant == 4)
+                {
+                    setNorm (preset, model, "vinylMix",    value01 (rng, 0.20f, 0.16f));
+                    setNorm (preset, model, "vinylAge",    value01 (rng, 0.48f, 0.28f));
+                    setNorm (preset, model, "vinylDust",   value01 (rng, 0.10f, 0.10f));
+                }
+                if (variant == 2 || variant == 4)
+                {
+                    setNorm (preset, model, "lofiMix",     value01 (rng, 0.22f, 0.18f));
+                    setValue (preset, model, "lofiBits",   7.0f + (float) (index % 5));
+                    setNorm (preset, model, "lofiRate",    value01 (rng, 0.28f, 0.22f));
+                }
+                if (variant == 3)
+                {
+                    setNorm (preset, model, "vocalMix",    value01 (rng, 0.24f, 0.18f));
+                    setNorm (preset, model, "vocalFormant", value01 (rng, 0.50f, 0.30f));
+                }
+            }
             else
             {
+                // Generic fallback - conservative and musical. Unknown themes
+                // should still land as a usable starter patch, not random noise.
                 setNorm (preset, model, "attack", value01 (rng, 0.10f, 0.10f));
                 setNorm (preset, model, "decay", value01 (rng, 0.25f, 0.18f));
                 setNorm (preset, model, "sustain", value01 (rng, 0.55f, 0.25f));
                 setNorm (preset, model, "release", value01 (rng, 0.32f, 0.18f));
-                setNorm (preset, model, "filterCutoff", value01 (rng, 0.55f, 0.30f));
-                setNorm (preset, model, "filterResonance", value01 (rng, 0.22f, 0.18f));
-                setNorm (preset, model, "delayMix", value01 (rng, 0.18f, 0.16f));
-                setNorm (preset, model, "reverbMix", value01 (rng, 0.28f, 0.20f));
+                setNorm (preset, model, "filterCutoff", value01 (rng, 0.50f, 0.20f));
+                setNorm (preset, model, "filterResonance", value01 (rng, 0.18f, 0.12f));
+                setNorm (preset, model, "delayMix", value01 (rng, 0.14f, 0.10f));
+                setNorm (preset, model, "reverbMix", value01 (rng, 0.24f, 0.14f));
             }
 
             if (engineId == "synth")
             {
-                setValue (preset, model, "oscType", (float) (index % 5));
-                setValue (preset, model, "osc2Type", (float) ((index + 2) % 5));
+                // Bias the oscillator choice toward something that fits the
+                // theme so a "Pads" preset doesn't accidentally start as a
+                // square-wave bass and a "Bass" preset doesn't start as a
+                // sine pad. 0=sine, 1=saw, 2=square, 3=triangle, 4=noise.
+                float oscMain  = (float) (index % 5);
+                float oscLayer = (float) ((index + 2) % 5);
+                if (lower.contains ("pad") || lower.contains ("choir") || lower.contains ("string"))
+                {
+                    oscMain  = (index % 2 == 0) ? 1.0f : 3.0f;   // saw / triangle
+                    oscLayer = (index % 2 == 0) ? 3.0f : 1.0f;
+                }
+                else if (lower.contains ("bass"))
+                {
+                    oscMain  = (index % 2 == 0) ? 2.0f : 1.0f;   // square / saw
+                    oscLayer = 0.0f;                             // sine sub
+                }
+                else if (lower.contains ("pluck"))
+                {
+                    oscMain  = (index % 2 == 0) ? 3.0f : 0.0f;   // triangle / sine
+                    oscLayer = 1.0f;
+                }
+                setValue (preset, model, "oscType", oscMain);
+                setValue (preset, model, "osc2Type", oscLayer);
                 setNorm (preset, model, "oscBlend", lower.contains ("bass") ? value01 (rng, 0.18f, 0.14f)
                                                                             : lower.contains ("string") || lower.contains ("pad") ? value01 (rng, 0.42f, 0.24f)
                                                                                                                                    : value01 (rng, 0.30f, 0.22f));
                 setValue (preset, model, "octave", lower.contains ("string") ? 0.0f : (float) ((index % 3) - 1));
-                setValue (preset, model, "detune", (rng.nextFloat() * 2.0f - 1.0f) * (lower.contains ("string") ? 18.0f : 8.0f));
+                setValue (preset, model, "detune", (rng.nextFloat() * 2.0f - 1.0f) * (lower.contains ("string") ? 14.0f : 7.0f));
                 setValue (preset, model, "osc2Detune", (rng.nextFloat() * 2.0f - 1.0f)
-                    * (lower.contains ("motion") || lower.contains ("lfo") ? 36.0f : 18.0f));
+                    * (lower.contains ("motion") || lower.contains ("lfo") ? 24.0f : 14.0f));
                 setNorm (preset, model, "subBlend", lower.contains ("bass") ? value01 (rng, 0.52f, 0.24f)
                                                                              : lower.contains ("pluck") ? value01 (rng, 0.12f, 0.10f)
                                                                                                          : value01 (rng, 0.20f, 0.18f));
@@ -331,7 +467,8 @@ namespace patchcraft
 
     juce::StringArray PresetGenerator::themes()
     {
-        return { "Arps", "LFO", "Motion", "Wavetables", "Plucks", "Strings", "Pads", "Bass", "FX" };
+        return { "Arps", "LFO", "Motion", "Wavetables", "Plucks", "Strings",
+                 "Pads", "Bass", "Choir", "FX" };
     }
 
     std::vector<Preset> PresetGenerator::generate (const ParameterModel& parameters,

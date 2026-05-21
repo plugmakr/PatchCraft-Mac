@@ -1,0 +1,22 @@
+{
+  "formatVersion": 1,
+  "instrumentName": "Organic Tape Sampler",
+  "creator": "PatchCraft",
+  "description": "An organic tape sampler demo with soft source playback, slow musical fades, and warm atmospheric space.",
+  "category": "Sample Instrument",
+  "engine": "sample",
+  "backgroundImage": "assets/background.png",
+  "libraryThumbnail": "assets/thumbnail.png",
+  "defaultPreset": "Tape Felt Pad",
+  "createdWith": "PatchCraft Studio",
+  "version": "1.0",
+  "playerDisplayName": "Organic Tape Sampler",
+  "playerTagline": "Factory demo template",
+  "playerAccentColour": "ffd6a45a",
+  "tags": [
+    "factory-demo",
+    "organic",
+    "sample",
+    "sample instrument"
+  ]
+}

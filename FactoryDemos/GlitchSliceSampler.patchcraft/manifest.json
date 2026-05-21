@@ -1,0 +1,22 @@
+{
+  "formatVersion": 1,
+  "instrumentName": "Glitch Slice Sampler",
+  "creator": "PatchCraft",
+  "description": "A sliced sampler demo built for chopped playback, short gates, glitches, and beat-synced throws.",
+  "category": "Performance Sampler",
+  "engine": "sample",
+  "backgroundImage": "assets/background.png",
+  "libraryThumbnail": "assets/thumbnail.png",
+  "defaultPreset": "Slice Runner",
+  "createdWith": "PatchCraft Studio",
+  "version": "1.0",
+  "playerDisplayName": "Glitch Slice Sampler",
+  "playerTagline": "Factory demo template",
+  "playerAccentColour": "ffff4dde",
+  "tags": [
+    "factory-demo",
+    "glitch",
+    "sample",
+    "performance sampler"
+  ]
+}

@@ -1,5 +1,6 @@
 #include "PatchCraftProject.h"
 #include "InstrumentTemplates.h"
+#include "PatchCraftPackReader.h"
 
 #include <algorithm>
 
@@ -52,6 +53,24 @@ namespace patchcraft
                 liveValues.getOrAddRaw (id, defaultValue);
             };
 
+            if (parameters.find ("projectBpm") == nullptr)
+            {
+                ParameterDef def;
+                def.id = "projectBpm";
+                def.name = "Project BPM";
+                def.min = 40.0f;
+                def.max = 220.0f;
+                def.defaultValue = 120.0f;
+                def.step = 1.0f;
+                def.unit = "BPM";
+                def.category = "Performance";
+                def.section = "out";
+                def.displayMode = "continuous";
+                def.hostAutomatable = false;
+                def.modulatable = false;
+                parameters.add (def);
+            }
+            liveValues.getOrAddRaw ("projectBpm", 120.0f);
             addIfMissing ("bpmSync", "BPM Sync", 1.0f);
             addIfMissing ("retrigger", "Retrigger", 1.0f);
         }
@@ -144,6 +163,54 @@ namespace patchcraft
         // See note in resetToDefaultInstrument: do not auto-link the first
         // preset's patchId to this captured-defaults patch.
         notifyChanged();
+    }
+
+    bool PatchCraftProject::loadRuntimePackAsProject (const juce::File& packFolder, juce::String& error)
+    {
+        PatchCraftPack pack;
+        PatchCraftPackReader reader;
+        if (! reader.read (packFolder, pack, error))
+            return false;
+
+        projectFolder = packFolder;
+        manifest = pack.manifest;
+        canvasSize = pack.canvasSize;
+        parameters = pack.parameters;
+        parameters.ensureRegistryMetadata (manifest.engine);
+        layout = pack.layout;
+        sampleMap = pack.sampleMap;
+        presets = pack.presets;
+        patches = pack.patches;
+        sectionPresets = pack.sectionPresets;
+        expansions = pack.expansions;
+        midiMappings = pack.midiMappings;
+        dspGraph = pack.dspGraph;
+        backgroundImageRelative = pack.backgroundImageRelative;
+
+        ensurePerformanceParameters (parameters, liveValues);
+        ensureGraphMacroParameters (parameters, liveValues, dspGraph);
+        resetLiveValuesToDefaults();
+
+        const auto defaultName = manifest.defaultPreset;
+        auto presetToApply = std::find_if (presets.begin(), presets.end(),
+            [&] (const Preset& preset)
+            {
+                return (defaultName.isNotEmpty() && preset.name == defaultName) || preset.isDefault;
+            });
+
+        if (presetToApply != presets.end())
+        {
+            for (const auto& value : presetToApply->values)
+                liveValues.setValue (value.first, value.second);
+            manifest.defaultPreset = presetToApply->name;
+            for (auto& preset : presets)
+                preset.isDefault = preset.name == presetToApply->name;
+        }
+
+        dirty = false;
+        notifyChanged();
+        error.clear();
+        return true;
     }
 
     void PatchCraftProject::resetLiveValuesToDefaults()
@@ -521,6 +588,41 @@ namespace patchcraft
             std::vector<LayoutElement> before, after;
             juce::String selectionBefore, selectionAfter;
         };
+
+        class SampleMapSnapshotAction : public juce::UndoableAction
+        {
+        public:
+            SampleMapSnapshotAction (PatchCraftProject& projIn,
+                                     std::vector<SampleZoneDef> beforeIn,
+                                     std::vector<SampleZoneDef> afterIn)
+                : project (projIn),
+                  before (std::move (beforeIn)),
+                  after  (std::move (afterIn))
+            {}
+
+            bool perform() override
+            {
+                project.getSampleMap().getZones() = after;
+                project.notifyChanged();
+                return true;
+            }
+
+            bool undo() override
+            {
+                project.getSampleMap().getZones() = before;
+                project.notifyChanged();
+                return true;
+            }
+
+            int getSizeInUnits() override
+            {
+                return (int) ((before.size() + after.size()) * sizeof (SampleZoneDef));
+            }
+
+        private:
+            PatchCraftProject& project;
+            std::vector<SampleZoneDef> before, after;
+        };
     }
 
     void PatchCraftProject::performLayoutEdit (const juce::String& actionName,
@@ -536,6 +638,19 @@ namespace patchcraft
         // re-apply for redo-after-undo.
         undoManager.perform (new LayoutSnapshotAction (
             *this, before, after, juce::String(), juce::String()));
+        notifyChanged();
+    }
+
+    void PatchCraftProject::performSampleMapEdit (const juce::String& actionName,
+                                                  std::function<void (SampleMap&)> mutator)
+    {
+        if (! mutator) return;
+        const auto before = sampleMap.getZones();
+        mutator (sampleMap);
+        const auto after = sampleMap.getZones();
+
+        undoManager.beginNewTransaction (actionName);
+        undoManager.perform (new SampleMapSnapshotAction (*this, before, after));
         notifyChanged();
     }
 
@@ -564,10 +679,12 @@ namespace patchcraft
         return projectFolder.getChildFile ("assets/knobs");
     }
 
-    void PatchCraftProject::notifyChanged()
+    void PatchCraftProject::notifyChanged (ChangeScope scope)
     {
+        ensurePerformanceParameters (parameters, liveValues);
+        ensureGraphMacroParameters (parameters, liveValues, dspGraph);
         markDirty();
-        listeners.call ([] (Listener& l) { l.projectChanged(); });
+        listeners.call ([scope] (Listener& l) { l.projectChanged (scope); });
     }
 
     bool PatchCraftProject::save (const juce::File& folder, juce::String& error)

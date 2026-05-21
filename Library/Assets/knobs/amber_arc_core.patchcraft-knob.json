@@ -1,0 +1,11 @@
+{
+  "format": "PatchCraft Knob",
+  "frames": 31,
+  "stripVertical": true,
+  "style": {
+    "name": "Amber Arc Core",
+    "frames": 31,
+    "outputMode": "vertical",
+    "category": "factory"
+  }
+}

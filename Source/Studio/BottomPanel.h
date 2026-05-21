@@ -16,6 +16,9 @@ namespace patchcraft
     class StudioInstrumentRenderer;
     class DspPage;
     class MidiPlaygroundPage;
+    class OneShotMakerPage;
+    class WorkflowPage;
+    class LaunchCenterPage;
     class IInstrumentEngine;
     class TestPage;
     class BrandingLabPage;
@@ -24,6 +27,7 @@ namespace patchcraft
     /**
         Bottom workspace - tabbed via the section tabs in the canvas toolbar.
         One Page is visible at a time:
+            Workflow     - Guided instrument-building path and health checks.
             Design       - Parameters list + Presets browser side-by-side.
             SampleMapper - Mapper / Keyzones / Velocity sub-tabs.
             MidiPlayground - Musical MIDI generation and sample-control tools.
@@ -33,7 +37,7 @@ namespace patchcraft
     class BottomPanel : public juce::Component
     {
     public:
-        enum class Page { Design = 0, SampleMapper = 1, MidiPlayground = 2, Test = 3, DSP = 4, Build = 5, Branding = 6 };
+        enum class Page { Workflow = 0, Design = 1, SampleMapper = 2, OneShotMaker = 3, MidiPlayground = 4, Test = 5, DSP = 6, Build = 7, Branding = 8, Launch = 9 };
 
         explicit BottomPanel (StudioMainComponent& owner);
         ~BottomPanel() override;
@@ -51,12 +55,19 @@ namespace patchcraft
         juce::String getDspPatchSectionId() const;
         juce::String getDspPatchSectionLabel() const;
         void showDspBuilderTutorial();
+        // Forwards to the underlying DspPage so the canvas right-click
+        // shortcut can drop in an arpeggiator without reaching into the
+        // bottom panel's private members.
+        void addArpBlock();
 
         void refresh();
 
     private:
         StudioMainComponent& owner;
-        Page currentPage = Page::Design;
+        Page currentPage = Page::Workflow;
+
+        // ---- Workflow page -------------------------------------------------
+        std::unique_ptr<WorkflowPage> workflowPage;
 
         // ---- Design page ---------------------------------------------------
         juce::Label                          designDspHeader;
@@ -76,6 +87,7 @@ namespace patchcraft
         void rebuildMapperSubVisibility();
 
         // ---- MIDI Playground page ------------------------------------------
+        std::unique_ptr<OneShotMakerPage> oneShotMaker;
         std::unique_ptr<MidiPlaygroundPage> midiPlayground;
 
         // ---- Test page -----------------------------------------------------
@@ -89,6 +101,9 @@ namespace patchcraft
 
         // ---- Branding Lab -------------------------------------------------
         std::unique_ptr<BrandingLabPage> brandingLab;
+
+        // ---- Launch Center ------------------------------------------------
+        std::unique_ptr<LaunchCenterPage> launchCenter;
 
         void rebuildPageVisibility();
 

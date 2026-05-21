@@ -3,6 +3,7 @@
 #include "BottomPanel.h"
 #include "MidiPlaygroundPattern.h"
 #include "PatchCraftLookAndFeel.h"
+#include "SampleSynthEngine.h"
 #include "StudioMainComponent.h"
 
 #include <algorithm>
@@ -165,13 +166,73 @@ namespace patchcraft
         }
 
         static void setDrumCell (DspBlock& block, int pattern, int track, int step,
-                                 bool active, float velocity, float gate = 0.36f, float probability = 1.0f)
+                                 bool active, float velocity, float gate = 0.36f,
+                                 float probability = 1.0f, int divisions = 1)
         {
             const auto prefix = drumPrefixForPattern (pattern, track, step);
             block.values[prefix + "On"] = active ? 1.0f : 0.0f;
             block.values[prefix + "Vel"] = juce::jlimit (0.0f, 1.0f, velocity);
             block.values[prefix + "Gate"] = juce::jlimit (0.05f, 1.0f, gate);
             block.values[prefix + "Prob"] = juce::jlimit (0.0f, 1.0f, probability);
+            block.values[prefix + "Div"] = (float) juce::jlimit (1, 4, divisions);
+        }
+
+        static int drumCellDivisions (const DspBlock& block, int pattern, int track, int step)
+        {
+            const auto prefix = drumPrefixForPattern (pattern, track, step);
+            return juce::jlimit (1, 4, juce::roundToInt (valueFor (block, prefix + "Div", 1.0f)));
+        }
+
+        static void clearDrumPattern (DspBlock& block, int pattern, int tracks, int steps)
+        {
+            pattern = juce::jlimit (0, 7, pattern);
+            tracks = juce::jlimit (1, 16, tracks);
+            steps = juce::jlimit (1, 64, steps);
+            for (int track = 0; track < tracks; ++track)
+                for (int step = 0; step < steps; ++step)
+                    setDrumCell (block, pattern, track, step, false, track == 0 ? 1.0f : 0.75f,
+                                 track == 2 ? 0.16f : 0.36f, 1.0f, 1);
+        }
+
+        static void copyDrumPattern (DspBlock& block, int sourcePattern, int destinationPattern,
+                                     int tracks, int steps)
+        {
+            sourcePattern = juce::jlimit (0, 7, sourcePattern);
+            destinationPattern = juce::jlimit (0, 7, destinationPattern);
+            tracks = juce::jlimit (1, 16, tracks);
+            steps = juce::jlimit (1, 64, steps);
+
+            for (int track = 0; track < tracks; ++track)
+                for (int step = 0; step < steps; ++step)
+                {
+                    const auto src = drumPrefixForPattern (sourcePattern, track, step);
+                    setDrumCell (block, destinationPattern, track, step,
+                                 valueFor (block, src + "On", 0.0f) >= 0.5f,
+                                 valueFor (block, src + "Vel", track == 0 ? 1.0f : 0.75f),
+                                 valueFor (block, src + "Gate", track == 2 ? 0.16f : 0.36f),
+                                 valueFor (block, src + "Prob", 1.0f),
+                                 juce::roundToInt (valueFor (block, src + "Div", 1.0f)));
+                }
+        }
+
+        static void shiftDrumPattern (DspBlock& block, int pattern, int tracks, int steps, int offset)
+        {
+            pattern = juce::jlimit (0, 7, pattern);
+            tracks = juce::jlimit (1, 16, tracks);
+            steps = juce::jlimit (1, 64, steps);
+            std::map<juce::String, float> snapshot;
+            for (int track = 0; track < tracks; ++track)
+                for (int step = 0; step < steps; ++step)
+                {
+                    const auto src = drumPrefixForPattern (pattern, track, step);
+                    const int destStep = (step + offset + steps) % steps;
+                    const auto dest = drumPrefixForPattern (pattern, track, destStep);
+                    for (auto* suffix : { "On", "Vel", "Gate", "Prob", "Div" })
+                        snapshot[dest + suffix] = valueFor (block, src + suffix, juce::String (suffix) == "Div" ? 1.0f : 0.0f);
+                }
+
+            for (const auto& value : snapshot)
+                block.values[value.first] = value.second;
         }
     }
 
@@ -189,34 +250,36 @@ namespace patchcraft
     {
         setOpaque (true);
 
-        title.setText ("MIDI PLAYGROUND", juce::dontSendNotification);
+        title.setText ("MIDI + PERFORMANCE PLAYGROUND", juce::dontSendNotification);
         title.setFont (juce::Font (17.0f, juce::Font::bold));
         title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
         addAndMakeVisible (title);
 
-        subtitle.setText ("Build MIDI generators for notes, samples, DSP modulation, and live performance.",
+        subtitle.setText ("Drop musical MIDI ideas into the editor, then route them to the current Synth, Sampler, Drum Machine, sample chops, or modulation layer.",
                           juce::dontSendNotification);
         subtitle.setFont (juce::Font (12.0f));
         subtitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
         addAndMakeVisible (subtitle);
 
-        activeSummary.setText ("No MIDI Playground block yet.", juce::dontSendNotification);
+        activeSummary.setText ("No Performance block yet. Choose a template: chords/arp generate notes, Drum Machine triggers pads, Sample Control moves slices/start/length.",
+                               juce::dontSendNotification);
         activeSummary.setFont (juce::Font (12.0f, juce::Font::bold));
         activeSummary.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::text());
         addAndMakeVisible (activeSummary);
 
-        sourceBox.addItem ("Synth Source Blocks", 1);
-        sourceBox.addItem ("Sample Mapper Zones", 2);
-        sourceBox.addItem ("FX Audio Input", 3);
+        sourceBox.addItem ("Current Synth Source", 1);
+        sourceBox.addItem ("Current Sample Map", 2);
+        sourceBox.addItem ("Current FX Input", 3);
         sourceBox.setSelectedId (owner.getProject().getEngineType() == "sample" ? 2
                                 : owner.getProject().getEngineType() == "fx" ? 3 : 1,
                                 juce::dontSendNotification);
+        sourceBox.setTooltip ("Choose what the generated MIDI/performance data controls. This is the routing bridge between MIDI Playground and the current instrument.");
         addAndMakeVisible (sourceBox);
 
-        modeBox.addItem ("Chord Phrase", 1);
-        modeBox.addItem ("Sample Slice Control", 2);
-        modeBox.addItem ("Riff Generator", 3);
-        modeBox.addItem ("Glitch / Stutter", 4);
+        modeBox.addItem ("Chord / Progression", 1);
+        modeBox.addItem ("Sample Chopper", 2);
+        modeBox.addItem ("Arp / Step Sequencer", 3);
+        modeBox.addItem ("Modulation Lane", 4);
         modeBox.addItem ("Drum Machine", 5);
         modeBox.setSelectedId (1, juce::dontSendNotification);
         addAndMakeVisible (modeBox);
@@ -226,6 +289,39 @@ namespace patchcraft
         editorViewBox.setSelectedId (1, juce::dontSendNotification);
         editorViewBox.onChange = [this] { repaint(); midiOutputLane.repaint(); pianoRollEditor.repaint(); };
         addAndMakeVisible (editorViewBox);
+
+        musicalPresetBox.setTextWhenNothingSelected ("Choose musical idea...");
+        musicalPresetBox.addSectionHeading ("Chords");
+        musicalPresetBox.addItem ("Major triad", 1001);
+        musicalPresetBox.addItem ("Minor triad", 1002);
+        musicalPresetBox.addItem ("Dominant 7", 1009);
+        musicalPresetBox.addItem ("Major 7", 1010);
+        musicalPresetBox.addItem ("Minor 9", 1018);
+        musicalPresetBox.addSeparator();
+        musicalPresetBox.addSectionHeading ("Progressions");
+        musicalPresetBox.addItem ("Pop lift: I-V-vi-IV", 2021);
+        musicalPresetBox.addItem ("Jazz color: ii-V-I", 2022);
+        musicalPresetBox.addItem ("Dark cinematic: i-VII-VI-VII", 2025);
+        musicalPresetBox.addItem ("Epic trailer: i-VI-III-VII", 2026);
+        musicalPresetBox.addSeparator();
+        musicalPresetBox.addSectionHeading ("Melodies + Bass");
+        musicalPresetBox.addItem ("Trance arp climb", 3003);
+        musicalPresetBox.addItem ("Acid bassline", 3005);
+        musicalPresetBox.addItem ("Anjuna lead", 3008);
+        musicalPresetBox.addItem ("Walking bass", 3015);
+        musicalPresetBox.addItem ("Sparse melodic skeleton", 3020);
+        musicalPresetBox.addSeparator();
+        musicalPresetBox.addSectionHeading ("Drum Grooves");
+        musicalPresetBox.addItem ("Modern trap rolls", 4301);
+        musicalPresetBox.addItem ("Four-on-the-floor house", 4303);
+        musicalPresetBox.addItem ("DnB roller", 4305);
+        musicalPresetBox.addItem ("UK garage shuffle", 4309);
+        musicalPresetBox.addSeparator();
+        musicalPresetBox.addSectionHeading ("Sample Remix");
+        musicalPresetBox.addItem ("Sample chopper performance", 5001);
+        musicalPresetBox.addItem ("Glitch gate performance", 5002);
+        musicalPresetBox.setTooltip ("Pick a chord, progression, melody, drum groove, or sample-remix behavior, then press Drop MIDI to write it into the editable grid.");
+        addAndMakeVisible (musicalPresetBox);
 
         for (int presetId = 1; presetId <= 31; ++presetId)
             chordPresetBox.addItem (chordPresetNameForId (presetId), presetId);
@@ -237,9 +333,9 @@ namespace patchcraft
         };
         addAndMakeVisible (chordPresetBox);
 
-        midiTemplateBox.addItem ("Piano Roll Lead", 1);
-        midiTemplateBox.addItem ("Chord Progression", 2);
-        midiTemplateBox.addItem ("Drum Machine", 3);
+        midiTemplateBox.addItem ("Melodic Lead Line", 1);
+        midiTemplateBox.addItem ("Cinematic Chord Bed", 2);
+        midiTemplateBox.addItem ("Drum Pattern", 3);
         midiTemplateBox.addItem ("Sample Chopper", 4);
         midiTemplateBox.addItem ("Glitch Gate", 5);
         midiTemplateBox.addItem ("Polymeter Key-Switch Banks", 6);
@@ -358,14 +454,15 @@ namespace patchcraft
             if (syncingControls)
                 return;
 
-            if (modeBox.getSelectedId() == 2)
-                configureSampleSliceControl();
-            else if (modeBox.getSelectedId() == 1)
-                configureChordPhrase();
-            else if (modeBox.getSelectedId() == 5)
-                configureDrumMachine();
-            else
-                updateBlockFromControls();
+            switch (modeBox.getSelectedId())
+            {
+                case 1: configureChordPhrase(); break;
+                case 2: configureSampleSliceControl(); break;
+                case 3: configureArpSequencer(); break;
+                case 4: configureModulationLane(); break;
+                case 5: configureDrumMachine(); break;
+                default: updateBlockFromControls(); break;
+            }
         };
 
         phraseBankBox.onChange = [this]
@@ -401,17 +498,28 @@ namespace patchcraft
 
         sourceBox.onChange = [this]
         {
+            if (syncingControls)
+                return;
+
+            if (sourceBox.getSelectedId() == 2)
+                owner.getProject().setEngineType ("sample");
+            else if (sourceBox.getSelectedId() == 3)
+                owner.getProject().setEngineType ("fx");
+            else
+                owner.getProject().setEngineType ("synth");
+
+            owner.getProject().markDirty();
+            owner.getProject().notifyChanged();
             repaint();
         };
 
-        // randomButton is intentionally excluded from layout: deterministic
-        // pattern operators (operatorsButton) and the authored phrase
-        // library (phraseLibraryButton) replace the random/seed-mutation
-        // workflow per the user's "no random generations" rule.
+        // The hidden variation action is deterministic. Authored phrase
+        // libraries and musical operators are the primary creation path.
         for (auto* button : { &addPlaygroundButton, &chordPhraseButton, &sampleSliceButton,
                               &drumMachineButton, &operatorsButton, &phraseLibraryButton,
-                              &storeBankButton, &duplicateBankButton,
+                              &applyMusicalPresetButton, &storeBankButton, &duplicateBankButton,
                               &applyProgressionButton, &applyMidiTemplateButton, &applyGuiTemplateButton, &exportMidiButton,
+                              &playPatternButton, &stopPatternButton,
                               &sourceBuilderButton, &sampleMapperButton, &testButton })
         {
             styleButton (*button);
@@ -426,13 +534,19 @@ namespace patchcraft
         operatorsButton.onClick = [this] { showOperatorsMenu(); };
         operatorsButton.setTooltip ("Deterministic pattern operators: transpose, invert, retrograde, scale-quantize.");
         phraseLibraryButton.onClick = [this] { showPhraseLibraryMenu(); };
-        phraseLibraryButton.setTooltip ("Apply a hand-authored phrase to the current 16-step pattern.");
+        phraseLibraryButton.setTooltip ("Open categorized hand-authored phrases and grooves for the current editor.");
+        applyMusicalPresetButton.onClick = [this] { applySelectedMusicalPreset(); };
+        applyMusicalPresetButton.getProperties().set ("primaryAction", true);
+        applyMusicalPresetButton.setTooltip ("Drop the selected musical preset into the visible MIDI/drum editor so it can be edited immediately.");
         storeBankButton.onClick = [this] { storeActivePhraseBank(); };
         duplicateBankButton.onClick = [this] { duplicateActivePhraseBank(); };
         applyProgressionButton.onClick = [this] { applySelectedProgression(); };
         applyMidiTemplateButton.onClick = [this] { applySelectedMidiTemplate(); };
         applyGuiTemplateButton.onClick = [this] { applySelectedGuiTemplate(); };
         exportMidiButton.onClick = [this] { exportMidiClip(); };
+        playPatternButton.onClick = [this] { startPatternPreview(); };
+        stopPatternButton.onClick = [this] { stopPatternPreview(); };
+        playPatternButton.getProperties().set ("primaryAction", true);
         sourceBuilderButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::DSP); };
         sampleMapperButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::SampleMapper); };
         testButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Test); };
@@ -442,6 +556,11 @@ namespace patchcraft
         pianoRollEditor.setVisible (false);
         addAndMakeVisible (drumPatternGrid);
         drumPatternGrid.setVisible (false);
+    }
+
+    MidiPlaygroundPage::~MidiPlaygroundPage()
+    {
+        stopPatternPreview();
     }
 
     void MidiPlaygroundPage::refresh()
@@ -522,7 +641,7 @@ namespace patchcraft
         block.id = uniqueMidiBlockId (graph);
         block.section = "mod";
         block.type = "midiPlayground";
-        block.name = "MIDI Playground";
+        block.name = "Performance Builder";
         block.targetId = "filterCutoff";
         block.enabled = true;
         block.metadata["bank"] = "0";
@@ -563,7 +682,7 @@ namespace patchcraft
         block.values["mpSampleStart"] = 0.0f;
         block.values["mpSampleLength"] = 1.0f;
         block.values["mpSamplePitch"] = 0.0f;
-        block.values["mpSeed"] = (float) juce::Random::getSystemRandom().nextInt (0x3fffffff);
+        block.values["mpSeed"] = 12001.0f;
 
         const float notes[] { 0.0f, 4.0f, 7.0f, 12.0f, 7.0f, 4.0f, 10.0f, 14.0f,
                               12.0f, 7.0f, 4.0f, 0.0f, 5.0f, 9.0f, 12.0f, 16.0f };
@@ -589,9 +708,11 @@ namespace patchcraft
     {
         if (auto* block = ensureMidiBlock())
         {
-            block->name = "Chord Phrase Playground";
+            block->name = "Chord Progression Performance";
             block->type = "midiPlayground";
+            block->section = "mod";
             block->targetId = "filterCutoff";
+            block->enabled = true;
             block->values["arpSteps"] = 8.0f;
             block->values["arpPattern"] = 2.0f;
             block->values["arpGate"] = 0.62f;
@@ -619,6 +740,8 @@ namespace patchcraft
             block->values["mpKeySwitchBase"] = 24.0f;
             block->values["mpOctaveFold"] = 1.0f;
             block->values["mpSampleControl"] = 0.0f;
+            block->values["mpModLane"] = 0.0f;
+            modeBox.setSelectedId (1, juce::dontSendNotification);
 
             const float notes[] { 0.0f, 2.0f, 4.0f, 7.0f, 9.0f, 7.0f, 4.0f, 2.0f };
             for (int step = 0; step < 16; ++step)
@@ -637,16 +760,67 @@ namespace patchcraft
         }
     }
 
+    void MidiPlaygroundPage::configureArpSequencer()
+    {
+        if (auto* block = ensureMidiBlock())
+        {
+            block->name = "Arp Step Sequencer";
+            block->type = "midiPlayground";
+            block->section = "mod";
+            block->targetId = "filterCutoff";
+            block->enabled = true;
+            block->values["arpSteps"] = 16.0f;
+            block->values["arpPattern"] = 7.0f;
+            block->values["arpGate"] = 0.46f;
+            block->values["arpSwing"] = 0.12f;
+            block->values["mpScaleRoot"] = (float) juce::jmax (0, rootBox.getSelectedId() - 1);
+            block->values["mpScaleType"] = (float) juce::jmax (0, scaleBox.getSelectedId() - 1);
+            block->values["mpChordMode"] = 0.0f;
+            block->values["mpChordSize"] = 1.0f;
+            block->values["mpChordSpread"] = 0.0f;
+            block->values["mpProbability"] = 1.0f;
+            block->values["mpHumanize"] = 0.04f;
+            block->values["mpMutation"] = 0.0f;
+            block->values["mpRatchet"] = 1.0f;
+            block->values["mpVelocityCurve"] = 0.10f;
+            block->values["mpStrum"] = 0.0f;
+            block->values["mpFlam"] = 0.0f;
+            block->values["mpEuclideanPulses"] = 0.0f;
+            block->values["mpEuclideanRotate"] = 0.0f;
+            block->values["mpModLane"] = 0.0f;
+            block->values["mpSampleControl"] = 0.0f;
+            block->values["mpSeed"] = 12002.0f;
+
+            const float notes[] { 0.0f, 7.0f, 12.0f, 16.0f, 14.0f, 12.0f, 7.0f, 4.0f,
+                                  0.0f, 4.0f, 7.0f, 11.0f, 12.0f, 16.0f, 19.0f, 24.0f };
+            for (int step = 0; step < 16; ++step)
+            {
+                block->values["arpNote" + juce::String (step)] = notes[step];
+                block->values["mpStep" + juce::String (step) + "On"] = 1.0f;
+                block->values["mpVelocity" + juce::String (step)] = step % 4 == 0 ? 0.96f : 0.68f;
+                block->values["mpGate" + juce::String (step)] = step % 4 == 0 ? 0.58f : 0.42f;
+                block->values["mpStepProb" + juce::String (step)] = 1.0f;
+                block->values["mpSampleSlice" + juce::String (step)] = -1.0f;
+            }
+
+            modeBox.setSelectedId (3, juce::dontSendNotification);
+            editorViewBox.setSelectedId (2, juce::dontSendNotification);
+            MidiPlaygroundPattern::storeActiveBank (*block, MidiPlaygroundPattern::getActiveBank (*block));
+            notifyGraphChanged (true);
+            syncControlsFromBlock();
+        }
+    }
+
     void MidiPlaygroundPage::configureSampleSliceControl()
     {
-        if (owner.getProject().getEngineType() != "sample")
-            owner.getProject().setEngineType ("sample");
 
         if (auto* block = ensureMidiBlock())
         {
-            block->name = "Sample Slice MIDI Playground";
+            block->name = "Sample Chopper Performance";
             block->type = "midiPlayground";
+            block->section = "mod";
             block->targetId = "sampleSlice";
+            block->enabled = true;
             block->values["arpSteps"] = 16.0f;
             block->values["arpPattern"] = 0.0f;
             block->values["arpGate"] = 0.42f;
@@ -673,6 +847,8 @@ namespace patchcraft
             block->values["mpKeySwitchBase"] = 24.0f;
             block->values["mpOctaveFold"] = 0.0f;
             block->values["mpSampleControl"] = 1.0f;
+            block->values["mpModLane"] = 0.0f;
+            block->values["mpSeed"] = 12003.0f;
             block->values["sampleStart"] = 0.0f;
             block->values["sampleLength"] = 0.18f;
             block->values["sampleSliceCount"] = 16.0f;
@@ -692,6 +868,68 @@ namespace patchcraft
                 block->values["mpStepProb" + juce::String (step)] = 1.0f;
             }
 
+            modeBox.setSelectedId (2, juce::dontSendNotification);
+            MidiPlaygroundPattern::storeActiveBank (*block, MidiPlaygroundPattern::getActiveBank (*block));
+            notifyGraphChanged (true);
+            syncControlsFromBlock();
+        }
+    }
+
+    void MidiPlaygroundPage::configureModulationLane()
+    {
+        if (auto* block = ensureMidiBlock())
+        {
+            block->name = "Performance Modulation Lane";
+            block->type = "midiPlayground";
+            block->section = "mod";
+            block->enabled = true;
+
+            switch (targetBox.getSelectedId())
+            {
+                case 2: block->targetId = "volume"; break;
+                case 3: block->targetId = "sampleSlice"; break;
+                case 4: block->targetId = "sampleStart"; break;
+                case 5: block->targetId = "sampleLength"; break;
+                case 6: block->targetId = "wtPosition"; break;
+                default: block->targetId = "filterCutoff"; break;
+            }
+
+            block->values["arpSteps"] = 16.0f;
+            block->values["arpPattern"] = 0.0f;
+            block->values["arpGate"] = 0.72f;
+            block->values["arpSwing"] = 0.0f;
+            block->values["mpScaleRoot"] = (float) juce::jmax (0, rootBox.getSelectedId() - 1);
+            block->values["mpScaleType"] = (float) juce::jmax (0, scaleBox.getSelectedId() - 1);
+            block->values["mpChordMode"] = 0.0f;
+            block->values["mpChordSize"] = 1.0f;
+            block->values["mpChordSpread"] = 0.0f;
+            block->values["mpProbability"] = 1.0f;
+            block->values["mpHumanize"] = 0.0f;
+            block->values["mpMutation"] = 0.0f;
+            block->values["mpRatchet"] = 1.0f;
+            block->values["mpVelocityCurve"] = 0.0f;
+            block->values["mpStrum"] = 0.0f;
+            block->values["mpFlam"] = 0.0f;
+            block->values["mpEuclideanPulses"] = 0.0f;
+            block->values["mpEuclideanRotate"] = 0.0f;
+            block->values["mpSampleControl"] = 0.0f;
+            block->values["mpModLane"] = 1.0f;
+            block->values["mpSeed"] = 12004.0f;
+
+            const float lane[] { 0.18f, 0.28f, 0.46f, 0.72f, 0.94f, 0.70f, 0.48f, 0.30f,
+                                 0.22f, 0.42f, 0.78f, 1.0f, 0.82f, 0.58f, 0.36f, 0.24f };
+            for (int step = 0; step < 16; ++step)
+            {
+                block->values["arpNote" + juce::String (step)] = 0.0f;
+                block->values["mpStep" + juce::String (step) + "On"] = 1.0f;
+                block->values["mpVelocity" + juce::String (step)] = lane[step];
+                block->values["mpGate" + juce::String (step)] = 0.72f;
+                block->values["mpStepProb" + juce::String (step)] = 1.0f;
+                block->values["mpSampleSlice" + juce::String (step)] = -1.0f;
+            }
+
+            modeBox.setSelectedId (4, juce::dontSendNotification);
+            editorViewBox.setSelectedId (1, juce::dontSendNotification);
             MidiPlaygroundPattern::storeActiveBank (*block, MidiPlaygroundPattern::getActiveBank (*block));
             notifyGraphChanged (true);
             syncControlsFromBlock();
@@ -700,12 +938,9 @@ namespace patchcraft
 
     void MidiPlaygroundPage::configureDrumMachine()
     {
-        if (owner.getProject().getEngineType() != "sample")
-            owner.getProject().setEngineType ("sample");
-
         if (auto* block = ensureMidiBlock())
         {
-            block->name = "Drum Machine Playground";
+            block->name = "Drum Machine Performance";
             block->type = "drumMachine";
             block->section = "mod";
             block->targetId = "sample";
@@ -722,8 +957,10 @@ namespace patchcraft
             block->values["dmChainLength"] = 4.0f;
             for (int chain = 0; chain < 8; ++chain)
                 block->values["dmChain" + juce::String (chain)] = (float) juce::jlimit (0, 7, chain);
-            block->values["dmSeed"] = (float) juce::Random::getSystemRandom().nextInt (0x3fffffff);
+            block->values["dmSeed"] = 16001.0f;
             block->values["mpSampleControl"] = 1.0f;
+            if (owner.getProject().getEngineType() != "sample")
+                owner.getProject().setEngineType ("sample");
 
             for (int track = 0; track < 16; ++track)
             {
@@ -740,6 +977,7 @@ namespace patchcraft
                         block->values.erase (prefix + "Vel");
                         block->values.erase (prefix + "Gate");
                         block->values.erase (prefix + "Prob");
+                        block->values.erase (prefix + "Div");
                     }
 
             for (int step : { 0, 4, 8, 12 }) setDrumCell (*block, 0, 0, step, true, 1.0f, 0.42f);
@@ -749,12 +987,12 @@ namespace patchcraft
 
             for (int step : { 0, 3, 10, 14 }) setDrumCell (*block, 1, 0, step, true, step == 0 ? 1.0f : 0.82f, 0.38f);
             for (int step : { 8 }) setDrumCell (*block, 1, 1, step, true, 0.92f, 0.34f);
-            for (int step = 0; step < 16; ++step) setDrumCell (*block, 1, 2, step, true, step % 2 == 0 ? 0.52f : 0.38f, 0.12f, step % 4 == 3 ? 0.70f : 1.0f);
+            for (int step = 0; step < 16; ++step) setDrumCell (*block, 1, 2, step, true, step % 2 == 0 ? 0.52f : 0.38f, 0.12f, step % 4 == 3 ? 0.70f : 1.0f, step % 4 == 3 ? 2 : 1);
             for (int step : { 11 }) setDrumCell (*block, 1, 3, step, true, 0.68f, 0.24f);
 
             for (int step : { 0, 6, 10 }) setDrumCell (*block, 2, 0, step, true, 0.94f, 0.40f);
             for (int step : { 4, 12 }) setDrumCell (*block, 2, 1, step, true, 0.90f, 0.34f);
-            for (int step : { 2, 5, 7, 9, 11, 13, 15 }) setDrumCell (*block, 2, 2, step, true, 0.60f, 0.16f);
+            for (int step : { 2, 5, 7, 9, 11, 13, 15 }) setDrumCell (*block, 2, 2, step, true, 0.60f, 0.16f, 1.0f, (step == 7 || step == 15) ? 3 : 1);
             setDrumCell (*block, 2, 6, 0, true, 0.78f, 0.48f);
 
             for (int step : { 0, 4, 8, 12 }) setDrumCell (*block, 3, 0, step, true, 1.0f, 0.38f);
@@ -762,6 +1000,7 @@ namespace patchcraft
             for (int step : { 2, 6, 10, 14 }) setDrumCell (*block, 3, 3, step, true, 0.68f, 0.28f);
             for (int step : { 0, 8 }) setDrumCell (*block, 3, 7, step, true, 0.44f, 0.50f);
 
+            modeBox.setSelectedId (5, juce::dontSendNotification);
             syncControlsFromBlock();
             notifyGraphChanged (true);
             drumPatternGrid.repaint();
@@ -773,66 +1012,68 @@ namespace patchcraft
     {
         if (auto* block = ensureMidiBlock())
         {
-            auto& rng = juce::Random::getSystemRandom();
             if (isDrumMachineBlock (*block))
             {
-                const int pattern = juce::jlimit (0, 7, drumPatternBox.getSelectedId() - 1);
+                const int pattern = juce::jlimit (0, 7, (drumPatternBox.getSelectedId() - 1 + 1) % 4);
                 const int tracks = juce::jlimit (1, 16, juce::roundToInt (valueFor (*block, "dmTracks", 8.0f)));
                 const int steps = juce::jlimit (1, 64, juce::roundToInt (valueFor (*block, "dmSteps", 16.0f)));
                 block->values["dmPattern"] = (float) pattern;
-                block->values["dmSeed"] = (float) rng.nextInt (0x3fffffff);
-                block->values["dmSwing"] = rng.nextFloat() * 0.20f;
-                block->values["dmProbability"] = 0.82f + rng.nextFloat() * 0.18f;
+                block->values["dmSeed"] = 16001.0f + (float) pattern;
+                block->values["dmSwing"] = 0.04f * (float) pattern;
+                block->values["dmProbability"] = 0.92f;
 
                 for (int track = 0; track < tracks; ++track)
                     for (int step = 0; step < steps; ++step)
                     {
                         bool active = false;
                         if (track == 0)
-                            active = step == 0 || step % 4 == 0 || rng.nextFloat() < 0.16f;
+                            active = step == 0 || step % 4 == 0 || (pattern == 1 && step == 10);
                         else if (track == 1)
-                            active = step % 8 == 4 || rng.nextFloat() < 0.08f;
+                            active = step % 8 == 4 || (pattern == 2 && step == 14);
                         else if (track == 2)
-                            active = step % 2 == 0 || rng.nextFloat() < 0.22f;
+                            active = step % 2 == 0 || (pattern == 3 && step % 4 == 3);
                         else if (track == 3)
-                            active = step % 8 == 6 || rng.nextFloat() < 0.08f;
+                            active = step % 8 == 6 || (pattern == 1 && step == 15);
                         else
-                            active = rng.nextFloat() < 0.05f + 0.025f * (float) track;
+                            active = pattern > 1 && step % juce::jmax (3, 9 - juce::jmin (track, 6)) == 0;
 
-                        const float velocity = active ? 0.42f + rng.nextFloat() * 0.58f : 0.75f;
-                        const float gate = track == 2 ? 0.10f + rng.nextFloat() * 0.12f : 0.20f + rng.nextFloat() * 0.32f;
-                        const float probability = active ? 0.70f + rng.nextFloat() * 0.30f : 1.0f;
+                        const float velocity = active ? juce::jlimit (0.0f, 1.0f, 0.58f + 0.08f * (float) ((step + track + pattern) % 5)) : 0.75f;
+                        const float gate = track == 2 ? 0.14f : 0.28f + 0.04f * (float) (pattern % 3);
+                        const float probability = active && (step + track) % 7 == 0 ? 0.78f : 1.0f;
                         setDrumCell (*block, pattern, track, step, active, velocity, gate, probability);
                     }
 
+                drumPatternBox.setSelectedId (pattern + 1, juce::dontSendNotification);
                 notifyGraphChanged (true);
                 syncControlsFromBlock();
                 drumPatternGrid.repaint();
                 return;
             }
 
-            block->values["mpSeed"] = (float) rng.nextInt (0x3fffffff);
+            const int bank = MidiPlaygroundPattern::getActiveBank (*block);
+            block->values["mpSeed"] = 12001.0f + (float) bank;
             block->values["arpPattern"] = 7.0f;
-            block->values["mpProbability"] = 0.55f + rng.nextFloat() * 0.45f;
-            block->values["mpHumanize"] = rng.nextFloat() * 0.35f;
-            block->values["mpMutation"] = 0.15f + rng.nextFloat() * 0.65f;
-            block->values["mpRatchet"] = (float) (1 + rng.nextInt (4));
-            block->values["mpVelocityCurve"] = -0.35f + rng.nextFloat() * 0.70f;
-            block->values["mpStrum"] = rng.nextFloat() * 0.45f;
-            block->values["mpFlam"] = rng.nextFloat() * 0.30f;
-            block->values["mpEuclideanPulses"] = (float) (rng.nextFloat() > 0.45f ? (3 + rng.nextInt (6)) : 0);
-            block->values["mpEuclideanRotate"] = (float) rng.nextInt (16);
+            block->values["mpProbability"] = 0.92f;
+            block->values["mpHumanize"] = 0.06f;
+            block->values["mpMutation"] = 0.0f;
+            block->values["mpRatchet"] = bank % 2 == 0 ? 1.0f : 2.0f;
+            block->values["mpVelocityCurve"] = bank % 2 == 0 ? 0.10f : -0.12f;
+            block->values["mpStrum"] = valueFor (*block, "mpChordMode", 0.0f) > 0.0f ? 0.12f : 0.0f;
+            block->values["mpFlam"] = valueFor (*block, "mpSampleControl", 0.0f) >= 0.5f ? 0.10f : 0.0f;
+            block->values["mpEuclideanPulses"] = bank % 2 == 0 ? 0.0f : 5.0f;
+            block->values["mpEuclideanRotate"] = (float) ((bank * 3) % 16);
 
             const int steps = juce::roundToInt (valueFor (*block, "arpSteps", 8.0f));
+            static constexpr std::array<float, 16> motif {{ 0, 4, 7, 12, 14, 12, 7, 4, 2, 5, 9, 14, 17, 14, 9, 5 }};
             for (int step = 0; step < 16; ++step)
             {
-                block->values["mpStep" + juce::String (step) + "On"] = step < steps && rng.nextFloat() > 0.12f ? 1.0f : 0.0f;
-                block->values["arpNote" + juce::String (step)] = (float) ((rng.nextInt (9) - 2) * 2);
-                block->values["mpVelocity" + juce::String (step)] = 0.48f + rng.nextFloat() * 0.52f;
-                block->values["mpGate" + juce::String (step)] = 0.18f + rng.nextFloat() * 0.70f;
-                block->values["mpStepProb" + juce::String (step)] = 0.45f + rng.nextFloat() * 0.55f;
+                block->values["mpStep" + juce::String (step) + "On"] = step < steps && step % 7 != 6 ? 1.0f : 0.0f;
+                block->values["arpNote" + juce::String (step)] = motif[(size_t) ((step + bank) % 16)];
+                block->values["mpVelocity" + juce::String (step)] = step % 4 == 0 ? 0.96f : 0.64f + 0.06f * (float) ((step + bank) % 3);
+                block->values["mpGate" + juce::String (step)] = step % 4 == 0 ? 0.70f : 0.42f;
+                block->values["mpStepProb" + juce::String (step)] = step % 5 == 4 ? 0.82f : 1.0f;
                 if (valueFor (*block, "mpSampleControl", 0.0f) >= 0.5f)
-                    block->values["mpSampleSlice" + juce::String (step)] = (float) rng.nextInt (juce::jmax (1, juce::roundToInt (valueFor (*block, "mpSampleSliceCount", 16.0f))));
+                    block->values["mpSampleSlice" + juce::String (step)] = (float) (step % juce::jmax (1, juce::roundToInt (valueFor (*block, "mpSampleSliceCount", 16.0f))));
             }
 
             MidiPlaygroundPattern::storeActiveBank (*block, MidiPlaygroundPattern::getActiveBank (*block));
@@ -848,6 +1089,28 @@ namespace patchcraft
     // ------------------------------------------------------------------------
     void MidiPlaygroundPage::showOperatorsMenu()
     {
+        if (const auto* block = activeMidiBlock(); block != nullptr && isDrumMachineBlock (*block))
+        {
+            juce::PopupMenu m;
+            m.addSectionHeader ("Pattern Clipboard");
+            m.addItem (200, "Copy Current Pattern");
+            m.addItem (201, "Paste Into Current Pattern", hasDrumPatternClipboard);
+            m.addItem (202, "Duplicate To Next Pattern");
+            m.addSeparator();
+            m.addSectionHeader ("Pattern Shape");
+            m.addItem (210, "Shift One Step Left");
+            m.addItem (211, "Shift One Step Right");
+            m.addItem (212, "Accent Downbeats");
+            m.addItem (213, "Add Ghost Notes");
+            m.addItem (214, "Add Trap Hat Rolls");
+            m.addSeparator();
+            m.addSectionHeader ("Clear");
+            m.addItem (220, "Clear Current Pattern");
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&operatorsButton),
+                [this] (int result) { if (result > 0) applyDrumOperator (result); });
+            return;
+        }
+
         juce::PopupMenu m;
         m.addSectionHeader ("Transpose");
         m.addItem (10, "Up 1 octave (+12)");
@@ -874,8 +1137,13 @@ namespace patchcraft
     void MidiPlaygroundPage::applyOperator (int operatorId)
     {
         auto* block = ensureMidiBlock();
-        if (block == nullptr || isDrumMachineBlock (*block))
+        if (block == nullptr)
             return;
+        if (isDrumMachineBlock (*block))
+        {
+            applyDrumOperator (operatorId);
+            return;
+        }
 
         const int steps = juce::jlimit (1, 16, juce::roundToInt (valueFor (*block, "arpSteps", 16.0f)));
 
@@ -969,8 +1237,152 @@ namespace patchcraft
         }
     }
 
+    void MidiPlaygroundPage::applyDrumOperator (int operatorId)
+    {
+        auto* block = ensureMidiBlock();
+        if (block == nullptr || ! isDrumMachineBlock (*block))
+            return;
+
+        const int pattern = juce::jlimit (0, 7, juce::roundToInt (valueFor (*block, "dmPattern", 0.0f)));
+        const int tracks = juce::jlimit (1, 16, juce::roundToInt (valueFor (*block, "dmTracks", 8.0f)));
+        const int steps = juce::jlimit (1, 64, juce::roundToInt (valueFor (*block, "dmSteps", 16.0f)));
+
+        auto finish = [&]
+        {
+            notifyGraphChanged (true);
+            activeSummary.setText (blockSummary(), juce::dontSendNotification);
+            syncControlsFromBlock();
+            drumPatternGrid.repaint();
+            repaint();
+        };
+
+        if (operatorId == 200)
+        {
+            drumPatternClipboard.clear();
+            drumPatternClipboardTracks = tracks;
+            drumPatternClipboardSteps = steps;
+            for (int track = 0; track < tracks; ++track)
+                for (int step = 0; step < steps; ++step)
+                {
+                    const auto source = drumPrefixForPattern (pattern, track, step);
+                    const auto clip = "T" + juce::String (track) + "S" + juce::String (step);
+                    for (auto* suffix : { "On", "Vel", "Gate", "Prob", "Div" })
+                        drumPatternClipboard[clip + suffix] = valueFor (*block, source + suffix,
+                            juce::String (suffix) == "Vel" ? (track == 0 ? 1.0f : 0.75f)
+                          : juce::String (suffix) == "Gate" ? (track == 2 ? 0.16f : 0.36f)
+                          : juce::String (suffix) == "Prob" || juce::String (suffix) == "Div" ? 1.0f : 0.0f);
+                }
+            hasDrumPatternClipboard = true;
+            return;
+        }
+
+        if (operatorId == 201 && hasDrumPatternClipboard)
+        {
+            const int pasteTracks = juce::jmin (tracks, drumPatternClipboardTracks);
+            const int pasteSteps = juce::jmin (steps, drumPatternClipboardSteps);
+            for (int track = 0; track < pasteTracks; ++track)
+                for (int step = 0; step < pasteSteps; ++step)
+                {
+                    const auto clip = "T" + juce::String (track) + "S" + juce::String (step);
+                    setDrumCell (*block, pattern, track, step,
+                                 drumPatternClipboard[clip + "On"] >= 0.5f,
+                                 drumPatternClipboard[clip + "Vel"],
+                                 drumPatternClipboard[clip + "Gate"],
+                                 drumPatternClipboard[clip + "Prob"],
+                                 juce::roundToInt (drumPatternClipboard[clip + "Div"]));
+                }
+            finish();
+            return;
+        }
+
+        if (operatorId == 202)
+        {
+            const int destination = (pattern + 1) % 8;
+            copyDrumPattern (*block, pattern, destination, tracks, steps);
+            block->values["dmPattern"] = (float) destination;
+            drumPatternBox.setSelectedId (destination + 1, juce::dontSendNotification);
+            finish();
+            return;
+        }
+
+        if (operatorId == 210 || operatorId == 211)
+        {
+            shiftDrumPattern (*block, pattern, tracks, steps, operatorId == 210 ? -1 : 1);
+            finish();
+            return;
+        }
+
+        if (operatorId == 212)
+        {
+            for (int track = 0; track < tracks; ++track)
+                for (int step = 0; step < steps; ++step)
+                {
+                    const auto prefix = drumPrefixForPattern (pattern, track, step);
+                    if (valueFor (*block, prefix + "On", 0.0f) < 0.5f)
+                        continue;
+                    const bool downbeat = (step % 4) == 0;
+                    block->values[prefix + "Vel"] = juce::jlimit (0.0f, 1.0f,
+                        valueFor (*block, prefix + "Vel", track == 0 ? 1.0f : 0.75f)
+                            + (downbeat ? 0.16f : -0.04f));
+                }
+            finish();
+            return;
+        }
+
+        if (operatorId == 213)
+        {
+            for (int step = 2; step < steps; step += 4)
+            {
+                setDrumCell (*block, pattern, 1, step, true, 0.30f, 0.18f, 0.70f, 1);
+                if (tracks > 9)
+                    setDrumCell (*block, pattern, 9, (step + 3) % steps, true, 0.26f, 0.16f, 0.60f, 1);
+            }
+            finish();
+            return;
+        }
+
+        if (operatorId == 214)
+        {
+            const int hatTrack = juce::jmin (2, tracks - 1);
+            for (int step = 0; step < steps; ++step)
+            {
+                if ((step % 2) == 0)
+                    setDrumCell (*block, pattern, hatTrack, step, true, step % 4 == 0 ? 0.68f : 0.52f, 0.12f, 1.0f, 1);
+                if (step == 3 || step == 7 || step == 11 || step == 15 || (steps > 16 && (step == 23 || step == 31)))
+                    setDrumCell (*block, pattern, hatTrack, step, true, 0.58f, 0.10f, 1.0f, (step % 8 == 7) ? 4 : 3);
+            }
+            finish();
+            return;
+        }
+
+        if (operatorId == 220)
+        {
+            clearDrumPattern (*block, pattern, tracks, steps);
+            finish();
+        }
+    }
+
     void MidiPlaygroundPage::showPhraseLibraryMenu()
     {
+        if (const auto* block = activeMidiBlock(); block != nullptr && isDrumMachineBlock (*block))
+        {
+            juce::PopupMenu m;
+            m.addSectionHeader ("Drum Machine Templates");
+            m.addItem (301, "Modern Trap Rolls");
+            m.addItem (302, "808 Bounce");
+            m.addItem (303, "Four-On-The-Floor House");
+            m.addItem (304, "Industrial Techno Drive");
+            m.addItem (305, "DnB Roller");
+            m.addItem (306, "Reggaeton Dembow");
+            m.addItem (307, "Boom Bap Pocket");
+            m.addItem (308, "Afro House Percussion");
+            m.addItem (309, "UK Garage Shuffle");
+            m.addItem (310, "Cinematic Half-Time Impacts");
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&phraseLibraryButton),
+                [this] (int result) { if (result > 0) applyDrumTemplate (result); });
+            return;
+        }
+
         juce::PopupMenu m;
         m.addSectionHeader ("Trance / Electronic Phrases (16 steps)");
         m.addItem (1,  "1. Driving 8th-note root");
@@ -1006,8 +1418,13 @@ namespace patchcraft
     void MidiPlaygroundPage::applyPhraseFromLibrary (int phraseId)
     {
         auto* block = ensureMidiBlock();
-        if (block == nullptr || isDrumMachineBlock (*block))
+        if (block == nullptr)
             return;
+        if (isDrumMachineBlock (*block))
+        {
+            applyDrumTemplate (phraseId);
+            return;
+        }
 
         // Each phrase is a 16-element array of {note, on}. note is offset
         // semitones from root, on is whether the step is active.
@@ -1108,6 +1525,191 @@ namespace patchcraft
         notifyGraphChanged (true);
         syncControlsFromBlock();
         repaint();
+    }
+
+    void MidiPlaygroundPage::applyDrumTemplate (int templateId)
+    {
+        auto* block = ensureMidiBlock();
+        if (block == nullptr || ! isDrumMachineBlock (*block))
+            return;
+
+        const int pattern = juce::jlimit (0, 7, juce::roundToInt (valueFor (*block, "dmPattern", 0.0f)));
+        const int tracks = juce::jlimit (1, 16, juce::roundToInt (valueFor (*block, "dmTracks", 8.0f)));
+        const int steps = juce::jlimit (1, 64, juce::roundToInt (valueFor (*block, "dmSteps", 16.0f)));
+        clearDrumPattern (*block, pattern, tracks, steps);
+
+        auto hit = [&] (int track, int step, float velocity, float gate = 0.32f, float probability = 1.0f, int divisions = 1)
+        {
+            if (track < tracks && step < steps)
+                setDrumCell (*block, pattern, track, step, true, velocity, gate, probability, divisions);
+        };
+        auto every = [&] (int track, int everySteps, float velocity, float gate, int divisions = 1)
+        {
+            for (int step = 0; step < steps; step += everySteps)
+                hit (track, step, velocity, gate, 1.0f, divisions);
+        };
+
+        switch (templateId)
+        {
+            case 301: // Modern Trap Rolls
+                hit (0, 0, 1.0f, 0.40f); hit (0, 7, 0.90f, 0.32f); hit (0, 10, 0.82f, 0.30f);
+                hit (1, 4, 0.92f, 0.30f); hit (1, 12, 0.96f, 0.30f);
+                for (int step = 0; step < steps; step += 2) hit (2, step, step % 4 == 0 ? 0.68f : 0.50f, 0.12f);
+                for (int step : { 3, 7, 11, 15 }) hit (2, step, 0.58f, 0.10f, 1.0f, step == 15 ? 4 : 3);
+                hit (9, 6, 0.38f, 0.18f, 0.80f); hit (9, 14, 0.34f, 0.18f, 0.70f);
+                break;
+
+            case 302: // 808 Bounce
+                hit (0, 0, 1.0f, 0.46f); hit (0, 3, 0.72f, 0.34f); hit (0, 10, 0.86f, 0.40f); hit (0, 14, 0.62f, 0.28f);
+                hit (1, 4, 0.90f, 0.30f); hit (1, 12, 0.92f, 0.30f);
+                for (int step = 0; step < steps; ++step) hit (2, step, step % 2 == 0 ? 0.42f : 0.30f, 0.10f, step % 4 == 3 ? 0.75f : 1.0f);
+                hit (3, 15, 0.56f, 0.22f, 1.0f, 2);
+                break;
+
+            case 303: // House
+                every (0, 4, 1.0f, 0.38f);
+                hit (1, 4, 0.88f, 0.30f); hit (1, 12, 0.88f, 0.30f);
+                for (int step = 2; step < steps; step += 4) hit (3, step, 0.64f, 0.20f);
+                for (int step = 0; step < steps; step += 2) hit (2, step, step % 4 == 0 ? 0.46f : 0.58f, 0.12f);
+                hit (12, 5, 0.36f, 0.18f, 0.75f); hit (12, 13, 0.34f, 0.18f, 0.75f);
+                break;
+
+            case 304: // Industrial Techno
+                every (0, 4, 1.0f, 0.38f);
+                hit (1, 4, 0.78f, 0.24f); hit (1, 12, 0.82f, 0.24f);
+                for (int step : { 1, 3, 6, 9, 11, 14 }) hit (13, step, 0.48f, 0.18f, 0.92f);
+                for (int step = 0; step < steps; step += 2) hit (2, step, 0.42f + 0.12f * (float) ((step / 2) % 2), 0.10f);
+                hit (6, 0, 0.52f, 0.50f); hit (6, 8, 0.42f, 0.44f);
+                break;
+
+            case 305: // DnB
+                hit (0, 0, 1.0f, 0.32f); hit (0, 6, 0.86f, 0.28f); hit (0, 10, 0.92f, 0.30f);
+                hit (1, 4, 0.96f, 0.24f); hit (1, 12, 0.98f, 0.24f);
+                for (int step = 0; step < steps; ++step) hit (2, step, step % 4 == 0 ? 0.62f : 0.40f, 0.09f);
+                hit (13, 7, 0.44f, 0.16f); hit (13, 15, 0.50f, 0.16f, 1.0f, 2);
+                break;
+
+            case 306: // Reggaeton
+                hit (0, 0, 1.0f, 0.40f); hit (0, 3, 0.78f, 0.30f); hit (0, 8, 0.96f, 0.38f); hit (0, 11, 0.72f, 0.28f);
+                hit (1, 4, 0.88f, 0.28f); hit (1, 12, 0.92f, 0.28f);
+                for (int step : { 2, 6, 10, 14 }) hit (2, step, 0.48f, 0.12f);
+                hit (9, 7, 0.46f, 0.16f); hit (9, 15, 0.50f, 0.16f);
+                break;
+
+            case 307: // Boom Bap
+                hit (0, 0, 1.0f, 0.38f); hit (0, 6, 0.76f, 0.30f); hit (0, 10, 0.84f, 0.30f);
+                hit (1, 4, 0.94f, 0.30f); hit (1, 12, 0.96f, 0.30f);
+                for (int step : { 0, 2, 6, 8, 10, 14 }) hit (2, step, 0.38f, 0.11f);
+                hit (8, 3, 0.28f, 0.12f, 0.70f); hit (8, 11, 0.28f, 0.12f, 0.70f);
+                break;
+
+            case 308: // Afro House
+                every (0, 4, 0.96f, 0.36f);
+                hit (1, 4, 0.78f, 0.24f); hit (1, 12, 0.78f, 0.24f);
+                for (int step : { 1, 4, 6, 9, 12, 14 }) hit (13, step, 0.52f, 0.17f);
+                for (int step : { 2, 5, 7, 10, 13, 15 }) hit (12, step, 0.42f, 0.12f, 0.88f);
+                break;
+
+            case 309: // UK Garage
+                hit (0, 0, 1.0f, 0.34f); hit (0, 5, 0.78f, 0.28f); hit (0, 10, 0.86f, 0.28f);
+                hit (1, 4, 0.88f, 0.25f); hit (1, 11, 0.78f, 0.22f); hit (1, 12, 0.92f, 0.25f);
+                for (int step : { 1, 3, 6, 8, 10, 13, 15 }) hit (2, step, 0.44f, 0.10f);
+                hit (3, 7, 0.58f, 0.18f, 1.0f, 2);
+                break;
+
+            case 310: // Cinematic Half-Time
+                hit (0, 0, 1.0f, 0.55f); hit (0, 10, 0.86f, 0.44f);
+                hit (1, 8, 0.98f, 0.38f); hit (6, 0, 0.72f, 0.66f); hit (7, 12, 0.54f, 0.70f);
+                for (int step : { 3, 7, 11, 15 }) hit (2, step, 0.38f, 0.12f, 0.82f, step == 15 ? 3 : 1);
+                hit (14, 15, 0.62f, 0.22f, 1.0f, 4);
+                break;
+
+            default:
+                return;
+        }
+
+        notifyGraphChanged (true);
+        activeSummary.setText (blockSummary(), juce::dontSendNotification);
+        syncControlsFromBlock();
+        drumPatternGrid.repaint();
+        repaint();
+    }
+
+    void MidiPlaygroundPage::applySelectedMusicalPreset()
+    {
+        const int id = musicalPresetBox.getSelectedId();
+        if (id <= 0)
+        {
+            activeSummary.setText ("Choose a musical idea, then press Drop MIDI to write it into the editor.",
+                                   juce::dontSendNotification);
+            repaint();
+            return;
+        }
+
+        if (id >= 1000 && id < 2000)
+        {
+            const int chordId = id - 1000;
+            chordPresetBox.setSelectedId (chordId, juce::dontSendNotification);
+            applySelectedChordPreset();
+            activeSummary.setText ("Dropped chord preset into Piano Roll: " + musicalPresetBox.getText(),
+                                   juce::dontSendNotification);
+            return;
+        }
+
+        if (id >= 2000 && id < 3000)
+        {
+            int progressionId = 1;
+            switch (id)
+            {
+                case 2021: progressionId = 1;  break;  // I - V - vi - IV
+                case 2022: progressionId = 3;  break;  // ii - V - I
+                case 2025: progressionId = 11; break;  // Dark Trailer Resolve
+                case 2026: progressionId = 8;  break;  // Cinematic Lift
+                default:   progressionId = 1;  break;
+            }
+
+            progressionBox.setSelectedId (progressionId, juce::dontSendNotification);
+            applySelectedProgression();
+            activeSummary.setText ("Dropped progression into Piano Roll: " + musicalPresetBox.getText(),
+                                   juce::dontSendNotification);
+            return;
+        }
+
+        if (id >= 3000 && id < 4000)
+        {
+            configureChordPhrase();
+            applyPhraseFromLibrary (id - 3000);
+            editorViewBox.setSelectedId (2, juce::dontSendNotification);
+            activeSummary.setText ("Dropped editable melody/bass phrase: " + musicalPresetBox.getText(),
+                                   juce::dontSendNotification);
+            return;
+        }
+
+        if (id >= 4000 && id < 5000)
+        {
+            configureDrumMachine();
+            applyDrumTemplate (id - 4000);
+            activeSummary.setText ("Dropped drum groove into the Drum Machine: " + musicalPresetBox.getText(),
+                                   juce::dontSendNotification);
+            return;
+        }
+
+        if (id == 5001)
+        {
+            configureSampleSliceControl();
+            editorViewBox.setSelectedId (1, juce::dontSendNotification);
+            activeSummary.setText ("Dropped Sample Chopper behavior. Import/slice samples in Sample Mapper, then edit steps here.",
+                                   juce::dontSendNotification);
+            return;
+        }
+
+        if (id == 5002)
+        {
+            midiTemplateBox.setSelectedId (5, juce::dontSendNotification);
+            applySelectedMidiTemplate();
+            activeSummary.setText ("Dropped Glitch Gate behavior. Edit active steps, probability, ratchet, and slice targets.",
+                                   juce::dontSendNotification);
+        }
     }
 
     void MidiPlaygroundPage::switchPhraseBank (int bank)
@@ -1325,6 +1927,7 @@ namespace patchcraft
             block->values["sync"] = 1.0f;
             block->values["arpSteps"] = 16.0f;
             block->values["mpSampleControl"] = 0.0f;
+            block->values["mpModLane"] = 0.0f;
             block->values["mpScaleRoot"] = (float) juce::jmax (0, rootBox.getSelectedId() - 1);
             block->values["mpScaleType"] = (float) juce::jmax (0, scaleBox.getSelectedId() - 1);
             block->targetId = "filterCutoff";
@@ -1342,7 +1945,7 @@ namespace patchcraft
 
             if (templateId == 2)
             {
-                block->name = "Chord Progression Template";
+                block->name = "Cinematic Chord Bed";
                 block->values["arpGate"] = 0.82f;
                 block->values["arpSwing"] = 0.08f;
                 block->values["mpChordMode"] = 1.0f;
@@ -1352,16 +1955,15 @@ namespace patchcraft
                                       9.0f, 9.0f, 9.0f, 9.0f, 7.0f, 7.0f, 7.0f, 7.0f };
                 for (int step = 0; step < 16; ++step)
                     fillStep (step, notes[step], step % 4 == 0, step % 8 == 0 ? 0.92f : 0.74f, 0.88f);
+                modeBox.setSelectedId (1, juce::dontSendNotification);
                 editorViewBox.setSelectedId (2, juce::dontSendNotification);
             }
             else if (templateId == 5)
             {
-                if (owner.getProject().getEngineType() != "sample")
-                    owner.getProject().setEngineType ("sample");
-
                 block->name = "Glitch Gate Template";
                 block->targetId = "sampleSlice";
                 block->values["mpSampleControl"] = 1.0f;
+                block->values["mpModLane"] = 0.0f;
                 block->values["arpGate"] = 0.20f;
                 block->values["arpSwing"] = 0.12f;
                 block->values["mpProbability"] = 0.78f;
@@ -1374,6 +1976,7 @@ namespace patchcraft
                               step % 2 == 0 ? 0.18f : 0.32f, step % 4 == 2 ? 0.62f : 1.0f);
                     block->values["mpSampleSlice" + juce::String (step)] = (float) step;
                 }
+                modeBox.setSelectedId (2, juce::dontSendNotification);
                 editorViewBox.setSelectedId (1, juce::dontSendNotification);
             }
             else if (templateId == 6)
@@ -1411,6 +2014,7 @@ namespace patchcraft
                 }
                 for (int step = 0; step < 16; ++step)
                     fillStep (step, bankNotes[0][(size_t) step], step < 5, step == 0 ? 0.96f : 0.70f, 0.50f);
+                modeBox.setSelectedId (3, juce::dontSendNotification);
                 editorViewBox.setSelectedId (2, juce::dontSendNotification);
             }
             else if (templateId == 7)
@@ -1426,6 +2030,7 @@ namespace patchcraft
                 block->values["mpFlam"] = 0.12f;
                 for (int step = 0; step < 16; ++step)
                     fillStep (step, (float) ((step / 4) * 3), step % 4 == 0, step == 0 ? 0.96f : 0.82f, 0.96f);
+                modeBox.setSelectedId (1, juce::dontSendNotification);
                 editorViewBox.setSelectedId (2, juce::dontSendNotification);
             }
             else if (templateId == 8)
@@ -1451,6 +2056,7 @@ namespace patchcraft
                     block->values[prefix + "mpStepProb" + suffix] = step % 5 == 0 ? 0.78f : 1.0f;
                     block->values[prefix + "mpSampleSlice" + suffix] = -1.0f;
                 }
+                modeBox.setSelectedId (3, juce::dontSendNotification);
                 editorViewBox.setSelectedId (1, juce::dontSendNotification);
             }
             else if (templateId == 9)
@@ -1466,11 +2072,12 @@ namespace patchcraft
                 const float pads[] { 0.0f, 5.0f, 9.0f, 7.0f };
                 for (int step = 0; step < 16; ++step)
                     fillStep (step, pads[step % 4], step < 4, 0.94f, 1.0f);
+                modeBox.setSelectedId (1, juce::dontSendNotification);
                 editorViewBox.setSelectedId (2, juce::dontSendNotification);
             }
             else if (templateId == 10)
             {
-                block->name = "Riff Generator";
+                block->name = "Arp Riff Sequencer";
                 block->values["arpGate"] = 0.46f;
                 block->values["arpSwing"] = 0.16f;
                 block->values["mpChordMode"] = 0.0f;
@@ -1483,11 +2090,12 @@ namespace patchcraft
                 for (int step = 0; step < 16; ++step)
                     fillStep (step, notes[step], true, step % 4 == 0 ? 0.98f : 0.66f, step % 2 == 0 ? 0.40f : 0.62f,
                               step % 7 == 0 ? 0.82f : 1.0f);
+                modeBox.setSelectedId (3, juce::dontSendNotification);
                 editorViewBox.setSelectedId (2, juce::dontSendNotification);
             }
             else
             {
-                block->name = "Piano Roll Lead Template";
+                block->name = "Melodic Lead Line";
                 block->values["arpGate"] = 0.58f;
                 block->values["arpSwing"] = 0.06f;
                 block->values["mpChordMode"] = 0.0f;
@@ -1498,6 +2106,7 @@ namespace patchcraft
                 for (int step = 0; step < 16; ++step)
                     fillStep (step, notes[step], true, step % 4 == 0 ? 0.94f : 0.68f,
                               step % 4 == 0 ? 0.72f : 0.46f);
+                modeBox.setSelectedId (3, juce::dontSendNotification);
                 editorViewBox.setSelectedId (2, juce::dontSendNotification);
             }
 
@@ -1588,14 +2197,30 @@ namespace patchcraft
             }
             else if (templateId == 3)
             {
-                addElement (panel ("Drum Pads", 600, 520, 420, 260), "drum_gui_panel_");
-                for (int row = 0; row < 4; ++row)
-                    for (int col = 0; col < 4; ++col)
-                        addElement (button ("Pad " + juce::String (row * 4 + col + 1),
-                                            625 + col * 92, 555 + row * 52, 78, 40),
-                                    "drum_gui_pad_");
-                addElement (knob ("Glitch", "sampleGlitch", 1040, 555), "drum_gui_knob_");
-                addElement (knob ("Grid", "sampleGlitchGrid", 1135, 555), "drum_gui_knob_");
+                addElement (panel ("Drum Machine", 560, 500, 690, 280), "drum_gui_panel_");
+                LayoutElement pattern;
+                pattern.type = ElementType::DrumGrid;
+                pattern.label = "Pattern";
+                pattern.x = 585; pattern.y = 525; pattern.width = 610; pattern.height = 130;
+                pattern.drumTracks = 8;
+                pattern.drumSteps = 16;
+                pattern.drumPattern = 0;
+                pattern.cornerRadius = 10.0f;
+                pattern.opacity = 0.95f;
+                addElement (pattern, "drum_gui_pattern_grid_");
+                LayoutElement pads;
+                pads.type = ElementType::PadGrid;
+                pads.label = "Drum Pads";
+                pads.x = 585; pads.y = 670; pads.width = 300; pads.height = 90;
+                pads.padRows = 2;
+                pads.padCols = 8;
+                pads.padBaseNote = 36;
+                pads.cornerRadius = 12.0f;
+                pads.opacity = 0.95f;
+                addElement (pads, "drum_gui_pad_grid_");
+                addElement (knob ("Glitch", "sampleGlitch", 935, 668), "drum_gui_knob_");
+                addElement (knob ("Grid", "sampleGlitchGrid", 1035, 668), "drum_gui_knob_");
+                addElement (knob ("Slice", "sampleSlice", 1135, 668), "drum_gui_knob_");
             }
             else if (templateId == 4)
             {
@@ -1658,7 +2283,7 @@ namespace patchcraft
             juce::AlertWindow::showAsync (
                 juce::MessageBoxOptions()
                     .withTitle ("Export MIDI")
-                    .withMessage ("Add or select a MIDI Playground block before exporting a clip.")
+                    .withMessage ("Add or select a Performance Builder block before exporting a clip.")
                     .withButton ("OK")
                     .withIconType (juce::MessageBoxIconType::InfoIcon),
                 nullptr);
@@ -1716,6 +2341,138 @@ namespace patchcraft
                         .withIconType (juce::MessageBoxIconType::InfoIcon),
                     nullptr);
             });
+    }
+
+    void MidiPlaygroundPage::startPatternPreview()
+    {
+        auto* block = ensureMidiBlock();
+        if (block == nullptr)
+            return;
+
+        if (modeBox.getSelectedId() == 5 && ! isDrumMachineBlock (*block))
+        {
+            configureDrumMachine();
+            block = activeMidiBlock();
+            if (block == nullptr)
+                return;
+        }
+
+        stopPatternPreview();
+
+        juce::String error;
+        if (! owner.getAudio().ensureOpen (error))
+        {
+            activeSummary.setText ("Pattern preview unavailable: " + error, juce::dontSendNotification);
+            return;
+        }
+
+        auto engine = std::make_unique<SampleSynthEngine>();
+        engine->prepare (previewSampleRate, previewBlockSize, previewChannels);
+        engine->setRenderContext (RenderContext::forBlock (previewSampleRate,
+                                                           previewBlockSize,
+                                                           previewBlockSize,
+                                                           0,
+                                                           previewChannels,
+                                                           120.0));
+        engine->loadFromPack (owner.getProject().getProjectFolder(),
+                              owner.getProject().getSampleMap());
+
+        previewRuntime.bind (owner.getProject().getDspGraph());
+        previewRuntime.reset();
+
+        if (! isDrumMachineBlock (*block))
+        {
+            previewHeldNote = juce::jlimit (0, 127, 60 + juce::jmax (0, rootBox.getSelectedId() - 1));
+            previewRuntime.handleNoteOn (*engine, previewHeldNote, 0.9f);
+        }
+
+        {
+            const juce::SpinLock::ScopedLockType lock (previewLock);
+            previewEngine = std::move (engine);
+        }
+
+        owner.getAudio().getDeviceManager().addAudioCallback (this);
+        patternPreviewActive = true;
+        playPatternButton.setButtonText ("Playing");
+        activeSummary.setText (blockSummary() + "  |  preview playing on this page", juce::dontSendNotification);
+        repaint();
+    }
+
+    void MidiPlaygroundPage::stopPatternPreview()
+    {
+        if (patternPreviewActive)
+            owner.getAudio().getDeviceManager().removeAudioCallback (this);
+
+        patternPreviewActive = false;
+        {
+            const juce::SpinLock::ScopedLockType lock (previewLock);
+            if (previewEngine != nullptr)
+            {
+                previewRuntime.allNotesOff (*previewEngine);
+                previewEngine->allNotesOff();
+                previewEngine->reset();
+            }
+            previewEngine.reset();
+        }
+        previewRuntime.reset();
+        playPatternButton.setButtonText ("Play Pattern");
+        repaint();
+    }
+
+    void MidiPlaygroundPage::audioDeviceAboutToStart (juce::AudioIODevice* device)
+    {
+        previewSampleRate = device != nullptr ? device->getCurrentSampleRate() : 44100.0;
+        previewBlockSize = device != nullptr ? device->getCurrentBufferSizeSamples() : 512;
+        previewChannels = device != nullptr
+            ? juce::jmax (1, device->getActiveOutputChannels().countNumberOfSetBits())
+            : 2;
+
+        const juce::SpinLock::ScopedLockType lock (previewLock);
+        if (previewEngine != nullptr)
+        {
+            previewEngine->prepare (previewSampleRate, previewBlockSize, previewChannels);
+            previewEngine->setRenderContext (RenderContext::forBlock (previewSampleRate,
+                                                                      previewBlockSize,
+                                                                      previewBlockSize,
+                                                                      0,
+                                                                      previewChannels,
+                                                                      120.0));
+        }
+    }
+
+    void MidiPlaygroundPage::audioDeviceStopped()
+    {
+        const juce::SpinLock::ScopedLockType lock (previewLock);
+        if (previewEngine != nullptr)
+        {
+            previewRuntime.allNotesOff (*previewEngine);
+            previewEngine->reset();
+        }
+    }
+
+    void MidiPlaygroundPage::audioDeviceIOCallbackWithContext (const float* const*, int,
+                                                               float* const* outputChannelData,
+                                                               int numOutputChannels,
+                                                               int numSamples,
+                                                               const juce::AudioIODeviceCallbackContext&)
+    {
+        juce::AudioBuffer<float> output (outputChannelData, numOutputChannels, numSamples);
+        output.clear();
+
+        const juce::SpinLock::ScopedTryLockType lock (previewLock);
+        if (! lock.isLocked() || previewEngine == nullptr || ! patternPreviewActive)
+            return;
+
+        auto context = RenderContext::forBlock (previewSampleRate,
+                                                numSamples,
+                                                previewBlockSize,
+                                                0,
+                                                numOutputChannels,
+                                                120.0);
+        context.isPlaying = true;
+        previewEngine->setRenderContext (context);
+        previewRuntime.process (*previewEngine, context);
+        previewEngine->process (output, 0, numSamples);
     }
 
     void MidiPlaygroundPage::syncControlsFromBlock()
@@ -1776,6 +2533,8 @@ namespace patchcraft
 
                 if (valueFor (*block, "mpSampleControl", 0.0f) >= 0.5f)
                     modeBox.setSelectedId (2, juce::dontSendNotification);
+                else if (valueFor (*block, "mpModLane", 0.0f) >= 0.5f)
+                    modeBox.setSelectedId (4, juce::dontSendNotification);
                 else if (valueFor (*block, "arpPattern", 0.0f) >= 7.0f)
                     modeBox.setSelectedId (3, juce::dontSendNotification);
                 else
@@ -1791,7 +2550,7 @@ namespace patchcraft
         }
         else
         {
-            activeSummary.setText ("No MIDI Playground block yet. Add one, choose a preset, then test it on the Test page.",
+            activeSummary.setText ("No Performance block yet. Add one, choose a musical behavior, then test the current Patch in Runtime.",
                                    juce::dontSendNotification);
         }
 
@@ -1822,6 +2581,7 @@ namespace patchcraft
                 block->values["dmProbability"] = (float) probabilitySlider.getValue();
                 block->values["dmTransport"] = 1.0f;
                 block->values["mpSampleControl"] = 1.0f;
+                block->name = "Drum Machine Performance";
                 block->targetId = "sample";
                 notifyGraphChanged (false);
                 activeSummary.setText (blockSummary(), juce::dontSendNotification);
@@ -1865,21 +2625,26 @@ namespace patchcraft
 
             if (modeBox.getSelectedId() == 2)
             {
-                block->name = "Sample Slice MIDI Playground";
+                block->name = "Sample Chopper Performance";
                 block->targetId = "sampleSlice";
                 block->values["mpSampleControl"] = 1.0f;
+                block->values["mpModLane"] = 0.0f;
             }
             else if (modeBox.getSelectedId() == 4)
             {
-                block->name = "Glitch MIDI Playground";
-                block->values["mpSampleControl"] = 1.0f;
-                block->values["arpPattern"] = 7.0f;
-                block->values["arpGate"] = juce::jmin (0.35f, (float) gateSlider.getValue());
+                block->name = "Performance Modulation Lane";
+                block->values["mpSampleControl"] = 0.0f;
+                block->values["mpModLane"] = 1.0f;
+                block->values["mpChordMode"] = 0.0f;
+                block->values["mpChordSize"] = 1.0f;
             }
             else
             {
-                block->name = modeBox.getSelectedId() == 3 ? "Riff MIDI Playground" : "Chord Phrase Playground";
+                block->name = modeBox.getSelectedId() == 3 ? "Arp Step Sequencer" : "Chord Progression Performance";
                 block->values["mpSampleControl"] = 0.0f;
+                block->values["mpModLane"] = 0.0f;
+                if (modeBox.getSelectedId() == 3)
+                    block->values["arpPattern"] = 7.0f;
             }
 
             MidiPlaygroundPattern::storeActiveBank (*block, MidiPlaygroundPattern::getActiveBank (*block));
@@ -1894,6 +2659,12 @@ namespace patchcraft
     {
         owner.getProject().getDspGraph().userConfigured = true;
         owner.getProject().markDirty();
+        if (patternPreviewActive)
+        {
+            const juce::SpinLock::ScopedLockType lock (previewLock);
+            if (previewEngine != nullptr)
+                previewRuntime.bind (owner.getProject().getDspGraph());
+        }
 
         if (immediate)
         {
@@ -1959,7 +2730,8 @@ namespace patchcraft
         }
     }
 
-    void MidiPlaygroundPage::setDrumStepFromEditor (int track, int step, bool active, float velocity, bool editVelocity)
+    void MidiPlaygroundPage::setDrumStepFromEditor (int track, int step, bool active, float velocity,
+                                                    bool editVelocity, int divisions)
     {
         auto* block = activeMidiBlock();
         if (block == nullptr || ! isDrumMachineBlock (*block))
@@ -1984,6 +2756,10 @@ namespace patchcraft
             block->values[prefix + "Gate"] = track == 2 ? 0.16f : 0.36f;
         if (block->values.find (prefix + "Prob") == block->values.end())
             block->values[prefix + "Prob"] = 1.0f;
+        if (divisions > 0)
+            block->values[prefix + "Div"] = (float) juce::jlimit (1, 4, divisions);
+        else if (block->values.find (prefix + "Div") == block->values.end())
+            block->values[prefix + "Div"] = 1.0f;
 
         notifyGraphChanged (false);
         activeSummary.setText (blockSummary(), juce::dontSendNotification);
@@ -2031,7 +2807,7 @@ namespace patchcraft
                   + "  |  mutation " + juce::String (juce::roundToInt (valueFor (*block, "mpMutation", 0.0f) * 100.0f)) + "%";
         }
 
-        return "No MIDI Playground block yet.";
+        return "No Performance block yet.";
     }
 
     juce::Rectangle<int> MidiPlaygroundPage::drawControl (juce::Graphics& g, juce::Rectangle<int> row,
@@ -2099,7 +2875,7 @@ namespace patchcraft
         static const juce::StringArray descriptions {
             "Hardware MIDI, software keyboard, latch, key switches, and future MIDI input filters.",
             "Scale root/type, chord size, spread, phrase notes, and progression tools.",
-            "Step count, rate, gate, swing, probability, velocity, humanize, and seeded mutation.",
+            "Step count, rate, gate, swing, probability, velocity, humanize, and musical transforms.",
             "Mod wheel, aftertouch, expression, XY motion, macros, and live performance switches.",
             "Per-step slice, sample start, length, pitch, retrigger, chopping, and glitch workflows.",
             "Routes generated notes and control data into Synth, Sampler, Player, DSP, and Test."
@@ -2504,13 +3280,59 @@ namespace patchcraft
             return;
 
         const bool currentActive = valueFor (*block, drumPrefix (*block, dragTrack, dragStep) + "On", 0.0f) >= 0.5f;
+        if (e.mods.isPopupMenu())
+        {
+            const int pattern = juce::jlimit (0, 7, juce::roundToInt (valueFor (*block, "dmPattern", 0.0f)));
+            const int currentDivisions = drumCellDivisions (*block, pattern, dragTrack, dragStep);
+            juce::PopupMenu m;
+            m.addSectionHeader ("Cell Divisions");
+            m.addItem (101, "Single", true, currentDivisions == 1);
+            m.addItem (102, "Double", true, currentDivisions == 2);
+            m.addItem (103, "Triple", true, currentDivisions == 3);
+            m.addItem (104, "Quad", true, currentDivisions == 4);
+            m.addSeparator();
+            m.addItem (120, "Clear Cell");
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
+                [this, track = dragTrack, step = dragStep] (int result)
+                {
+                    if (result >= 101 && result <= 104)
+                        owner.setDrumStepFromEditor (track, step, true, 0.82f, false, result - 100);
+                    else if (result == 120)
+                        owner.setDrumStepFromEditor (track, step, false, 0.75f, false, 1);
+                });
+            dragTrack = -1;
+            dragStep = -1;
+            return;
+        }
+
+        if (e.mods.isCtrlDown() || e.mods.isCommandDown())
+        {
+            const int pattern = juce::jlimit (0, 7, juce::roundToInt (valueFor (*block, "dmPattern", 0.0f)));
+            const int currentDivisions = currentActive ? drumCellDivisions (*block, pattern, dragTrack, dragStep) : 1;
+            const int nextDivisions = currentDivisions >= 4 ? 1 : currentDivisions + 1;
+            const float velocity = valueFor (*block, drumPrefix (*block, dragTrack, dragStep) + "Vel",
+                                             dragTrack == 0 ? 1.0f : 0.75f);
+            owner.setDrumStepFromEditor (dragTrack, dragStep, true, velocity, false, nextDivisions);
+            dragTrack = -1;
+            dragStep = -1;
+            return;
+        }
+
         dragState = e.mods.isShiftDown() ? true : ! currentActive;
         editFromMouse (e);
     }
 
     void MidiPlaygroundPage::DrumPatternGrid::mouseDrag (const juce::MouseEvent& e)
     {
+        if (dragTrack < 0 || dragStep < 0)
+            return;
         editFromMouse (e);
+    }
+
+    void MidiPlaygroundPage::DrumPatternGrid::mouseUp (const juce::MouseEvent&)
+    {
+        dragTrack = -1;
+        dragStep = -1;
     }
 
     void MidiPlaygroundPage::DrumPatternGrid::paint (juce::Graphics& g)
@@ -2524,7 +3346,7 @@ namespace patchcraft
 
         g.setColour (PatchCraftLookAndFeel::textDim());
         g.setFont (10.5f);
-        g.drawText ("Click cells to toggle hits. Drag across cells to draw. Shift-drag vertically edits velocity. Pattern selector stores 8 separate patterns.",
+        g.drawText ("Click/drag toggles hits. Shift-drag edits velocity. Ctrl-click cycles x2/x3/x4 divisions. Right-click opens cell tools.",
                     content.removeFromTop (18), juce::Justification::centredLeft, true);
 
         const auto* block = owner.activeMidiBlock();
@@ -2583,15 +3405,31 @@ namespace patchcraft
                 const auto prefix = drumPrefix (*block, track, step);
                 const bool active = valueFor (*block, prefix + "On", 0.0f) >= 0.5f;
                 const float velocity = juce::jlimit (0.0f, 1.0f, valueFor (*block, prefix + "Vel", track == 0 ? 1.0f : 0.75f));
+                const int divisions = juce::jlimit (1, 4, juce::roundToInt (valueFor (*block, prefix + "Div", 1.0f)));
 
                 g.setColour (step % 4 == 0 ? PatchCraftLookAndFeel::panelAlt().brighter (0.10f)
                                             : PatchCraftLookAndFeel::panelAlt());
                 g.fillRoundedRectangle (cell.toFloat(), 4.0f);
+                if (divisions > 1)
+                {
+                    g.setColour (PatchCraftLookAndFeel::border().brighter (0.35f).withAlpha (0.82f));
+                    for (int division = 1; division < divisions; ++division)
+                    {
+                        const int x = cell.getX() + juce::roundToInt ((float) cell.getWidth() * (float) division / (float) divisions);
+                        g.drawVerticalLine (x, (float) cell.getY() + 3.0f, (float) cell.getBottom() - 3.0f);
+                    }
+                }
                 if (active)
                 {
                     auto fill = cell.reduced (2).withTrimmedTop (juce::roundToInt ((1.0f - velocity) * (float) juce::jmax (1, cell.getHeight() - 4)));
                     g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.38f + velocity * 0.55f));
                     g.fillRoundedRectangle (fill.toFloat(), 3.0f);
+                    if (divisions > 1 && cell.getWidth() >= 18)
+                    {
+                        g.setColour (juce::Colour (0xff0a0c10));
+                        g.setFont (juce::Font (juce::jmin (9.0f, (float) cell.getHeight() * 0.44f), juce::Font::bold));
+                        g.drawText ("x" + juce::String (divisions), cell.reduced (1), juce::Justification::centred, true);
+                    }
                 }
 
                 g.setColour (active ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::borderSoft());
@@ -2791,7 +3629,7 @@ namespace patchcraft
         {
             g.setColour (PatchCraftLookAndFeel::textDim());
             g.setFont (12.0f);
-            g.drawFittedText ("Add a Playground block or choose Chord Phrase / Sample Slice Control to create a playable MIDI generator.",
+            g.drawFittedText ("Add a Performance block or choose a musical behavior to create playable notes, chops, drums, or modulation.",
                               content, juce::Justification::centred, 3);
         }
     }
@@ -2799,10 +3637,10 @@ namespace patchcraft
     juce::String MidiPlaygroundPage::sourceHelpText() const
     {
         if (sourceBox.getSelectedId() == 2)
-            return "Sampler source = Sample Mapper zones. MIDI Playground controls which notes/slices trigger those samples.";
+            return "Sampler source = Sample Mapper zones. Performance Builder controls which notes, slices, and pads trigger those samples.";
         if (sourceBox.getSelectedId() == 3)
-            return "FX source = live or imported audio input. MIDI Playground can still drive gates, throws, and performance controls.";
-        return "Synth source = DSP Builder Source blocks. MIDI Playground creates/edits the MIDI data that plays those sources.";
+            return "FX source = live or imported audio input. Performance Builder drives gates, throws, and performable controls.";
+        return "Synth source = DSP Builder Source blocks. Performance Builder creates the MIDI and modulation behavior that plays those sources.";
     }
 
     void MidiPlaygroundPage::paint (juce::Graphics& g)
@@ -2826,6 +3664,8 @@ namespace patchcraft
                            || modeBox.getSelectedId() == 5;
 
         editorViewBox.setVisible (! drumMode);
+        musicalPresetBox.setVisible (true);
+        applyMusicalPresetButton.setVisible (true);
         chordPresetBox.setVisible (! drumMode);
         midiTemplateBox.setVisible (true);
         guiTemplateBox.setVisible (true);
@@ -2857,7 +3697,7 @@ namespace patchcraft
 
         g.setColour (PatchCraftLookAndFeel::accent());
         g.setFont (juce::Font (12.0f, juce::Font::bold));
-        g.drawText ("SOUND SOURCE", controlContent.removeFromTop (22), juce::Justification::centredLeft);
+        g.drawText ("CURRENT PATCH SOURCE", controlContent.removeFromTop (22), juce::Justification::centredLeft);
 
         drawControl (g, controlContent.removeFromTop (30), "Source", sourceBox);
         controlContent.removeFromTop (4);
@@ -2871,7 +3711,16 @@ namespace patchcraft
 
         g.setColour (PatchCraftLookAndFeel::accent());
         g.setFont (juce::Font (12.0f, juce::Font::bold));
-        g.drawText ("PLAYGROUND SETUP", controlContent.removeFromTop (22), juce::Justification::centredLeft);
+        g.drawText ("PERFORMANCE WORKFLOW", controlContent.removeFromTop (22), juce::Justification::centredLeft);
+
+        auto presetRow = controlContent.removeFromTop (30);
+        auto presetLabel = presetRow.removeFromLeft (116);
+        g.setColour (PatchCraftLookAndFeel::textDim());
+        g.setFont (10.5f);
+        g.drawText ("Drop Preset", presetLabel, juce::Justification::centredLeft);
+        applyMusicalPresetButton.setBounds (presetRow.removeFromRight (82).reduced (2));
+        musicalPresetBox.setBounds (presetRow.reduced (0, 0));
+        controlContent.removeFromTop (6);
 
         drawControl (g, controlContent.removeFromTop (30), "Mode", modeBox);
         controlContent.removeFromTop (6);
@@ -2882,7 +3731,7 @@ namespace patchcraft
             drawControl (g, controlContent.removeFromTop (30), "Chord Preset", chordPresetBox);
             controlContent.removeFromTop (6);
         }
-        drawControl (g, controlContent.removeFromTop (30), "MIDI Template", midiTemplateBox);
+        drawControl (g, controlContent.removeFromTop (30), "Behavior", midiTemplateBox);
         controlContent.removeFromTop (6);
         drawControl (g, controlContent.removeFromTop (30), "GUI Template", guiTemplateBox);
         controlContent.removeFromTop (8);
@@ -2959,7 +3808,7 @@ namespace patchcraft
             octaveFoldToggle.setBounds (foldRow);
         }
 
-        auto buttonRows = controlContent.removeFromBottom (160);
+        auto buttonRows = controlContent.removeFromBottom (192);
         auto row = buttonRows.removeFromTop (32);
         addPlaygroundButton.setBounds (row.removeFromLeft (158).reduced (2));
         chordPhraseButton.setBounds (row.reduced (2));
@@ -2979,6 +3828,9 @@ namespace patchcraft
         applyProgressionButton.setBounds (row.removeFromLeft (108).reduced (2));
         exportMidiButton.setBounds (row.removeFromLeft (108).reduced (2));
         testButton.setBounds (row.reduced (2));
+        row = buttonRows.removeFromTop (32);
+        playPatternButton.setBounds (row.removeFromLeft (158).reduced (2));
+        stopPatternButton.setBounds (row.reduced (2));
 
         // Compact status strip in place of the old 6-card grid.
         auto cards = main.removeFromTop (32);

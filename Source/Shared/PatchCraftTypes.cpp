@@ -18,6 +18,69 @@ namespace patchcraft
         return juce::Colour::fromString ("ff" + v.toLowerCase());
     }
 
+    static juce::var stringArrayToVar (const juce::StringArray& values)
+    {
+        juce::Array<juce::var> arr;
+        for (const auto& value : values)
+            arr.add (value);
+        return arr;
+    }
+
+    static void readStringArrayProperty (juce::DynamicObject* object,
+                                         const juce::Identifier& property,
+                                         juce::StringArray& destination)
+    {
+        destination.clear();
+        if (object == nullptr)
+            return;
+
+        if (auto* arr = object->getProperty (property).getArray())
+            for (const auto& value : *arr)
+                destination.add (value.toString());
+    }
+
+    static juce::var floatArrayToVar (const juce::Array<float>& values)
+    {
+        juce::Array<juce::var> arr;
+        for (const auto value : values)
+            arr.add ((double) value);
+        return arr;
+    }
+
+    static juce::var intArrayToVar (const juce::Array<int>& values)
+    {
+        juce::Array<juce::var> arr;
+        for (const auto value : values)
+            arr.add (value);
+        return arr;
+    }
+
+    static void readFloatArrayProperty (juce::DynamicObject* object,
+                                        const juce::Identifier& property,
+                                        juce::Array<float>& destination)
+    {
+        destination.clear();
+        if (object == nullptr)
+            return;
+
+        if (auto* arr = object->getProperty (property).getArray())
+            for (const auto& value : *arr)
+                destination.add ((float) value);
+    }
+
+    static void readIntArrayProperty (juce::DynamicObject* object,
+                                      const juce::Identifier& property,
+                                      juce::Array<int>& destination)
+    {
+        destination.clear();
+        if (object == nullptr)
+            return;
+
+        if (auto* arr = object->getProperty (property).getArray())
+            for (const auto& value : *arr)
+                destination.add ((int) value);
+    }
+
     // Manifest -----------------------------------------------------------------
     juce::var Manifest::toVar() const
     {
@@ -31,12 +94,32 @@ namespace patchcraft
         obj->setProperty ("backgroundImage", backgroundImage);
         obj->setProperty ("defaultPreset",   defaultPreset);
         obj->setProperty ("createdWith",     createdWith);
+        obj->setProperty ("multiInstrumentMode", multiInstrumentMode);
         obj->setProperty ("libraryThumbnail", libraryThumbnail);
         obj->setProperty ("version",         version);
         obj->setProperty ("website",         website);
         obj->setProperty ("playerDisplayName",       playerDisplayName);
         obj->setProperty ("playerTagline",           playerTagline);
         obj->setProperty ("playerLogoImage",         playerLogoImage);
+        obj->setProperty ("playerClientName",        playerClientName);
+        obj->setProperty ("playerSupportEmail",      playerSupportEmail);
+        obj->setProperty ("playerSupportUrl",        playerSupportUrl);
+        obj->setProperty ("playerManualUrl",         playerManualUrl);
+        obj->setProperty ("playerStoreUrl",          playerStoreUrl);
+        obj->setProperty ("playerCopyright",         playerCopyright);
+        obj->setProperty ("playerLegalText",         playerLegalText);
+        obj->setProperty ("salesHeadline",           salesHeadline);
+        obj->setProperty ("salesSubheadline",        salesSubheadline);
+        obj->setProperty ("salesCtaText",            salesCtaText);
+        obj->setProperty ("salesCheckoutUrl",        salesCheckoutUrl);
+        obj->setProperty ("salesDemoVideoUrl",       salesDemoVideoUrl);
+        obj->setProperty ("salesAudioDemoUrl",       salesAudioDemoUrl);
+        obj->setProperty ("salesCurrency",           salesCurrency);
+        obj->setProperty ("salesPrice",              salesPrice);
+        obj->setProperty ("salesCompareAtPrice",     salesCompareAtPrice);
+        obj->setProperty ("salesHighlights",         stringArrayToVar (salesHighlights));
+        obj->setProperty ("salesIncludes",           stringArrayToVar (salesIncludes));
+        obj->setProperty ("salesFaq",                stringArrayToVar (salesFaq));
         obj->setProperty ("playerBackgroundColour",  playerBackgroundColour.toString());
         obj->setProperty ("playerPanelColour",       playerPanelColour.toString());
         obj->setProperty ("playerAccentColour",      playerAccentColour.toString());
@@ -49,18 +132,64 @@ namespace patchcraft
         obj->setProperty ("playerAllowMidiLearn",    playerAllowMidiLearn);
         obj->setProperty ("playerShowAbout",         playerShowAbout);
         obj->setProperty ("playerShowParameterGuidance", playerShowParameterGuidance);
+        obj->setProperty ("playerShowPatchCraftBranding", playerShowPatchCraftBranding);
         obj->setProperty ("studioShowTutorials",     studioShowTutorials);
+        obj->setProperty ("whiteLabelPackageName",   whiteLabelPackageName);
+        obj->setProperty ("whiteLabelPublisher",     whiteLabelPublisher);
+        obj->setProperty ("whiteLabelProductCode",   whiteLabelProductCode);
+        obj->setProperty ("whiteLabelBundleIdentifier", whiteLabelBundleIdentifier);
+        obj->setProperty ("whiteLabelInstallerId",   whiteLabelInstallerId);
+        obj->setProperty ("whiteLabelInstallerIcon", whiteLabelInstallerIcon);
+        obj->setProperty ("whiteLabelEulaPath",      whiteLabelEulaPath);
+        obj->setProperty ("whiteLabelPrivacyUrl",    whiteLabelPrivacyUrl);
+        obj->setProperty ("whiteLabelInstallNotes",  whiteLabelInstallNotes);
+        obj->setProperty ("whiteLabelWindowsVst3Path", whiteLabelWindowsVst3Path);
+        obj->setProperty ("whiteLabelMacVst3Path",   whiteLabelMacVst3Path);
+        obj->setProperty ("whiteLabelRequireLicenseOnFirstRun", whiteLabelRequireLicenseOnFirstRun);
+        obj->setProperty ("whiteLabelIncludeStandalone", whiteLabelIncludeStandalone);
+        obj->setProperty ("whiteLabelIncludeVst3",   whiteLabelIncludeVst3);
         obj->setProperty ("licenseRequired",         licenseRequired);
         obj->setProperty ("licenseKey",              licenseKey);
+        obj->setProperty ("licenseProductId",        licenseProductId);
+        obj->setProperty ("licenseServerUrl",        licenseServerUrl);
+        obj->setProperty ("licensePublicKey",        licensePublicKey);
+        obj->setProperty ("licensePolicy",           licensePolicy);
         obj->setProperty ("trialDays",               trialDays);
         obj->setProperty ("isTrial",                 isTrial);
         obj->setProperty ("trialExpiryDate",         trialExpiryDate);
         obj->setProperty ("licenseOwner",              licenseOwner);
+        obj->setProperty ("licenseOfflineGraceDays", licenseOfflineGraceDays);
+        obj->setProperty ("licenseBindToMachine",    licenseBindToMachine);
+        obj->setProperty ("licenseAllowTrialConversion", licenseAllowTrialConversion);
 
         juce::Array<juce::var> tagArray;
         for (auto& tag : tags)
             tagArray.add (tag);
         obj->setProperty ("tags", tagArray);
+
+        juce::Array<juce::var> instrumentIdArray;
+        for (auto& id : instrumentIds)
+            instrumentIdArray.add (id);
+        obj->setProperty ("instrumentIds", instrumentIdArray);
+
+        juce::Array<juce::var> instrumentNameArray;
+        for (auto& name : instrumentNames)
+            instrumentNameArray.add (name);
+        obj->setProperty ("instrumentNames", instrumentNameArray);
+
+        juce::Array<juce::var> instrumentFileArray;
+        for (auto& file : instrumentFiles)
+            instrumentFileArray.add (file);
+        obj->setProperty ("instrumentFiles", instrumentFileArray);
+        obj->setProperty ("instrumentVolumes", instrumentVolumes.isEmpty() ? juce::var() : floatArrayToVar (instrumentVolumes));
+        obj->setProperty ("instrumentPans", instrumentPans.isEmpty() ? juce::var() : floatArrayToVar (instrumentPans));
+        obj->setProperty ("instrumentMidiChannels", instrumentMidiChannels.isEmpty() ? juce::var() : intArrayToVar (instrumentMidiChannels));
+        obj->setProperty ("instrumentOutputRoutes", instrumentOutputRoutes.isEmpty() ? juce::var() : intArrayToVar (instrumentOutputRoutes));
+        obj->setProperty ("instrumentTransposeSemitones", instrumentTransposeSemitones.isEmpty() ? juce::var() : intArrayToVar (instrumentTransposeSemitones));
+        obj->setProperty ("instrumentEnabled", instrumentEnabled.isEmpty() ? juce::var() : intArrayToVar (instrumentEnabled));
+        obj->setProperty ("instrumentAutoPlay", instrumentAutoPlay.isEmpty() ? juce::var() : intArrayToVar (instrumentAutoPlay));
+        obj->setProperty ("instrumentAutoPlayNotes", instrumentAutoPlayNotes.isEmpty() ? juce::var() : intArrayToVar (instrumentAutoPlayNotes));
+        obj->setProperty ("instrumentAutoPlayVelocities", instrumentAutoPlayVelocities.isEmpty() ? juce::var() : floatArrayToVar (instrumentAutoPlayVelocities));
 
         return juce::var (obj);
     }
@@ -79,6 +208,8 @@ namespace patchcraft
             m.backgroundImage = o->getProperty ("backgroundImage").toString();
             m.defaultPreset   = o->getProperty ("defaultPreset").toString();
             m.createdWith     = o->getProperty ("createdWith").toString();
+            if (o->hasProperty ("multiInstrumentMode"))
+                m.multiInstrumentMode = (bool) o->getProperty ("multiInstrumentMode");
             m.libraryThumbnail = o->getProperty ("libraryThumbnail").toString();
             m.version         = o->getProperty ("version").toString();
             m.website         = o->getProperty ("website").toString();
@@ -88,6 +219,41 @@ namespace patchcraft
                 m.playerTagline = o->getProperty ("playerTagline").toString();
             if (o->hasProperty ("playerLogoImage"))
                 m.playerLogoImage = o->getProperty ("playerLogoImage").toString();
+            if (o->hasProperty ("playerClientName"))
+                m.playerClientName = o->getProperty ("playerClientName").toString();
+            if (o->hasProperty ("playerSupportEmail"))
+                m.playerSupportEmail = o->getProperty ("playerSupportEmail").toString();
+            if (o->hasProperty ("playerSupportUrl"))
+                m.playerSupportUrl = o->getProperty ("playerSupportUrl").toString();
+            if (o->hasProperty ("playerManualUrl"))
+                m.playerManualUrl = o->getProperty ("playerManualUrl").toString();
+            if (o->hasProperty ("playerStoreUrl"))
+                m.playerStoreUrl = o->getProperty ("playerStoreUrl").toString();
+            if (o->hasProperty ("playerCopyright"))
+                m.playerCopyright = o->getProperty ("playerCopyright").toString();
+            if (o->hasProperty ("playerLegalText"))
+                m.playerLegalText = o->getProperty ("playerLegalText").toString();
+            if (o->hasProperty ("salesHeadline"))
+                m.salesHeadline = o->getProperty ("salesHeadline").toString();
+            if (o->hasProperty ("salesSubheadline"))
+                m.salesSubheadline = o->getProperty ("salesSubheadline").toString();
+            if (o->hasProperty ("salesCtaText"))
+                m.salesCtaText = o->getProperty ("salesCtaText").toString();
+            if (o->hasProperty ("salesCheckoutUrl"))
+                m.salesCheckoutUrl = o->getProperty ("salesCheckoutUrl").toString();
+            if (o->hasProperty ("salesDemoVideoUrl"))
+                m.salesDemoVideoUrl = o->getProperty ("salesDemoVideoUrl").toString();
+            if (o->hasProperty ("salesAudioDemoUrl"))
+                m.salesAudioDemoUrl = o->getProperty ("salesAudioDemoUrl").toString();
+            if (o->hasProperty ("salesCurrency"))
+                m.salesCurrency = o->getProperty ("salesCurrency").toString();
+            if (o->hasProperty ("salesPrice"))
+                m.salesPrice = (double) o->getProperty ("salesPrice");
+            if (o->hasProperty ("salesCompareAtPrice"))
+                m.salesCompareAtPrice = (double) o->getProperty ("salesCompareAtPrice");
+            readStringArrayProperty (o, "salesHighlights", m.salesHighlights);
+            readStringArrayProperty (o, "salesIncludes", m.salesIncludes);
+            readStringArrayProperty (o, "salesFaq", m.salesFaq);
             if (o->hasProperty ("playerBackgroundColour"))
                 m.playerBackgroundColour = juce::Colour::fromString (o->getProperty ("playerBackgroundColour").toString());
             if (o->hasProperty ("playerPanelColour"))
@@ -112,12 +278,50 @@ namespace patchcraft
                 m.playerShowAbout = (bool) o->getProperty ("playerShowAbout");
             if (o->hasProperty ("playerShowParameterGuidance"))
                 m.playerShowParameterGuidance = (bool) o->getProperty ("playerShowParameterGuidance");
+            if (o->hasProperty ("playerShowPatchCraftBranding"))
+                m.playerShowPatchCraftBranding = (bool) o->getProperty ("playerShowPatchCraftBranding");
             if (o->hasProperty ("studioShowTutorials"))
                 m.studioShowTutorials = (bool) o->getProperty ("studioShowTutorials");
+            if (o->hasProperty ("whiteLabelPackageName"))
+                m.whiteLabelPackageName = o->getProperty ("whiteLabelPackageName").toString();
+            if (o->hasProperty ("whiteLabelPublisher"))
+                m.whiteLabelPublisher = o->getProperty ("whiteLabelPublisher").toString();
+            if (o->hasProperty ("whiteLabelProductCode"))
+                m.whiteLabelProductCode = o->getProperty ("whiteLabelProductCode").toString();
+            if (o->hasProperty ("whiteLabelBundleIdentifier"))
+                m.whiteLabelBundleIdentifier = o->getProperty ("whiteLabelBundleIdentifier").toString();
+            if (o->hasProperty ("whiteLabelInstallerId"))
+                m.whiteLabelInstallerId = o->getProperty ("whiteLabelInstallerId").toString();
+            if (o->hasProperty ("whiteLabelInstallerIcon"))
+                m.whiteLabelInstallerIcon = o->getProperty ("whiteLabelInstallerIcon").toString();
+            if (o->hasProperty ("whiteLabelEulaPath"))
+                m.whiteLabelEulaPath = o->getProperty ("whiteLabelEulaPath").toString();
+            if (o->hasProperty ("whiteLabelPrivacyUrl"))
+                m.whiteLabelPrivacyUrl = o->getProperty ("whiteLabelPrivacyUrl").toString();
+            if (o->hasProperty ("whiteLabelInstallNotes"))
+                m.whiteLabelInstallNotes = o->getProperty ("whiteLabelInstallNotes").toString();
+            if (o->hasProperty ("whiteLabelWindowsVst3Path"))
+                m.whiteLabelWindowsVst3Path = o->getProperty ("whiteLabelWindowsVst3Path").toString();
+            if (o->hasProperty ("whiteLabelMacVst3Path"))
+                m.whiteLabelMacVst3Path = o->getProperty ("whiteLabelMacVst3Path").toString();
+            if (o->hasProperty ("whiteLabelRequireLicenseOnFirstRun"))
+                m.whiteLabelRequireLicenseOnFirstRun = (bool) o->getProperty ("whiteLabelRequireLicenseOnFirstRun");
+            if (o->hasProperty ("whiteLabelIncludeStandalone"))
+                m.whiteLabelIncludeStandalone = (bool) o->getProperty ("whiteLabelIncludeStandalone");
+            if (o->hasProperty ("whiteLabelIncludeVst3"))
+                m.whiteLabelIncludeVst3 = (bool) o->getProperty ("whiteLabelIncludeVst3");
             if (o->hasProperty ("licenseRequired"))
                 m.licenseRequired = (bool) o->getProperty ("licenseRequired");
             if (o->hasProperty ("licenseKey"))
                 m.licenseKey = o->getProperty ("licenseKey").toString();
+            if (o->hasProperty ("licenseProductId"))
+                m.licenseProductId = o->getProperty ("licenseProductId").toString();
+            if (o->hasProperty ("licenseServerUrl"))
+                m.licenseServerUrl = o->getProperty ("licenseServerUrl").toString();
+            if (o->hasProperty ("licensePublicKey"))
+                m.licensePublicKey = o->getProperty ("licensePublicKey").toString();
+            if (o->hasProperty ("licensePolicy"))
+                m.licensePolicy = o->getProperty ("licensePolicy").toString();
             if (o->hasProperty ("trialDays"))
                 m.trialDays = (int) o->getProperty ("trialDays");
             if (o->hasProperty ("isTrial"))
@@ -126,6 +330,12 @@ namespace patchcraft
                 m.trialExpiryDate = o->getProperty ("trialExpiryDate").toString();
             if (o->hasProperty ("licenseOwner"))
                 m.licenseOwner = o->getProperty ("licenseOwner").toString();
+            if (o->hasProperty ("licenseOfflineGraceDays"))
+                m.licenseOfflineGraceDays = juce::jlimit (0, 365, (int) o->getProperty ("licenseOfflineGraceDays"));
+            if (o->hasProperty ("licenseBindToMachine"))
+                m.licenseBindToMachine = (bool) o->getProperty ("licenseBindToMachine");
+            if (o->hasProperty ("licenseAllowTrialConversion"))
+                m.licenseAllowTrialConversion = (bool) o->getProperty ("licenseAllowTrialConversion");
 
             if (auto* tagArray = o->getProperty ("tags").getArray())
             {
@@ -133,11 +343,35 @@ namespace patchcraft
                     m.tags.add (tag.toString());
             }
 
+            if (auto* instrumentIdArray = o->getProperty ("instrumentIds").getArray())
+                for (auto& id : *instrumentIdArray)
+                    m.instrumentIds.add (id.toString());
+            if (auto* instrumentNameArray = o->getProperty ("instrumentNames").getArray())
+                for (auto& name : *instrumentNameArray)
+                    m.instrumentNames.add (name.toString());
+            if (auto* instrumentFileArray = o->getProperty ("instrumentFiles").getArray())
+                for (auto& file : *instrumentFileArray)
+                    m.instrumentFiles.add (file.toString());
+            readFloatArrayProperty (o, "instrumentVolumes", m.instrumentVolumes);
+            readFloatArrayProperty (o, "instrumentPans", m.instrumentPans);
+            readIntArrayProperty (o, "instrumentMidiChannels", m.instrumentMidiChannels);
+            readIntArrayProperty (o, "instrumentOutputRoutes", m.instrumentOutputRoutes);
+            readIntArrayProperty (o, "instrumentTransposeSemitones", m.instrumentTransposeSemitones);
+            readIntArrayProperty (o, "instrumentEnabled", m.instrumentEnabled);
+            readIntArrayProperty (o, "instrumentAutoPlay", m.instrumentAutoPlay);
+            readIntArrayProperty (o, "instrumentAutoPlayNotes", m.instrumentAutoPlayNotes);
+            readFloatArrayProperty (o, "instrumentAutoPlayVelocities", m.instrumentAutoPlayVelocities);
+
             if (m.formatVersion <= 0)   m.formatVersion = kFormatVersion;
             if (m.engine.isEmpty())     m.engine = "sample";
             if (m.createdWith.isEmpty())m.createdWith = "PatchCraft Studio";
+            if (m.licensePolicy.isEmpty()) m.licensePolicy = "online-or-offline-grace";
+            if (m.salesCurrency.isEmpty()) m.salesCurrency = "USD";
+            if (m.salesCtaText.isEmpty()) m.salesCtaText = "Buy Now";
             if (m.playerDisplayName.isEmpty())
                 m.playerDisplayName = m.instrumentName;
+            if (m.whiteLabelWindowsVst3Path.isEmpty()) m.whiteLabelWindowsVst3Path = R"(CommonFilesFolder\VST3)";
+            if (m.whiteLabelMacVst3Path.isEmpty()) m.whiteLabelMacVst3Path = "/Library/Audio/Plug-Ins/VST3";
         }
         return m;
     }
@@ -161,12 +395,19 @@ namespace patchcraft
             case ElementType::Panel:        return "panel";
             case ElementType::Shape:        return "shape";
             case ElementType::XYPad:        return "xyPad";
+            case ElementType::GranularField:return "granular";
             case ElementType::TabPanel:     return "tabPanel";
             case ElementType::ScrollPanel:  return "scrollPanel";
             case ElementType::Group:        return "group";
             case ElementType::Separator:    return "separator";
             case ElementType::DrumPad:      return "drumPad";
             case ElementType::PadGrid:      return "padGrid";
+            case ElementType::DrumGrid:     return "drumGrid";
+            case ElementType::Mixer:        return "mixer";
+            case ElementType::MacroControl: return "macroControl";
+            case ElementType::ModMatrix:    return "modMatrix";
+            case ElementType::EqCurve:      return "eqCurve";
+            case ElementType::SpectrumAnalyzer: return "spectrumAnalyzer";
         }
         return "knob";
     }
@@ -187,12 +428,19 @@ namespace patchcraft
         if (s == "panel")        return ElementType::Panel;
         if (s == "shape")        return ElementType::Shape;
         if (s == "xyPad")        return ElementType::XYPad;
+        if (s == "granular")     return ElementType::GranularField;
         if (s == "tabPanel")     return ElementType::TabPanel;
         if (s == "scrollPanel")  return ElementType::ScrollPanel;
         if (s == "group")        return ElementType::Group;
         if (s == "separator")    return ElementType::Separator;
         if (s == "drumPad")      return ElementType::DrumPad;
         if (s == "padGrid")      return ElementType::PadGrid;
+        if (s == "drumGrid")     return ElementType::DrumGrid;
+        if (s == "mixer")        return ElementType::Mixer;
+        if (s == "macroControl") return ElementType::MacroControl;
+        if (s == "modMatrix")    return ElementType::ModMatrix;
+        if (s == "eqCurve")      return ElementType::EqCurve;
+        if (s == "spectrumAnalyzer") return ElementType::SpectrumAnalyzer;
         return ElementType::Knob;
     }
 
@@ -214,12 +462,19 @@ namespace patchcraft
             case ElementType::Panel:        return "Panel";
             case ElementType::Shape:        return "Shape";
             case ElementType::XYPad:        return "XY Pad";
+            case ElementType::GranularField:return "Granular Field";
             case ElementType::TabPanel:     return "Tab Panel";
             case ElementType::ScrollPanel:  return "Scroll Panel";
             case ElementType::Group:        return "Group";
             case ElementType::Separator:    return "Separator";
             case ElementType::DrumPad:      return "Drum Pad";
             case ElementType::PadGrid:      return "Pad Grid";
+            case ElementType::DrumGrid:     return "Drum Grid";
+            case ElementType::Mixer:        return "Mixer";
+            case ElementType::MacroControl: return "Macro Control";
+            case ElementType::ModMatrix:    return "Mod Matrix";
+            case ElementType::EqCurve:      return "EQ Curve";
+            case ElementType::SpectrumAnalyzer: return "Spectrum Analyzer";
         }
         return "Knob";
     }
@@ -231,7 +486,8 @@ namespace patchcraft
             || type == ElementType::Button
             || type == ElementType::Toggle
             || type == ElementType::Dropdown
-            || type == ElementType::ValueDisplay;
+            || type == ElementType::ValueDisplay
+            || type == ElementType::MacroControl;
     }
 
     bool isPlayerRuntimeElementSupported (ElementType type)
@@ -250,12 +506,19 @@ namespace patchcraft
             || type == ElementType::Panel
             || type == ElementType::Shape
             || type == ElementType::XYPad
+            || type == ElementType::GranularField
             || type == ElementType::TabPanel
             || type == ElementType::ScrollPanel
             || type == ElementType::Group
             || type == ElementType::Separator
             || type == ElementType::DrumPad
-            || type == ElementType::PadGrid;
+            || type == ElementType::PadGrid
+            || type == ElementType::DrumGrid
+            || type == ElementType::Mixer
+            || type == ElementType::MacroControl
+            || type == ElementType::ModMatrix
+            || type == ElementType::EqCurve
+            || type == ElementType::SpectrumAnalyzer;
     }
 
     // LayoutElement ------------------------------------------------------------
@@ -275,9 +538,12 @@ namespace patchcraft
         obj->setProperty ("knobStyle",   knobStyle);
         obj->setProperty ("valueFormat", valueFormat);
         obj->setProperty ("asset",       asset);
+        if (action.isNotEmpty())
+            obj->setProperty ("action",  action);
         obj->setProperty ("shapeKind",   shapeKind);
         obj->setProperty ("labelPosition", labelPosition);
         obj->setProperty ("containerId", containerId);
+        obj->setProperty ("linkedCopyGroupId", linkedCopyGroupId);
         obj->setProperty ("x",           x);
         obj->setProperty ("y",           y);
         obj->setProperty ("width",       width);
@@ -325,6 +591,22 @@ namespace patchcraft
             obj->setProperty ("padCols",     padCols);
             obj->setProperty ("padBaseNote", padBaseNote);
         }
+        if (type == ElementType::DrumGrid)
+        {
+            obj->setProperty ("drumTracks",  drumTracks);
+            obj->setProperty ("drumSteps",   drumSteps);
+            obj->setProperty ("drumPattern", drumPattern);
+        }
+        if (type == ElementType::Mixer)
+        {
+            obj->setProperty ("mixerChannels", mixerChannels);
+            obj->setProperty ("mixerMode",     mixerMode);
+            if (! mixerChannelLabels.isEmpty()) obj->setProperty ("mixerChannelLabels", stringArrayToVar (mixerChannelLabels));
+            if (! mixerVolumeParams.isEmpty())  obj->setProperty ("mixerVolumeParams",  stringArrayToVar (mixerVolumeParams));
+            if (! mixerPanParams.isEmpty())     obj->setProperty ("mixerPanParams",     stringArrayToVar (mixerPanParams));
+            if (! mixerMuteParams.isEmpty())    obj->setProperty ("mixerMuteParams",    stringArrayToVar (mixerMuteParams));
+            if (! mixerSoloParams.isEmpty())    obj->setProperty ("mixerSoloParams",    stringArrayToVar (mixerSoloParams));
+        }
         return juce::var (obj);
     }
 
@@ -341,9 +623,11 @@ namespace patchcraft
             e.knobStyle   = o->getProperty ("knobStyle").toString();
             e.valueFormat = o->getProperty ("valueFormat").toString();
             e.asset       = o->getProperty ("asset").toString();
+            e.action      = o->getProperty ("action").toString();
             e.shapeKind   = o->getProperty ("shapeKind").toString();
             e.labelPosition = o->getProperty ("labelPosition").toString();
             e.containerId = o->getProperty ("containerId").toString();
+            e.linkedCopyGroupId = o->getProperty ("linkedCopyGroupId").toString();
             e.x      = (int) o->getProperty ("x");
             e.y      = (int) o->getProperty ("y");
             e.width  = (int) o->getProperty ("width");
@@ -384,6 +668,21 @@ namespace patchcraft
                 e.padCols = juce::jlimit (1, 8, (int) o->getProperty ("padCols"));
             if (o->hasProperty ("padBaseNote"))
                 e.padBaseNote = juce::jlimit (0, 127, (int) o->getProperty ("padBaseNote"));
+            if (o->hasProperty ("drumTracks"))
+                e.drumTracks = juce::jlimit (1, 16, (int) o->getProperty ("drumTracks"));
+            if (o->hasProperty ("drumSteps"))
+                e.drumSteps = juce::jlimit (1, 64, (int) o->getProperty ("drumSteps"));
+            if (o->hasProperty ("drumPattern"))
+                e.drumPattern = juce::jlimit (0, 7, (int) o->getProperty ("drumPattern"));
+            if (o->hasProperty ("mixerChannels"))
+                e.mixerChannels = juce::jlimit (1, 16, (int) o->getProperty ("mixerChannels"));
+            if (o->hasProperty ("mixerMode"))
+                e.mixerMode = o->getProperty ("mixerMode").toString();
+            readStringArrayProperty (o, "mixerChannelLabels", e.mixerChannelLabels);
+            readStringArrayProperty (o, "mixerVolumeParams",  e.mixerVolumeParams);
+            readStringArrayProperty (o, "mixerPanParams",     e.mixerPanParams);
+            readStringArrayProperty (o, "mixerMuteParams",    e.mixerMuteParams);
+            readStringArrayProperty (o, "mixerSoloParams",    e.mixerSoloParams);
 
             if (e.style.isEmpty()) e.style = "Modern Dark";
             if (e.knobStyle.isEmpty()) e.knobStyle = "Vintage 01";
@@ -392,6 +691,7 @@ namespace patchcraft
             if (e.labelPosition.isEmpty()) e.labelPosition = "bottom";
             if (e.audioReactiveMode.isEmpty()) e.audioReactiveMode = "level";
             if (e.animationMode.isEmpty()) e.animationMode = "none";
+            if (e.mixerMode.isEmpty()) e.mixerMode = "auto";
         }
         return e;
     }
@@ -542,11 +842,13 @@ namespace patchcraft
         obj->setProperty ("fadeOutStart",   fadeOutStart);
         obj->setProperty ("fadeOutLength",  fadeOutLength);
         obj->setProperty ("pitchOffset",    (double) pitchOffset);
+        obj->setProperty ("keyTracking",    (double) keyTracking);
         obj->setProperty ("velocityLowerVelXFade", (double) velocityLowerVelXFade);
         obj->setProperty ("velocityUpperVelXFade", (double) velocityUpperVelXFade);
         obj->setProperty ("reverse",        reverse);
         obj->setProperty ("priority",       priority);
         obj->setProperty ("group",          group);
+        obj->setProperty ("bpm",           (double) bpm);
         obj->setProperty ("padIndex",       padIndex);
         obj->setProperty ("padLabel",       padLabel);
         obj->setProperty ("chokeGroup",     chokeGroup);
@@ -590,6 +892,8 @@ namespace patchcraft
                 z.fadeOutLength = (int) o->getProperty ("fadeOutLength");
             if (o->hasProperty ("pitchOffset"))
                 z.pitchOffset = (float) (double) o->getProperty ("pitchOffset");
+            if (o->hasProperty ("keyTracking"))
+                z.keyTracking = (float) (double) o->getProperty ("keyTracking");
             if (o->hasProperty ("velocityLowerVelXFade"))
                 z.velocityLowerVelXFade = (float) (double) o->getProperty ("velocityLowerVelXFade");
             if (o->hasProperty ("velocityUpperVelXFade"))
@@ -610,12 +914,15 @@ namespace patchcraft
                 z.oneShot = (bool) o->getProperty ("oneShot");
             if (o->hasProperty ("triggerProbability"))
                 z.triggerProbability = (int) o->getProperty ("triggerProbability");
+            if (o->hasProperty ("bpm"))
+                z.bpm = (float) (double) o->getProperty ("bpm");
             if (z.lowVelocity  <= 0)   z.lowVelocity  = 1;
             if (z.highVelocity <= 0)   z.highVelocity = 127;
             if (z.highNote     <= 0)   z.highNote     = 127;
             z.padIndex = juce::jlimit (-1, 15, z.padIndex);
             z.chokeGroup = juce::jlimit (0, 127, z.chokeGroup);
             z.triggerProbability = juce::jlimit (0, 100, z.triggerProbability);
+            z.keyTracking = juce::jlimit (0.0f, 2.0f, z.keyTracking);
         }
         return z;
     }
@@ -1133,7 +1440,7 @@ namespace patchcraft
                                              "dist", "shape", "crush", "dynamics", "compress", "chorus", "phaser", "comb", "resonator",
                                              "convolution", "spectral", "effect", "utility", "router", "mixer", "amp" });
         if (node.kind == DspNodeKind::modulation)
-            return containsAnyToken (type, { "lfo", "random", "macro", "midi", "cc", "velocity", "keytrack", "step", "sequencer", "arp", "auto", "envelopefollower", "peakfollower",
+            return containsAnyToken (type, { "lfo", "random", "macro", "midi", "drum", "cc", "velocity", "keytrack", "step", "sequencer", "arp", "auto", "envelopefollower", "peakfollower",
                                              "rmsfollower", "transientdetector", "spectralcentroid", "bandenergy", "gatetrigger" });
         if (node.kind == DspNodeKind::analysis)
             return containsAnyToken (type, { "analyzer", "meter", "scope", "spectrum" });
@@ -1311,7 +1618,7 @@ namespace patchcraft
             if (! sectionLooksSupported (node.section))
                 issues.push_back ({ "error", node.id, "DSP block section is unsupported by the current Player engine." });
             if (node.kind != DspNodeKind::unknown && ! blockTypeLooksSupported (node))
-                issues.push_back ({ "warning", node.id, "DSP block type is not yet backed by an explicit Player routing implementation." });
+                issues.push_back ({ "warning", node.id, "DSP block type uses generic Player routing; test the exported patch to confirm the intended sound." });
             if (node.type.isEmpty())
                 issues.push_back ({ "warning", node.id, "DSP node type is empty." });
             if (node.kind == DspNodeKind::source && node.enabled)
@@ -1540,6 +1847,16 @@ namespace patchcraft
             reverb.values["reverbMix"] = 0.22f;
             reverb.values["mix"] = 1.0f;
 
+            auto& lfo = addBlock ("lfo_1", "mod", "lfo", "LFO 1");
+            lfo.targetId = "filterCutoff";
+            lfo.values["rate"] = 0.25f;
+            lfo.values["sync"] = 1.0f;
+            lfo.values["amount"] = 0.15f;
+
+            auto& macro = addBlock ("macro_motion", "mod", "macro", "Motion Macro");
+            macro.targetId = "filterCutoff";
+            macro.values["value"] = 0.45f;
+
             addAudioEdge ("input_drive", "filter_1");
             addAudioEdge ("filter_1", "delay_1");
             addAudioEdge ("delay_1", "reverb_1");
@@ -1666,8 +1983,9 @@ namespace patchcraft
         quickEditControls["amp"] = { "attack", "decay", "sustain", "release", "volume" };
         quickEditControls["mod"] = { "lfoRate", "lfoAmount", "vibratoRate", "vibratoDepth" };
         quickEditControls["fx"] = { "drive", "mix", "delayTime", "delayFeedback", "delayMix", "reverbMix",
-                                    "dynMix", "chorusMix", "phaserMix", "combMix", "resonatorMix", "spectralMix" };
-        quickEditControls["out"] = { "volume", "pan", "inputTrimDb", "stereoWidth", "monoMaker", "outputGainDb", "outputLimiter", "outputCeilingDb", "bpmSync", "retrigger" };
+                                    "dynMix", "chorusMix", "phaserMix", "combMix", "resonatorMix", "spectralMix",
+                                    "tapeMix", "vinylMix", "lofiMix", "vocalMix", "multiTapMix" };
+        quickEditControls["out"] = { "volume", "pan", "projectBpm", "inputTrimDb", "stereoWidth", "monoMaker", "outputGainDb", "outputLimiter", "outputCeilingDb", "bpmSync", "retrigger" };
     }
 
     juce::var DspGraph::toVar() const

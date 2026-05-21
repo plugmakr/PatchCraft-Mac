@@ -73,6 +73,7 @@ namespace patchcraft
         loopLbl.setText ("Loop", juce::dontSendNotification);
         startLbl.setText ("Start", juce::dontSendNotification);
         endLbl.setText  ("End",  juce::dontSendNotification);
+        bpmLbl.setText ("BPM", juce::dontSendNotification);
         // HISE-style advanced labels
         rrGroupLbl.setText ("RR Group", juce::dontSendNotification);
         rrIndexLbl.setText ("RR Index", juce::dontSendNotification);
@@ -97,7 +98,7 @@ namespace patchcraft
         addAndMakeVisible (highBox);
 
         for (auto* e : { &lowVelEdit, &highVelEdit, &gainEdit, &panEdit, &startEdit, &endEdit,
-                         &rrGroupEdit, &rrIndexEdit, &sampleStartEdit, &sampleEndEdit,
+                         &bpmEdit, &rrGroupEdit, &rrIndexEdit, &sampleStartEdit, &sampleEndEdit,
                          &fadeInStartEdit, &fadeInLenEdit, &fadeOutStartEdit, &fadeOutLenEdit,
                          &pitchOffsetEdit, &velXFadeLowerEdit, &velXFadeUpperEdit,
                          &priorityEdit, &groupEdit })
@@ -140,7 +141,7 @@ namespace patchcraft
     {
         g.fillAll (PatchCraftLookAndFeel::panel());
 
-        // Mini keyboard area placeholder is drawn here using current bounds.
+        // Mini keyboard area is owned by the mapper layout and drawn from current bounds.
         if (auto kbArea = juce::Rectangle<int> (200, 100, getWidth() - 220, getHeight() - 160);
             kbArea.getWidth() > 60 && kbArea.getHeight() > 30)
         {
@@ -175,11 +176,12 @@ namespace patchcraft
         place (highLbl, highBox);
         place (lowVelLbl, lowVelEdit);
         place (highVelLbl, highVelEdit);
-        place (gainLbl,  gainEdit);
+        place (gainLbl, gainEdit);
         place (panLbl,   panEdit);
-        place (loopLbl,  loopToggle);
+        place (loopLbl, loopToggle);
         place (startLbl, startEdit);
         place (endLbl,   endEdit);
+        place (bpmLbl,   bpmEdit);
 
         // Advanced fields row (HISE-style)
         r.removeFromTop (8);
@@ -313,6 +315,7 @@ namespace patchcraft
         z.velocityLowerVelXFade = velXFadeLowerEdit.getText().getFloatValue();
         z.velocityUpperVelXFade = velXFadeUpperEdit.getText().getFloatValue();
         z.reverse = reverseToggle.getToggleState();
+        z.bpm = bpmEdit.getText().getFloatValue();
         z.priority = priorityEdit.getText().getIntValue();
         z.group = groupEdit.getText().trim();
 
@@ -358,6 +361,7 @@ namespace patchcraft
             startEdit.setText (juce::String (z.loopStart), juce::dontSendNotification);
             endEdit.setText   (juce::String (z.loopEnd),   juce::dontSendNotification);
             loopToggle.setToggleState (z.loopEnabled, juce::dontSendNotification);
+            bpmEdit.setText (juce::String (z.bpm, 1), juce::dontSendNotification);
 
             // HISE-style advanced fields
             rrGroupEdit.setText (juce::String (z.roundRobinGroup), juce::dontSendNotification);

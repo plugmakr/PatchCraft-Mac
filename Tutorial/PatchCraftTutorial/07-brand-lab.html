@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>7 — Brand Lab · PatchCraft Tutorial</title>
+    <link rel="stylesheet" href="assets/css/main.css"/>
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo.svg"/>
+</head>
+<body>
+<header class="topbar">
+    <div class="topbar-logo"><img src="assets/img/logo.svg" alt="" class="hex"/>PATCHCRAFT</div>
+    <span class="topbar-tagline">Instrument Builder Tutorial</span>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-actions">
+        <a href="index.html">Home</a>
+        <a href="10-glossary.html">Glossary</a>
+        <a class="cta" href="PatchCraftTutorial.zip">Download</a>
+    </div>
+</header>
+
+<div class="shell">
+    <nav class="sidebar">
+        <div class="sidebar-section"><h5>Tutorial</h5>
+            <ul>
+                <li><a href="index.html">Overview</a></li>
+                <li><a href="01-overview.html">1 — What is PatchCraft</a></li>
+                <li><a href="02-getting-started.html">2 — Getting started</a></li>
+                <li><a href="03-design.html">3 — Design canvas</a></li>
+                <li><a href="04-sample-mapper.html">4 — Sample mapper</a></li>
+                <li><a href="05-midi-playground.html">5 — MIDI playground</a></li>
+                <li><a href="06-dsp-builder.html">6 — DSP builder</a></li>
+                <li><a href="07-brand-lab.html">7 — Brand Lab</a></li>
+                <li><a href="08-presets-expansions.html">8 — Presets &amp; expansions</a></li>
+                <li><a href="09-export-distribute.html">9 — Export &amp; ship</a></li>
+                <li><a href="10-glossary.html">10 — Glossary</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="content">
+        <h1>7 — Brand Lab</h1>
+        <p class="lede" style="color:var(--text-mid);font-size:1.1rem;">The single tab that turns your instrument into a product. White-label the Player chrome, set your identity, and play the live instrument inside a true-to-DAW preview.</p>
+
+        <h2>Why it matters</h2>
+        <p>The Brand Lab is the answer to "what does this look like as a sellable plugin?" — it's where the Test page (live audio + MIDI playback of your instrument) and the Branding form merge into one workspace. The right pane shows your actual instrument inside a Player-shaped frame; the left pane lets you edit the brand identity in real time.</p>
+
+        <h2>What you can edit</h2>
+
+        <h3>Identity</h3>
+        <ul>
+            <li><strong>Display Name</strong> — overrides the title-bar text in the Player</li>
+            <li><strong>Tagline</strong> — short marketing line under the title</li>
+            <li><strong>Creator</strong> — appears in pack metadata and About</li>
+            <li><strong>Version</strong> — semver string for the pack</li>
+            <li><strong>Website</strong> — clickable link in the Player's About</li>
+            <li><strong>Logo Image</strong> — pick a PNG / JPG / SVG via the Browse... button. Replaces the default initial-letter plate in the Player chrome.</li>
+        </ul>
+
+        <h3>Skin colours</h3>
+        <ul>
+            <li><strong>Accent</strong> — primary brand colour (knob outlines, highlights, borders)</li>
+            <li><strong>Panel</strong> — secondary surface colour</li>
+            <li><strong>Background</strong> — main fill</li>
+            <li><strong>Text</strong> — body text colour</li>
+        </ul>
+        <p>Each colour swatch opens a colour-picker callout when clicked; pick a colour, the live preview updates instantly. <strong>Reset to Default Colours</strong> restores the default PatchCraft skin.</p>
+
+        <h2>Live preview</h2>
+        <p>The right side of the Brand Lab is a Player-shaped frame:</p>
+        <ul>
+            <li><strong>Branded header strip</strong> at the top — logo plate, display name, tagline, creator + version on the right. This is exactly the chrome end users will see in their DAW.</li>
+            <li><strong>Live instrument</strong> below — your actual designed layout, with the audio engine running. Click on-screen keyboard keys, drum pads, knobs — everything works.</li>
+        </ul>
+
+        <p>Use the <strong>Show Branding Form</strong> toggle in the page header to hide the form column and see the player at full width. That's exactly what your end user sees.</p>
+
+        <h2>Workflow tips</h2>
+        <ol class="steps">
+            <li><h3>Sketch identity first</h3><p>Set Display Name and pick an Accent colour before fine-tuning anything else — the rest of the design hangs off these choices.</p></li>
+            <li><h3>Pick a logo at full resolution</h3><p>The Player scales it down. Use a 256–512px square PNG with transparent background. SVG works too.</p></li>
+            <li><h3>Audition real notes</h3><p>While editing branding, play notes through the on-screen keyboard or a connected MIDI controller. Audio is live so you can A/B colour choices against the actual sound.</p></li>
+            <li><h3>Hide the form for a final review</h3><p>Toggle the form off — what you see is shipping.</p></li>
+        </ol>
+
+        <h2>Where the values are stored</h2>
+        <p>Every field on this page writes to <code>manifest.json</code> in the project. When the Player loads a pack, it reads the manifest and applies branding before drawing the layout. So:</p>
+
+        <pre><code>{
+  "playerDisplayName": "MyBrand Drums",
+  "playerTagline": "Hand-crafted percussion library",
+  "playerLogoImage": "assets/logo.png",
+  "playerAccentColour": "ffb14a2c",
+  "playerPanelColour":  "ff15171b",
+  "playerBackgroundColour": "ff0b0d10",
+  "playerTextColour": "ffe6e6e6",
+  "creator": "MyBrand",
+  "version": "1.0",
+  "website": "https://mybrand.example"
+}</code></pre>
+
+        <p>You can edit these by hand in the JSON if you prefer — the Brand Lab is just a friendly UI over the same fields.</p>
+
+        <div class="callout tip">
+            <strong>Tip — Test in the actual DAW too</strong>
+            The Brand Lab preview is faithful, but the final test is loading the exported pack into the Player VST3 inside a DAW like Reaper, Live or FL Studio. Treat that as your release gate.
+        </div>
+
+        <div class="section-nav">
+            <a href="06-dsp-builder.html"><strong>Back</strong><span>6 — DSP builder</span></a>
+            <a class="next" href="08-presets-expansions.html"><strong>Up next</strong><span>8 — Presets &amp; expansions</span></a>
+        </div>
+    </main>
+</div>
+
+<footer class="footer">PatchCraft · Tutorial bundle</footer>
+<script src="assets/js/nav.js"></script>
+</body>
+</html>

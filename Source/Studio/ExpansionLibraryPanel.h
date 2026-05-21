@@ -42,7 +42,7 @@ namespace patchcraft
         StudioMainComponent& owner;
         juce::TextButton newExpansionButton { "+ New" };
         juce::TextButton refreshButton      { "Refresh" };
-        juce::TextButton popOutBtn          { "\xe2\xa4\xa2" };
+        juce::TextButton popOutBtn          { "Pop" };
         juce::Label header;
         juce::String selectedExpansionId;
         std::vector<CardLayout> cards;

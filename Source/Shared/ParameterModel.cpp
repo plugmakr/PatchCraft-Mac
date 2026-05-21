@@ -179,6 +179,81 @@ namespace patchcraft
                     auto sampleGlitchGrid = makeDef ("sampleGlitchGrid", "Glitch Grid", 2.0f, 64.0f, 16.0f, "", "source", "Sample Performance", "stepped", 1.0f);
                     sampleGlitchGrid.enableHint = "Set the slice grid used by Glitch Chance. Higher values create tighter stutters.";
                     add (sampleGlitchGrid);
+
+                    for (int pad = 1; pad <= 16; ++pad)
+                    {
+                        const auto padText = juce::String (pad);
+                        auto padLevel = makeDef ("pad" + padText + "Volume", "Pad " + padText + " Level",
+                                                 0.0f, 2.0f, 1.0f, "", "source", "Drum Pads");
+                        padLevel.enableHint = "Map samples to drum pads first. Controls the runtime level for pad " + padText + ".";
+                        add (padLevel);
+
+                        auto padPitch = makeDef ("pad" + padText + "Pitch", "Pad " + padText + " Pitch",
+                                                 -24.0f, 24.0f, 0.0f, "st", "source", "Drum Pads");
+                        padPitch.enableHint = "Map samples to drum pads first. Retunes pad " + padText + " without changing the sample map.";
+                        add (padPitch);
+
+                        auto padPan = makeDef ("pad" + padText + "Pan", "Pad " + padText + " Pan",
+                                               -1.0f, 1.0f, 0.0f, "", "source", "Drum Pads");
+                        padPan.enableHint = "Map samples to drum pads first. Offsets the stereo position for pad " + padText + ".";
+                        add (padPan);
+                    }
+
+                    auto granularOn = makeDef ("granularOn", "Granular Engine", 0.0f, 1.0f, 0.0f, "", "source", "Granular", "toggle", 1.0f);
+                    granularOn.enableHint = "Turn this on to use PatchCraft's grain-cloud voice engine instead of standard sample playback.";
+                    add (granularOn);
+                    auto granularDensity = makeDef ("granularDensity", "Grain Density", 0.5f, 220.0f, 24.0f, "g/s", "source", "Granular");
+                    granularDensity.enabledBy = "granularOn";
+                    granularDensity.enableHint = "Enable Granular Engine first. Higher density creates smoother clouds; lower density creates pointillistic pulses.";
+                    add (granularDensity);
+                    auto granularSizeMs = makeDef ("granularSizeMs", "Grain Size", 2.0f, 1000.0f, 90.0f, "ms", "source", "Granular");
+                    granularSizeMs.enabledBy = "granularOn";
+                    granularSizeMs.enableHint = "Enable Granular Engine first. Short grains sound stuttery; long grains become pads and smears.";
+                    add (granularSizeMs);
+                    auto granularSizeRandom = makeDef ("granularSizeRandom", "Size Chaos", 0.0f, 1.0f, 0.25f, "", "source", "Granular");
+                    granularSizeRandom.enabledBy = "granularOn";
+                    granularSizeRandom.enableHint = "Enable Granular Engine first. Randomizes each grain length for organic movement.";
+                    add (granularSizeRandom);
+                    auto granularSpread = makeDef ("granularSpread", "Position Spray", 0.0f, 1.0f, 0.18f, "", "source", "Granular");
+                    granularSpread.enabledBy = "granularOn";
+                    granularSpread.enableHint = "Enable Granular Engine first. Sprays grains around Sample Start for wider textures.";
+                    add (granularSpread);
+                    auto granularScan = makeDef ("granularScan", "Scan Motion", -3.0f, 3.0f, 0.0f, "x", "source", "Granular");
+                    granularScan.enabledBy = "granularOn";
+                    granularScan.enableHint = "Enable Granular Engine first. Moves the grain source through the sample while notes are held.";
+                    add (granularScan);
+                    auto granularPitchSpread = makeDef ("granularPitchSpread", "Pitch Spray", 0.0f, 36.0f, 0.0f, "st", "source", "Granular");
+                    granularPitchSpread.enabledBy = "granularOn";
+                    granularPitchSpread.enableHint = "Enable Granular Engine first. Randomizes grain pitch in semitones for shimmer, swarms, and chaos.";
+                    add (granularPitchSpread);
+                    auto granularPanSpread = makeDef ("granularPanSpread", "Pan Spray", 0.0f, 1.0f, 0.45f, "", "source", "Granular");
+                    granularPanSpread.enabledBy = "granularOn";
+                    granularPanSpread.enableHint = "Enable Granular Engine first. Spreads grains across stereo for wide clouds.";
+                    add (granularPanSpread);
+                    auto granularReverse = makeDef ("granularReverse", "Reverse Chance", 0.0f, 1.0f, 0.0f, "", "source", "Granular");
+                    granularReverse.enabledBy = "granularOn";
+                    granularReverse.enableHint = "Enable Granular Engine first. In Multi Direction mode, controls how often grains play backwards.";
+                    add (granularReverse);
+                    auto granularTexture = makeDef ("granularTexture", "Texture Chaos", 0.0f, 1.0f, 0.20f, "", "source", "Granular");
+                    granularTexture.enabledBy = "granularOn";
+                    granularTexture.enableHint = "Enable Granular Engine first. Adds timing, position, and spray instability for less static clouds.";
+                    add (granularTexture);
+                    auto granularMaxGrains = makeDef ("granularMaxGrains", "Max Grains", 1.0f, 32.0f, 16.0f, "", "source", "Granular", "stepped", 1.0f);
+                    granularMaxGrains.enabledBy = "granularOn";
+                    granularMaxGrains.enableHint = "Enable Granular Engine first. Limits simultaneous grains to balance density and CPU.";
+                    add (granularMaxGrains);
+                    auto granularDirection = makeDef ("granularDirection", "Grain Direction", 0.0f, 3.0f, 3.0f, "", "source", "Granular", "stepped", 1.0f);
+                    granularDirection.enabledBy = "granularOn";
+                    granularDirection.enableHint = "Enable Granular Engine first. 0 Forward, 1 Reverse, 2 Ping-Pong, 3 Multi Direction.";
+                    add (granularDirection);
+                    auto granularWindow = makeDef ("granularWindow", "Grain Window", 0.0f, 3.0f, 0.0f, "", "source", "Granular", "stepped", 1.0f);
+                    granularWindow.enabledBy = "granularOn";
+                    granularWindow.enableHint = "Enable Granular Engine first. 0 Hann, 1 Triangle, 2 Blackman, 3 Smooth Plateau.";
+                    add (granularWindow);
+                    auto granularFreeze = makeDef ("granularFreeze", "Freeze Position", 0.0f, 1.0f, 0.0f, "", "source", "Granular", "toggle", 1.0f);
+                    granularFreeze.enabledBy = "granularOn";
+                    granularFreeze.enableHint = "Enable Granular Engine first. Freezes scan motion so grains orbit a fixed sample position.";
+                    add (granularFreeze);
                 }
                 add (makeDef ("attack", "Attack", 0.001f, 5.0f, 0.01f, "s", "amp", "Envelope"));
                 add (makeDef ("decay", "Decay", 0.001f, 5.0f, 0.20f, "s", "amp", "Envelope"));
@@ -363,6 +438,72 @@ namespace patchcraft
             add (spectralTilt);
             add (makeDef ("spectralMix", "Spectral Mix", 0.0f, 1.0f, 0.0f, "", "fx", "Spectral"));
 
+            auto tapeDrive = makeDef ("tapeDrive", "Tape Drive", 0.0f, 1.0f, 0.25f, "", "fx", "FX Lab / Tape");
+            tapeDrive.enabledBy = "tapeMix";
+            tapeDrive.enableHint = "Raise Tape Mix or add a Tape block first. Tape Drive adds analog saturation.";
+            add (tapeDrive);
+            auto tapeTone = makeDef ("tapeTone", "Tape Tone", 0.0f, 1.0f, 0.55f, "", "fx", "FX Lab / Tape");
+            tapeTone.enabledBy = "tapeMix";
+            tapeTone.enableHint = "Raise Tape Mix or add a Tape block first. Tape Tone brightens or darkens the saturation.";
+            add (tapeTone);
+            auto tapeFlutter = makeDef ("tapeFlutter", "Tape Flutter", 0.0f, 1.0f, 0.12f, "", "fx", "FX Lab / Tape");
+            tapeFlutter.enabledBy = "tapeMix";
+            tapeFlutter.enableHint = "Raise Tape Mix or add a Tape block first. Flutter adds subtle analog instability.";
+            add (tapeFlutter);
+            add (makeDef ("tapeMix", "Tape Mix", 0.0f, 1.0f, 0.0f, "", "fx", "FX Lab / Tape"));
+
+            auto vinylAge = makeDef ("vinylAge", "Vinyl Age", 0.0f, 1.0f, 0.35f, "", "fx", "FX Lab / Vinyl");
+            vinylAge.enabledBy = "vinylMix";
+            vinylAge.enableHint = "Raise Vinyl Mix or add a Vinyl block first. Age darkens and softens the signal.";
+            add (vinylAge);
+            auto vinylDust = makeDef ("vinylDust", "Vinyl Dust", 0.0f, 1.0f, 0.08f, "", "fx", "FX Lab / Vinyl");
+            vinylDust.enabledBy = "vinylMix";
+            vinylDust.enableHint = "Raise Vinyl Mix or add a Vinyl block first. Dust adds crackle and texture.";
+            add (vinylDust);
+            auto vinylWarp = makeDef ("vinylWarp", "Vinyl Warp", 0.0f, 1.0f, 0.12f, "", "fx", "FX Lab / Vinyl");
+            vinylWarp.enabledBy = "vinylMix";
+            vinylWarp.enableHint = "Raise Vinyl Mix or add a Vinyl block first. Warp adds slow old-school movement.";
+            add (vinylWarp);
+            add (makeDef ("vinylMix", "Vinyl Mix", 0.0f, 1.0f, 0.0f, "", "fx", "FX Lab / Vinyl"));
+
+            auto lofiBits = makeDef ("lofiBits", "LoFi Bits", 4.0f, 16.0f, 12.0f, "bit", "fx", "FX Lab / LoFi", "stepped", 1.0f);
+            lofiBits.enabledBy = "lofiMix";
+            lofiBits.enableHint = "Raise LoFi Mix or add a LoFi block first. Lower bits sound more crushed.";
+            add (lofiBits);
+            auto lofiRate = makeDef ("lofiRate", "LoFi Rate Crush", 0.0f, 1.0f, 0.20f, "", "fx", "FX Lab / LoFi");
+            lofiRate.enabledBy = "lofiMix";
+            lofiRate.enableHint = "Raise LoFi Mix or add a LoFi block first. Higher values reduce the effective sample rate.";
+            add (lofiRate);
+            add (makeDef ("lofiMix", "LoFi Mix", 0.0f, 1.0f, 0.0f, "", "fx", "FX Lab / LoFi"));
+
+            auto vocalFormant = makeDef ("vocalFormant", "Vocal Formant", 0.0f, 1.0f, 0.40f, "", "fx", "FX Lab / Vocal");
+            vocalFormant.enabledBy = "vocalMix";
+            vocalFormant.enableHint = "Raise Vocal Mix or add a Vocal Formant block first. Formant sweeps the vowel position.";
+            add (vocalFormant);
+            auto vocalBody = makeDef ("vocalBody", "Vocal Body", 0.0f, 1.0f, 0.35f, "", "fx", "FX Lab / Vocal");
+            vocalBody.enabledBy = "vocalMix";
+            vocalBody.enableHint = "Raise Vocal Mix or add a Vocal Formant block first. Body controls resonance intensity.";
+            add (vocalBody);
+            add (makeDef ("vocalMix", "Vocal Mix", 0.0f, 1.0f, 0.0f, "", "fx", "FX Lab / Vocal"));
+
+            auto multiTapTime = makeDef ("multiTapTime", "MultiTap Time", 0.02f, 2.0f, 0.375f, "s", "fx", "FX Lab / Advanced Delay");
+            multiTapTime.enabledBy = "multiTapMix";
+            multiTapTime.enableHint = "Raise MultiTap Mix or add a MultiTap Delay block first.";
+            add (multiTapTime);
+            auto multiTapFeedback = makeDef ("multiTapFeedback", "MultiTap Feedback", 0.0f, 0.92f, 0.35f, "", "fx", "FX Lab / Advanced Delay");
+            multiTapFeedback.enabledBy = "multiTapMix";
+            multiTapFeedback.enableHint = "Raise MultiTap Mix or add a MultiTap Delay block first.";
+            add (multiTapFeedback);
+            auto multiTapSpread = makeDef ("multiTapSpread", "MultiTap Spread", 0.0f, 1.0f, 0.45f, "", "fx", "FX Lab / Advanced Delay");
+            multiTapSpread.enabledBy = "multiTapMix";
+            multiTapSpread.enableHint = "Raise MultiTap Mix or add a MultiTap Delay block first. Spread spaces the secondary taps.";
+            add (multiTapSpread);
+            add (makeDef ("multiTapMix", "MultiTap Mix", 0.0f, 1.0f, 0.0f, "", "fx", "FX Lab / Advanced Delay"));
+
+            auto projectBpm = makeDef ("projectBpm", "Project BPM", 40.0f, 220.0f, 120.0f, "BPM", "out", "Transport", "continuous", 1.0f);
+            projectBpm.hostAutomatable = false;
+            projectBpm.modulatable = false;
+            add (projectBpm);
             add (makeDef ("bpmSync", "BPM Sync", 0.0f, 1.0f, 1.0f, "", "out", "Transport", "toggle", 1.0f));
             add (makeDef ("retrigger", "Retrigger", 0.0f, 1.0f, 1.0f, "", "out", "Performance", "toggle", 1.0f));
             add (makeDef ("inputTrimDb", "Input Trim", -48.0f, 24.0f, 0.0f, "dB", "out", "Utility"));
@@ -401,6 +542,15 @@ namespace patchcraft
             defs.push_back (sustainPedal);
 
             return defs;
+        }
+
+        static bool isMidiRuntimePerformanceParameter (const juce::String& parameterId)
+        {
+            return parameterId == "modWheel"
+                || parameterId == "expression"
+                || parameterId == "pitchWheel"
+                || parameterId == "aftertouch"
+                || parameterId == "sustainPedal";
         }
     }
 
@@ -551,10 +701,11 @@ namespace patchcraft
             {
                 if (const auto* def = find (element.parameterId))
                 {
-                    if (isControlElement (element.type) && ! def->hostAutomatable)
+                    const bool isMidiPerformanceControl = isMidiRuntimePerformanceParameter (element.parameterId);
+                    if (isControlElement (element.type) && ! def->hostAutomatable && ! isMidiPerformanceControl)
                         issues.push_back ({ "warning", element.id, element.parameterId,
                                             "Layout control is assigned to an internal parameter that will not expose host automation." });
-                    if (isControlElement (element.type) && ! def->midiLearnable)
+                    if (isControlElement (element.type) && ! def->midiLearnable && ! isMidiPerformanceControl)
                         issues.push_back ({ "warning", element.id, element.parameterId,
                                             "Layout control is assigned to a parameter that will not support Player MIDI Learn." });
                 }

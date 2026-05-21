@@ -3,8 +3,10 @@
 #include "EngineFactory.h"
 #include "InstrumentTemplates.h"
 #include "LibraryScanner.h"
+#include "../Shared/MultiInstrumentEngine.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace patchcraft
 {
@@ -26,6 +28,59 @@ namespace patchcraft
             pack.midiMappings = patch.midiMappings;
     }
 
+    static bool engineIsEffect (juce::String engineId)
+    {
+        engineId = engineId.toLowerCase();
+        return engineId == "fx" || engineId == "effect" || engineId.contains ("fx");
+    }
+
+    static bool packEngineIsCompatibleWithThisBinary (const juce::String& engineId)
+    {
+       #if PATCHCRAFT_PLAYER_FX
+        juce::ignoreUnused (engineId);
+        return true;
+       #else
+        return ! engineIsEffect (engineId);
+       #endif
+    }
+
+    static juce::String incompatiblePackMessage (const PatchCraftPack& pack)
+    {
+       #if PATCHCRAFT_PLAYER_FX
+        return "This is an instrument pack (" + pack.manifest.instrumentName
+            + "). PatchCraft Player FX can load it for inspection and MIDI-triggered playback, "
+              "but it will pass the host track through instead of replacing it.";
+       #else
+        return "This is an FX pack (" + pack.manifest.instrumentName
+            + "). Open it in PatchCraft Player FX, not PatchCraft Player.\n\n"
+              "PatchCraft Player only loads synth, sample, drum, and multi-instrument packs.";
+       #endif
+    }
+
+    static juce::String floatMapToJson (const std::map<juce::String, float>& values)
+    {
+        auto* root = new juce::DynamicObject();
+        for (const auto& value : values)
+            root->setProperty (value.first, value.second);
+        return juce::JSON::toString (juce::var (root), false);
+    }
+
+    static std::map<juce::String, float> floatMapFromJson (const juce::String& json)
+    {
+        std::map<juce::String, float> values;
+        if (json.trim().isEmpty())
+            return values;
+
+        auto parsed = juce::JSON::parse (json);
+        if (auto* root = parsed.getDynamicObject())
+        {
+            const auto& properties = root->getProperties();
+            for (int i = 0; i < properties.size(); ++i)
+                values[properties.getName (i).toString()] = (float) properties.getValueAt (i);
+        }
+        return values;
+    }
+
     juce::AudioProcessorValueTreeState::ParameterLayout PlayerProcessor::createLayout()
     {
         std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
@@ -41,20 +96,69 @@ namespace patchcraft
         return { params.begin(), params.end() };
     }
 
+    // Resolve the folder containing an embedded .patchcraft pack, if this
+    // binary was produced by the Studio's VST Export module. The exporter
+    // drops the pack into one of these locations:
+    //
+    //   - Inside a VST3 bundle:  <Bundle>.vst3/Contents/Resources/EmbeddedPack/
+    //   - Next to a standalone:  <exe dir>/EmbeddedPack/
+    //
+    // Returns juce::File() when no embedded pack is present (vanilla Player).
+    static juce::File findEmbeddedPackFolder()
+    {
+        const auto looksLikePack = [] (const juce::File& f)
+        {
+            return f.isDirectory()
+                && (f.getChildFile ("manifest.json").existsAsFile()
+                    || f.getChildFile ("pack.json").existsAsFile());
+        };
+
+        const auto self = juce::File::getSpecialLocation (juce::File::currentApplicationFile);
+
+        // Walk up a few levels - works for both VST3 bundles
+        // (Bundle.vst3/Contents/<arch>/Bundle.vst3) and standalone exes.
+        auto node = self.isDirectory() ? self : self.getParentDirectory();
+        for (int depth = 0; depth < 5 && node.exists(); ++depth)
+        {
+            const auto candidates = {
+                node.getChildFile ("Contents").getChildFile ("Resources").getChildFile ("EmbeddedPack"),
+                node.getChildFile ("Resources").getChildFile ("EmbeddedPack"),
+                node.getChildFile ("EmbeddedPack")
+            };
+            for (const auto& c : candidates)
+                if (looksLikePack (c))
+                    return c;
+            node = node.getParentDirectory();
+        }
+        return {};
+    }
+
     PlayerProcessor::PlayerProcessor()
         : juce::AudioProcessor (
            #if PATCHCRAFT_PLAYER_FX
             BusesProperties()
                 .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                .withOutput ("Main",  juce::AudioChannelSet::stereo(), true)
+                .withOutput ("Aux 1", juce::AudioChannelSet::stereo(), false)
+                .withOutput ("Aux 2", juce::AudioChannelSet::stereo(), false)
+                .withOutput ("Aux 3", juce::AudioChannelSet::stereo(), false)
+                .withOutput ("Aux 4", juce::AudioChannelSet::stereo(), false)
            #else
-            BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+            BusesProperties()
+                .withOutput ("Main",  juce::AudioChannelSet::stereo(), true)
+                .withOutput ("Aux 1", juce::AudioChannelSet::stereo(), false)
+                .withOutput ("Aux 2", juce::AudioChannelSet::stereo(), false)
+                .withOutput ("Aux 3", juce::AudioChannelSet::stereo(), false)
+                .withOutput ("Aux 4", juce::AudioChannelSet::stereo(), false)
            #endif
             ),
           apvts (*this, nullptr, "PatchCraft", createLayout())
     {
         try
         {
+            for (auto& level : noteHighlightLevels)
+                level.store (0.0f);
+
             for (int i = 0; i < kPatchCraftHostParameterSlots; ++i)
             {
                 ParamSlot s;
@@ -65,6 +169,7 @@ namespace patchcraft
 
             // Initialize library scanner
             libraryScanner = std::make_unique<LibraryScanner>();
+            libraryScanner->scanLibrary();
 
            #if PATCHCRAFT_PLAYER_FX
             engine = createEngine (EngineType::Effect);
@@ -76,8 +181,18 @@ namespace patchcraft
             pack   = buildDemoPack ("synth");
            #endif
             loaded = true;          // the demo pack is always there
+            authoredSampleMap = pack.sampleMap;
             bindRoutingFromPack();
             rebuildApvtsFromPack();
+
+            // If the Studio's VST Export module bundled a pack with this
+            // plugin, load it now so the host opens straight into the
+            // packaged instrument instead of the demo.
+            if (const auto embedded = findEmbeddedPackFolder(); embedded != juce::File())
+            {
+                juce::String embeddedError;
+                loadPack (embedded, embeddedError);
+            }
         }
         catch (...) { jassertfalse; engine.reset(); }
     }
@@ -98,6 +213,8 @@ namespace patchcraft
                 engine->prepare (currentSampleRate, currentBlockSize, currentNumChans);
                 engine->setRenderContext (context);
             }
+            userSampleOverlay.prepare (currentSampleRate, currentBlockSize, currentNumChans);
+            userSampleOverlay.setRenderContext (context);
             routingEngine.prepare (context);
         }
         catch (...) { jassertfalse; }
@@ -113,6 +230,7 @@ namespace patchcraft
                 arpeggiator.allNotesOff (*engine);
                 engine->reset();
             }
+            userSampleOverlay.reset();
         }
         catch (...) { jassertfalse; }
     }
@@ -123,6 +241,13 @@ namespace patchcraft
         if (out != juce::AudioChannelSet::stereo()
             && out != juce::AudioChannelSet::mono())
             return false;
+        for (const auto& outputBus : layouts.outputBuses)
+        {
+            if (! outputBus.isDisabled()
+                && outputBus != juce::AudioChannelSet::mono()
+                && outputBus != juce::AudioChannelSet::stereo())
+                return false;
+        }
        #if PATCHCRAFT_PLAYER_FX
         // FX supports practical mono/stereo use: mono->mono, mono->stereo, stereo->stereo.
         const auto in = layouts.getMainInputChannelSet();
@@ -139,6 +264,7 @@ namespace patchcraft
                                         juce::MidiBuffer& midi)
     {
         juce::ScopedNoDenormals nd;
+        bool restoreFxDryOnFailure = false;
 
         // Note: try/catch here is paranoid - the audio thread shouldn't throw,
         // but FL's plugin scanner has been known to call processBlock during
@@ -148,18 +274,57 @@ namespace patchcraft
             const juce::SpinLock::ScopedTryLockType lk (engineLock);
             if (! lk.isLocked() || engine == nullptr)
             {
+               #if PATCHCRAFT_PLAYER_FX
+                return;
+               #else
                 buffer.clear();
                 return;
+               #endif
             }
 
             const int inputChannels = getTotalNumInputChannels();
             const int outputChannels = getTotalNumOutputChannels();
-            const auto context = makeRenderContext (buffer.getNumSamples());
+            const int mainOutputChannels = juce::jmax (1, getChannelCountOfBus (false, 0));
+            auto context = makeRenderContext (buffer.getNumSamples());
+            if (! context.isPlaying && internalTransportPlaying.load())
+            {
+                context.isPlaying = true;
+                context.ppqPosition = internalTransportPpq.load();
+                context.timeInSeconds = context.ppqPosition * 60.0 / RenderContext::sanitiseBpm (context.bpm);
+                auto nextPpq = context.ppqPosition + context.beatsPerBlock();
+                if (nextPpq >= 16384.0)
+                    nextPpq = std::fmod (nextPpq, 16384.0);
+                internalTransportPpq.store (nextPpq);
+            }
 
             // Source/synth engines start with a clean buffer; FX engines read
             // input audio from the buffer and normalize mono input to stereo output.
             if (! engine->needsAudioInput())
             {
+               #if PATCHCRAFT_PLAYER_FX
+                // Player FX may be used on a mixer insert to preview or inspect
+                // instrument packs. In that case the instrument engine does not
+                // consume audio input, but the plugin must still pass the host
+                // track through instead of muting the insert.
+                if (inputChannels > 0)
+                {
+                    fxDryPassthroughBuffer.setSize (buffer.getNumChannels(), buffer.getNumSamples(),
+                                                    false, false, true);
+                    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                    {
+                        if (ch < mainOutputChannels && ch < outputChannels)
+                        {
+                            const int sourceChannel = inputChannels == 1 ? 0 : ch % inputChannels;
+                            fxDryPassthroughBuffer.copyFrom (ch, 0, buffer, sourceChannel, 0, buffer.getNumSamples());
+                        }
+                        else
+                        {
+                            fxDryPassthroughBuffer.clear (ch, 0, buffer.getNumSamples());
+                        }
+                    }
+                    restoreFxDryOnFailure = true;
+                }
+               #endif
                 buffer.clear();
             }
             else
@@ -170,13 +335,13 @@ namespace patchcraft
                     return;
                 }
 
-                for (int ch = inputChannels; ch < outputChannels && ch < buffer.getNumChannels(); ++ch)
+                for (int ch = inputChannels; ch < mainOutputChannels && ch < buffer.getNumChannels(); ++ch)
                 {
                     const int sourceChannel = inputChannels == 1 ? 0 : ch % inputChannels;
                     buffer.copyFrom (ch, 0, buffer, sourceChannel, 0, buffer.getNumSamples());
                 }
 
-                for (int ch = outputChannels; ch < buffer.getNumChannels(); ++ch)
+                for (int ch = mainOutputChannels; ch < buffer.getNumChannels(); ++ch)
                     buffer.clear (ch, 0, buffer.getNumSamples());
             }
 
@@ -205,9 +370,42 @@ namespace patchcraft
                     }
 
                     engine->setParameter (def.id, v);
+                    if (userSampleOverlayEnabled)
+                        userSampleOverlay.setParameter (def.id, v);
                     routingEngine.setParameterValue (def.id, v);
                 }
+
+                // Layer persistent MIDI overrides on top of the static params.
+                // Wheels emit events only on value changes, so without this
+                // re-application the next block would erase the bend back to
+                // the user's static detune.
+                const float bendCents = midiPitchBendCents.load();
+                if (std::abs (bendCents) > 0.0001f)
+                {
+                    const float baseDetune = getCurrentPackParameterValue ("detune");
+                    engine->setParameter ("detune", baseDetune + bendCents);
+                    if (userSampleOverlayEnabled)
+                        userSampleOverlay.setParameter ("samplePitch", bendCents / 100.0f);
+                    routingEngine.setParameterValue ("detune", baseDetune + bendCents);
+                }
+                const float modWheel = midiModWheel.load();
+                if (modWheel >= 0.0f)
+                {
+                    // The mod wheel layers on top of the user's static LFO
+                    // depth so it always brightens motion, but never reduces
+                    // it below what the patch sets.
+                    const float baseLfo  = getCurrentPackParameterValue ("lfoAmount");
+                    const float baseVib  = getCurrentPackParameterValue ("vibratoDepth");
+                    engine->setParameter ("lfoAmount",     juce::jmax (baseLfo, modWheel));
+                    engine->setParameter ("vibratoDepth",  juce::jmax (baseVib, modWheel));
+                    if (userSampleOverlayEnabled)
+                        userSampleOverlay.setParameter ("granularTexture", modWheel);
+                    routingEngine.setParameterValue ("lfoAmount",    juce::jmax (baseLfo, modWheel));
+                    routingEngine.setParameterValue ("vibratoDepth", juce::jmax (baseVib, modWheel));
+                }
             }
+
+            engine->setRenderContext (context);
 
             // MIDI must update the same parameter model before graph routing so
             // MIDI CC, wheels, aftertouch, sustain, macros, and modulation lanes
@@ -234,6 +432,23 @@ namespace patchcraft
 
             arpeggiator.process (*engine, context);
             engine->process (buffer, 0, buffer.getNumSamples());
+            if (userSampleOverlayEnabled)
+            {
+                userSampleOverlay.setRenderContext (context);
+                userSampleOverlay.process (buffer, 0, buffer.getNumSamples());
+            }
+            if (dynamic_cast<MultiInstrumentEngine*> (engine.get()) == nullptr)
+                for (int ch = mainOutputChannels; ch < buffer.getNumChannels(); ++ch)
+                    buffer.clear (ch, 0, buffer.getNumSamples());
+           #if PATCHCRAFT_PLAYER_FX
+            if (restoreFxDryOnFailure
+                && fxDryPassthroughBuffer.getNumChannels() == buffer.getNumChannels()
+                && fxDryPassthroughBuffer.getNumSamples() >= buffer.getNumSamples())
+            {
+                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                    buffer.addFrom (ch, 0, fxDryPassthroughBuffer, ch, 0, buffer.getNumSamples());
+            }
+           #endif
             routingEngine.captureAudioAnalysis (buffer, 0, buffer.getNumSamples());
 
             float peak = 0.0f;
@@ -242,12 +457,85 @@ namespace patchcraft
             const auto previous = outputPeak.load();
             outputPeak.store (juce::jmax (peak, previous * 0.82f));
         }
-        catch (...) { buffer.clear(); jassertfalse; }
+        catch (...)
+        {
+           #if PATCHCRAFT_PLAYER_FX
+            if (restoreFxDryOnFailure
+                && fxDryPassthroughBuffer.getNumChannels() == buffer.getNumChannels()
+                && fxDryPassthroughBuffer.getNumSamples() >= buffer.getNumSamples())
+            {
+                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                    buffer.copyFrom (ch, 0, fxDryPassthroughBuffer, ch, 0, buffer.getNumSamples());
+            }
+           #else
+            buffer.clear();
+           #endif
+            jassertfalse;
+        }
     }
 
     juce::AudioProcessorEditor* PlayerProcessor::createEditor()
     {
         return new PlayerEditor (*this);
+    }
+
+    float PlayerProcessor::getNoteHighlightLevel (int midiNote) const noexcept
+    {
+        if (midiNote < 0 || midiNote >= (int) noteHighlightLevels.size())
+            return 0.0f;
+        return juce::jlimit (0.0f, 1.0f, noteHighlightLevels[(size_t) midiNote].load());
+    }
+
+    bool PlayerProcessor::decayNoteHighlightLevels() noexcept
+    {
+        bool anyVisible = false;
+        for (auto& level : noteHighlightLevels)
+        {
+            const float current = level.load();
+            if (current <= 0.01f)
+            {
+                if (current > 0.0f)
+                    level.store (0.0f);
+                continue;
+            }
+
+            level.store (current * 0.82f);
+            anyVisible = true;
+        }
+        return anyVisible;
+    }
+
+    void PlayerProcessor::setInternalTransportPlaying (bool shouldPlay)
+    {
+        internalTransportPlaying.store (shouldPlay);
+        if (! shouldPlay)
+            internalTransportPpq.store (0.0);
+    }
+
+    void PlayerProcessor::toggleInternalTransport()
+    {
+        setInternalTransportPlaying (! internalTransportPlaying.load());
+    }
+
+    bool PlayerProcessor::isAnyTransportPlaying() const
+    {
+        const auto context = makeRenderContext (currentBlockSize);
+        return context.isPlaying || internalTransportPlaying.load();
+    }
+
+    double PlayerProcessor::getSequencerPlaybackPosition01 (int stepsPerCycle) const
+    {
+        juce::ignoreUnused (stepsPerCycle);
+        const auto context = makeRenderContext (currentBlockSize);
+        const bool hostPlaying = context.isPlaying;
+        const bool internalPlaying = internalTransportPlaying.load();
+        if (! hostPlaying && ! internalPlaying)
+            return -1.0;
+
+        const double ppq = hostPlaying ? context.ppqPosition : internalTransportPpq.load();
+        const double cycles = ppq / 4.0;
+        const double phase = cycles - std::floor (cycles);
+        return juce::jlimit (0.0, 0.999999, phase);
     }
 
     void PlayerProcessor::getStateInformation (juce::MemoryBlock& dest)
@@ -257,6 +545,10 @@ namespace patchcraft
             auto state = apvts.copyState();
             state.setProperty ("packPath", loadedPath.getFullPathName(), nullptr);
             state.setProperty ("userMidiMappingsJson", midiMappingsToJson(), nullptr);
+            state.setProperty ("defaultPresetValuesJson", floatMapToJson (defaultPresetValues), nullptr);
+            state.setProperty ("userSnapshotsJson", userSnapshotsToJson(), nullptr);
+            state.setProperty ("multiLayerRackJson", multiLayerRackToJson(), nullptr);
+            state.setProperty ("userContentJson", userContentToJson(), nullptr);
             if (auto xml = std::unique_ptr<juce::XmlElement> (state.createXml()))
                 copyXmlToBinary (*xml, dest);
         }
@@ -284,6 +576,10 @@ namespace patchcraft
             apvts.replaceState (state);
 
             const auto userMidiMappingsJson = state.getProperty ("userMidiMappingsJson").toString();
+            const auto defaultPresetValuesJson = state.getProperty ("defaultPresetValuesJson").toString();
+            const auto userSnapshotsJson = state.getProperty ("userSnapshotsJson").toString();
+            const auto multiLayerRackJson = state.getProperty ("multiLayerRackJson").toString();
+            const auto userContentJson = state.getProperty ("userContentJson").toString();
             const auto path = state.getProperty ("packPath").toString();
             if (path.isEmpty() || ! juce::File::isAbsolutePath (path)) return;
 
@@ -295,7 +591,11 @@ namespace patchcraft
             // wrapped in try/catch.
             juce::String error;
             loadPack (folder, error);
+            userContentFromJson (userContentJson);
+            userSnapshotsFromJson (userSnapshotsJson);
             midiMappingsFromJson (userMidiMappingsJson);
+            defaultPresetValues = floatMapFromJson (defaultPresetValuesJson);
+            multiLayerRackFromJson (multiLayerRackJson);
         }
         catch (...) { jassertfalse; }
     }
@@ -396,12 +696,605 @@ namespace patchcraft
         return getCurrentPackParameterValue (parameterId);
     }
 
+    int PlayerProcessor::getActiveVoiceCount() const
+    {
+        const juce::SpinLock::ScopedTryLockType lock (engineLock);
+        if (! lock.isLocked() || engine == nullptr)
+            return 0;
+        return engine->getActiveVoiceCount();
+    }
+
+    int PlayerProcessor::getLoadedSampleCount() const
+    {
+        const juce::SpinLock::ScopedTryLockType lock (engineLock);
+        if (! lock.isLocked() || engine == nullptr)
+            return 0;
+        return engine->getLoadedSampleCount();
+    }
+
+    juce::String PlayerProcessor::getEngineDiagnosticStatus() const
+    {
+        const juce::SpinLock::ScopedTryLockType lock (engineLock);
+        if (! lock.isLocked() || engine == nullptr)
+            return "Engine busy";
+        return engine->getDiagnosticStatus();
+    }
+
     int PlayerProcessor::getHostParameterSlotIndex (const juce::String& parameterId) const
     {
         if (parameterId.isEmpty())
             return -1;
         const auto it = hostSlotByParameterId.find (parameterId);
         return it != hostSlotByParameterId.end() ? it->second : -1;
+    }
+
+    bool PlayerProcessor::isSupportedUserSampleFile (const juce::File& file)
+    {
+        const auto ext = file.getFileExtension().toLowerCase();
+        return file.existsAsFile()
+            && (ext == ".wav" || ext == ".aif" || ext == ".aiff" || ext == ".flac");
+    }
+
+    bool PlayerProcessor::isSupportedUserMidiFile (const juce::File& file)
+    {
+        const auto ext = file.getFileExtension().toLowerCase();
+        return file.existsAsFile() && (ext == ".mid" || ext == ".midi");
+    }
+
+    juce::String PlayerProcessor::safeUserContentFileName (const juce::File& file)
+    {
+        auto base = file.getFileNameWithoutExtension()
+            .retainCharacters ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ .#")
+            .trim();
+        if (base.isEmpty())
+            base = "import";
+        return base + file.getFileExtension().toLowerCase();
+    }
+
+    juce::File PlayerProcessor::getUserContentRoot() const
+    {
+        auto key = loaded && pack.manifest.instrumentName.isNotEmpty()
+            ? pack.manifest.instrumentName + "_" + pack.manifest.creator + "_" + pack.manifest.version
+            : juce::String ("PatchCraft Demo");
+        key = key.retainCharacters ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ .").trim();
+        if (key.isEmpty())
+            key = "Instrument";
+
+        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+            .getChildFile ("PatchCraft")
+            .getChildFile ("Player")
+            .getChildFile ("User Imports")
+            .getChildFile (key);
+    }
+
+    std::vector<PlayerProcessor::UserContentItem> PlayerProcessor::getUserContentSnapshot() const
+    {
+        const juce::ScopedLock lock (userContentLock);
+        return userContent;
+    }
+
+    juce::String PlayerProcessor::userContentToJson() const
+    {
+        juce::Array<juce::var> items;
+        {
+            const juce::ScopedLock lock (userContentLock);
+            for (const auto& item : userContent)
+            {
+                auto* object = new juce::DynamicObject();
+                object->setProperty ("id", item.id);
+                object->setProperty ("kind", item.kind);
+                object->setProperty ("name", item.name);
+                object->setProperty ("filePath", item.filePath);
+                object->setProperty ("role", item.role);
+                object->setProperty ("summary", item.summary);
+                object->setProperty ("rootNote", item.rootNote);
+                object->setProperty ("lowNote", item.lowNote);
+                object->setProperty ("highNote", item.highNote);
+                object->setProperty ("padIndex", item.padIndex);
+                object->setProperty ("noteCount", item.noteCount);
+                object->setProperty ("bpm", item.bpm);
+                items.add (juce::var (object));
+            }
+        }
+
+        auto* root = new juce::DynamicObject();
+        root->setProperty ("version", 1);
+        root->setProperty ("items", items);
+        return juce::JSON::toString (juce::var (root), false);
+    }
+
+    void PlayerProcessor::saveUserContentManifest() const
+    {
+        const auto root = getUserContentRoot();
+        root.createDirectory();
+        root.getChildFile ("user-imports.json").replaceWithText (userContentToJson());
+    }
+
+    void PlayerProcessor::userContentFromJson (const juce::String& json)
+    {
+        std::vector<UserContentItem> restored;
+        const auto parsed = juce::JSON::parse (json);
+        if (auto* root = parsed.getDynamicObject())
+        {
+            const auto* array = root->getProperty ("items").getArray();
+            if (array != nullptr)
+            {
+                for (const auto& value : *array)
+                {
+                    if (auto* object = value.getDynamicObject())
+                    {
+                        UserContentItem item;
+                        item.id = object->getProperty ("id").toString();
+                        item.kind = object->getProperty ("kind").toString();
+                        item.name = object->getProperty ("name").toString();
+                        item.filePath = object->getProperty ("filePath").toString();
+                        item.role = object->getProperty ("role").toString();
+                        item.summary = object->getProperty ("summary").toString();
+                        item.rootNote = juce::jlimit (0, 127, (int) object->getProperty ("rootNote"));
+                        item.lowNote = juce::jlimit (0, 127, (int) object->getProperty ("lowNote"));
+                        item.highNote = juce::jlimit (0, 127, (int) object->getProperty ("highNote"));
+                        item.padIndex = (int) object->getProperty ("padIndex");
+                        item.noteCount = juce::jmax (0, (int) object->getProperty ("noteCount"));
+                        item.bpm = (double) object->getProperty ("bpm");
+                        if (item.id.isNotEmpty() && item.kind.isNotEmpty() && juce::File (item.filePath).existsAsFile())
+                            restored.push_back (std::move (item));
+                    }
+                }
+            }
+        }
+
+        {
+            const juce::ScopedLock lock (userContentLock);
+            userContent = std::move (restored);
+        }
+
+        {
+            const juce::SpinLock::ScopedLockType engineGuard (engineLock);
+            rebuildRuntimeUserContentLocked (true);
+        }
+
+        editorListeners.call ([] (EditorListener& listener) { listener.packChanged(); });
+    }
+
+    bool PlayerProcessor::applyMidiContentToGraphLocked (const UserContentItem& item)
+    {
+        juce::FileInputStream input (juce::File (item.filePath));
+        if (! input.openedOk())
+            return false;
+
+        juce::MidiFile midiFile;
+        if (! midiFile.readFrom (input) || midiFile.getNumTracks() <= 0)
+            return false;
+
+        struct NoteEvent { double time = 0.0; int note = 60; float velocity = 1.0f; };
+        std::vector<NoteEvent> notes;
+        for (int trackIndex = 0; trackIndex < midiFile.getNumTracks(); ++trackIndex)
+        {
+            const auto* track = midiFile.getTrack (trackIndex);
+            if (track == nullptr)
+                continue;
+
+            for (int eventIndex = 0; eventIndex < track->getNumEvents(); ++eventIndex)
+            {
+                const auto message = track->getEventPointer (eventIndex)->message;
+                if (message.isNoteOn())
+                    notes.push_back ({ message.getTimeStamp(),
+                                       juce::jlimit (0, 127, message.getNoteNumber()),
+                                       message.getFloatVelocity() });
+            }
+        }
+
+        if (notes.empty())
+            return false;
+
+        std::stable_sort (notes.begin(), notes.end(),
+            [] (const NoteEvent& a, const NoteEvent& b) { return a.time < b.time; });
+
+        DspBlock* drumBlock = nullptr;
+        for (auto& candidate : pack.dspGraph.blocks)
+        {
+            if (candidate.type.containsIgnoreCase ("drum")
+                || candidate.values.find ("dmTracks") != candidate.values.end())
+            {
+                drumBlock = &candidate;
+                break;
+            }
+        }
+
+        if (drumBlock != nullptr)
+        {
+            static constexpr int kImportPattern = 0;
+            static constexpr int kImportSteps = 16;
+            static constexpr int kMaxTracks = 8;
+
+            std::vector<int> trackNotes;
+            trackNotes.reserve (kMaxTracks);
+            for (const auto& note : notes)
+            {
+                if (std::find (trackNotes.begin(), trackNotes.end(), note.note) == trackNotes.end())
+                {
+                    trackNotes.push_back (note.note);
+                    if ((int) trackNotes.size() >= kMaxTracks)
+                        break;
+                }
+            }
+
+            if (trackNotes.empty())
+                return false;
+
+            drumBlock->enabled = true;
+            drumBlock->type = "drumMachine";
+            drumBlock->name = item.name.isNotEmpty() ? "Imported MIDI: " + item.name : "Imported MIDI Drum Pattern";
+            drumBlock->values["rate"] = 1.0f;
+            drumBlock->values["sync"] = 1.0f;
+            drumBlock->values["dmTracks"] = (float) trackNotes.size();
+            drumBlock->values["dmSteps"] = (float) kImportSteps;
+            drumBlock->values["dmPattern"] = (float) kImportPattern;
+            drumBlock->values["dmTransport"] = 1.0f;
+            drumBlock->values["dmSongMode"] = 0.0f;
+            drumBlock->values["dmSwing"] = 0.08f;
+            drumBlock->values["dmProbability"] = 1.0f;
+            drumBlock->values["dmSeed"] = (float) (juce::Time::getCurrentTime().toMilliseconds() & 0x7fffffff);
+
+            for (int track = 0; track < kMaxTracks; ++track)
+            {
+                const int mappedNote = track < (int) trackNotes.size() ? trackNotes[(size_t) track] : 36 + track;
+                drumBlock->values["dmTrack" + juce::String (track) + "Note"] = (float) mappedNote;
+                for (int step = 0; step < kImportSteps; ++step)
+                {
+                    const auto prefix = "dmP" + juce::String (kImportPattern)
+                                      + "T" + juce::String (track)
+                                      + "S" + juce::String (step);
+                    drumBlock->values[prefix + "On"] = 0.0f;
+                    drumBlock->values[prefix + "Vel"] = 0.78f;
+                    drumBlock->values[prefix + "Gate"] = 0.34f;
+                    drumBlock->values[prefix + "Prob"] = 1.0f;
+                    drumBlock->values[prefix + "Div"] = 1.0f;
+                }
+            }
+
+            const double firstTime = notes.front().time;
+            const double lastTime = juce::jmax (firstTime + 1.0, notes.back().time);
+            const double duration = juce::jmax (1.0, lastTime - firstTime);
+            for (const auto& note : notes)
+            {
+                auto trackIt = std::find (trackNotes.begin(), trackNotes.end(), note.note);
+                if (trackIt == trackNotes.end())
+                    continue;
+
+                const int track = (int) std::distance (trackNotes.begin(), trackIt);
+                const int step = juce::jlimit (0, kImportSteps - 1,
+                    juce::roundToInt (((note.time - firstTime) / duration) * (double) (kImportSteps - 1)));
+                const auto prefix = "dmP" + juce::String (kImportPattern)
+                                  + "T" + juce::String (track)
+                                  + "S" + juce::String (step);
+                drumBlock->values[prefix + "On"] = 1.0f;
+                drumBlock->values[prefix + "Vel"] = juce::jlimit (0.05f, 1.0f, note.velocity);
+                drumBlock->values[prefix + "Gate"] = 0.34f;
+                drumBlock->values[prefix + "Prob"] = 1.0f;
+                if (note.note == 42 || note.note == 44 || note.note == 46)
+                    drumBlock->values[prefix + "Div"] = note.velocity > 0.88f ? 2.0f : 1.0f;
+            }
+
+            pack.dspGraph.userConfigured = true;
+            bindRoutingFromPack();
+            return true;
+        }
+
+        DspBlock* block = nullptr;
+        for (auto& candidate : pack.dspGraph.blocks)
+        {
+            if (candidate.id == "user_midi_playground")
+            {
+                block = &candidate;
+                break;
+            }
+        }
+
+        if (block == nullptr)
+        {
+            DspBlock created;
+            created.id = "user_midi_playground";
+            created.section = "mod";
+            created.type = "arpStepSequencer";
+            created.name = "User MIDI Playground";
+            created.enabled = true;
+            pack.dspGraph.blocks.push_back (std::move (created));
+            block = &pack.dspGraph.blocks.back();
+        }
+
+        block->enabled = true;
+        block->type = "arpStepSequencer";
+        block->name = item.name.isNotEmpty() ? "User MIDI: " + item.name : "User MIDI Playground";
+        block->values["arpRate"] = 1.0f;
+        block->values["arpGate"] = 0.72f;
+        block->values["arpPattern"] = 0.0f;
+        block->values["arpOctaves"] = 1.0f;
+        block->values["mpProbability"] = 1.0f;
+        block->values["mpHumanize"] = 0.02f;
+        block->values["mpSwing"] = 0.0f;
+        block->values["mpLatch"] = 1.0f;
+        block->values["mpScaleType"] = 0.0f;
+        block->values["mpSeed"] = (float) (juce::Time::getCurrentTime().toMilliseconds() & 0x7fffffff);
+
+        const int steps = juce::jlimit (1, 16, (int) notes.size());
+        const int root = notes.front().note;
+        block->values["arpSteps"] = (float) steps;
+        for (int step = 0; step < 16; ++step)
+        {
+            const bool active = step < steps;
+            block->values["mpStep" + juce::String (step) + "On"] = active ? 1.0f : 0.0f;
+            block->values["arpNote" + juce::String (step)] = active
+                ? (float) juce::jlimit (-36, 36, notes[(size_t) step].note - root)
+                : 0.0f;
+            block->values["mpVelocity" + juce::String (step)] = active
+                ? juce::jlimit (0.05f, 1.0f, notes[(size_t) step].velocity)
+                : 0.0f;
+            block->values["mpGate" + juce::String (step)] = active ? 0.72f : 0.05f;
+            block->values["mpStepProb" + juce::String (step)] = 1.0f;
+        }
+
+        pack.dspGraph.userConfigured = true;
+        bindRoutingFromPack();
+        return true;
+    }
+
+    void PlayerProcessor::rebuildRuntimeUserContentLocked (bool reloadEngine)
+    {
+        std::vector<UserContentItem> snapshot;
+        {
+            const juce::ScopedLock lock (userContentLock);
+            snapshot = userContent;
+        }
+
+        pack.sampleMap = authoredSampleMap;
+        SampleMap overlayMap;
+        int padCounter = 0;
+        for (const auto& item : snapshot)
+        {
+            if (item.kind != "sample")
+                continue;
+
+            const juce::File file (item.filePath);
+            if (! file.existsAsFile())
+                continue;
+
+            SampleZoneDef zone;
+            zone.samplePath = file.getFullPathName();
+            zone.rootNote = juce::jlimit (0, 127, item.rootNote);
+            zone.lowNote = juce::jlimit (0, 127, item.lowNote);
+            zone.highNote = juce::jlimit (zone.lowNote, 127, item.highNote);
+            zone.lowVelocity = 1;
+            zone.highVelocity = 127;
+            zone.oneShot = item.role != "keyboard";
+            zone.padIndex = item.role == "pads" ? (item.padIndex >= 0 ? item.padIndex : padCounter) : -1;
+            zone.padLabel = item.name;
+            zone.group = "__user_import__";
+            zone.bpm = (float) item.bpm;
+            overlayMap.add (zone);
+            pack.sampleMap.add (zone);
+            ++padCounter;
+        }
+
+        userSampleOverlayEnabled = ! overlayMap.getZones().empty();
+        userSampleOverlay.loadFromPack (getUserContentRoot(), overlayMap);
+
+        if (reloadEngine && engine != nullptr)
+        {
+            engine->allNotesOff();
+            userSampleOverlay.allNotesOff();
+            if (loadedPath.isDirectory())
+                engine->loadFromPack (loadedPath, pack.sampleMap);
+        }
+
+        for (const auto& item : snapshot)
+            if (item.kind == "midi" && item.role == "playground")
+                applyMidiContentToGraphLocked (item);
+
+        arpeggiator.bind (pack.dspGraph);
+        routingEngine.bind (pack.dspGraph, pack.parameters);
+        routingEngine.prepare (makeRenderContext (currentBlockSize));
+    }
+
+    bool PlayerProcessor::importUserContentFiles (const juce::StringArray& files,
+                                                  const juce::String& sampleMappingMode,
+                                                  juce::String& report)
+    {
+        const auto root = getUserContentRoot();
+        const auto sampleDir = root.getChildFile ("Samples");
+        const auto midiDir = root.getChildFile ("MIDI");
+        sampleDir.createDirectory();
+        midiDir.createDirectory();
+
+        std::vector<UserContentItem> imported;
+        int importedSamples = 0;
+        int importedMidi = 0;
+        int skippedUnsupported = 0;
+        int failedCopies = 0;
+        const bool keyboardMode = sampleMappingMode.equalsIgnoreCase ("keyboard");
+        int nextPadIndex = 0;
+        {
+            const juce::ScopedLock lock (userContentLock);
+            for (const auto& item : userContent)
+            {
+                if (item.kind == "sample" && item.role == "pads")
+                    nextPadIndex = juce::jmax (nextPadIndex, item.padIndex + 1);
+            }
+        }
+
+        for (const auto& path : files)
+        {
+            const juce::File source (path);
+            if (! source.existsAsFile())
+            {
+                ++skippedUnsupported;
+                continue;
+            }
+
+            const bool isSample = isSupportedUserSampleFile (source);
+            const bool isMidi = isSupportedUserMidiFile (source);
+            if (! isSample && ! isMidi)
+            {
+                ++skippedUnsupported;
+                continue;
+            }
+
+            const auto destinationDir = isSample ? sampleDir : midiDir;
+            auto destination = destinationDir.getChildFile (safeUserContentFileName (source));
+            const auto safeBase = destination.getFileNameWithoutExtension();
+            const auto safeExtension = destination.getFileExtension();
+            for (int suffix = 2; destination.existsAsFile(); ++suffix)
+            {
+                destination = destinationDir.getChildFile (
+                    safeBase + "-" + juce::String (suffix) + safeExtension);
+            }
+
+            if (! source.copyFileTo (destination))
+            {
+                ++failedCopies;
+                continue;
+            }
+
+            UserContentItem item;
+            item.id = juce::Uuid().toString();
+            item.kind = isSample ? "sample" : "midi";
+            item.name = source.getFileNameWithoutExtension();
+            item.filePath = destination.getFullPathName();
+            item.role = isSample ? (keyboardMode ? "keyboard" : "pads") : "playground";
+            item.bpm = getHostBpm();
+
+            if (isSample)
+            {
+                if (keyboardMode)
+                {
+                    bool usedNamePitch = false;
+                    bool usedAudioPitch = false;
+                    auto zone = SampleMap::inferZoneFromFileWithAudio (destination, 60, 0, 127,
+                                                                        &usedNamePitch, &usedAudioPitch, nullptr);
+                    item.rootNote = zone.rootNote;
+                    item.lowNote = 0;
+                    item.highNote = 127;
+                    item.summary = "Keyboard map"
+                        + juce::String (usedNamePitch ? " / name pitch" : (usedAudioPitch ? " / detected pitch" : ""));
+                }
+                else
+                {
+                    item.padIndex = nextPadIndex + importedSamples;
+                    item.rootNote = juce::jlimit (0, 127, 36 + item.padIndex);
+                    item.lowNote = item.rootNote;
+                    item.highNote = item.rootNote;
+                    item.summary = "Pad " + juce::String (item.padIndex + 1)
+                        + " / " + juce::MidiMessage::getMidiNoteName (item.rootNote, true, true, 4);
+                }
+                ++importedSamples;
+            }
+            else
+            {
+                juce::FileInputStream input (destination);
+                juce::MidiFile midiFile;
+                if (input.openedOk() && midiFile.readFrom (input))
+                {
+                    int noteCount = 0;
+                    for (int trackIndex = 0; trackIndex < midiFile.getNumTracks(); ++trackIndex)
+                    {
+                        const auto* track = midiFile.getTrack (trackIndex);
+                        if (track == nullptr)
+                            continue;
+                        for (int eventIndex = 0; eventIndex < track->getNumEvents(); ++eventIndex)
+                            if (track->getEventPointer (eventIndex)->message.isNoteOn())
+                                ++noteCount;
+                    }
+                    item.noteCount = noteCount;
+                    item.summary = juce::String (noteCount) + " notes / sent to MIDI Playground";
+                }
+                else
+                {
+                    item.summary = "MIDI file copied; parse failed";
+                }
+                ++importedMidi;
+            }
+
+            imported.push_back (std::move (item));
+        }
+
+        if (imported.empty())
+        {
+            report = "No supported files imported. Drop WAV, AIFF, FLAC, MID, or MIDI files.";
+            return false;
+        }
+
+        {
+            const juce::ScopedLock lock (userContentLock);
+            userContent.insert (userContent.end(), imported.begin(), imported.end());
+        }
+
+        {
+            const juce::SpinLock::ScopedLockType engineGuard (engineLock);
+            rebuildRuntimeUserContentLocked (true);
+        }
+
+        saveUserContentManifest();
+        report = "Imported " + juce::String (importedSamples) + " sample"
+               + (importedSamples == 1 ? "" : "s")
+               + " and " + juce::String (importedMidi) + " MIDI file"
+               + (importedMidi == 1 ? "" : "s") + ".";
+        if (importedMidi > 0)
+            report += " MIDI pattern is active.";
+        if (skippedUnsupported > 0)
+            report += " Skipped " + juce::String (skippedUnsupported) + " unsupported item"
+                + (skippedUnsupported == 1 ? "" : "s") + ".";
+        if (failedCopies > 0)
+            report += " Failed to copy " + juce::String (failedCopies) + " item"
+                + (failedCopies == 1 ? "" : "s") + ".";
+        editorListeners.call ([] (EditorListener& listener) { listener.packChanged(); });
+        return true;
+    }
+
+    bool PlayerProcessor::clearUserContent()
+    {
+        {
+            const juce::ScopedLock lock (userContentLock);
+            if (userContent.empty())
+                return false;
+            userContent.clear();
+        }
+
+        {
+            const juce::SpinLock::ScopedLockType engineGuard (engineLock);
+            rebuildRuntimeUserContentLocked (true);
+        }
+
+        saveUserContentManifest();
+        editorListeners.call ([] (EditorListener& listener) { listener.packChanged(); });
+        return true;
+    }
+
+    bool PlayerProcessor::applyUserMidiToPlayground (const juce::String& contentId)
+    {
+        UserContentItem target;
+        {
+            const juce::ScopedLock lock (userContentLock);
+            for (const auto& item : userContent)
+            {
+                if (item.id == contentId && item.kind == "midi")
+                {
+                    target = item;
+                    break;
+                }
+            }
+        }
+
+        if (target.id.isEmpty())
+            return false;
+
+        const juce::SpinLock::ScopedLockType engineGuard (engineLock);
+        const bool ok = applyMidiContentToGraphLocked (target);
+        if (ok)
+        {
+            bindRoutingFromPack();
+            editorListeners.call ([] (EditorListener& listener) { listener.packChanged(); });
+        }
+        return ok;
     }
 
     bool PlayerProcessor::loadPack (const juce::File& packFolder, juce::String& error)
@@ -412,6 +1305,11 @@ namespace patchcraft
             PatchCraftPackReader reader;
             PatchCraftPack np;
             if (! reader.read (packFolder, np, error)) return false;
+            if (! packEngineIsCompatibleWithThisBinary (np.manifest.engine))
+            {
+                error = incompatiblePackMessage (np);
+                return false;
+            }
             if (const auto* patch = np.findDefaultPatch())
                 applyPatchStateToPack (np, *patch);
 
@@ -429,6 +1327,13 @@ namespace patchcraft
                 pack       = std::move (np);
                 loaded     = true;
                 loadedPath = packFolder;
+                authoredSampleMap = pack.sampleMap;
+                {
+                    const juce::ScopedLock contentLock (userContentLock);
+                    userContent.clear();
+                }
+                userSampleOverlayEnabled = false;
+                userSampleOverlay.allNotesOff();
                 heldNotes.fill (false);
                 sustainPedalDown = false;
             }
@@ -465,6 +1370,13 @@ namespace patchcraft
             pack       = buildDemoPack (engineId);
             loaded     = true;
             loadedPath = juce::File();
+            authoredSampleMap = pack.sampleMap;
+            {
+                const juce::ScopedLock contentLock (userContentLock);
+                userContent.clear();
+            }
+            userSampleOverlayEnabled = false;
+            userSampleOverlay.allNotesOff();
             heldNotes.fill (false);
             sustainPedalDown = false;
             if (engine) engine->allNotesOff();
@@ -533,12 +1445,17 @@ namespace patchcraft
 
     RenderContext PlayerProcessor::makeRenderContext (int numSamples) const
     {
+        double tempo = 120.0;
+        if (const auto found = runtimeParameterValues.find ("projectBpm");
+            found != runtimeParameterValues.end())
+            tempo = found->second;
+
         auto context = RenderContext::forBlock (currentSampleRate,
                                                numSamples,
                                                currentBlockSize,
                                                getTotalNumInputChannels(),
                                                getTotalNumOutputChannels(),
-                                               120.0);
+                                               tempo);
 
         if (auto* playHead = getPlayHead())
         {
@@ -645,6 +1562,8 @@ namespace patchcraft
 
         if (engine != nullptr)
             engine->setParameter (parameterId, limited);
+        if (userSampleOverlayEnabled)
+            userSampleOverlay.setParameter (parameterId, limited);
         routingEngine.setParameterValue (parameterId, limited);
         return true;
     }
@@ -653,6 +1572,92 @@ namespace patchcraft
     {
         const juce::SpinLock::ScopedLockType lk (engineLock);
         return setPackParameterValue (parameterId, value, true);
+    }
+
+    bool PlayerProcessor::setDrumPatternCellFromUi (int pattern, int track, int step, bool enabled,
+                                                    float velocity, float gate, float probability,
+                                                    int divisions)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (! loaded)
+            return false;
+
+        DspBlock* drumBlock = nullptr;
+        for (auto& block : pack.dspGraph.blocks)
+        {
+            if (block.type.containsIgnoreCase ("drum")
+                || block.values.find ("dmTracks") != block.values.end())
+            {
+                drumBlock = &block;
+                break;
+            }
+        }
+
+        if (drumBlock == nullptr)
+            return false;
+
+        pattern = juce::jlimit (0, 7, pattern);
+        track = juce::jlimit (0, 15, track);
+        step = juce::jlimit (0, 63, step);
+
+        drumBlock->values["dmTracks"] = (float) juce::jmax (track + 1,
+            juce::roundToInt (drumBlock->values.count ("dmTracks") != 0 ? drumBlock->values["dmTracks"] : 8.0f));
+        drumBlock->values["dmSteps"] = (float) juce::jmax (step + 1,
+            juce::roundToInt (drumBlock->values.count ("dmSteps") != 0 ? drumBlock->values["dmSteps"] : 16.0f));
+        drumBlock->values["dmPattern"] = (float) pattern;
+
+        const auto prefix = "dmP" + juce::String (pattern)
+                          + "T" + juce::String (track)
+                          + "S" + juce::String (step);
+        drumBlock->values[prefix + "On"] = enabled ? 1.0f : 0.0f;
+        drumBlock->values[prefix + "Vel"] = juce::jlimit (0.01f, 1.0f, velocity);
+        drumBlock->values[prefix + "Gate"] = juce::jlimit (0.05f, 1.0f, gate);
+        drumBlock->values[prefix + "Prob"] = juce::jlimit (0.0f, 1.0f, probability);
+        if (divisions > 0)
+            drumBlock->values[prefix + "Div"] = (float) juce::jlimit (1, 4, divisions);
+        else if (drumBlock->values.find (prefix + "Div") == drumBlock->values.end())
+            drumBlock->values[prefix + "Div"] = 1.0f;
+
+        if (engine != nullptr)
+            arpeggiator.allNotesOff (*engine);
+        arpeggiator.bind (pack.dspGraph);
+        routingEngine.bind (pack.dspGraph, pack.parameters);
+        routingEngine.prepare (makeRenderContext (currentBlockSize));
+        return true;
+    }
+
+    bool PlayerProcessor::setDrumActivePatternFromUi (int pattern)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (! loaded)
+            return false;
+
+        DspBlock* drumBlock = nullptr;
+        for (auto& block : pack.dspGraph.blocks)
+        {
+            if (block.type.containsIgnoreCase ("drum")
+                || block.values.find ("dmTracks") != block.values.end())
+            {
+                drumBlock = &block;
+                break;
+            }
+        }
+
+        if (drumBlock == nullptr)
+            return false;
+
+        drumBlock->values["dmPattern"] = (float) juce::jlimit (0, 7, pattern);
+        arpeggiator.bind (pack.dspGraph);
+        routingEngine.bind (pack.dspGraph, pack.parameters);
+        routingEngine.prepare (makeRenderContext (currentBlockSize));
+        return true;
+    }
+
+    bool PlayerProcessor::allowsExternalPackLoading() const
+    {
+        if (! loaded)
+            return true;
+        return pack.manifest.playerAllowPackLoading || pack.manifest.playerShowLibraryBrowser;
     }
 
     bool PlayerProcessor::applyPresetByIndex (int presetIndex)
@@ -673,6 +1678,8 @@ namespace patchcraft
         if (const auto* patch = pack.findPatchForPreset (preset))
         {
             applyPatchStateToPack (pack, *patch);
+            authoredSampleMap = pack.sampleMap;
+            rebuildRuntimeUserContentLocked (false);
             if (engine != nullptr)
             {
                 engine->allNotesOff();
@@ -698,10 +1705,71 @@ namespace patchcraft
         return true;
     }
 
+    int PlayerProcessor::getPresetCount() const
+    {
+        const juce::SpinLock::ScopedTryLockType lock (engineLock);
+        if (! lock.isLocked() || ! loaded)
+            return 0;
+        return (int) pack.presets.size();
+    }
+
+    int PlayerProcessor::getCurrentPresetIndex() const
+    {
+        const juce::SpinLock::ScopedTryLockType lock (engineLock);
+        if (! lock.isLocked() || ! loaded || pack.presets.empty())
+            return -1;
+
+        const auto current = pack.manifest.defaultPreset.trim();
+        if (current.isNotEmpty())
+        {
+            for (int index = 0; index < (int) pack.presets.size(); ++index)
+                if (pack.presets[(size_t) index].name == current)
+                    return index;
+        }
+
+        return 0;
+    }
+
+    juce::String PlayerProcessor::getPresetName (int presetIndex) const
+    {
+        const juce::SpinLock::ScopedTryLockType lock (engineLock);
+        if (! lock.isLocked() || ! loaded
+            || presetIndex < 0 || presetIndex >= (int) pack.presets.size())
+            return {};
+
+        return pack.presets[(size_t) presetIndex].name;
+    }
+
+    juce::StringArray PlayerProcessor::getPresetNames() const
+    {
+        juce::StringArray names;
+        const juce::SpinLock::ScopedTryLockType lock (engineLock);
+        if (! lock.isLocked() || ! loaded)
+            return names;
+
+        for (const auto& preset : pack.presets)
+            names.add (preset.name.isNotEmpty() ? preset.name : "Preset " + juce::String (names.size() + 1));
+        return names;
+    }
+
+    bool PlayerProcessor::applyPresetOffset (int delta)
+    {
+        const int count = getPresetCount();
+        if (count <= 0)
+            return false;
+
+        int current = getCurrentPresetIndex();
+        if (current < 0)
+            current = 0;
+
+        const int next = (current + delta + count) % count;
+        return applyPresetByIndex (next);
+    }
+
     void PlayerProcessor::randomizeCurrentPreset()
     {
         const juce::SpinLock::ScopedLockType lk (engineLock);
-        if (! loaded) return;
+        if (! loaded || engine == nullptr) return;
         juce::Random rng (static_cast<int> (juce::Time::getCurrentTime().toMilliseconds() & 0x7fffffff));
         for (const auto& def : pack.parameters.getAll())
         {
@@ -709,6 +1777,39 @@ namespace patchcraft
             const float v = def.min + rng.nextFloat() * (def.max - def.min);
             setPackParameterValue (def.id, v, true);
         }
+    }
+
+    void PlayerProcessor::restoreAllPresets()
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (! loaded) return;
+
+        arpeggiator.allNotesOff (*engine);
+        engine->allNotesOff();
+        heldNotes.fill (false);
+        sustainPedalDown = false;
+        midiPitchBendCents.store (0.0f);
+        midiModWheel.store (-1.0f);
+
+        for (const auto& def : pack.parameters.getAll())
+        {
+            auto defaultIt = defaultPresetValues.find (def.id);
+            setPackParameterValue (def.id,
+                                   defaultIt != defaultPresetValues.end()
+                                       ? defaultIt->second
+                                       : def.defaultValue,
+                                   true);
+        }
+    }
+
+    void PlayerProcessor::setDefaultPreset()
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (! loaded) return;
+        
+        defaultPresetValues.clear();
+        for (const auto& def : pack.parameters.getAll())
+            defaultPresetValues[def.id] = getCurrentPackParameterValue (def.id);
     }
 
     void PlayerProcessor::saveAbSnapshot (int slot)
@@ -736,6 +1837,359 @@ namespace patchcraft
         const auto& source = (slot == 0) ? abSnapshotA : abSnapshotB;
         return source.empty() ? (slot == 0 ? "A (empty)" : "B (empty)")
                               : (slot == 0 ? "A" : "B");
+    }
+
+    std::vector<PlayerProcessor::UserSnapshotInfo> PlayerProcessor::getUserSnapshots() const
+    {
+        const juce::ScopedLock lock (snapshotLock);
+        std::vector<UserSnapshotInfo> result;
+        result.reserve (userSnapshots.size());
+        for (const auto& snapshot : userSnapshots)
+        {
+            UserSnapshotInfo info;
+            info.id = snapshot.id;
+            info.name = snapshot.name;
+            info.notes = snapshot.notes;
+            info.favorite = snapshot.favorite;
+            info.sourcePresetIndex = snapshot.sourcePresetIndex;
+            info.parameterCount = (int) snapshot.values.size();
+            result.push_back (info);
+        }
+        return result;
+    }
+
+    bool PlayerProcessor::saveUserSnapshot (const juce::String& name, bool favorite)
+    {
+        UserSnapshot snapshot;
+        snapshot.id = juce::Uuid().toString();
+        snapshot.favorite = favorite;
+
+        {
+            const juce::SpinLock::ScopedLockType lk (engineLock);
+            if (! loaded)
+                return false;
+
+            snapshot.name = name.trim().isNotEmpty()
+                ? name.trim()
+                : (pack.manifest.defaultPreset.isNotEmpty()
+                    ? pack.manifest.defaultPreset + " User Snapshot"
+                    : juce::String ("User Snapshot ") + juce::String ((int) userSnapshots.size() + 1));
+            snapshot.notes = "Captured inside the Player from "
+                + (pack.manifest.playerDisplayName.isNotEmpty()
+                    ? pack.manifest.playerDisplayName
+                    : pack.manifest.instrumentName);
+            snapshot.sourcePresetIndex = -1;
+            const auto current = pack.manifest.defaultPreset.trim();
+            if (current.isNotEmpty())
+                for (int index = 0; index < (int) pack.presets.size(); ++index)
+                    if (pack.presets[(size_t) index].name == current)
+                    {
+                        snapshot.sourcePresetIndex = index;
+                        break;
+                    }
+
+            for (const auto& def : pack.parameters.getAll())
+                snapshot.values[def.id] = getCurrentPackParameterValue (def.id);
+        }
+
+        const juce::ScopedLock lock (snapshotLock);
+        userSnapshots.push_back (std::move (snapshot));
+        return true;
+    }
+
+    bool PlayerProcessor::applyUserSnapshot (const juce::String& id)
+    {
+        std::map<juce::String, float> values;
+        {
+            const juce::ScopedLock lock (snapshotLock);
+            for (const auto& snapshot : userSnapshots)
+            {
+                if (snapshot.id == id)
+                {
+                    values = snapshot.values;
+                    break;
+                }
+            }
+        }
+
+        if (values.empty())
+            return false;
+
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (! loaded)
+            return false;
+
+        bool changed = false;
+        for (const auto& value : values)
+            changed = setPackParameterValue (value.first, value.second, true) || changed;
+        return changed;
+    }
+
+    bool PlayerProcessor::deleteUserSnapshot (const juce::String& id)
+    {
+        const juce::ScopedLock lock (snapshotLock);
+        const auto before = userSnapshots.size();
+        userSnapshots.erase (std::remove_if (userSnapshots.begin(), userSnapshots.end(),
+                                             [&] (const UserSnapshot& snapshot) { return snapshot.id == id; }),
+                             userSnapshots.end());
+        return userSnapshots.size() != before;
+    }
+
+    bool PlayerProcessor::toggleUserSnapshotFavorite (const juce::String& id)
+    {
+        const juce::ScopedLock lock (snapshotLock);
+        for (auto& snapshot : userSnapshots)
+        {
+            if (snapshot.id == id)
+            {
+                snapshot.favorite = ! snapshot.favorite;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool PlayerProcessor::isMultiInstrumentPack() const
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        return loaded && dynamic_cast<const MultiInstrumentEngine*> (engine.get()) != nullptr;
+    }
+
+    int PlayerProcessor::getMultiLayerCount() const
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (auto* multi = dynamic_cast<const MultiInstrumentEngine*> (engine.get()))
+            return multi->getLayerCount();
+        return 0;
+    }
+
+    juce::String PlayerProcessor::getMultiLayerName (int index) const
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (auto* multi = dynamic_cast<const MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size())
+                return layers[(size_t) index].name.isNotEmpty() ? layers[(size_t) index].name
+                                                                : layers[(size_t) index].id;
+        }
+        return {};
+    }
+
+    int PlayerProcessor::getMultiLayerActiveVoiceCount (int index) const
+    {
+        const juce::SpinLock::ScopedTryLockType lk (engineLock);
+        if (! lk.isLocked())
+            return 0;
+
+        if (auto* multi = dynamic_cast<const MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size() && layers[(size_t) index].engine)
+                return layers[(size_t) index].engine->getActiveVoiceCount();
+        }
+
+        return 0;
+    }
+
+    int PlayerProcessor::getMultiLayerLoadedSampleCount (int index) const
+    {
+        const juce::SpinLock::ScopedTryLockType lk (engineLock);
+        if (! lk.isLocked())
+            return 0;
+
+        if (auto* multi = dynamic_cast<const MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size() && layers[(size_t) index].engine)
+                return layers[(size_t) index].engine->getLoadedSampleCount();
+        }
+
+        return 0;
+    }
+
+    bool PlayerProcessor::getMultiLayerMuted (int index) const
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (auto* multi = dynamic_cast<const MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size())
+                return layers[(size_t) index].muted;
+        }
+        return false;
+    }
+
+    bool PlayerProcessor::getMultiLayerSoloed (int index) const
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (auto* multi = dynamic_cast<const MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size())
+                return layers[(size_t) index].solo;
+        }
+        return false;
+    }
+
+    bool PlayerProcessor::getMultiLayerEnabled (int index) const
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (auto* multi = dynamic_cast<const MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size())
+                return layers[(size_t) index].enabled;
+        }
+        return true;
+    }
+
+    int PlayerProcessor::getMultiLayerMidiChannel (int index) const
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (auto* multi = dynamic_cast<const MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size())
+                return layers[(size_t) index].midiChannel;
+        }
+        return 0;
+    }
+
+    int PlayerProcessor::getMultiLayerOutputRoute (int index) const
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (auto* multi = dynamic_cast<const MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size())
+                return layers[(size_t) index].outputRoute;
+        }
+        return 0;
+    }
+
+    int PlayerProcessor::getMultiLayerTransposeSemitones (int index) const
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (auto* multi = dynamic_cast<const MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size())
+                return layers[(size_t) index].transposeSemitones;
+        }
+        return 0;
+    }
+
+    float PlayerProcessor::getMultiLayerVolume (int index) const
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (auto* multi = dynamic_cast<const MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size())
+                return layers[(size_t) index].volume;
+        }
+        return 1.0f;
+    }
+
+    float PlayerProcessor::getMultiLayerPan (int index) const
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (auto* multi = dynamic_cast<const MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size())
+                return layers[(size_t) index].pan;
+        }
+        return 0.0f;
+    }
+
+    void PlayerProcessor::setMultiLayerVolume (int index, float volume)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (auto* multi = dynamic_cast<MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size())
+                multi->setLayerVolume (layers[(size_t) index].id, juce::jlimit (0.0f, 1.0f, volume));
+        }
+    }
+
+    void PlayerProcessor::setMultiLayerPan (int index, float pan)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (auto* multi = dynamic_cast<MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size())
+                multi->setLayerPan (layers[(size_t) index].id, juce::jlimit (-1.0f, 1.0f, pan));
+        }
+    }
+
+    void PlayerProcessor::setMultiLayerMuted (int index, bool muted)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (auto* multi = dynamic_cast<MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size())
+                multi->setLayerMute (layers[(size_t) index].id, muted);
+        }
+    }
+
+    void PlayerProcessor::setMultiLayerSoloed (int index, bool solo)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (auto* multi = dynamic_cast<MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size())
+                multi->setLayerSolo (layers[(size_t) index].id, solo);
+        }
+    }
+
+    void PlayerProcessor::setMultiLayerEnabled (int index, bool enabled)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (auto* multi = dynamic_cast<MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size())
+                multi->setLayerEnabled (layers[(size_t) index].id, enabled);
+        }
+    }
+
+    void PlayerProcessor::setMultiLayerMidiChannel (int index, int channel)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (auto* multi = dynamic_cast<MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size())
+                multi->setLayerMidiChannel (layers[(size_t) index].id, channel);
+        }
+    }
+
+    void PlayerProcessor::setMultiLayerOutputRoute (int index, int route)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (auto* multi = dynamic_cast<MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size())
+                multi->setLayerOutputRoute (layers[(size_t) index].id, route);
+        }
+    }
+
+    void PlayerProcessor::setMultiLayerTransposeSemitones (int index, int semitones)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (auto* multi = dynamic_cast<MultiInstrumentEngine*> (engine.get()))
+        {
+            const auto& layers = multi->getLayers();
+            if (index >= 0 && index < (int) layers.size())
+                multi->setLayerTransposeSemitones (layers[(size_t) index].id, semitones);
+        }
     }
 
     bool PlayerProcessor::applyMidiMappings (const juce::MidiMessage& message)
@@ -841,9 +2295,17 @@ namespace patchcraft
         if (message.isNoteOn())
         {
             const int note = juce::jlimit (0, 127, message.getNoteNumber());
+            noteHighlightLevels[(size_t) note].store (1.0f);
             heldNotes[(size_t) note] = false;
             if (! arpeggiator.handleNoteOn (*engine, note, message.getFloatVelocity()))
-                engine->noteOn (note, message.getFloatVelocity());
+            {
+                if (auto* multi = dynamic_cast<MultiInstrumentEngine*> (engine.get()))
+                    multi->noteOnForChannel (note, message.getFloatVelocity(), message.getChannel());
+                else
+                    engine->noteOn (note, message.getFloatVelocity());
+            }
+            if (userSampleOverlayEnabled)
+                userSampleOverlay.noteOn (note, message.getFloatVelocity());
             return;
         }
 
@@ -853,7 +2315,14 @@ namespace patchcraft
             if (sustainPedalDown)
                 heldNotes[(size_t) note] = true;
             else if (! arpeggiator.handleNoteOff (*engine, note))
-                engine->noteOff (note);
+            {
+                if (auto* multi = dynamic_cast<MultiInstrumentEngine*> (engine.get()))
+                    multi->noteOffForChannel (note, message.getChannel());
+                else
+                    engine->noteOff (note);
+            }
+            if (! sustainPedalDown && userSampleOverlayEnabled)
+                userSampleOverlay.noteOff (note);
             return;
         }
 
@@ -861,6 +2330,7 @@ namespace patchcraft
         {
             arpeggiator.allNotesOff (*engine);
             engine->allNotesOff();
+            userSampleOverlay.allNotesOff();
             heldNotes.fill (false);
             sustainPedalDown = false;
             setPackParameterValue ("sustainPedal", 0.0f, true);
@@ -874,9 +2344,12 @@ namespace patchcraft
             if (applyMidiMappings (message))
                 return;
             const float bend = ((float) message.getPitchWheelValue() - 8192.0f) / 8192.0f;
-            setPackParameterValue ("pitchWheel", bend, true);
-            const float baseDetune = getCurrentPackParameterValue ("detune");
-            setEngineParameterIfPresent ("detune", baseDetune + bend * 200.0f);
+            setPackParameterValue ("pitchWheel", bend, false);
+            // Persistent state - applied in processBlock AFTER the static
+            // parameter sync, so the bend isn't wiped out the moment the
+            // host stops emitting wheel events (i.e. while the user is
+            // holding the wheel bent).
+            midiPitchBendCents.store (bend * 200.0f);   // +/- 2 semitones
             return;
         }
 
@@ -891,9 +2364,11 @@ namespace patchcraft
 
             if (controller == 1)
             {
-                setPackParameterValue ("modWheel", normalised, true);
-                setPackParameterValue ("lfoAmount", normalised, true);
-                setPackParameterValue ("vibratoDepth", normalised, true);
+                setPackParameterValue ("modWheel", normalised, false);
+                // Persistent override re-applied each block; see processBlock.
+                // Stored as -1 when the wheel hasn't been touched so the
+                // user's static LFO/vibrato depths still apply.
+                midiModWheel.store (normalised);
             }
             else if (controller == 11)
             {
@@ -962,6 +2437,8 @@ namespace patchcraft
                 {
                     if (! arpeggiator.handleNoteOff (*engine, note))
                         engine->noteOff (note);
+                    if (userSampleOverlayEnabled)
+                        userSampleOverlay.noteOff (note);
                     heldNotes[(size_t) note] = false;
                 }
             }
@@ -991,6 +2468,169 @@ namespace patchcraft
         const juce::SpinLock::ScopedLockType lk (midiMappingLock);
         userMidiMappings = std::move (loadedMappings);
         pendingMidiLearnParameter.clear();
+    }
+
+    juce::String PlayerProcessor::userSnapshotsToJson() const
+    {
+        juce::Array<juce::var> snapshots;
+        {
+            const juce::ScopedLock lock (snapshotLock);
+            for (const auto& snapshot : userSnapshots)
+            {
+                auto* row = new juce::DynamicObject();
+                row->setProperty ("id", snapshot.id);
+                row->setProperty ("name", snapshot.name);
+                row->setProperty ("notes", snapshot.notes);
+                row->setProperty ("favorite", snapshot.favorite);
+                row->setProperty ("sourcePresetIndex", snapshot.sourcePresetIndex);
+                row->setProperty ("values", juce::JSON::parse (floatMapToJson (snapshot.values)));
+                snapshots.add (juce::var (row));
+            }
+        }
+
+        auto* root = new juce::DynamicObject();
+        root->setProperty ("snapshots", snapshots);
+        return juce::JSON::toString (juce::var (root), false);
+    }
+
+    void PlayerProcessor::userSnapshotsFromJson (const juce::String& json)
+    {
+        std::vector<UserSnapshot> loadedSnapshots;
+        if (json.trim().isEmpty())
+        {
+            const juce::ScopedLock lock (snapshotLock);
+            userSnapshots.clear();
+            return;
+        }
+
+        auto parsed = juce::JSON::parse (json);
+        if (auto* root = parsed.getDynamicObject())
+        {
+            if (auto* rows = root->getProperty ("snapshots").getArray())
+            {
+                for (const auto& item : *rows)
+                {
+                    auto* row = item.getDynamicObject();
+                    if (row == nullptr)
+                        continue;
+
+                    UserSnapshot snapshot;
+                    snapshot.id = row->getProperty ("id").toString();
+                    if (snapshot.id.isEmpty())
+                        snapshot.id = juce::Uuid().toString();
+                    snapshot.name = row->getProperty ("name").toString();
+                    snapshot.notes = row->getProperty ("notes").toString();
+                    snapshot.favorite = (bool) row->getProperty ("favorite");
+                    snapshot.sourcePresetIndex = row->hasProperty ("sourcePresetIndex")
+                        ? (int) row->getProperty ("sourcePresetIndex") : -1;
+
+                    if (auto* values = row->getProperty ("values").getDynamicObject())
+                    {
+                        const auto& props = values->getProperties();
+                        for (int i = 0; i < props.size(); ++i)
+                            snapshot.values[props.getName (i).toString()] = (float) props.getValueAt (i);
+                    }
+
+                    if (snapshot.name.isEmpty())
+                        snapshot.name = "User Snapshot";
+                    if (! snapshot.values.empty())
+                        loadedSnapshots.push_back (std::move (snapshot));
+                }
+            }
+        }
+
+        const juce::ScopedLock lock (snapshotLock);
+        userSnapshots = std::move (loadedSnapshots);
+    }
+
+    juce::String PlayerProcessor::multiLayerRackToJson() const
+    {
+        juce::Array<juce::var> rows;
+        {
+            const juce::SpinLock::ScopedLockType lk (engineLock);
+            if (auto* multi = dynamic_cast<const MultiInstrumentEngine*> (engine.get()))
+            {
+                const auto& layers = multi->getLayers();
+                for (int index = 0; index < (int) layers.size(); ++index)
+                {
+                    const auto& layer = layers[(size_t) index];
+                    auto* row = new juce::DynamicObject();
+                    row->setProperty ("index", index);
+                    row->setProperty ("id", layer.id);
+                    row->setProperty ("enabled", layer.enabled);
+                    row->setProperty ("muted", layer.muted);
+                    row->setProperty ("solo", layer.solo);
+                    row->setProperty ("volume", layer.volume);
+                    row->setProperty ("pan", layer.pan);
+                    row->setProperty ("midiChannel", layer.midiChannel);
+                    row->setProperty ("outputRoute", layer.outputRoute);
+                    row->setProperty ("transposeSemitones", layer.transposeSemitones);
+                    rows.add (juce::var (row));
+                }
+            }
+        }
+
+        auto* root = new juce::DynamicObject();
+        root->setProperty ("layers", rows);
+        return juce::JSON::toString (juce::var (root), false);
+    }
+
+    void PlayerProcessor::multiLayerRackFromJson (const juce::String& json)
+    {
+        if (json.trim().isEmpty())
+            return;
+
+        auto parsed = juce::JSON::parse (json);
+        auto* root = parsed.getDynamicObject();
+        if (root == nullptr)
+            return;
+
+        auto* rows = root->getProperty ("layers").getArray();
+        if (rows == nullptr)
+            return;
+
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        auto* multi = dynamic_cast<MultiInstrumentEngine*> (engine.get());
+        if (multi == nullptr)
+            return;
+
+        const auto& layers = multi->getLayers();
+        for (const auto& item : *rows)
+        {
+            auto* row = item.getDynamicObject();
+            if (row == nullptr)
+                continue;
+
+            const auto savedId = row->getProperty ("id").toString();
+            int index = row->hasProperty ("index") ? (int) row->getProperty ("index") : -1;
+            if (index < 0 || index >= (int) layers.size()
+                || (savedId.isNotEmpty() && layers[(size_t) index].id != savedId))
+            {
+                index = -1;
+                for (int candidate = 0; candidate < (int) layers.size(); ++candidate)
+                    if (layers[(size_t) candidate].id == savedId)
+                    {
+                        index = candidate;
+                        break;
+                    }
+            }
+
+            if (index < 0 || index >= (int) layers.size())
+                continue;
+
+            const auto id = layers[(size_t) index].id;
+            if (row->hasProperty ("enabled")) multi->setLayerEnabled (id, (bool) row->getProperty ("enabled"));
+            if (row->hasProperty ("muted"))   multi->setLayerMute (id, (bool) row->getProperty ("muted"));
+            if (row->hasProperty ("solo"))    multi->setLayerSolo (id, (bool) row->getProperty ("solo"));
+            if (row->hasProperty ("volume"))  multi->setLayerVolume (id, (float) row->getProperty ("volume"));
+            if (row->hasProperty ("pan"))     multi->setLayerPan (id, (float) row->getProperty ("pan"));
+            if (row->hasProperty ("midiChannel"))
+                multi->setLayerMidiChannel (id, (int) row->getProperty ("midiChannel"));
+            if (row->hasProperty ("outputRoute"))
+                multi->setLayerOutputRoute (id, (int) row->getProperty ("outputRoute"));
+            if (row->hasProperty ("transposeSemitones"))
+                multi->setLayerTransposeSemitones (id, (int) row->getProperty ("transposeSemitones"));
+        }
     }
 
 } // namespace patchcraft

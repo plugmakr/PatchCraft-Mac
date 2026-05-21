@@ -135,13 +135,23 @@ namespace patchcraft
             auto col = PatchCraftLookAndFeel::accent();
             if (down) col = col.darker (0.15f);
             else if (over) col = col.brighter (0.05f);
-            g.setColour (col);
+            juce::ColourGradient grad (col.brighter (0.08f), r.getX(), r.getY(),
+                                       col.darker (0.18f), r.getX(), r.getBottom(), false);
+            g.setGradientFill (grad);
             g.fillRoundedRectangle (r, 6.0f);
+            g.setColour (juce::Colour (0xff050608).withAlpha (0.35f));
+            g.drawRoundedRectangle (r, 6.0f, 1.0f);
         }
-        else if (over || down)
+        else
         {
-            g.setColour (PatchCraftLookAndFeel::raised().brighter (0.1f));
+            auto base = PatchCraftLookAndFeel::raised().withAlpha (over || down ? 0.96f : 0.38f);
+            if (down) base = base.brighter (0.08f);
+            else if (over) base = base.brighter (0.12f);
+            g.setColour (base);
             g.fillRoundedRectangle (r, 6.0f);
+            g.setColour (over ? PatchCraftLookAndFeel::accent().withAlpha (0.38f)
+                              : PatchCraftLookAndFeel::border().withAlpha (0.45f));
+            g.drawRoundedRectangle (r, 6.0f, 1.0f);
         }
 
         const auto col = accent
@@ -188,7 +198,9 @@ namespace patchcraft
             });
         addBtn (btnImportSamples, "Import Samples", "importSamples",  [this] { owner.importSamples(); });
         addBtn (btnImportBg,      "Import BG",      "importBg",       [this] { owner.importBackground(); });
+#if PATCHCRAFT_ENABLE_AI_STUDIO
         addBtn (btnAiAssist,      "AI Assist",      "aiAssist",       [this] { owner.aiAssist(); });
+#endif
         addBtn (btnPreview,       "Preview",        "preview",        [this] { owner.togglePreview(); }, true);
         addBtn (btnExport,        "Export Pack",    "export",
             [this]
@@ -196,11 +208,16 @@ namespace patchcraft
                 juce::PopupMenu menu;
                 menu.addItem (1, "Export Pack...");
                 menu.addItem (2, "Send to Expansion Pack...");
+                menu.addSeparator();
+                menu.addItem (3, "Export VST3 Plugin...");
+                menu.addItem (4, "Publish Draft to Plugin.club...");
                 menu.showMenuAsync (juce::PopupMenu::Options(),
                     [this] (int result)
                     {
                         if (result == 1) owner.exportPack();
                         if (result == 2) owner.sendToExpansionPack();
+                        if (result == 3) owner.exportVstPlugin();
+                        if (result == 4) owner.publishToPluginClub();
                     });
             }, true);
 
@@ -216,6 +233,24 @@ namespace patchcraft
         projectStatusLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
         projectStatusLabel.setJustificationType (juce::Justification::centredRight);
         addAndMakeVisible (projectStatusLabel);
+
+        bpmLabel.setText ("BPM", juce::dontSendNotification);
+        bpmLabel.setFont (juce::Font (10.0f, juce::Font::bold));
+        bpmLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+        bpmLabel.setJustificationType (juce::Justification::centredRight);
+        addAndMakeVisible (bpmLabel);
+
+        bpmSlider.setRange (40.0, 220.0, 1.0);
+        bpmSlider.setValue (owner.getProject().getLiveValues().getValue ("projectBpm", 120.0f),
+                            juce::dontSendNotification);
+        bpmSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+        bpmSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 48, 18);
+        bpmSlider.setTooltip ("Global project BPM for Studio preview, Brand Lab playback, MIDI patterns, synced FX, and exported standalone fallback tempo. DAWs still provide host tempo when available.");
+        bpmSlider.onValueChange = [this]
+        {
+            owner.getProject().getLiveValues().setValue ("projectBpm", (float) bpmSlider.getValue());
+        };
+        addAndMakeVisible (bpmSlider);
 
         settingsBtn.setButtonText ("Settings");
         settingsBtn.getProperties().set ("fontSize", 11.0);
@@ -234,6 +269,8 @@ namespace patchcraft
         projectStatusLabel.setColour (juce::Label::textColourId,
             dirty ? PatchCraftLookAndFeel::accent()
                   : PatchCraftLookAndFeel::textDim());
+        bpmSlider.setValue (owner.getProject().getLiveValues().getValue ("projectBpm", 120.0f),
+                            juce::dontSendNotification);
     }
 
     void TopToolbar::setPreviewActive (bool active)
@@ -247,10 +284,21 @@ namespace patchcraft
     {
         // Background gradient bar
         auto r = getLocalBounds().toFloat();
-        juce::ColourGradient grad (juce::Colour (0xff141618), 0.0f, 0.0f,
-                                   juce::Colour (0xff0c0d10), 0.0f, r.getHeight(), false);
+        juce::ColourGradient grad (juce::Colour (0xff11161d), 0.0f, 0.0f,
+                                   juce::Colour (0xff07090d), 0.0f, r.getHeight(), false);
         g.setGradientFill (grad);
         g.fillAll();
+
+        g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.07f));
+        g.fillRoundedRectangle (juce::Rectangle<float> (292.0f, 7.0f,
+                                                        juce::jmax (120.0f, r.getWidth() - 620.0f),
+                                                        r.getHeight() - 14.0f),
+                                10.0f);
+        g.setColour (PatchCraftLookAndFeel::border().withAlpha (0.55f));
+        g.drawRoundedRectangle (juce::Rectangle<float> (292.5f, 7.5f,
+                                                        juce::jmax (120.0f, r.getWidth() - 621.0f),
+                                                        r.getHeight() - 15.0f),
+                                10.0f, 1.0f);
 
         // Bottom border line
         g.setColour (PatchCraftLookAndFeel::border());
@@ -259,7 +307,9 @@ namespace patchcraft
         // PATCHCRAFT logo block on the far left
         const int logoW = 280;
         auto logoArea = juce::Rectangle<int> (0, 0, logoW, getHeight()).toFloat();
-        g.setColour (juce::Colour (0xff181a1d));
+        juce::ColourGradient logoGrad (juce::Colour (0xff171c22), logoArea.getX(), logoArea.getY(),
+                                       juce::Colour (0xff0d1015), logoArea.getX(), logoArea.getBottom(), false);
+        g.setGradientFill (logoGrad);
         g.fillRect (logoArea);
         g.setColour (PatchCraftLookAndFeel::border());
         g.fillRect (logoArea.removeFromRight (1.0f));
@@ -301,6 +351,8 @@ namespace patchcraft
         x += 12; // separator
         for (auto* b : { btnImportSamples.get(), btnImportBg.get(), btnAiAssist.get() })
         {
+            if (b == nullptr)
+                continue;
             b->setBounds (x, top, btnW + 16, height);
             x += btnW + 20;
         }
@@ -313,7 +365,11 @@ namespace patchcraft
         projectNameLabel.setBounds (rightX - 240, 8, 240, 22);
         projectStatusLabel.setBounds (rightX - 240, 30, 240, 18);
 
-        rightX = projectNameLabel.getX() - 16;
+        rightX = projectNameLabel.getX() - 12;
+        bpmSlider.setBounds (rightX - 124, (getHeight() - 24) / 2, 124, 24);
+        bpmLabel.setBounds (bpmSlider.getX() - 34, bpmSlider.getY(), 30, bpmSlider.getHeight());
+
+        rightX = bpmLabel.getX() - 14;
         btnExport->setBounds  (rightX - btnW - 20, top, btnW + 20, height);
         btnPreview->setBounds (btnExport->getX() - btnW - 8, top, btnW, height);
     }

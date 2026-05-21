@@ -21,6 +21,7 @@ namespace patchcraft
     class CanvasToolbar;
     class InspectorPanel;
     class BottomPanel;
+    class PresetsComponent;
 
     /**
         Top-level Studio layout: top toolbar + left sidebar + canvas + inspector
@@ -49,6 +50,7 @@ namespace patchcraft
         // ---- Project / pack actions ----------------------------------------
         void newProject();
         void openProject();
+        void loadFactoryDemo (const juce::File& demoPackFolder);
         void saveProject();
         void saveProjectAs();
         void saveCurrentDspPatch();
@@ -56,10 +58,23 @@ namespace patchcraft
         void saveCurrentSectionPreset();
         void sendToExpansionPack();
         void importSamples();
+        void importSampleFiles (const juce::Array<juce::File>& files,
+                                bool switchToMapper = true,
+                                bool spanMappedRoots = true);
         void importBackground();
+        void generateAiBackground();
+        void generateAiImageAsset();
         void aiAssist();
         void togglePreview();
         void exportPack();
+        void exportVstPlugin();
+        void publishToPluginClub();
+        // Drops an arpeggiator block into the DSP graph and switches to
+        // the MIDI builder so the user can edit it - hooked up from the
+        // canvas right-click menu.
+        void addArpBlock();
+        void restoreAllPresets();
+        void setDefaultPreset();
 
         // ---- Canvas / selection state --------------------------------------
         void setSelectedElementId (juce::String id);
@@ -73,6 +88,13 @@ namespace patchcraft
         // Edit operations (undoable).
         void deleteSelected();
         void duplicateSelected();
+        void copySelectedElements (bool includeParameters);
+        void pasteCopiedElements();
+        void copySelectedToAllTabs();
+        void setCopySelectionToTabsAsReference (bool shouldLink) { copySelectionToTabsAsReference = shouldLink; }
+        bool getCopySelectionToTabsAsReference() const noexcept  { return copySelectionToTabsAsReference; }
+        void propagateLinkedElementChange (const juce::String& sourceId);
+        bool hasCopiedElements() const                    { return ! copiedLayoutElements.empty(); }
         void groupSelectedElements();
         void ungroupSelectedElements();
         void removeSelectedFromContainer();
@@ -84,14 +106,23 @@ namespace patchcraft
         void snapSelectedToGrid();
         void setSelectedVisibility (bool visible);
         void setSelectedLocked (bool locked);
+        void detachLabelsFromSelectedControls();
         void copySelectedDesignStyle();
         void pasteDesignStyle();
         void applyDesignStylePreset (const juce::String& presetId);
         void addElementToCanvas (ElementType type, juce::String parameterId = {});
+        void addMixerChannelToCanvas();
+        void addDrumMachineControlsToCanvas();
         void toggleCanvasGrid();
         void toggleCanvasRulers();
+        void setCanvasZoom (float zoomFactor);
+        void fitCanvasToWindow();
+        void hideAllWindows();
+        void showMainWindows();
+        void dockAllFloatingPanels();
         void addLibraryAssetToCanvas (const juce::String& category, const juce::File& file,
-                                      int frames, bool vertical);
+                                      int frames, bool vertical,
+                                      juce::Point<int> canvasPosition = juce::Point<int> (-1, -1));
         void undo();
         void redo();
 
@@ -114,6 +145,7 @@ namespace patchcraft
         bool getStudioTutorialsEnabled() const;
         void setStudioTutorialsEnabled (bool enabled);
         void toggleHelpTooltips();
+        bool captureTutorialScreenshots (const juce::File& outputFolder, juce::String& error);
 
         // Section tab routing - canvas toolbar + bottom panel both consult this.
         void setBottomTab (BottomPanel::Page);
@@ -129,7 +161,10 @@ namespace patchcraft
 
     private:
         void projectChanged() override;
+        void projectChanged (PatchCraftProject::ChangeScope scope) override;
         void liveValueChanged (const juce::String&, float) override;
+        void publishToPluginClubWithArtifactChoice (int artifactChoice);
+        void refreshTooltipWindowState();
 
         PatchCraftProject  project;
         AssetManager       assets;
@@ -137,6 +172,7 @@ namespace patchcraft
         StudioAudioService audioService;
 
         juce::MenuBarComponent menuBar;
+        juce::TooltipWindow studioTooltipWindow { this, 650 };
         std::unique_ptr<TopToolbar>      topToolbar;
         std::unique_ptr<ElementPalette>  elementPalette;
         std::unique_ptr<BuiltAssetLibraryComponent> assetLibraryPanel;
@@ -145,6 +181,8 @@ namespace patchcraft
         std::unique_ptr<CanvasEditor>    canvasEditor;
         std::unique_ptr<CanvasToolbar>   canvasToolbar;
         std::unique_ptr<InspectorPanel>  inspectorPanel;
+        std::unique_ptr<juce::Viewport>  inspectorViewport;
+        std::unique_ptr<PresetsComponent> presetsPanel;
         std::unique_ptr<BottomPanel>     bottomPanel;
 
         // Floating panel windows for the docking system.
@@ -160,9 +198,13 @@ namespace patchcraft
         juce::TabbedButtonBar rightTabs { juce::TabbedButtonBar::TabsAtTop };
         juce::TextButton leftCollapseButton  { "<" };
         juce::TextButton rightCollapseButton { ">" };
+        juce::TextButton leftPopButton  { "Pop" };
+        juce::TextButton rightPopButton { "Pop" };
+        // Right-panel tab indices: 0=Inspector, 1=Layers, 2=Presets.
+        int  rightTabIndex = 0;
         bool showLayersInRightPanel = false;
 
-        BottomPanel::Page bottomTab { BottomPanel::Page::Design };
+        BottomPanel::Page bottomTab { BottomPanel::Page::Workflow };
 
         // Settings window (audio/MIDI device picker).
         class SettingsWindowHolder;
@@ -172,6 +214,9 @@ namespace patchcraft
         juce::StringArray selectedElementIds;
         juce::String pendingMidiLearnParameter;
         LayoutElement copiedDesignStyle;
+        std::vector<LayoutElement> copiedLayoutElements;
+        bool copiedLayoutIncludesParameters = true;
+        bool copySelectionToTabsAsReference = false;
         bool hasCopiedDesignStyle = false;
         bool showLayersInsteadOfElements = false;
         bool showLibraryInsteadOfElements = false;

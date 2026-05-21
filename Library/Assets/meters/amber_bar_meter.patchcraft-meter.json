@@ -1,0 +1,11 @@
+{
+  "format": "PatchCraft Meter",
+  "frames": 31,
+  "stripVertical": true,
+  "style": {
+    "name": "Amber Bar Meter",
+    "frames": 31,
+    "outputMode": "vertical",
+    "category": "factory"
+  }
+}

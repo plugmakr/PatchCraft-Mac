@@ -47,6 +47,11 @@ namespace patchcraft
 
     void InstrumentPreviewComponent::projectChanged()
     {
+        projectChanged (PatchCraftProject::ChangeScope::structural);
+    }
+
+    void InstrumentPreviewComponent::projectChanged (PatchCraftProject::ChangeScope scope)
+    {
         // Auto-rebuild engine if the project's engine type changed.
         if (active && engine != nullptr && project.getEngineType() != engineId)
         {
@@ -66,9 +71,10 @@ namespace patchcraft
         {
             {
                 const juce::SpinLock::ScopedLockType lk (engineLock);
-                syncRoutingFromProject();
+                syncRoutingFromProject (scope == PatchCraftProject::ChangeScope::dspRealtime);
             }
-            engine->loadFromPack (project.getProjectFolder(), project.getSampleMap());
+            if (scope != PatchCraftProject::ChangeScope::dspRealtime)
+                engine->loadFromPack (project.getProjectFolder(), project.getSampleMap());
             refreshPlaybackStatus();
         }
     }
@@ -166,9 +172,9 @@ namespace patchcraft
         }
     }
 
-    void InstrumentPreviewComponent::syncRoutingFromProject()
+    void InstrumentPreviewComponent::syncRoutingFromProject (bool preserveActiveNotes)
     {
-        if (engine != nullptr)
+        if (! preserveActiveNotes && engine != nullptr)
             arpeggiator.allNotesOff (*engine);
         arpeggiator.bind (project.getDspGraph());
         routingEngine.bind (project.getDspGraph(), project.getParameters());

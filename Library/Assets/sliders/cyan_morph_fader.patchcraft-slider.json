@@ -1,0 +1,11 @@
+{
+  "format": "PatchCraft Slider",
+  "frames": 31,
+  "stripVertical": true,
+  "style": {
+    "name": "Cyan Morph Fader",
+    "frames": 31,
+    "outputMode": "vertical",
+    "category": "factory"
+  }
+}

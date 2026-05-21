@@ -1,0 +1,122 @@
+[
+  {
+    "slug": "CinematicAmberPad",
+    "source": "C:\\Users\\seth\\.codex\\generated_images\\019decb0-4988-7483-a4ab-12d6d3cbcf2c\\ig_0c732b5448db9fb8016a02a971ad20819b9a412d9c99b0b631.png",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\CinematicAmberPad.patchcraft\\assets\\background.png",
+    "backup": "M:\\AudiCode\\PCraft\\FactoryDemos\\CinematicAmberPad.patchcraft\\assets\\background-with-ui.png",
+    "size": [
+      1280,
+      800
+    ]
+  },
+  {
+    "slug": "NeonWavetableMotion",
+    "source": "C:\\Users\\seth\\.codex\\generated_images\\019decb0-4988-7483-a4ab-12d6d3cbcf2c\\ig_0c732b5448db9fb8016a02a9b03aa0819b8ab0da05569cae6a.png",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\NeonWavetableMotion.patchcraft\\assets\\background.png",
+    "backup": "M:\\AudiCode\\PCraft\\FactoryDemos\\NeonWavetableMotion.patchcraft\\assets\\background-with-ui.png",
+    "size": [
+      1280,
+      800
+    ]
+  },
+  {
+    "slug": "OrganicTapeSampler",
+    "source": "C:\\Users\\seth\\.codex\\generated_images\\019decb0-4988-7483-a4ab-12d6d3cbcf2c\\ig_0c732b5448db9fb8016a02a9f6cc8c819b941c85ab9c87d165.png",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\OrganicTapeSampler.patchcraft\\assets\\background.png",
+    "backup": "M:\\AudiCode\\PCraft\\FactoryDemos\\OrganicTapeSampler.patchcraft\\assets\\background-with-ui.png",
+    "size": [
+      1280,
+      800
+    ]
+  },
+  {
+    "slug": "ClubGridDrums",
+    "source": "C:\\Users\\seth\\.codex\\generated_images\\019decb0-4988-7483-a4ab-12d6d3cbcf2c\\ig_0c732b5448db9fb8016a02aa39fb44819b902928a51349a036.png",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\ClubGridDrums.patchcraft\\assets\\background.png",
+    "backup": "M:\\AudiCode\\PCraft\\FactoryDemos\\ClubGridDrums.patchcraft\\assets\\background-with-ui.png",
+    "size": [
+      1280,
+      800
+    ]
+  },
+  {
+    "slug": "SurgicalEqMaster",
+    "source": "C:\\Users\\seth\\.codex\\generated_images\\019decb0-4988-7483-a4ab-12d6d3cbcf2c\\ig_0c732b5448db9fb8016a02aa7db2c4819bbd9806b5733c6151.png",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\SurgicalEqMaster.patchcraft\\assets\\background.png",
+    "backup": "M:\\AudiCode\\PCraft\\FactoryDemos\\SurgicalEqMaster.patchcraft\\assets\\background-with-ui.png",
+    "size": [
+      1280,
+      800
+    ]
+  },
+  {
+    "slug": "GranularVocalClouds",
+    "source": "C:\\Users\\seth\\.codex\\generated_images\\019decb0-4988-7483-a4ab-12d6d3cbcf2c\\ig_0c732b5448db9fb8016a02aac24730819b837a8661e11d05ba.png",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\GranularVocalClouds.patchcraft\\assets\\background.png",
+    "backup": "M:\\AudiCode\\PCraft\\FactoryDemos\\GranularVocalClouds.patchcraft\\assets\\background-with-ui.png",
+    "size": [
+      1280,
+      800
+    ]
+  },
+  {
+    "slug": "LoFiKeysTape",
+    "source": "C:\\Users\\seth\\.codex\\generated_images\\019decb0-4988-7483-a4ab-12d6d3cbcf2c\\ig_0c732b5448db9fb8016a02ab012854819ba8b1eeecfe92576f.png",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\LoFiKeysTape.patchcraft\\assets\\background.png",
+    "backup": "M:\\AudiCode\\PCraft\\FactoryDemos\\LoFiKeysTape.patchcraft\\assets\\background-with-ui.png",
+    "size": [
+      1280,
+      800
+    ]
+  },
+  {
+    "slug": "TrailerBraamFX",
+    "source": "C:\\Users\\seth\\.codex\\generated_images\\019decb0-4988-7483-a4ab-12d6d3cbcf2c\\ig_0c732b5448db9fb8016a02ab43ddec819b842237ac3d369fc3.png",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\TrailerBraamFX.patchcraft\\assets\\background.png",
+    "backup": "M:\\AudiCode\\PCraft\\FactoryDemos\\TrailerBraamFX.patchcraft\\assets\\background-with-ui.png",
+    "size": [
+      1280,
+      800
+    ]
+  },
+  {
+    "slug": "AuroraArpSynth",
+    "source": "C:\\Users\\seth\\.codex\\generated_images\\019decb0-4988-7483-a4ab-12d6d3cbcf2c\\ig_0c732b5448db9fb8016a02ab8d3a48819bb7ea2d5c8cdefca3.png",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\AuroraArpSynth.patchcraft\\assets\\background.png",
+    "backup": "M:\\AudiCode\\PCraft\\FactoryDemos\\AuroraArpSynth.patchcraft\\assets\\background-with-ui.png",
+    "size": [
+      1280,
+      800
+    ]
+  },
+  {
+    "slug": "GlitchSliceSampler",
+    "source": "C:\\Users\\seth\\.codex\\generated_images\\019decb0-4988-7483-a4ab-12d6d3cbcf2c\\ig_0c732b5448db9fb8016a02abd3d5d8819b9fd0b046f8c0beaa.png",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\GlitchSliceSampler.patchcraft\\assets\\background.png",
+    "backup": "M:\\AudiCode\\PCraft\\FactoryDemos\\GlitchSliceSampler.patchcraft\\assets\\background-with-ui.png",
+    "size": [
+      1280,
+      800
+    ]
+  },
+  {
+    "slug": "OceanicEvolvePad",
+    "source": "C:\\Users\\seth\\.codex\\generated_images\\019decb0-4988-7483-a4ab-12d6d3cbcf2c\\ig_0c732b5448db9fb8016a02ac1b2694819b9f9c7a685770c761.png",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\OceanicEvolvePad.patchcraft\\assets\\background.png",
+    "backup": "M:\\AudiCode\\PCraft\\FactoryDemos\\OceanicEvolvePad.patchcraft\\assets\\background-with-ui.png",
+    "size": [
+      1280,
+      800
+    ]
+  },
+  {
+    "slug": "ModularMotionFX",
+    "source": "C:\\Users\\seth\\.codex\\generated_images\\019decb0-4988-7483-a4ab-12d6d3cbcf2c\\ig_0c732b5448db9fb8016a02ac65a138819ba4efe9837fd2b777.png",
+    "background": "M:\\AudiCode\\PCraft\\FactoryDemos\\ModularMotionFX.patchcraft\\assets\\background.png",
+    "backup": "M:\\AudiCode\\PCraft\\FactoryDemos\\ModularMotionFX.patchcraft\\assets\\background-with-ui.png",
+    "size": [
+      1280,
+      800
+    ]
+  }
+]

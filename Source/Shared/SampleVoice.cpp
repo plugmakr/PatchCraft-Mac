@@ -1,6 +1,8 @@
 #include "SampleVoice.h"
 #include "DebugLog.h"
 
+#include <cmath>
+
 namespace patchcraft
 {
     void SampleVoice::prepare (double sampleRate)
@@ -13,7 +15,10 @@ namespace patchcraft
                              const juce::ADSR::Parameters& adsr, bool /*legato*/,
                              float sampleStart01, float sampleLength01,
                              int sampleSlice, int sampleSliceCount,
-                             float pitchOffset, bool reverseOverride)
+                             float pitchOffset, bool reverseOverride,
+                             float tempoRatio,
+                             float padGain,
+                             float padPanOffset)
     {
         PC_DBG("[SampleVoice::start] note=%d vel=%.2f", midiNote, velocity);
 
@@ -54,13 +59,18 @@ namespace patchcraft
 
             active.store (true, std::memory_order_release);
 
-            const auto rootRatio = std::pow (2.0, (midiNote - s->zone.rootNote + s->zone.pitchOffset + pitchOffset) / 12.0);
-            pitchRatio = rootRatio * (s->sourceSampleRate / currentSampleRate);
+            const auto trackedSemitones = (double) (midiNote - s->zone.rootNote)
+                                        * (double) juce::jlimit (0.0f, 2.0f, s->zone.keyTracking);
+            const auto rootRatio = std::pow (2.0, (trackedSemitones + s->zone.pitchOffset + pitchOffset) / 12.0);
+            pitchRatio = rootRatio
+                       * (double) juce::jlimit (0.25f, 4.0f, tempoRatio)
+                       * (s->sourceSampleRate / currentSampleRate);
             if (reversePlayback)
                 pitchRatio = -pitchRatio;
 
-            const float gainLin = juce::Decibels::decibelsToGain (s->zone.gainDb);
-            const float pan     = juce::jlimit (-1.0f, 1.0f, s->zone.pan);
+            const float gainLin = juce::Decibels::decibelsToGain (s->zone.gainDb)
+                                * juce::jlimit (0.0f, 2.0f, padGain);
+            const float pan     = juce::jlimit (-1.0f, 1.0f, s->zone.pan + padPanOffset);
             leftGain  = gainLin * std::cos ((pan + 1.0f) * 0.25f * juce::MathConstants<float>::pi);
             rightGain = gainLin * std::sin ((pan + 1.0f) * 0.25f * juce::MathConstants<float>::pi);
         }
@@ -178,6 +188,300 @@ namespace patchcraft
                 outR[i] += sR * g * fadeGain * rightGain;
 
             position += pitchRatio;
+        }
+    }
+
+    void GranularVoice::prepare (double sampleRate)
+    {
+        currentSampleRate = sampleRate;
+        env.setSampleRate (sampleRate);
+    }
+
+    void GranularVoice::start (const LoadedSamplePtr& s, int midiNote, float velocity,
+                               const juce::ADSR::Parameters& adsr,
+                               const Params& params,
+                               juce::uint32 seed)
+    {
+        sample = s;
+        note = midiNote;
+        chokeGroup = s != nullptr ? juce::jlimit (0, 127, s->zone.chokeGroup) : 0;
+        velocityGain = juce::jlimit (0.05f, 1.0f, velocity);
+        envParams = adsr;
+        env.setParameters (envParams);
+        env.reset();
+        env.noteOn();
+        rngState = seed != 0 ? seed : 0x12345678u;
+        samplesUntilNextGrain = 0.0;
+        scanPosition = 0.0;
+        alternatingDirection = 1;
+        heldTempoRatio = juce::jlimit (0.25f, 4.0f, params.tempoRatio);
+        for (auto& grain : grains)
+            grain.active = false;
+
+        active.store (s != nullptr && s->buffer.getNumSamples() > 8 && s->buffer.getNumChannels() > 0,
+                      std::memory_order_release);
+    }
+
+    void GranularVoice::release()
+    {
+        if (active.load (std::memory_order_acquire))
+            env.noteOff();
+    }
+
+    void GranularVoice::kill()
+    {
+        active.store (false, std::memory_order_release);
+        env.reset();
+        sample = nullptr;
+        chokeGroup = 0;
+        for (auto& grain : grains)
+            grain.active = false;
+    }
+
+    juce::uint32 GranularVoice::nextRandom() noexcept
+    {
+        rngState = rngState * 1664525u + 1013904223u;
+        return rngState;
+    }
+
+    float GranularVoice::random01() noexcept
+    {
+        return (float) ((nextRandom() >> 8) & 0x00ffffffu) / (float) 0x01000000u;
+    }
+
+    float GranularVoice::randomSigned() noexcept
+    {
+        return random01() * 2.0f - 1.0f;
+    }
+
+    int GranularVoice::activeGrainCount() const noexcept
+    {
+        int count = 0;
+        for (const auto& grain : grains)
+            if (grain.active)
+                ++count;
+        return count;
+    }
+
+    float GranularVoice::grainWindow (const Grain& grain, int shape) const noexcept
+    {
+        const float phase = juce::jlimit (0.0f, 1.0f, (float) grain.age / (float) juce::jmax (1, grain.length));
+        switch (juce::jlimit (0, 3, shape))
+        {
+            case 1:
+                return 1.0f - std::abs (phase * 2.0f - 1.0f);
+            case 2:
+                return 0.42f - 0.50f * std::cos (juce::MathConstants<float>::twoPi * phase)
+                             + 0.08f * std::cos (juce::MathConstants<float>::twoPi * 2.0f * phase);
+            case 3:
+            {
+                constexpr float edge = 0.18f;
+                if (phase < edge)
+                    return 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * phase / edge);
+                if (phase > 1.0f - edge)
+                    return 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * (1.0f - phase) / edge);
+                return 1.0f;
+            }
+            default:
+                return std::sin (juce::MathConstants<float>::pi * phase);
+        }
+    }
+
+    void GranularVoice::spawnGrain (const Params& params, float envelopeValue)
+    {
+        if (sample == nullptr || envelopeValue <= 0.00001f)
+            return;
+
+        const auto& buffer = sample->buffer;
+        const int sourceLength = buffer.getNumSamples();
+        if (sourceLength <= 8 || buffer.getNumChannels() <= 0)
+            return;
+
+        const int maxGrains = juce::jlimit (1, kMaxGrains, params.maxGrains);
+        if (activeGrainCount() >= maxGrains)
+            return;
+
+        Grain* target = nullptr;
+        for (auto& grain : grains)
+        {
+            if (! grain.active)
+            {
+                target = &grain;
+                break;
+            }
+        }
+
+        if (target == nullptr)
+            return;
+
+        const int zoneStart = juce::jlimit (0, sourceLength - 1, sample->zone.sampleStart);
+        const int zoneEnd = sample->zone.sampleEnd > zoneStart
+            ? juce::jlimit (zoneStart + 1, sourceLength, sample->zone.sampleEnd)
+            : sourceLength;
+        const int zoneLength = juce::jmax (1, zoneEnd - zoneStart);
+        const int sliceCount = juce::jlimit (1, 128, params.sampleSliceCount);
+        const int sliceIndex = juce::jlimit (0, sliceCount - 1, params.sampleSlice);
+        const int sliceStart = zoneStart + (zoneLength * sliceIndex) / sliceCount;
+        const int sliceEnd = zoneStart + (zoneLength * (sliceIndex + 1)) / sliceCount;
+        const int availableLength = juce::jmax (8, sliceEnd - sliceStart);
+        const float regionLength01 = juce::jlimit (0.01f, 1.0f, params.sampleLength);
+        const int regionLength = juce::jlimit (8, availableLength, juce::roundToInt ((float) availableLength * regionLength01));
+
+        if (! params.freeze)
+        {
+            scanPosition += (double) params.scanRate / juce::jmax (1.0, currentSampleRate);
+            if (params.directionMode == 2)
+            {
+                if (scanPosition >= 1.0)
+                {
+                    scanPosition = 1.0;
+                    alternatingDirection = -1;
+                }
+                else if (scanPosition <= 0.0)
+                {
+                    scanPosition = 0.0;
+                    alternatingDirection = 1;
+                }
+            }
+            else
+            {
+                while (scanPosition > 1.0)
+                    scanPosition -= 1.0;
+                while (scanPosition < 0.0)
+                    scanPosition += 1.0;
+            }
+        }
+
+        const float basePosition = params.freeze
+            ? juce::jlimit (0.0f, 1.0f, params.sampleStart)
+            : juce::jlimit (0.0f, 1.0f, (float) (params.sampleStart + scanPosition));
+        const float spread = juce::jlimit (0.0f, 1.0f, params.positionSpread);
+        const float texture = juce::jlimit (0.0f, 1.0f, params.texture);
+        const float randomOffset = randomSigned() * spread * (0.20f + texture * 0.80f);
+        const int centre = sliceStart + juce::roundToInt (juce::jlimit (0.0f, 1.0f, basePosition + randomOffset)
+                                                        * (float) juce::jmax (0, availableLength - 1));
+
+        const float sizeRandom = 1.0f + randomSigned() * juce::jlimit (0.0f, 1.0f, params.sizeRandom) * 0.85f;
+        const int grainLength = juce::jlimit (8, regionLength,
+            juce::roundToInt (juce::jmax (2.0, currentSampleRate * (double) params.sizeMs / 1000.0) * sizeRandom));
+        const int half = grainLength / 2;
+        const int start = juce::jlimit (sliceStart, juce::jmax (sliceStart, sliceEnd - 2), centre - half);
+
+        int direction = 1;
+        const int directionMode = juce::jlimit (0, 3, params.directionMode);
+        if (directionMode == 1)
+            direction = -1;
+        else if (directionMode == 2)
+            direction = alternatingDirection;
+        else if (directionMode == 3)
+            direction = random01() < juce::jlimit (0.0f, 1.0f, params.reverseProbability) ? -1 : 1;
+
+        const float pitchRandom = randomSigned() * juce::jlimit (0.0f, 36.0f, params.pitchSpread);
+        const double trackedSemitones = (double) (note - sample->zone.rootNote)
+                                      * (double) juce::jlimit (0.0f, 2.0f, sample->zone.keyTracking);
+        const double pitchRatio = std::pow (2.0, (trackedSemitones
+                                                + sample->zone.pitchOffset
+                                                + params.pitchOffset
+                                                + pitchRandom) / 12.0)
+                                * (double) heldTempoRatio
+                                * (sample->sourceSampleRate / currentSampleRate);
+
+        const float zoneGain = juce::Decibels::decibelsToGain (sample->zone.gainDb)
+                             * juce::jlimit (0.0f, 2.0f, params.padGain);
+        const float pan = juce::jlimit (-1.0f, 1.0f,
+            sample->zone.pan + params.padPanOffset + randomSigned() * juce::jlimit (0.0f, 1.0f, params.panSpread));
+        const float grainGain = zoneGain * velocityGain * 1.35f
+                              / std::sqrt ((float) juce::jmax (1, maxGrains));
+
+        target->active = true;
+        target->position = direction >= 0 ? (double) start : (double) juce::jmin (sliceEnd - 2, start + grainLength);
+        target->step = pitchRatio * (double) direction;
+        target->age = 0;
+        target->length = grainLength;
+        target->leftGain = std::cos ((pan + 1.0f) * 0.25f * juce::MathConstants<float>::pi);
+        target->rightGain = std::sin ((pan + 1.0f) * 0.25f * juce::MathConstants<float>::pi);
+        target->gain = grainGain;
+    }
+
+    void GranularVoice::render (juce::AudioBuffer<float>& dest, int startSample, int numSamples, const Params& params)
+    {
+        if (! active.load (std::memory_order_acquire) || sample == nullptr)
+            return;
+
+        const auto& buffer = sample->buffer;
+        const int sourceLength = buffer.getNumSamples();
+        const int numSourceChannels = buffer.getNumChannels();
+        if (sourceLength <= 8 || numSourceChannels <= 0)
+        {
+            kill();
+            return;
+        }
+
+        auto* outL = dest.getWritePointer (0, startSample);
+        auto* outR = dest.getNumChannels() > 1 ? dest.getWritePointer (1, startSample) : nullptr;
+        if (outL == nullptr)
+            return;
+
+        const auto* srcL = buffer.getReadPointer (0);
+        const auto* srcR = numSourceChannels > 1 ? buffer.getReadPointer (1) : srcL;
+        const float density = juce::jlimit (0.5f, 220.0f, params.density);
+        const double baseInterval = currentSampleRate / (double) density;
+        const float texture = juce::jlimit (0.0f, 1.0f, params.texture);
+
+        for (int sampleIndex = 0; sampleIndex < numSamples; ++sampleIndex)
+        {
+            const float envValue = env.getNextSample();
+            const bool envelopeActive = env.isActive();
+            bool anyGrainsActive = false;
+
+            if (envelopeActive)
+            {
+                samplesUntilNextGrain -= 1.0;
+                while (samplesUntilNextGrain <= 0.0)
+                {
+                    spawnGrain (params, envValue);
+                    const double jitter = 1.0 + (double) randomSigned() * 0.75 * (double) texture;
+                    samplesUntilNextGrain += juce::jmax (4.0, baseInterval * juce::jlimit (0.20, 2.50, jitter));
+                }
+            }
+
+            float accumL = 0.0f;
+            float accumR = 0.0f;
+            for (auto& grain : grains)
+            {
+                if (! grain.active)
+                    continue;
+
+                const int idx0 = (int) grain.position;
+                if (grain.age >= grain.length || idx0 < 0 || idx0 >= sourceLength - 1)
+                {
+                    grain.active = false;
+                    continue;
+                }
+
+                const int idx1 = idx0 + 1;
+                const float frac = (float) (grain.position - (double) idx0);
+                const float sL = srcL[idx0] + frac * (srcL[idx1] - srcL[idx0]);
+                const float sR = srcR[idx0] + frac * (srcR[idx1] - srcR[idx0]);
+                const float window = grainWindow (grain, params.windowShape);
+                const float gain = window * grain.gain * envValue;
+                accumL += sL * gain * grain.leftGain;
+                accumR += sR * gain * grain.rightGain;
+
+                grain.position += grain.step;
+                ++grain.age;
+                anyGrainsActive = true;
+            }
+
+            outL[sampleIndex] += accumL;
+            if (outR != nullptr)
+                outR[sampleIndex] += accumR;
+
+            if (! envelopeActive && ! anyGrainsActive)
+            {
+                kill();
+                break;
+            }
         }
     }
 

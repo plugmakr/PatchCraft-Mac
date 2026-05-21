@@ -1,0 +1,22 @@
+{
+  "formatVersion": 1,
+  "instrumentName": "Neon Wavetable Motion",
+  "creator": "PatchCraft",
+  "description": "A modern wavetable motion demo with unison, warped digital tone, and animated filter movement.",
+  "category": "Wavetable Synth",
+  "engine": "synth",
+  "backgroundImage": "assets/background.png",
+  "libraryThumbnail": "assets/thumbnail.png",
+  "defaultPreset": "Neon Glass Arp",
+  "createdWith": "PatchCraft Studio",
+  "version": "1.0",
+  "playerDisplayName": "Neon Wavetable Motion",
+  "playerTagline": "Factory demo template",
+  "playerAccentColour": "ff39d7ff",
+  "tags": [
+    "factory-demo",
+    "wavetable",
+    "synth",
+    "wavetable synth"
+  ]
+}

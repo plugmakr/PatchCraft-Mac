@@ -2,6 +2,66 @@
 
 namespace patchcraft
 {
+    namespace
+    {
+        static bool tryAddReferencedRegistryParameter (ParameterModel& parameters,
+                                                       const juce::String& parameterId,
+                                                       const juce::String& engineId)
+        {
+            if (parameterId.isEmpty() || parameters.contains (parameterId))
+                return true;
+
+            if (parameters.addFromRegistry (parameterId, engineId))
+                return true;
+
+            for (const auto& fallbackEngine : { juce::String ("synth"),
+                                                juce::String ("sample"),
+                                                juce::String ("fx") })
+            {
+                if (fallbackEngine == engineId)
+                    continue;
+                if (parameters.addFromRegistry (parameterId, fallbackEngine))
+                    return true;
+            }
+
+            return false;
+        }
+
+        static void repairReferencedParameters (ParameterModel& parameters,
+                                                const juce::String& engineId,
+                                                const LayoutModel& layout,
+                                                const DspGraph& graph,
+                                                const std::vector<Preset>& presets)
+        {
+            parameters.ensureRegistryMetadata (engineId);
+
+            for (const auto& element : layout.getAll())
+                tryAddReferencedRegistryParameter (parameters, element.parameterId, engineId);
+
+            for (const auto& block : graph.blocks)
+                tryAddReferencedRegistryParameter (parameters, block.targetId, engineId);
+
+            for (const auto& macro : graph.macros)
+            {
+                tryAddReferencedRegistryParameter (parameters, macro.macroId, engineId);
+                tryAddReferencedRegistryParameter (parameters, macro.targetId, engineId);
+            }
+
+            for (const auto& route : graph.modulation)
+            {
+                tryAddReferencedRegistryParameter (parameters, route.sourceId, engineId);
+                tryAddReferencedRegistryParameter (parameters, route.targetId, engineId);
+            }
+
+            for (const auto& lane : graph.automation)
+                tryAddReferencedRegistryParameter (parameters, lane.targetId, engineId);
+
+            for (const auto& preset : presets)
+                for (const auto& value : preset.values)
+                    tryAddReferencedRegistryParameter (parameters, value.first, engineId);
+        }
+    }
+
     juce::var PatchCraftPackReader::loadJson (const juce::File& f, juce::String& error)
     {
         if (! f.existsAsFile())
@@ -43,7 +103,8 @@ namespace patchcraft
 
         out.hostParameterSlots.clear();
         auto hostMapFile = packFolder.getChildFile ("hostParameterMap.json");
-        if (hostMapFile.existsAsFile())
+        const bool hasExplicitHostMap = hostMapFile.existsAsFile();
+        if (hasExplicitHostMap)
         {
             auto hostMapVar = juce::JSON::parse (hostMapFile);
             if (auto* hostMapObj = hostMapVar.getDynamicObject())
@@ -51,8 +112,6 @@ namespace patchcraft
                     for (const auto& item : *arr)
                         out.hostParameterSlots.push_back (HostParameterSlot::fromVar (item));
         }
-        if (out.hostParameterSlots.empty())
-            out.hostParameterSlots = out.parameters.buildHostParameterSlots();
 
         auto mappingsVar = loadJson (packFolder.getChildFile ("mappings.json"), error);
         if (mappingsVar.isObject())
@@ -100,8 +159,23 @@ namespace patchcraft
                 for (auto& item : *arr)
                     out.midiMappings.push_back (MidiMapping::fromVar (item));
 
+        const bool looksLikeFactoryDemo = packFolder.getFullPathName().containsIgnoreCase ("FactoryDemos")
+            || out.manifest.creator.equalsIgnoreCase ("PatchCraft")
+            || out.manifest.category.containsIgnoreCase ("Demo");
+        if (looksLikeFactoryDemo)
+            ensurePresetBackedPatches (out, false);
+
         out.backgroundImageRelative = out.manifest.backgroundImage.isNotEmpty()
             ? out.manifest.backgroundImage : juce::String ("assets/background.png");
+
+        repairReferencedParameters (out.parameters,
+                                    out.manifest.engine.isNotEmpty() ? out.manifest.engine : juce::String ("synth"),
+                                    out.layout,
+                                    out.dspGraph,
+                                    out.presets);
+
+        if (! hasExplicitHostMap || out.hostParameterSlots.empty())
+            out.hostParameterSlots = out.parameters.buildHostParameterSlots();
 
         error.clear();
         return true;

@@ -11,17 +11,80 @@
 #include "BottomPanel.h"
 #include "CanvasToolbar.h"
 #include "SettingsDialog.h"
+#include "AiImageService.h"
+#include "LicenseValidator.h"
 #include "PatchCraftPackWriter.h"
+#include "PluginClubPublisher.h"
+#include "PresetsComponent.h"
 #include "SampleMap.h"
+#include "VstExportModule.h"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <map>
+#include <thread>
 #include <vector>
 
 namespace patchcraft
 {
     namespace
     {
+        static bool tryAddRegistryParameterForExport (ParameterModel& parameters,
+                                                      const juce::String& parameterId,
+                                                      const juce::String& engineId)
+        {
+            if (parameterId.isEmpty() || parameters.contains (parameterId))
+                return true;
+
+            if (parameters.addFromRegistry (parameterId, engineId))
+                return true;
+
+            for (const auto& fallbackEngine : { juce::String ("synth"),
+                                                juce::String ("sample"),
+                                                juce::String ("fx") })
+            {
+                if (fallbackEngine == engineId)
+                    continue;
+                if (parameters.addFromRegistry (parameterId, fallbackEngine))
+                    return true;
+            }
+
+            return false;
+        }
+
+        static int removeStalePresetValuesForExport (PatchCraftProject& project)
+        {
+            auto& parameters = project.getParameters();
+            const auto engineId = project.getManifest().engine.isNotEmpty()
+                ? project.getManifest().engine
+                : project.getEngineType();
+            parameters.ensureRegistryMetadata (engineId);
+
+            int removed = 0;
+            for (auto& preset : project.getPresets())
+            {
+                for (auto it = preset.values.begin(); it != preset.values.end();)
+                {
+                    if (tryAddRegistryParameterForExport (parameters, it->first, engineId)
+                        || parameters.find (it->first) != nullptr)
+                    {
+                        ++it;
+                    }
+                    else
+                    {
+                        it = preset.values.erase (it);
+                        ++removed;
+                    }
+                }
+            }
+
+            if (removed > 0)
+                project.notifyChanged();
+
+            return removed;
+        }
+
         static juce::String validationWarningSummary (const PatchCraftProject& project)
         {
             const auto issues = project.getParameters().validateReferences (
@@ -46,6 +109,31 @@ namespace patchcraft
             return warnings.isEmpty()
                 ? juce::String()
                 : ("\n\nWarnings:\n" + warnings.joinIntoString ("\n"));
+        }
+
+        static juce::String safePublishFileStem (juce::String text)
+        {
+            text = text.trim();
+            juce::String out;
+            for (auto c : text)
+            {
+                if (juce::CharacterFunctions::isLetterOrDigit (c) || c == '-' || c == '_')
+                    out << c;
+                else if (c == ' ' || c == '.')
+                    out << '_';
+            }
+            return out.isNotEmpty() ? out : juce::String ("PatchCraftProduct");
+        }
+
+        static juce::String publishChoiceLabel (int choice)
+        {
+            switch (choice)
+            {
+                case 1: return "PatchCraft Instrument Pack";
+                case 2: return "Standalone VST3 Plugin";
+                case 3: return "Pack + Standalone VST3";
+                default: return "PatchCraft Instrument Pack";
+            }
         }
 
         static bool showSampleExportValidationIfBlocked (StudioMainComponent& owner,
@@ -103,6 +191,220 @@ namespace patchcraft
 
             return fallback;
         }
+
+        static juce::String copilotTaskDescription (AiAssistService::TaskType task)
+        {
+            switch (task)
+            {
+                case AiAssistService::TaskType::BackgroundPrompt:           return "Art direction for backgrounds and product visuals";
+                case AiAssistService::TaskType::SuggestLayout:              return "Improve the Player layout and interaction hierarchy";
+                case AiAssistService::TaskType::SuggestControls:            return "Recommend useful controls mapped to real parameters";
+                case AiAssistService::TaskType::SuggestMacroAssignments:    return "Plan expressive knobs, macros, and performance links";
+                case AiAssistService::TaskType::GeneratePresetNames:        return "Create sellable preset names, categories, and tags";
+                case AiAssistService::TaskType::GenerateProductDescription: return "Draft marketplace copy for the instrument or expansion";
+                case AiAssistService::TaskType::DesignCritique:             return "Audit UI clarity, spacing, runtime parity, and flow";
+                case AiAssistService::TaskType::SoundRecipe:                return "Create a sound-design recipe from the current patch";
+                case AiAssistService::TaskType::WavetableRecipe:            return "Suggest wavetable movement and modulation ideas";
+                case AiAssistService::TaskType::EqChain:                    return "Plan advanced EQ and dynamic tone-shaping moves";
+                case AiAssistService::TaskType::ModulationPlan:             return "Plan LFOs, automation, macros, and motion";
+                case AiAssistService::TaskType::BuildAssetGuidance:         return "Guide knob, slider, meter, and UI asset building";
+                case AiAssistService::TaskType::ExportChecklist:            return "Check pack, licensing, runtime, and export readiness";
+            }
+            return "Run a PatchCraft Copilot action";
+        }
+
+        class CopilotDialogContent final : public juce::Component
+        {
+        public:
+            CopilotDialogContent()
+            {
+                setSize (780, 640);
+
+                title.setText ("PatchCraft Copilot", juce::dontSendNotification);
+                title.setFont (juce::Font (24.0f, juce::Font::bold));
+                title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
+                addAndMakeVisible (title);
+
+                subtitle.setText ("Choose a focused assistant action. Results are preview-first and do not mutate the project unless you explicitly use another Studio action.",
+                                  juce::dontSendNotification);
+                subtitle.setFont (juce::Font (12.5f));
+                subtitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+                addAndMakeVisible (subtitle);
+
+                status.setText (AiAssistService::providerStatusText(), juce::dontSendNotification);
+                status.setFont (juce::Font (12.0f));
+                status.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+                status.setJustificationType (juce::Justification::centredLeft);
+                addAndMakeVisible (status);
+
+                auto setupButton = [] (juce::TextButton& button, bool primary)
+                {
+                    button.getProperties().set ("fontSize", primary ? 12.5 : 12.0);
+                    button.getProperties().set ("bold", primary);
+                    button.getProperties().set ("corner", 8.0);
+                    if (primary)
+                        button.getProperties().set ("primaryAction", true);
+                };
+
+                setupButton (settingsButton, true);
+                settingsButton.setButtonText ("Open AI Settings");
+                settingsButton.setTooltip ("Configure built-in templates, local llama.cpp/OpenAI-compatible endpoints, image APIs, and cloud integrations.");
+                settingsButton.onClick = [this] { runAfterClose (onSettings); };
+                addAndMakeVisible (settingsButton);
+
+                setupButton (closeButton, false);
+                closeButton.setButtonText ("Close");
+                closeButton.onClick = [this] { runAfterClose (onClose); };
+                addAndMakeVisible (closeButton);
+
+                for (auto* button : { &backgroundButton, &assetButton, &publishButton })
+                {
+                    setupButton (*button, false);
+                    button->getProperties().set ("workflowStep", true);
+                    addAndMakeVisible (*button);
+                }
+                backgroundButton.setButtonText ("Generate Background\nCreate artwork from the current instrument context");
+                assetButton.setButtonText ("Generate Image Asset\nCreate an editable visual asset for the canvas");
+                publishButton.setButtonText ("Publish Draft\nStage and push the current pack to Plugin.club");
+
+                backgroundButton.onClick = [this] { runAfterClose (onGenerateBackground); };
+                assetButton.onClick = [this] { runAfterClose (onGenerateAsset); };
+                publishButton.onClick = [this] { runAfterClose (onPublish); };
+
+                taskViewport.setViewedComponent (&taskContent, false);
+                taskViewport.setScrollBarsShown (true, false);
+                taskViewport.setScrollBarThickness (8);
+                addAndMakeVisible (taskViewport);
+
+                for (auto task : AiAssistService::defaultTasks())
+                {
+                    auto button = std::make_unique<juce::TextButton>();
+                    button->setButtonText (AiAssistService::displayName (task) + "\n" + copilotTaskDescription (task));
+                    button->getProperties().set ("workflowStep", true);
+                    button->getProperties().set ("headlineSize", 12.2);
+                    button->getProperties().set ("detailSize", 10.2);
+                    button->setTooltip (copilotTaskDescription (task));
+                    button->onClick = [this, task]
+                    {
+                        auto callback = onTask;
+                        runAfterClose ([callback, task]
+                        {
+                            if (callback)
+                                callback (task);
+                        });
+                    };
+                    taskContent.addAndMakeVisible (*button);
+                    taskButtons.push_back (std::move (button));
+                }
+            }
+
+            void paint (juce::Graphics& g) override
+            {
+                auto bounds = getLocalBounds().toFloat();
+                juce::ColourGradient grad (juce::Colour (0xff10151d), bounds.getX(), bounds.getY(),
+                                           juce::Colour (0xff080a0e), bounds.getRight(), bounds.getBottom(), false);
+                g.setGradientFill (grad);
+                g.fillRoundedRectangle (bounds.reduced (1.0f), 12.0f);
+
+                g.setColour (PatchCraftLookAndFeel::accent());
+                g.fillRoundedRectangle (bounds.withHeight (4.0f), 2.0f);
+
+                auto body = getLocalBounds().reduced (18);
+                body.removeFromTop (124);
+                auto quick = body.removeFromTop (78);
+                g.setColour (PatchCraftLookAndFeel::border().withAlpha (0.65f));
+                g.drawRoundedRectangle (quick.toFloat(), 10.0f, 1.0f);
+
+                body.removeFromTop (14);
+                g.setColour (PatchCraftLookAndFeel::panelAlt().withAlpha (0.78f));
+                g.fillRoundedRectangle (body.toFloat(), 10.0f);
+                g.setColour (PatchCraftLookAndFeel::border().withAlpha (0.7f));
+                g.drawRoundedRectangle (body.toFloat(), 10.0f, 1.0f);
+            }
+
+            void resized() override
+            {
+                auto bounds = getLocalBounds().reduced (18);
+                auto header = bounds.removeFromTop (112);
+                auto headerRight = header.removeFromRight (240);
+                closeButton.setBounds (headerRight.removeFromTop (32).removeFromRight (82));
+                headerRight.removeFromTop (12);
+                settingsButton.setBounds (headerRight.removeFromTop (38));
+
+                title.setBounds (header.removeFromTop (34));
+                subtitle.setBounds (header.removeFromTop (36));
+                status.setBounds (header.removeFromTop (26));
+
+                auto quick = bounds.removeFromTop (78).reduced (12, 10);
+                const int quickGap = 10;
+                const int quickW = (quick.getWidth() - quickGap * 2) / 3;
+                backgroundButton.setBounds (quick.removeFromLeft (quickW));
+                quick.removeFromLeft (quickGap);
+                assetButton.setBounds (quick.removeFromLeft (quickW));
+                quick.removeFromLeft (quickGap);
+                publishButton.setBounds (quick);
+
+                bounds.removeFromTop (14);
+                taskViewport.setBounds (bounds.reduced (10));
+                layoutTaskButtons (taskViewport.getWidth() - 10);
+            }
+
+            std::function<void (AiAssistService::TaskType)> onTask;
+            std::function<void()> onSettings;
+            std::function<void()> onGenerateBackground;
+            std::function<void()> onGenerateAsset;
+            std::function<void()> onPublish;
+            std::function<void()> onClose;
+
+        private:
+            void runAfterClose (std::function<void()> callback)
+            {
+                if (auto* dialog = findParentComponentOfClass<juce::DialogWindow>())
+                    dialog->exitModalState (0);
+
+                if (callback)
+                    juce::MessageManager::callAsync (std::move (callback));
+            }
+
+            void layoutTaskButtons (int width)
+            {
+                width = juce::jmax (320, width);
+                const int columns = width >= 640 ? 2 : 1;
+                const int gap = 10;
+                const int buttonH = 62;
+                const int cellW = columns == 2 ? (width - gap) / 2 : width;
+
+                int index = 0;
+                for (auto& button : taskButtons)
+                {
+                    const int column = columns == 2 ? index % 2 : 0;
+                    const int row = columns == 2 ? index / 2 : index;
+                    button->setBounds (column * (cellW + gap),
+                                       row * (buttonH + gap),
+                                       cellW,
+                                       buttonH);
+                    ++index;
+                }
+
+                const int rows = columns == 2
+                    ? (int) std::ceil ((double) taskButtons.size() / 2.0)
+                    : (int) taskButtons.size();
+                taskContent.setSize (width, juce::jmax (taskViewport.getHeight(),
+                                                        rows * (buttonH + gap) + 8));
+            }
+
+            juce::Label title;
+            juce::Label subtitle;
+            juce::Label status;
+            juce::TextButton settingsButton { "Open AI Settings" };
+            juce::TextButton closeButton { "Close" };
+            juce::TextButton backgroundButton;
+            juce::TextButton assetButton;
+            juce::TextButton publishButton;
+            juce::Viewport taskViewport;
+            juce::Component taskContent;
+            std::vector<std::unique_ptr<juce::TextButton>> taskButtons;
+        };
 
         static void writeStudioTutorialPreference (bool enabled)
         {
@@ -184,6 +486,62 @@ namespace patchcraft
         repaint();
     }
 
+    bool StudioMainComponent::captureTutorialScreenshots (const juce::File& outputFolder, juce::String& error)
+    {
+        if (! outputFolder.createDirectory())
+        {
+            error = "Could not create screenshot folder: " + outputFolder.getFullPathName();
+            return false;
+        }
+
+        struct Shot
+        {
+            BottomPanel::Page page;
+            const char* fileName;
+        };
+
+        const Shot shots[] = {
+            { BottomPanel::Page::Workflow,       "studio-workflow.png" },
+            { BottomPanel::Page::Design,         "studio-design.png" },
+            { BottomPanel::Page::SampleMapper,   "studio-samples.png" },
+            { BottomPanel::Page::OneShotMaker,   "studio-one-shot.png" },
+            { BottomPanel::Page::MidiPlayground, "studio-midi.png" },
+            { BottomPanel::Page::DSP,            "studio-dsp.png" },
+            { BottomPanel::Page::Build,          "studio-build.png" },
+            { BottomPanel::Page::Branding,       "studio-brand-lab.png" },
+            { BottomPanel::Page::Test,           "studio-test.png" },
+            { BottomPanel::Page::Launch,         "studio-launch.png" }
+        };
+
+        dspTutorialShownThisSession = true;
+        juce::PNGImageFormat png;
+
+        for (const auto& shot : shots)
+        {
+            setBottomTab (shot.page);
+            resized();
+            repaint();
+
+            auto image = createComponentSnapshot (getLocalBounds(), true, 1.0f);
+            if (! image.isValid())
+            {
+                error = "Could not render screenshot: " + juce::String (shot.fileName);
+                return false;
+            }
+
+            const auto file = outputFolder.getChildFile (shot.fileName);
+            std::unique_ptr<juce::FileOutputStream> out (file.createOutputStream());
+            if (out == nullptr || ! out->openedOk() || ! png.writeImageToStream (image, *out))
+            {
+                error = "Could not write screenshot: " + file.getFullPathName();
+                return false;
+            }
+        }
+
+        error.clear();
+        return true;
+    }
+
     // SettingsWindowHolder is just a unique_ptr<SettingsWindow> with a deleter
     // that runs on the message thread (done implicitly by the host caller).
     class StudioMainComponent::SettingsWindowHolder
@@ -201,7 +559,7 @@ namespace patchcraft
         }
         settingsWindow = std::make_unique<SettingsWindowHolder>();
         juce::Component::SafePointer<StudioMainComponent> self (this);
-        settingsWindow->w = std::make_unique<SettingsWindow> (audioService, ai,
+        settingsWindow->w = std::make_unique<SettingsWindow> (audioService, ai, project,
             [self]
             {
                 juce::MessageManager::callAsync ([self]
@@ -214,6 +572,7 @@ namespace patchcraft
     StudioMainComponent::StudioMainComponent()
     {
         setOpaque (true);
+        refreshTooltipWindowState();
         menuBar.setModel (this);
 
         topToolbar      = std::make_unique<TopToolbar> (*this);
@@ -224,7 +583,14 @@ namespace patchcraft
         canvasEditor    = std::make_unique<CanvasEditor> (*this);
         canvasToolbar   = std::make_unique<CanvasToolbar> (*this, *canvasEditor);
         inspectorPanel  = std::make_unique<InspectorPanel> (*this);
+        inspectorViewport = std::make_unique<juce::Viewport> ("inspectorViewport");
+        presetsPanel    = std::make_unique<PresetsComponent> (*this);
         bottomPanel     = std::make_unique<BottomPanel> (*this);
+
+        inspectorViewport->setViewedComponent (inspectorPanel.get(), false);
+        inspectorViewport->setScrollBarsShown (true, false);
+        inspectorViewport->setScrollBarThickness (8);
+        inspectorViewport->setWantsKeyboardFocus (false);
 
         addAndMakeVisible (menuBar);
         addAndMakeVisible (*topToolbar);
@@ -234,15 +600,15 @@ namespace patchcraft
         addChildComponent (*layersPanel);
         addAndMakeVisible (*canvasToolbar);
         addAndMakeVisible (*canvasEditor);
-        addAndMakeVisible (*inspectorPanel);
+        addAndMakeVisible (*inspectorViewport);
+        addChildComponent (*presetsPanel);
         addAndMakeVisible (*bottomPanel);
 
-        // Left tabs (Elements / Layers / Library)
-        // Layers moved to the right (Inspector) panel. Left side is now
-        // Elements / Library / Expansions only.
+        // Left tabs expose the complete authoring browser at startup.
         leftTabs.addTab ("Elements",   PatchCraftLookAndFeel::panel(), -1);
+        leftTabs.addTab ("Layers",     PatchCraftLookAndFeel::panel(), -1);
         leftTabs.addTab ("Library",    PatchCraftLookAndFeel::panel(), -1);
-        leftTabs.addTab ("Expansions", PatchCraftLookAndFeel::panel(), -1);
+        leftTabs.addTab ("Packs",      PatchCraftLookAndFeel::panel(), -1);
         leftTabs.setCurrentTabIndex (0, juce::dontSendNotification);
         addAndMakeVisible (leftTabs);
         leftCollapseButton.getProperties().set ("smallButton", true);
@@ -256,6 +622,22 @@ namespace patchcraft
         };
         addAndMakeVisible (leftCollapseButton);
 
+        leftPopButton.getProperties().set ("smallButton", true);
+        leftPopButton.getProperties().set ("fontSize", 10.0);
+        leftPopButton.setTooltip ("Pop out the active left panel.");
+        leftPopButton.onClick = [this]
+        {
+            if (showLibraryInsteadOfElements)
+                togglePanelFloat (assetLibraryPanel.get(), "Library");
+            else if (showExpansionsInsteadOfElements)
+                togglePanelFloat (expansionLibraryPanel.get(), "Packs");
+            else if (showLayersInsteadOfElements)
+                togglePanelFloat (layersPanel.get(), "Layers");
+            else
+                togglePanelFloat (elementPalette.get(), "Elements");
+        };
+        addAndMakeVisible (leftPopButton);
+
         rightCollapseButton.getProperties().set ("smallButton", true);
         rightCollapseButton.setTooltip ("Collapse or expand the Inspector panel");
         rightCollapseButton.onClick = [this]
@@ -267,9 +649,24 @@ namespace patchcraft
         };
         addAndMakeVisible (rightCollapseButton);
 
-        // Right panel tabs: Inspector (default) and Layers.
+        rightPopButton.getProperties().set ("smallButton", true);
+        rightPopButton.getProperties().set ("fontSize", 10.0);
+        rightPopButton.setTooltip ("Pop out the active right properties panel.");
+        rightPopButton.onClick = [this]
+        {
+            if (rightTabIndex == 1)
+                togglePanelFloat (layersPanel.get(), "Layers");
+            else if (rightTabIndex == 2)
+                togglePanelFloat (presetsPanel.get(), "Presets");
+            else
+                togglePanelFloat (inspectorViewport.get(), "Inspector");
+        };
+        addAndMakeVisible (rightPopButton);
+
+        // Right panel tabs: Inspector (default), Layers, Presets.
         rightTabs.addTab ("Inspector", PatchCraftLookAndFeel::panel(), -1);
         rightTabs.addTab ("Layers",    PatchCraftLookAndFeel::panel(), -1);
+        rightTabs.addTab ("Presets",   PatchCraftLookAndFeel::panel(), -1);
         rightTabs.setCurrentTabIndex (0, juce::dontSendNotification);
         addAndMakeVisible (rightTabs);
         for (int i = 0; i < rightTabs.getNumTabs(); ++i)
@@ -278,10 +675,13 @@ namespace patchcraft
             tb->onClick = [this, i]
             {
                 rightTabs.setCurrentTabIndex (i);
+                rightTabIndex = i;
                 showLayersInRightPanel = (i == 1);
-                inspectorPanel->setVisible (! showLayersInRightPanel);
-                layersPanel->setVisible (showLayersInRightPanel);
-                if (showLayersInRightPanel) layersPanel->refresh();
+                inspectorViewport->setVisible (i == 0 || isPanelFloating (inspectorViewport.get()));
+                layersPanel  ->setVisible (i == 1);
+                presetsPanel ->setVisible (i == 2);
+                if (i == 1) layersPanel->refresh();
+                if (i == 2) presetsPanel->refresh();
                 resized();
             };
         }
@@ -291,16 +691,18 @@ namespace patchcraft
             auto* tb = leftTabs.getTabButton (i);
             tb->onClick = [this, i] {
                 leftTabs.setCurrentTabIndex (i);
-                // Layers tab is now hosted on the right; left tabs are
-                // Elements (0), Library (1), Expansions (2).
-                showLayersInsteadOfElements      = false;
-                showLibraryInsteadOfElements     = (i == 1);
-                showExpansionsInsteadOfElements  = (i == 2);
+                showLayersInsteadOfElements      = (i == 1);
+                showLibraryInsteadOfElements     = (i == 2);
+                showExpansionsInsteadOfElements  = (i == 3);
                 const bool showElements = ! showLibraryInsteadOfElements
+                                       && ! showLayersInsteadOfElements
                                        && ! showExpansionsInsteadOfElements;
                 elementPalette->setVisible (showElements);
+                layersPanel->setVisible (showLayersInsteadOfElements);
                 assetLibraryPanel->setVisible (showLibraryInsteadOfElements);
                 expansionLibraryPanel->setVisible (showExpansionsInsteadOfElements);
+                if (showLayersInsteadOfElements)
+                    layersPanel->refresh();
                 if (showExpansionsInsteadOfElements)
                     expansionLibraryPanel->refresh();
                 resized();
@@ -333,7 +735,31 @@ namespace patchcraft
 
     void StudioMainComponent::projectChanged()
     {
+        refreshTooltipWindowState();
         refreshAllPanels();
+    }
+
+    void StudioMainComponent::projectChanged (PatchCraftProject::ChangeScope scope)
+    {
+        if (scope == PatchCraftProject::ChangeScope::dspRealtime)
+        {
+            refreshTooltipWindowState();
+            topToolbar->setProjectName (project.getManifest().instrumentName,
+                                        project.hasUnsavedChanges());
+            if (bottomPanel != nullptr)
+                bottomPanel->repaint();
+            if (canvasEditor != nullptr)
+                canvasEditor->repaint();
+            return;
+        }
+
+        projectChanged();
+    }
+
+    void StudioMainComponent::refreshTooltipWindowState()
+    {
+        studioTooltipWindow.setMillisecondsBeforeTipAppears (
+            project.getManifest().playerShowParameterGuidance ? 650 : std::numeric_limits<int>::max() / 4);
     }
 
     void StudioMainComponent::refreshAllPanels()
@@ -343,6 +769,7 @@ namespace patchcraft
         bottomPanel->refresh();
         inspectorPanel->refresh();
         layersPanel->refresh();
+        if (presetsPanel) presetsPanel->refresh();
         assetLibraryPanel->refresh();
         if (canvasToolbar)
         {
@@ -377,18 +804,87 @@ namespace patchcraft
             std::move (parameterId));
     }
 
-    void StudioMainComponent::addLibraryAssetToCanvas (const juce::String& category, const juce::File& file,
-                                                       int frames, bool vertical)
+    void StudioMainComponent::addMixerChannelToCanvas()
     {
-        auto type = ElementType::Knob;
-        if (category.startsWithIgnoreCase ("slider"))
+        if (canvasEditor == nullptr)
+            return;
+
+        const auto& canvas = project.getCanvasSize();
+        canvasEditor->addMixerChannelAt ({ canvas.width / 2 - 58, canvas.height / 2 - 130 });
+    }
+
+    void StudioMainComponent::addDrumMachineControlsToCanvas()
+    {
+        if (canvasEditor == nullptr)
+            return;
+
+        const auto& canvas = project.getCanvasSize();
+        canvasEditor->addDrumMachineControlLayout ({ juce::jmax (24, canvas.width / 2 - 540),
+                                                     juce::jmax (24, canvas.height / 2 - 210) });
+    }
+
+    void StudioMainComponent::addLibraryAssetToCanvas (const juce::String& category, const juce::File& file,
+                                                       int frames, bool vertical,
+                                                       juce::Point<int> canvasPosition)
+    {
+        if (category.equalsIgnoreCase ("templates"))
+        {
+            juce::Component::SafePointer<StudioMainComponent> safe (this);
+            juce::AlertWindow::showAsync (
+                juce::MessageBoxOptions()
+                    .withTitle ("Load Template")
+                    .withMessage ("Loading a template replaces the current instrument design, controls, DSP graph, presets, samples, and artwork.\n\n"
+                                  "It does not merge with the existing template. Save first if you need to keep the current work.")
+                    .withButton ("Load Template")
+                    .withButton ("Cancel")
+                    .withIconType (juce::MessageBoxIconType::QuestionIcon),
+                [safe, file] (int result)
+                {
+                    if (result != 1)
+                        return;
+                    if (auto* component = safe.getComponent())
+                        component->loadFactoryDemo (file);
+                });
+            return;
+        }
+
+        if (category.equalsIgnoreCase ("backgrounds"))
+        {
+            if (! file.existsAsFile())
+                return;
+
+            project.backgroundImageRelative = file.getFullPathName();
+            project.getManifest().backgroundImage = project.backgroundImageRelative;
+            if (auto* background = project.getLayout().find ("background"))
+                background->asset.clear();
+            assets.clear();
+            project.notifyChanged();
+            return;
+        }
+
+        if (category.equalsIgnoreCase ("sounds"))
+        {
+            if (! file.existsAsFile())
+                return;
+
+            juce::Array<juce::File> files;
+            files.add (file);
+            importSampleFiles (files);
+            setBottomTab (BottomPanel::Page::SampleMapper);
+            return;
+        }
+
+        auto type = ElementType::Image;
+        if (category.startsWithIgnoreCase ("knob"))
+            type = ElementType::Knob;
+        else if (category.startsWithIgnoreCase ("slider"))
             type = ElementType::Slider;
         else if (category.startsWithIgnoreCase ("meter"))
             type = ElementType::Meter;
 
         auto& canvas = project.getCanvasSize();
-        int assetWidth = type == ElementType::Slider ? 52 : 112;
-        int assetHeight = type == ElementType::Slider ? 220 : 112;
+        int assetWidth = type == ElementType::Slider ? 52 : (type == ElementType::Image ? 240 : 112);
+        int assetHeight = type == ElementType::Slider ? 220 : (type == ElementType::Image ? 160 : 112);
         if (auto image = juce::ImageFileFormat::loadFrom (file); image.isValid())
         {
             const int safeFrames = juce::jmax (1, frames);
@@ -401,18 +897,34 @@ namespace patchcraft
         }
         project.performLayoutEdit ("Add library asset", [&] (LayoutModel& layout)
         {
+            const int maxX = juce::jmax (0, canvas.width - assetWidth);
+            const int maxY = juce::jmax (0, canvas.height - assetHeight);
+            const bool hasDropPosition = canvasPosition.x >= 0 && canvasPosition.y >= 0;
+
             LayoutElement element;
             element.type = type;
             element.id = layout.generateUniqueId (elementTypeToString (type) + "_");
             element.label = file.getFileNameWithoutExtension();
-            element.x = canvas.width / 2 - assetWidth / 2;
-            element.y = canvas.height / 2 - assetHeight / 2;
+            element.x = hasDropPosition
+                ? juce::jlimit (0, maxX, canvasPosition.x - assetWidth / 2)
+                : canvas.width / 2 - assetWidth / 2;
+            element.y = hasDropPosition
+                ? juce::jlimit (0, maxY, canvasPosition.y - assetHeight / 2)
+                : canvas.height / 2 - assetHeight / 2;
             element.width = assetWidth;
             element.height = assetHeight;
-            element.filmstripAsset = file.getFullPathName();
-            element.filmstripFrames = frames;
-            element.filmstripVertical = vertical;
-            element.parameterId = defaultParameterForLibraryAsset (project, type);
+            if (type == ElementType::Image)
+            {
+                element.asset = file.getFullPathName();
+                element.parameterId = {};
+            }
+            else
+            {
+                element.filmstripAsset = file.getFullPathName();
+                element.filmstripFrames = frames;
+                element.filmstripVertical = vertical;
+                element.parameterId = defaultParameterForLibraryAsset (project, type);
+            }
             layout.add (element);
         });
 
@@ -522,25 +1034,38 @@ namespace patchcraft
         canvasToolbar->setBounds (toolbarStrip);
 
         const bool designTab = (bottomTab == BottomPanel::Page::Design);
+        const bool elementsFloating = isPanelFloating (elementPalette.get());
+        const bool libraryFloating = isPanelFloating (assetLibraryPanel.get());
+        const bool packsFloating = isPanelFloating (expansionLibraryPanel.get());
+        const bool inspectorFloating = isPanelFloating (inspectorViewport.get());
+        const bool layersFloating = isPanelFloating (layersPanel.get());
+        const bool presetsFloating = isPanelFloating (presetsPanel.get());
+        const bool brandLabTab = (bottomTab == BottomPanel::Page::Branding);
+        const bool brandLibraryDocked = brandLabTab && ! libraryFloating;
+        const bool leftLayersDocked = designTab && ! leftPanelCollapsed && showLayersInsteadOfElements;
 
         // Visibility: only Design shows sidebar / canvas / inspector.
         leftCollapseButton.setVisible (designTab);
         rightCollapseButton.setVisible (designTab);
+        leftPopButton.setVisible (designTab && ! leftPanelCollapsed);
+        rightPopButton.setVisible (designTab && ! rightPanelCollapsed);
         leftTabs.setVisible       (designTab && ! leftPanelCollapsed);
-        // Left column (Elements / Library / Expansions). Layers moved out
+        // Left column (Elements / Library / Packs). Layers moved out
         // to the right column.
-        elementPalette->setVisible(designTab && ! leftPanelCollapsed
+        elementPalette->setVisible(elementsFloating || (designTab && ! leftPanelCollapsed
                                    && ! showLibraryInsteadOfElements
-                                   && ! showExpansionsInsteadOfElements);
-        assetLibraryPanel->setVisible (designTab && ! leftPanelCollapsed && showLibraryInsteadOfElements);
-        expansionLibraryPanel->setVisible (designTab && ! leftPanelCollapsed && showExpansionsInsteadOfElements);
+                                   && ! showLayersInsteadOfElements
+                                   && ! showExpansionsInsteadOfElements));
+        assetLibraryPanel->setVisible (libraryFloating || brandLibraryDocked || (designTab && ! leftPanelCollapsed && showLibraryInsteadOfElements));
+        expansionLibraryPanel->setVisible (packsFloating || (designTab && ! leftPanelCollapsed && showExpansionsInsteadOfElements));
 
-        // Right column (Inspector / Layers).
+        // Right column (Inspector / Layers / Presets).
         const bool rightVisible = designTab && ! rightPanelCollapsed;
         rightTabs.setVisible (rightVisible);
-        layersPanel->setVisible (rightVisible && showLayersInRightPanel);
-        canvasEditor->setVisible  (designTab);
-        inspectorPanel->setVisible(designTab && ! rightPanelCollapsed && ! showLayersInRightPanel);
+        layersPanel  ->setVisible (layersFloating || leftLayersDocked || (rightVisible && rightTabIndex == 1 && ! leftLayersDocked));
+        presetsPanel ->setVisible (presetsFloating || (rightVisible && rightTabIndex == 2));
+        canvasEditor ->setVisible (designTab);
+        inspectorViewport->setVisible (inspectorFloating || (rightVisible && rightTabIndex == 0));
 
         if (designTab)
         {
@@ -563,11 +1088,16 @@ namespace patchcraft
                 auto leftCol = r.removeFromLeft (leftPanelWidth);
                 auto leftHeader = leftCol.removeFromTop (32);
                 leftCollapseButton.setBounds (leftHeader.removeFromRight (28).reduced (3));
+                leftPopButton.setBounds (leftHeader.removeFromRight (40).reduced (3));
                 leftTabs.setBounds (leftHeader);
-                elementPalette->setBounds (leftCol);
-                layersPanel->setBounds    (leftCol);
-                assetLibraryPanel->setBounds (leftCol);
-                expansionLibraryPanel->setBounds (leftCol);
+                if (! elementsFloating)
+                    elementPalette->setBounds (leftCol);
+                if (! libraryFloating)
+                    assetLibraryPanel->setBounds (leftCol);
+                if (! packsFloating)
+                    expansionLibraryPanel->setBounds (leftCol);
+                if (! layersFloating)
+                    layersPanel->setBounds (leftCol);
                 leftResizeHandle = r.removeFromLeft (5);
             }
 
@@ -583,21 +1113,37 @@ namespace patchcraft
                 auto rightCol = r.removeFromRight (inspectorPanelWidth);
                 auto rightHeader = rightCol.removeFromTop (32);
                 rightCollapseButton.setBounds (rightHeader.removeFromLeft (28).reduced (3));
+                rightPopButton.setBounds (rightHeader.removeFromLeft (40).reduced (3));
                 rightTabs.setBounds (rightHeader);
-                // Inspector and Layers share the body — only the active one
-                // is visible (rebuildPageVisibility() / our tab handler).
-                inspectorPanel->setBounds (rightCol);
-                layersPanel->setBounds (rightCol);
+                // Inspector, Layers and Presets share the body - only the
+                // active one is visible (handled by the rightTabs onClick
+                // and the visibility logic above).
+                if (! inspectorFloating)
+                {
+                    inspectorViewport->setBounds (rightCol);
+                    inspectorPanel->setSize (juce::jmax (1, rightCol.getWidth() - 10),
+                                             juce::jmax (rightCol.getHeight(), 2200));
+                }
+                if (! layersFloating && ! leftLayersDocked)
+                    layersPanel->setBounds (rightCol);
+                if (! presetsFloating)
+                    presetsPanel->setBounds (rightCol);
                 rightResizeHandle = r.removeFromRight (5);
             }
 
             canvasEditor->setBounds (r);
-            canvasEditor->fit();
+            canvasEditor->refreshZoomForBounds();
         }
         else
         {
             leftResizeHandle = {};
             rightResizeHandle = {};
+            if (brandLibraryDocked)
+            {
+                auto libraryCol = r.removeFromRight (juce::jlimit (260, 340, getWidth() / 5));
+                r.removeFromRight (8);
+                assetLibraryPanel->setBounds (libraryCol);
+            }
             // Non-Design tabs: bottom panel grows to fill the entire workspace.
             bottomPanel->setBounds (r);
         }
@@ -607,7 +1153,7 @@ namespace patchcraft
 
     juce::StringArray StudioMainComponent::getMenuBarNames()
     {
-        return { "File", "Design", "Help" };
+        return { "File", "Design", "Window", "Help" };
     }
 
     juce::PopupMenu StudioMainComponent::getMenuForIndex (int, const juce::String& menuName)
@@ -623,12 +1169,22 @@ namespace patchcraft
             menu.addSeparator();
             menu.addItem (1005, "Import Samples...");
             menu.addItem (1006, "Import Background...");
+#if PATCHCRAFT_ENABLE_AI_STUDIO
+            menu.addItem (1022, "Generate AI Background...");
+#endif
+            menu.addSeparator();
+            menu.addItem (1023, "Launch Center...");
             menu.addSeparator();
             menu.addItem (1007, "Export Pack...");
             menu.addItem (1008, "Send to Expansion Pack...");
+            menu.addItem (1020, "Export VST3 Plugin...");
+            menu.addItem (1021, "Publish Draft to Plugin.club...");
             menu.addSeparator();
             menu.addItem (1009, "Settings...");
             menu.addItem (1010, "Quit");
+            menu.addSeparator();
+            menu.addItem (1012, "Set Current Sound as Default Preset");
+            menu.addItem (1011, "Restore Current Sound to Defaults");
         }
         else if (menuName == "Design")
         {
@@ -636,7 +1192,25 @@ namespace patchcraft
             const bool hasSelection = selectedCount > 0;
             const bool canAlign = selectedCount >= 2;
             const bool canDistribute = selectedCount >= 3;
+            bool canDetachLabels = false;
+            for (const auto& id : selectedElementIds)
+                if (auto* el = project.getLayout().find (id))
+                    if (isRuntimeControlElement (el->type)
+                        && el->labelPosition != "hidden"
+                        && (el->label.isNotEmpty() || el->parameterId.isNotEmpty()))
+                    {
+                        canDetachLabels = true;
+                        break;
+                    }
 
+            menu.addItem (2998, "Undo", project.canUndo());
+            menu.addItem (2999, "Redo", project.canRedo());
+            menu.addSeparator();
+            menu.addItem (3003, "Copy Selection", hasSelection);
+            menu.addItem (3004, "Copy Selection Without Parameters", hasSelection);
+            menu.addItem (3005, "Paste Elements", hasCopiedElements());
+            menu.addItem (3006, "Copy Selection To All Tabs", hasSelection);
+            menu.addSeparator();
             menu.addItem (3001, "Duplicate Selection", hasSelection);
             menu.addItem (3002, "Delete Selection", hasSelection);
             menu.addSeparator();
@@ -688,6 +1262,10 @@ namespace patchcraft
             precisionMenu.addItem (3073, "Snap Selection To Grid", hasSelection);
             menu.addSubMenu ("Transform Precision", precisionMenu);
 
+            juce::PopupMenu labelMenu;
+            labelMenu.addItem (3090, "Detach Labels From Selection", canDetachLabels);
+            menu.addSubMenu ("Labels", labelMenu);
+
             juce::PopupMenu styleMenu;
             styleMenu.addItem (3080, "Copy Style From Primary Selection", hasSelection);
             styleMenu.addItem (3081, "Paste Style To Selection", hasSelection && hasCopiedDesignStyle);
@@ -709,6 +1287,33 @@ namespace patchcraft
             menu.addItem (3040, "Show Grid", true, canvasEditor != nullptr && canvasEditor->isGridVisible());
             menu.addItem (3041, "Show Rulers", true, canvasEditor != nullptr && canvasEditor->areRulersVisible());
         }
+        else if (menuName == "Window")
+        {
+            juce::PopupMenu zoomMenu;
+            zoomMenu.addItem (4100, "Fit Canvas To Window", canvasEditor != nullptr, canvasEditor != nullptr && canvasEditor->isAutoFitEnabled());
+            zoomMenu.addSeparator();
+            const int zooms[] = { 10, 25, 33, 50, 67, 75, 90, 100, 110, 125, 150, 175, 200, 300, 400 };
+            for (int z : zooms)
+            {
+                const bool selected = canvasEditor != nullptr
+                    && ! canvasEditor->isAutoFitEnabled()
+                    && juce::roundToInt (canvasEditor->getZoom() * 100.0f) == z;
+                zoomMenu.addItem (4100 + z, juce::String (z) + " %", canvasEditor != nullptr, selected);
+            }
+            menu.addSubMenu ("Canvas Zoom", zoomMenu);
+            menu.addSeparator();
+            menu.addItem (4001, "Hide All Windows");
+            menu.addItem (4002, "Show Main Windows");
+            menu.addItem (4003, "Dock All Floating Windows", ! floatingPanels.empty());
+            menu.addSeparator();
+            menu.addItem (4004, "Toggle Left Panel", bottomTab == BottomPanel::Page::Design);
+            menu.addItem (4005, "Toggle Right Panel", bottomTab == BottomPanel::Page::Design);
+            menu.addSeparator();
+            menu.addItem (4006, "Go To Workflow");
+            menu.addItem (4007, "Go To Design");
+            menu.addItem (4008, "Go To DSP Builder");
+            menu.addItem (4009, "Go To Launch");
+        }
         else if (menuName == "Help")
         {
             menu.addItem (2001, "DSP Builder Tutorial...");
@@ -729,10 +1334,22 @@ namespace patchcraft
             case 1004: saveProjectAs(); break;
             case 1005: importSamples(); break;
             case 1006: importBackground(); break;
+#if PATCHCRAFT_ENABLE_AI_STUDIO
+            case 1022: generateAiBackground(); break;
+#endif
+            case 1023: setBottomTab (BottomPanel::Page::Launch); break;
             case 1007: exportPack(); break;
             case 1008: sendToExpansionPack(); break;
+            case 1020: exportVstPlugin(); break;
+            case 1021: publishToPluginClub(); break;
             case 1009: openSettings(); break;
             case 1010: juce::JUCEApplication::getInstance()->systemRequestedQuit(); break;
+            case 2998: undo(); break;
+            case 2999: redo(); break;
+            case 3003: copySelectedElements (true); break;
+            case 3004: copySelectedElements (false); break;
+            case 3005: pasteCopiedElements(); break;
+            case 3006: copySelectedToAllTabs(); break;
             case 3001: duplicateSelected(); break;
             case 3002: deleteSelected(); break;
             case 3010: groupSelectedElements(); break;
@@ -765,6 +1382,7 @@ namespace patchcraft
             case 3071: matchSelectedSize ("height"); break;
             case 3072: matchSelectedSize ("both"); break;
             case 3073: snapSelectedToGrid(); break;
+            case 3090: detachLabelsFromSelectedControls(); break;
             case 3080: copySelectedDesignStyle(); break;
             case 3081: pasteDesignStyle(); break;
             case 3082: applyDesignStylePreset ("glass"); break;
@@ -773,12 +1391,37 @@ namespace patchcraft
             case 3085: applyDesignStylePreset ("neon"); break;
             case 3040: toggleCanvasGrid(); break;
             case 3041: toggleCanvasRulers(); break;
+            case 4001: hideAllWindows(); break;
+            case 4002: showMainWindows(); break;
+            case 4003: dockAllFloatingPanels(); break;
+            case 4004:
+                leftPanelCollapsed = ! leftPanelCollapsed;
+                leftCollapseButton.setButtonText (leftPanelCollapsed ? ">" : "<");
+                resized();
+                repaint();
+                break;
+            case 4005:
+                rightPanelCollapsed = ! rightPanelCollapsed;
+                rightCollapseButton.setButtonText (rightPanelCollapsed ? "<" : ">");
+                resized();
+                repaint();
+                break;
+            case 4006: setBottomTab (BottomPanel::Page::Workflow); break;
+            case 4007: setBottomTab (BottomPanel::Page::Design); break;
+            case 4008: setBottomTab (BottomPanel::Page::DSP); break;
+            case 4009: setBottomTab (BottomPanel::Page::Launch); break;
+            case 4100: fitCanvasToWindow(); break;
             case 2001: showDspBuilderTutorial(); break;
             case 2002: toggleHelpTooltips(); break;
             case 2003:
                 setStudioTutorialsEnabled (! getStudioTutorialsEnabled());
                 break;
-            default: break;
+            case 1011: restoreAllPresets(); break;
+            case 1012: setDefaultPreset(); break;
+            default:
+                if (menuItemID > 4100 && menuItemID <= 4500)
+                    setCanvasZoom ((float) (menuItemID - 4100) / 100.0f);
+                break;
         }
     }
 
@@ -868,9 +1511,9 @@ namespace patchcraft
     void StudioMainComponent::openProject()
     {
         auto chooser = std::make_shared<juce::FileChooser> (
-            "Open PatchCraft project",
+            "Open PatchCraft project or demo",
             juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
-            "*.patchcraftproject");
+            "*.patchcraftproject;*.patchcraft");
         chooser->launchAsync (juce::FileBrowserComponent::openMode
                               | juce::FileBrowserComponent::canSelectDirectories,
             [this, chooser] (const juce::FileChooser& fc)
@@ -878,12 +1521,36 @@ namespace patchcraft
                 auto folder = fc.getResult();
                 if (folder == juce::File()) return;
                 juce::String err;
+
+                if (folder.getChildFile ("manifest.json").existsAsFile())
+                {
+                    if (! project.loadRuntimePackAsProject (folder, err))
+                    {
+                        juce::AlertWindow::showAsync (
+                            juce::MessageBoxOptions()
+                                .withTitle ("Open demo/template")
+                                .withMessage (err.isEmpty() ? "Failed to open PatchCraft demo/template." : err)
+                                .withButton ("OK")
+                                .withIconType (juce::MessageBoxIconType::WarningIcon),
+                            nullptr);
+                        return;
+                    }
+                    selectedElementId.clear();
+                    selectedElementIds.clear();
+                    assets.clear();
+                    refreshAllPanels();
+                    setBottomTab (BottomPanel::Page::Design);
+                    return;
+                }
+
                 if (! project.load (folder, err))
                 {
                     juce::AlertWindow::showAsync (
                         juce::MessageBoxOptions()
                             .withTitle ("Open project")
-                            .withMessage (err.isEmpty() ? "Failed to open project." : err)
+                            .withMessage ((err.containsIgnoreCase ("project.json") && folder.getChildFile ("manifest.json").existsAsFile())
+                                ? "This is a PatchCraft runtime pack/demo, not a saved authoring project. It will now be opened as an editable demo."
+                                : (err.isEmpty() ? "Failed to open project." : err))
                             .withButton ("OK")
                             .withIconType (juce::MessageBoxIconType::WarningIcon),
                         nullptr);
@@ -891,6 +1558,28 @@ namespace patchcraft
                 }
                 project.notifyChanged();
             });
+    }
+
+    void StudioMainComponent::loadFactoryDemo (const juce::File& demoPackFolder)
+    {
+        juce::String err;
+        if (! project.loadRuntimePackAsProject (demoPackFolder, err))
+        {
+            juce::AlertWindow::showAsync (
+                juce::MessageBoxOptions()
+                    .withTitle ("Load factory demo")
+                    .withMessage (err.isEmpty() ? "Failed to load factory demo." : err)
+                    .withButton ("OK")
+                    .withIconType (juce::MessageBoxIconType::WarningIcon),
+                nullptr);
+            return;
+        }
+
+        selectedElementId.clear();
+        selectedElementIds.clear();
+        assets.clear();
+        refreshAllPanels();
+        setBottomTab (BottomPanel::Page::Design);
     }
 
     void StudioMainComponent::saveProject()
@@ -1319,76 +2008,96 @@ namespace patchcraft
                               | juce::FileBrowserComponent::canSelectFiles,
             [this, chooser] (const juce::FileChooser& fc)
             {
-                auto files = fc.getResults();
-                int baseNote = 24; // C0 fallback when filenames/audio do not expose pitch.
-                constexpr int zoneSize = 1;
-                bool anyParsedRoot = false;
-                bool anyNamePitch = false;
-                bool anyAudioPitch = false;
-                std::vector<SampleZoneDef> importedZones;
-                importedZones.reserve ((size_t) files.size());
-                for (auto& f : files)
-                {
-                    const int fallbackRoot = juce::jlimit (0, 127, baseNote);
-                    bool usedNamePitch = false;
-                    bool usedAudioPitch = false;
-                    auto z = SampleMap::inferZoneFromFileWithAudio (f,
-                                                                    fallbackRoot,
-                                                                    baseNote,
-                                                                    juce::jmin (127, baseNote + zoneSize - 1),
-                                                                    &usedNamePitch,
-                                                                    &usedAudioPitch);
-                    anyParsedRoot = anyParsedRoot || usedNamePitch || usedAudioPitch;
-                    anyNamePitch = anyNamePitch || usedNamePitch;
-                    anyAudioPitch = anyAudioPitch || usedAudioPitch;
-                    importedZones.push_back (z);
-                    baseNote += zoneSize;
-                    if (baseNote > 108) baseNote = 24;
-                }
-                std::map<int, int> initialRootCounts;
-                for (const auto& zone : importedZones)
-                    ++initialRootCounts[zone.rootNote];
-
-                if (! anyNamePitch
-                    && anyAudioPitch
-                    && initialRootCounts.size() <= 1
-                    && importedZones.size() > 1)
-                {
-                    int fallbackNote = 24;
-                    for (auto& zone : importedZones)
-                    {
-                        zone.rootNote = fallbackNote;
-                        zone.lowNote = fallbackNote;
-                        zone.highNote = fallbackNote;
-                        if (++fallbackNote > 108)
-                            fallbackNote = 24;
-                    }
-                    anyParsedRoot = false;
-                }
-
-                std::map<int, int> rootCounts;
-                for (const auto& zone : importedZones)
-                    ++rootCounts[zone.rootNote];
-                std::map<int, int> rootRoundRobinIndex;
-                for (auto& zone : importedZones)
-                {
-                    const bool stackedRoot = rootCounts[zone.rootNote] > 1;
-                    const bool noVelocityLayer = zone.lowVelocity == 1 && zone.highVelocity == 127;
-                    const bool noRoundRobin = zone.roundRobinGroup == 0 && zone.roundRobinIndex == 0;
-                    if (stackedRoot && noVelocityLayer && noRoundRobin)
-                    {
-                        zone.roundRobinGroup = 1;
-                        zone.roundRobinIndex = ++rootRoundRobinIndex[zone.rootNote];
-                    }
-                    project.getSampleMap().add (zone);
-                }
-                if (anyParsedRoot)
-                    project.getSampleMap().autoMapByRootNotes();
-                if (! files.isEmpty() && project.getEngineType() != "sample")
-                    project.setEngineType ("sample");
-                else
-                    project.notifyChanged();
+                importSampleFiles (fc.getResults());
             });
+    }
+
+    void StudioMainComponent::importSampleFiles (const juce::Array<juce::File>& files,
+                                                 bool switchToMapper,
+                                                 bool spanMappedRoots)
+    {
+        int baseNote = 24; // C0 fallback when filenames/audio do not expose pitch.
+        constexpr int zoneSize = 1;
+        bool anyParsedRoot = false;
+        bool anyNamePitch = false;
+        bool anyAudioPitch = false;
+        std::vector<SampleZoneDef> importedZones;
+        importedZones.reserve ((size_t) files.size());
+        for (auto& f : files)
+        {
+            if (! f.existsAsFile())
+                continue;
+
+            const int fallbackRoot = juce::jlimit (0, 127, baseNote);
+            bool usedNamePitch = false;
+            bool usedAudioPitch = false;
+            auto z = SampleMap::inferZoneFromFileWithAudio (f,
+                                                            fallbackRoot,
+                                                            baseNote,
+                                                            juce::jmin (127, baseNote + zoneSize - 1),
+                                                            &usedNamePitch,
+                                                            &usedAudioPitch);
+            anyParsedRoot = anyParsedRoot || usedNamePitch || usedAudioPitch;
+            anyNamePitch = anyNamePitch || usedNamePitch;
+            anyAudioPitch = anyAudioPitch || usedAudioPitch;
+            importedZones.push_back (z);
+            baseNote += zoneSize;
+            if (baseNote > 108) baseNote = 24;
+        }
+        std::map<int, int> initialRootCounts;
+        for (const auto& zone : importedZones)
+            ++initialRootCounts[zone.rootNote];
+
+        if (! anyNamePitch
+            && anyAudioPitch
+            && initialRootCounts.size() <= 1
+            && importedZones.size() > 1)
+        {
+            int fallbackNote = 24;
+            for (auto& zone : importedZones)
+            {
+                zone.rootNote = fallbackNote;
+                zone.lowNote = fallbackNote;
+                zone.highNote = fallbackNote;
+                if (++fallbackNote > 108)
+                    fallbackNote = 24;
+            }
+            anyParsedRoot = false;
+        }
+
+        std::map<int, int> rootCounts;
+        for (const auto& zone : importedZones)
+            ++rootCounts[zone.rootNote];
+        std::map<int, int> rootRoundRobinIndex;
+        for (auto& zone : importedZones)
+        {
+            const bool stackedRoot = rootCounts[zone.rootNote] > 1;
+            const bool noVelocityLayer = zone.lowVelocity == 1 && zone.highVelocity == 127;
+            const bool noRoundRobin = zone.roundRobinGroup == 0 && zone.roundRobinIndex == 0;
+            if (stackedRoot && noVelocityLayer && noRoundRobin)
+            {
+                zone.roundRobinGroup = 1;
+                zone.roundRobinIndex = ++rootRoundRobinIndex[zone.rootNote];
+            }
+        }
+        if (! importedZones.empty())
+        {
+            project.performSampleMapEdit ("Import samples",
+                [zonesToAdd = importedZones, shouldAutoMap = anyParsedRoot && spanMappedRoots] (SampleMap& map)
+                {
+                    for (const auto& zone : zonesToAdd)
+                        map.add (zone);
+                    if (shouldAutoMap)
+                        map.autoMapByRootNotes();
+                });
+        }
+        if (! importedZones.empty() && project.getEngineType() != "sample")
+            project.setEngineType ("sample");
+        else if (! importedZones.empty())
+            project.notifyChanged();
+
+        if (! importedZones.empty() && switchToMapper)
+            setBottomTab (BottomPanel::Page::SampleMapper);
     }
 
     void StudioMainComponent::importBackground()
@@ -1422,30 +2131,193 @@ namespace patchcraft
             });
     }
 
-    void StudioMainComponent::aiAssist()
+    void StudioMainComponent::generateAiBackground()
     {
-        auto* aw = new juce::AlertWindow ("PatchCraft Copilot",
-            "Local preview-first copilot. It reads project context and proposes guidance without changing your project.",
-            juce::MessageBoxIconType::NoIcon);
-
-        aw->addTextBlock ("Pick a copilot action:");
-        aw->addTextBlock (AiAssistService::providerStatusText());
-        for (auto t : AiAssistService::defaultTasks())
-            aw->addButton (AiAssistService::displayName (t), (int) t);
-        aw->addButton ("Local AI Settings", 9001);
-        aw->addButton ("Close", -1);
-
+        auto* aw = new juce::AlertWindow ("Generate Background",
+                                          "Create background artwork for the current instrument. No baked-in knobs or text.",
+                                          juce::MessageBoxIconType::NoIcon);
+        aw->addTextEditor ("prompt", "", "Direction:");
+        aw->addButton ("Generate", 1);
+        aw->addButton ("Cancel", 0);
         aw->enterModalState (true,
-            juce::ModalCallbackFunction::create ([this, aw] (int which)
+            juce::ModalCallbackFunction::create ([this, aw] (int action)
             {
                 std::unique_ptr<juce::AlertWindow> own (aw);
-                if (which < 0) return;
-                if (which == 9001)
-                {
-                    openSettings();
+                if (action != 1)
                     return;
-                }
-                const auto proposal = ai.run ((AiAssistService::TaskType) which, project);
+
+                auto direction = aw->getTextEditorContents ("prompt").trim();
+                const auto config = AiAssistService::loadCloudIntegrationConfig();
+                const auto& canvas = project.getCanvasSize();
+                auto output = project.getProjectFolder().isDirectory()
+                    ? project.getAssetsFolder().getChildFile ("ai-background.png")
+                    : juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+                        .getChildFile ("PatchCraft")
+                        .getChildFile ("Generated")
+                        .getChildFile ("ai-background-" + juce::String (juce::Time::getMillisecondCounter()) + ".png");
+
+                AiImageService::Request request;
+                request.kind = AiImageService::ImageKind::Background;
+                request.width = canvas.width;
+                request.height = canvas.height;
+                request.outputFile = output;
+                request.prompt = AiImageService::buildPrompt (request.kind, project, direction);
+
+                juce::Component::SafePointer<StudioMainComponent> safeThis (this);
+                std::thread ([safeThis, request, config]
+                {
+                    const auto result = AiImageService::generate (request, config);
+                    juce::MessageManager::callAsync ([safeThis, result]
+                    {
+                        if (safeThis == nullptr)
+                            return;
+
+                        if (result.success)
+                        {
+                            auto& project = safeThis->project;
+                            if (project.getProjectFolder().isDirectory()
+                                && result.outputFile.isAChildOf (project.getProjectFolder()))
+                                project.backgroundImageRelative = result.outputFile.getRelativePathFrom (project.getProjectFolder()).replaceCharacter ('\\', '/');
+                            else
+                                project.backgroundImageRelative = result.outputFile.getFullPathName();
+
+                            project.getManifest().backgroundImage = project.backgroundImageRelative;
+                            if (auto* background = project.getLayout().find ("background"))
+                                background->asset.clear();
+                            safeThis->assets.clear();
+                            project.markDirty();
+                            project.notifyChanged();
+                        }
+
+                        juce::AlertWindow::showAsync (
+                            juce::MessageBoxOptions()
+                                .withTitle (result.success ? "Background Generated" : "Background Generation Failed")
+                                .withMessage (result.message + (result.outputFile != juce::File()
+                                    ? "\n\n" + result.outputFile.getFullPathName() : juce::String()))
+                                .withButton ("OK")
+                                .withIconType (result.success ? juce::MessageBoxIconType::InfoIcon
+                                                              : juce::MessageBoxIconType::WarningIcon),
+                            nullptr);
+                    });
+                }).detach();
+            }), true);
+    }
+
+    void StudioMainComponent::generateAiImageAsset()
+    {
+        auto* aw = new juce::AlertWindow ("Generate Image Asset",
+                                          "Create a reusable transparent image asset and place it on the Design canvas.",
+                                          juce::MessageBoxIconType::NoIcon);
+        aw->addTextEditor ("prompt", "", "Direction:");
+        aw->addButton ("Generate", 1);
+        aw->addButton ("Cancel", 0);
+        aw->enterModalState (true,
+            juce::ModalCallbackFunction::create ([this, aw] (int action)
+            {
+                std::unique_ptr<juce::AlertWindow> own (aw);
+                if (action != 1)
+                    return;
+
+                const auto direction = aw->getTextEditorContents ("prompt").trim();
+                const auto config = AiAssistService::loadCloudIntegrationConfig();
+                auto output = project.getProjectFolder().isDirectory()
+                    ? project.getAssetsFolder().getChildFile ("images").getChildFile ("ai-asset-" + juce::String (juce::Time::getMillisecondCounter()) + ".png")
+                    : juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+                        .getChildFile ("PatchCraft")
+                        .getChildFile ("Generated")
+                        .getChildFile ("ai-asset-" + juce::String (juce::Time::getMillisecondCounter()) + ".png");
+
+                AiImageService::Request request;
+                request.kind = AiImageService::ImageKind::Asset;
+                request.width = 512;
+                request.height = 512;
+                request.transparent = true;
+                request.outputFile = output;
+                request.prompt = AiImageService::buildPrompt (request.kind, project, direction);
+
+                juce::Component::SafePointer<StudioMainComponent> safeThis (this);
+                std::thread ([safeThis, request, config]
+                {
+                    const auto result = AiImageService::generate (request, config);
+                    juce::MessageManager::callAsync ([safeThis, result]
+                    {
+                        if (safeThis == nullptr)
+                            return;
+
+                        if (result.success)
+                        {
+                            auto& project = safeThis->project;
+                            const auto& canvas = project.getCanvasSize();
+                            project.performLayoutEdit ("Add generated image asset", [&] (LayoutModel& layout)
+                            {
+                                LayoutElement element;
+                                element.type = ElementType::Image;
+                                element.id = layout.generateUniqueId ("image_");
+                                element.label = result.outputFile.getFileNameWithoutExtension();
+                                element.asset = project.getProjectFolder().isDirectory()
+                                    && result.outputFile.isAChildOf (project.getProjectFolder())
+                                        ? result.outputFile.getRelativePathFrom (project.getProjectFolder()).replaceCharacter ('\\', '/')
+                                        : result.outputFile.getFullPathName();
+                                element.x = canvas.width / 2 - 128;
+                                element.y = canvas.height / 2 - 128;
+                                element.width = 256;
+                                element.height = 256;
+                                layout.add (element);
+                            });
+                            if (! project.getLayout().getAll().empty())
+                                safeThis->setSelectedElementId (project.getLayout().getAll().back().id);
+                            safeThis->assets.clear();
+                            project.notifyChanged();
+                        }
+
+                        juce::AlertWindow::showAsync (
+                            juce::MessageBoxOptions()
+                                .withTitle (result.success ? "Image Asset Generated" : "Image Generation Failed")
+                                .withMessage (result.message + (result.outputFile != juce::File()
+                                    ? "\n\n" + result.outputFile.getFullPathName() : juce::String()))
+                                .withButton ("OK")
+                                .withIconType (result.success ? juce::MessageBoxIconType::InfoIcon
+                                                              : juce::MessageBoxIconType::WarningIcon),
+                            nullptr);
+                    });
+                }).detach();
+            }), true);
+    }
+
+    void StudioMainComponent::aiAssist()
+    {
+        juce::Component::SafePointer<StudioMainComponent> safeThis (this);
+        auto* content = new CopilotDialogContent();
+
+        content->onSettings = [safeThis]
+        {
+            if (auto* component = safeThis.getComponent())
+                component->openSettings();
+        };
+
+        content->onGenerateBackground = [safeThis]
+        {
+            if (auto* component = safeThis.getComponent())
+                component->generateAiBackground();
+        };
+
+        content->onGenerateAsset = [safeThis]
+        {
+            if (auto* component = safeThis.getComponent())
+                component->generateAiImageAsset();
+        };
+
+        content->onPublish = [safeThis]
+        {
+            if (auto* component = safeThis.getComponent())
+                component->publishToPluginClub();
+        };
+
+        content->onTask = [safeThis] (AiAssistService::TaskType task)
+        {
+            if (auto* component = safeThis.getComponent())
+            {
+                const auto proposal = component->ai.run (task, component->project);
 
                 auto* result = new juce::AlertWindow (
                     proposal.title,
@@ -1469,7 +2341,20 @@ namespace patchcraft
                             juce::SystemClipboard::copyTextToClipboard (text);
                         std::unique_ptr<juce::AlertWindow> r (result);
                     }), true);
-            }), true);
+            }
+        };
+
+        juce::DialogWindow::LaunchOptions options;
+        options.dialogTitle = "PatchCraft Copilot";
+        options.dialogBackgroundColour = PatchCraftLookAndFeel::bg();
+        options.escapeKeyTriggersCloseButton = true;
+        options.useNativeTitleBar = true;
+        options.resizable = true;
+        options.useBottomRightCornerResizer = true;
+        options.componentToCentreAround = this;
+        options.content.setOwned (content);
+        if (auto* window = options.launchAsync())
+            window->setResizeLimits (640, 500, 1180, 900);
     }
 
     void StudioMainComponent::deleteSelected()
@@ -1543,6 +2428,172 @@ namespace patchcraft
         });
         if (! newIds.isEmpty())
             setSelectedElementIds (newIds);
+    }
+
+    void StudioMainComponent::copySelectedElements (bool includeParameters)
+    {
+        copiedLayoutElements.clear();
+        copiedLayoutIncludesParameters = includeParameters;
+
+        for (const auto& id : selectedElementIds)
+        {
+            if (auto* el = project.getLayout().find (id))
+            {
+                auto copy = *el;
+                if (! includeParameters)
+                {
+                    copy.parameterId.clear();
+                    copy.valueFormat = "Auto";
+                    copy.mixerVolumeParams.clear();
+                    copy.mixerPanParams.clear();
+                    copy.mixerMuteParams.clear();
+                    copy.mixerSoloParams.clear();
+                }
+                copiedLayoutElements.push_back (std::move (copy));
+            }
+        }
+
+        if (inspectorPanel != nullptr)
+            inspectorPanel->refresh();
+    }
+
+    void StudioMainComponent::pasteCopiedElements()
+    {
+        if (copiedLayoutElements.empty())
+            return;
+
+        juce::StringArray newIds;
+        project.performLayoutEdit ("Paste elements", [&] (LayoutModel& m)
+        {
+            for (auto copy : copiedLayoutElements)
+            {
+                copy.id.clear();
+                copy.x += 16;
+                copy.y += 16;
+                auto& added = m.add (copy);
+                newIds.add (added.id);
+            }
+        });
+
+        if (! newIds.isEmpty())
+            setSelectedElementIds (newIds);
+        refreshAllPanels();
+    }
+
+    void StudioMainComponent::copySelectedToAllTabs()
+    {
+        const auto ids = selectedElementIds;
+        if (ids.isEmpty())
+            return;
+
+        struct Fanout
+        {
+            juce::String sourceId;
+            LayoutElement source;
+            juce::StringArray targetGroups;
+        };
+
+        std::vector<Fanout> fanouts;
+        const auto& elements = project.getLayout().getAll();
+        for (const auto& id : ids)
+        {
+            const auto* source = project.getLayout().find (id);
+            if (source == nullptr || source->locked)
+                continue;
+
+            for (const auto& candidate : elements)
+            {
+                if (candidate.type != ElementType::TabPanel || candidate.tabs.isEmpty())
+                    continue;
+
+                juce::StringArray groups;
+                for (const auto& tab : candidate.tabs)
+                    groups.addIfNotAlreadyThere (studioScopedTabGroupId (candidate, tab));
+
+                if (! groups.contains (source->groupId))
+                    continue;
+
+                Fanout fanout;
+                fanout.sourceId = id;
+                fanout.source = *source;
+                for (const auto& group : groups)
+                    if (group != source->groupId)
+                        fanout.targetGroups.addIfNotAlreadyThere (group);
+
+                if (! fanout.targetGroups.isEmpty())
+                    fanouts.push_back (std::move (fanout));
+                break;
+            }
+        }
+
+        if (fanouts.empty())
+            return;
+
+        juce::StringArray newIds;
+        project.performLayoutEdit ("Copy selection to all tabs", [&] (LayoutModel& m)
+        {
+            for (const auto& fanout : fanouts)
+            {
+                juce::String linkedGroupId;
+                if (copySelectionToTabsAsReference)
+                {
+                    linkedGroupId = fanout.source.linkedCopyGroupId;
+                    if (linkedGroupId.isEmpty())
+                        linkedGroupId = "linked_tabs_" + juce::Uuid().toString();
+
+                    if (auto* source = m.find (fanout.sourceId))
+                        source->linkedCopyGroupId = linkedGroupId;
+                }
+
+                for (const auto& group : fanout.targetGroups)
+                {
+                    auto copy = fanout.source;
+                    copy.id.clear();
+                    copy.groupId = group;
+                    copy.linkedCopyGroupId = linkedGroupId;
+
+                    if (copy.containerId.isNotEmpty())
+                    {
+                        if (auto* parent = m.find (copy.containerId))
+                        {
+                            if (parent->groupId.isNotEmpty() && parent->groupId != group)
+                                copy.containerId.clear();
+                        }
+                    }
+
+                    auto& added = m.add (copy);
+                    newIds.add (added.id);
+                }
+            }
+        });
+
+        if (! newIds.isEmpty())
+            setSelectedElementIds (newIds);
+        refreshAllPanels();
+    }
+
+    void StudioMainComponent::propagateLinkedElementChange (const juce::String& sourceId)
+    {
+        auto* source = project.getLayout().find (sourceId);
+        if (source == nullptr || source->linkedCopyGroupId.isEmpty())
+            return;
+
+        const auto linkedGroupId = source->linkedCopyGroupId;
+        auto& elements = project.getLayout().getAll();
+        for (auto& target : elements)
+        {
+            if (target.id == source->id || target.linkedCopyGroupId != linkedGroupId)
+                continue;
+
+            const auto keepId = target.id;
+            const auto keepGroupId = target.groupId;
+            const auto keepContainerId = target.containerId;
+            target = *source;
+            target.id = keepId;
+            target.groupId = keepGroupId;
+            target.containerId = keepContainerId;
+            target.linkedCopyGroupId = linkedGroupId;
+        }
     }
 
     void StudioMainComponent::groupSelectedElements()
@@ -1659,6 +2710,24 @@ namespace patchcraft
         if (canvasEditor == nullptr) return;
         canvasEditor->setRulersVisible (! canvasEditor->areRulersVisible());
         resized();
+        menuBar.repaint();
+    }
+
+    void StudioMainComponent::setCanvasZoom (float zoomFactor)
+    {
+        if (canvasEditor == nullptr) return;
+        canvasEditor->setZoom (zoomFactor);
+        if (canvasToolbar != nullptr)
+            canvasToolbar->refresh();
+        menuBar.repaint();
+    }
+
+    void StudioMainComponent::fitCanvasToWindow()
+    {
+        if (canvasEditor == nullptr) return;
+        canvasEditor->fit();
+        if (canvasToolbar != nullptr)
+            canvasToolbar->refresh();
         menuBar.repaint();
     }
 
@@ -1861,6 +2930,87 @@ namespace patchcraft
                 if (auto* el = m.find (id); el != nullptr)
                     el->locked = locked;
         });
+        refreshAllPanels();
+    }
+
+    void StudioMainComponent::detachLabelsFromSelectedControls()
+    {
+        const auto ids = selectedElementIds;
+        if (ids.isEmpty()) return;
+
+        juce::StringArray newLabelIds;
+        project.performLayoutEdit ("Detach control labels", [&] (LayoutModel& m)
+        {
+            for (const auto& id : ids)
+            {
+                auto* el = m.find (id);
+                if (el == nullptr || el->locked || ! isRuntimeControlElement (el->type))
+                    continue;
+
+                const auto text = el->label.isNotEmpty() ? el->label : el->parameterId;
+                if (text.isEmpty() || el->labelPosition == "hidden")
+                    continue;
+
+                const float fontSize = el->labelSize > 0.0f
+                    ? el->labelSize
+                    : juce::jmax (10.0f, (float) el->height * 0.13f);
+                const int labelHeight = juce::jmax (18, juce::roundToInt (fontSize + 8.0f));
+                const int labelWidth = juce::jmax (el->width, juce::roundToInt (text.length() * fontSize * 0.72f) + 24);
+
+                int labelX = el->x + el->width / 2 - labelWidth / 2 + juce::roundToInt (el->labelOffsetX);
+                int labelY = el->y + el->height + 4 + juce::roundToInt (el->labelSpacing + el->labelOffsetY);
+
+                if (el->labelPosition == "top")
+                {
+                    labelY = el->y - labelHeight - 4 + juce::roundToInt (el->labelOffsetY);
+                }
+                else if (el->labelPosition == "left")
+                {
+                    labelX = el->x - labelWidth - 8 + juce::roundToInt (el->labelOffsetX - el->labelSpacing);
+                    labelY = el->y + el->height / 2 - labelHeight / 2 + juce::roundToInt (el->labelOffsetY);
+                }
+                else if (el->labelPosition == "right")
+                {
+                    labelX = el->x + el->width + 8 + juce::roundToInt (el->labelOffsetX + el->labelSpacing);
+                    labelY = el->y + el->height / 2 - labelHeight / 2 + juce::roundToInt (el->labelOffsetY);
+                }
+                else
+                {
+                    labelY = el->y + juce::roundToInt ((float) el->height * 0.65f)
+                           + juce::roundToInt (el->labelSpacing + el->labelOffsetY);
+                }
+
+                LayoutElement label;
+                label.type = ElementType::Label;
+                label.id.clear();
+                label.x = labelX;
+                label.y = labelY;
+                label.width = labelWidth;
+                label.height = labelHeight;
+                label.label = text;
+                label.style = el->style;
+                label.textColour = el->textColour;
+                label.accentColour = el->accentColour;
+                label.backgroundColour = juce::Colours::transparentBlack;
+                label.borderColour = juce::Colours::transparentBlack;
+                label.labelSize = fontSize;
+                label.groupId = el->groupId;
+                label.containerId = el->containerId;
+                label.visible = el->visible;
+                label.locked = false;
+
+                auto& added = m.add (label);
+                newLabelIds.add (added.id);
+
+                el->labelPosition = "hidden";
+                el->labelOffsetX = 0.0f;
+                el->labelOffsetY = 0.0f;
+                el->labelSpacing = 0.0f;
+            }
+        });
+
+        if (! newLabelIds.isEmpty())
+            setSelectedElementIds (newLabelIds);
         refreshAllPanels();
     }
 
@@ -2091,6 +3241,47 @@ namespace patchcraft
         return false;
     }
 
+    void StudioMainComponent::dockAllFloatingPanels()
+    {
+        for (auto& entry : floatingPanels)
+        {
+            if (entry.panel != nullptr && entry.originalParent != nullptr)
+            {
+                entry.originalParent->addAndMakeVisible (entry.panel);
+                entry.originalParent->resized();
+            }
+            entry.window.reset();
+        }
+
+        floatingPanels.clear();
+        resized();
+        repaint();
+        menuBar.repaint();
+    }
+
+    void StudioMainComponent::hideAllWindows()
+    {
+        dockAllFloatingPanels();
+        leftPanelCollapsed = true;
+        rightPanelCollapsed = true;
+        leftCollapseButton.setButtonText (">");
+        rightCollapseButton.setButtonText ("<");
+        resized();
+        repaint();
+        menuBar.repaint();
+    }
+
+    void StudioMainComponent::showMainWindows()
+    {
+        leftPanelCollapsed = false;
+        rightPanelCollapsed = false;
+        leftCollapseButton.setButtonText ("<");
+        rightCollapseButton.setButtonText (">");
+        resized();
+        repaint();
+        menuBar.repaint();
+    }
+
     void StudioMainComponent::togglePanelFloat (juce::Component* panel, juce::String title)
     {
         if (panel == nullptr) return;
@@ -2117,6 +3308,7 @@ namespace patchcraft
 
         // Not floating: stash original parent, open a window with the panel
         // as content. Closing the window re-docks via the lambda above.
+        panel->setVisible (true);
         auto* originalParent = panel->getParentComponent();
         FloatingEntry entry;
         entry.panel = panel;
@@ -2137,6 +3329,8 @@ namespace patchcraft
         // Host now has a hole where the panel was — re-flow.
         if (originalParent != nullptr)
             originalParent->resized();
+        panel->setVisible (true);
+        panel->resized();
         resized();
         repaint();
     }
@@ -2252,6 +3446,8 @@ namespace patchcraft
         if (showSampleExportValidationIfBlocked (*this, project, "Export Pack"))
             return;
 
+        const int repairedPresetValues = removeStalePresetValuesForExport (project);
+
         auto chooser = std::make_shared<juce::FileChooser> (
             "Export PatchCraft pack",
             juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
@@ -2259,7 +3455,7 @@ namespace patchcraft
             "");
         chooser->launchAsync (juce::FileBrowserComponent::saveMode
                               | juce::FileBrowserComponent::canSelectDirectories,
-            [this, chooser] (const juce::FileChooser& fc)
+            [this, chooser, repairedPresetValues] (const juce::FileChooser& fc)
             {
                 auto folder = fc.getResult();
                 if (folder == juce::File()) return;
@@ -2267,6 +3463,11 @@ namespace patchcraft
                 PatchCraftPackWriter writer;
                 juce::String err;
                 const auto warnings = validationWarningSummary (project);
+                const auto repairNote = repairedPresetValues > 0
+                    ? ("\n\nCleaned up " + juce::String (repairedPresetValues)
+                       + " stale preset value" + (repairedPresetValues == 1 ? "" : "s")
+                       + " that referenced removed parameters.")
+                    : juce::String();
                 if (! writer.write (project, folder, err))
                 {
                     juce::AlertWindow::showAsync (
@@ -2281,8 +3482,9 @@ namespace patchcraft
 
                 juce::AlertWindow::showAsync (
                     juce::MessageBoxOptions()
-                        .withTitle ("Export Pack")
-                        .withMessage ("Exported to:\n" + folder.getFullPathName() + warnings)
+                        .withTitle (warnings.isNotEmpty() ? "Export Pack Complete - Review Warnings"
+                                                          : "Export Pack Complete")
+                        .withMessage ("Exported successfully to:\n" + folder.getFullPathName() + repairNote + warnings)
                         .withButton ("OK")
                         .withIconType (warnings.isNotEmpty() ? juce::MessageBoxIconType::WarningIcon
                                                              : juce::MessageBoxIconType::InfoIcon),
@@ -2290,4 +3492,334 @@ namespace patchcraft
             });
     }
 
-} // namespace patchcraft
+    void StudioMainComponent::addArpBlock()
+    {
+        // Switch the bottom workspace to DSP and ask the panel to drop in
+        // an arpeggiator block. setBottomTab handles the page transition
+        // (and its tutorial / sidebar bookkeeping); BottomPanel::addArpBlock
+        // forwards to DspPage::addArpBlock to do the actual graph mutation.
+        setBottomTab (BottomPanel::Page::DSP);
+        if (bottomPanel) bottomPanel->addArpBlock();
+    }
+
+    void StudioMainComponent::exportVstPlugin()
+    {
+        // Sample-health gating only applies to sampler projects. Synth and
+        // FX engines export fine without any zones - their sound comes
+        // from the DSP graph, not from samples - so we run the validator
+        // only when the project's engine is the sampler.
+        if (project.getEngineType() == "sample"
+            && showSampleExportValidationIfBlocked (*this, project, "Export VST3 Plugin"))
+            return;
+
+        VstExportModule::showExportDialog (this, project);
+    }
+
+    void StudioMainComponent::publishToPluginClub()
+    {
+        if (showSampleExportValidationIfBlocked (*this, project, "Publish Draft to Plugin.club"))
+            return;
+
+        const auto config = AiAssistService::loadCloudIntegrationConfig();
+        const auto endpoint = PluginClubPublisher::normaliseSellerImportEndpoint (
+            config.pluginClubEndpoint.trim().isNotEmpty()
+                ? config.pluginClubEndpoint
+                : juce::String ("https://plugin.club/functions/sellerImport"));
+        const bool hasApiKey = config.pluginClubApiKey.trim().isNotEmpty();
+        const bool canPushOnline = endpoint.isNotEmpty() && hasApiKey;
+        const bool vstExpansionInstalled = VstExportModule::isVstExpansionInstalled();
+
+        auto* window = new juce::AlertWindow ("Publish Draft to Plugin.club",
+            "Choose the artifact to stage. If the seller API key is configured, PatchCraft will also push it as a Plugin.club draft.",
+            juce::MessageBoxIconType::NoIcon);
+        window->addTextBlock ("Endpoint: " + (endpoint.isNotEmpty() ? endpoint : juce::String ("not configured"))
+            + "\nSeller API key: " + (hasApiKey ? "ready" : "missing - package will be prepared locally")
+            + "\nLicense: " + (project.getManifest().licenseRequired ? "required" : "not required")
+            + "\nMode: " + (canPushOnline ? "stage + publish draft" : "stage local package only")
+            + "\nVST Expansion: " + (vstExpansionInstalled ? "installed" : "not installed - VST3 publishing locked"));
+
+        juce::StringArray artifactChoices { "PatchCraft Instrument Pack" };
+        if (vstExpansionInstalled)
+            artifactChoices.addArray ({ "Standalone VST3 Plugin", "Pack + Standalone VST3" });
+        window->addComboBox ("artifact", artifactChoices,
+                             "Artifact:");
+        if (auto* box = window->getComboBoxComponent ("artifact"))
+            box->setSelectedItemIndex (0, juce::dontSendNotification);
+        window->addButton (canPushOnline ? "Publish Draft" : "Prepare Package", 1);
+        window->addButton ("Settings", 2);
+        window->addButton ("Cancel", 0);
+        window->enterModalState (true,
+            juce::ModalCallbackFunction::create ([this, window] (int result)
+            {
+                std::unique_ptr<juce::AlertWindow> owned (window);
+                if (result == 2)
+                {
+                    openSettings();
+                    return;
+                }
+                if (result != 1)
+                    return;
+
+                int choice = 1;
+                if (auto* box = owned->getComboBoxComponent ("artifact"))
+                    choice = box->getSelectedItemIndex() + 1;
+                publishToPluginClubWithArtifactChoice (choice);
+            }), true);
+    }
+
+    void StudioMainComponent::publishToPluginClubWithArtifactChoice (int artifactChoice)
+    {
+        if (artifactChoice != 1 && ! VstExportModule::isVstExpansionInstalled())
+        {
+            juce::AlertWindow::showAsync (
+                juce::MessageBoxOptions()
+                    .withTitle ("VST Expansion Required")
+                    .withMessage (VstExportModule::vstExpansionInstallMessage())
+                    .withIconType (juce::MessageBoxIconType::InfoIcon)
+                    .withButton ("OK"),
+                nullptr);
+            return;
+        }
+
+        const auto config = AiAssistService::loadCloudIntegrationConfig();
+        auto options = PluginClubPublisher::optionsFromCloudConfig (config);
+
+        if (project.getManifest().licenseRequired || config.licenseEndpoint.isNotEmpty())
+        {
+            auto& manifest = project.getManifest();
+            if (manifest.licenseServerUrl.isEmpty())
+                manifest.licenseServerUrl = config.licenseEndpoint;
+            if (manifest.licensePublicKey.isEmpty())
+                manifest.licensePublicKey = config.licensePublicKey;
+            if (manifest.licenseProductId.isEmpty())
+                manifest.licenseProductId = LicenseValidator::hashInstrumentId (manifest.instrumentName,
+                                                                                manifest.creator);
+            project.markDirty();
+        }
+
+        juce::Component::SafePointer<StudioMainComponent> safeThis (this);
+        std::thread ([safeThis, options, artifactChoice]
+        {
+            if (safeThis == nullptr)
+                return;
+
+            std::vector<PluginClubPublisher::PublishResult> results;
+
+            auto publishPack = [&]
+            {
+                results.push_back (PluginClubPublisher::publishDraft (safeThis->project, options));
+            };
+
+            auto publishVst3 = [&]
+            {
+                const auto& manifest = safeThis->project.getManifest();
+                const auto pluginName = manifest.instrumentName.trim().isNotEmpty()
+                    ? manifest.instrumentName.trim()
+                    : juce::String ("PatchCraft Plugin");
+
+                VstExportModule::ExportOptions exportOptions;
+                exportOptions.pluginName = pluginName;
+                exportOptions.fileSafeName = safePublishFileStem (pluginName);
+                exportOptions.manufacturerName = manifest.creator.trim().isNotEmpty()
+                    ? manifest.creator.trim()
+                    : juce::String ("PatchCraft");
+                exportOptions.version = manifest.version.trim().isNotEmpty()
+                    ? manifest.version.trim()
+                    : juce::String ("1.0.0");
+                exportOptions.outputFolder = options.stagingRoot
+                    .getChildFile ("VST3Exports")
+                    .getChildFile (exportOptions.fileSafeName + "-" + juce::String (juce::Time::getCurrentTime().toMilliseconds()));
+                exportOptions.installToSystemVst3 = false;
+
+                const auto exportResult = VstExportModule::exportPlugin (safeThis->project, exportOptions);
+                if (! exportResult.success)
+                {
+                    PluginClubPublisher::PublishResult failed;
+                    failed.artifactKind = PluginClubPublisher::ArtifactKind::StandaloneVst3Plugin;
+                    failed.message = "VST3 export failed before Plugin.club upload:\n" + exportResult.message;
+                    results.push_back (failed);
+                    return;
+                }
+
+                PluginClubPublisher::PublishArtifact artifact;
+                artifact.kind = PluginClubPublisher::ArtifactKind::StandaloneVst3Plugin;
+                artifact.title = pluginName;
+                artifact.description = manifest.description.trim().isNotEmpty()
+                    ? manifest.description.trim()
+                    : juce::String ("Standalone VST3 plugin exported from PatchCraft Studio.");
+                artifact.creator = exportOptions.manufacturerName;
+                artifact.category = manifest.category;
+                artifact.version = exportOptions.version;
+                artifact.status = "draft";
+                artifact.tags = manifest.tags;
+                artifact.tags.addIfNotAlreadyThere ("VST3");
+                artifact.tags.addIfNotAlreadyThere ("PatchCraft");
+                artifact.formats.add ("VST3");
+               #if JUCE_WINDOWS
+                artifact.operatingSystems.add ("Windows");
+               #elif JUCE_MAC
+                artifact.operatingSystems.add ("macOS");
+               #endif
+                artifact.sourcePath = exportResult.bundlePath;
+
+                auto* extra = new juce::DynamicObject();
+                extra->setProperty ("embeddedPack", true);
+                extra->setProperty ("sourceProject", manifest.instrumentName);
+                extra->setProperty ("bundlePath", exportResult.bundlePath.getFullPathName());
+                artifact.extraMetadata = juce::var (extra);
+                results.push_back (PluginClubPublisher::publishArtifact (artifact, options));
+            };
+
+            if (artifactChoice == 1)
+                publishPack();
+            else if (artifactChoice == 2)
+                publishVst3();
+            else
+            {
+                publishPack();
+                publishVst3();
+            }
+
+            juce::MessageManager::callAsync ([safeThis, results, artifactChoice]
+            {
+                if (safeThis == nullptr)
+                    return;
+
+                bool anyUploaded = false;
+                bool allSucceeded = ! results.empty();
+                juce::String message = "Artifact: " + publishChoiceLabel (artifactChoice) + "\n";
+                juce::String firstEditUrl;
+                for (const auto& result : results)
+                {
+                    anyUploaded = anyUploaded || result.uploaded;
+                    allSucceeded = allSucceeded && result.success;
+                    if (firstEditUrl.isEmpty() && result.editUrl.isNotEmpty())
+                        firstEditUrl = result.editUrl;
+                    message += "\n[" + PluginClubPublisher::artifactKindToString (result.artifactKind) + "]\n"
+                             + result.message
+                             + (result.endpointUsed.isNotEmpty() ? "\nEndpoint: " + result.endpointUsed : juce::String())
+                             + "\nArchive: " + result.archiveFile.getFullPathName()
+                             + "\nPayload: " + result.payloadFile.getFullPathName()
+                             + "\n";
+                }
+
+                const auto title = allSucceeded
+                    ? (anyUploaded ? "Plugin.club Draft Published" : "Plugin.club Package Prepared")
+                    : "Plugin.club Publish Failed";
+
+                auto options = juce::MessageBoxOptions()
+                    .withTitle (title)
+                    .withMessage (message)
+                    .withIconType (allSucceeded ? juce::MessageBoxIconType::InfoIcon
+                                                : juce::MessageBoxIconType::WarningIcon);
+
+                if (firstEditUrl.isNotEmpty())
+                    options = options.withButton ("Open Draft")
+                                     .withButton ("Copy Report")
+                                     .withButton ("OK");
+                else
+                    options = options.withButton ("Copy Report")
+                                     .withButton ("OK");
+
+                juce::AlertWindow::showAsync (options,
+                    [firstEditUrl, message] (int result)
+                    {
+                        if (firstEditUrl.isNotEmpty())
+                        {
+                            if (result == 1)
+                                juce::URL (firstEditUrl).launchInDefaultBrowser();
+                            else if (result == 2)
+                                juce::SystemClipboard::copyTextToClipboard (message);
+                        }
+                        else if (result == 1)
+                        {
+                            juce::SystemClipboard::copyTextToClipboard (message);
+                        }
+                    });
+            });
+        }).detach();
+    }
+
+    void StudioMainComponent::restoreAllPresets()
+    {
+        project.resetLiveValuesToDefaults();
+        project.notifyChanged();
+        
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::InfoIcon,
+            "Restore Current Sound",
+            "The current sound has been restored to the parameter defaults.",
+            "OK",
+            nullptr, nullptr);
+    }
+
+    void StudioMainComponent::setDefaultPreset()
+    {
+        auto patchName = project.getManifest().defaultPreset.trim();
+        if (patchName.isEmpty())
+            patchName = project.getManifest().instrumentName.trim().isNotEmpty()
+                ? project.getManifest().instrumentName.trim() + " Default"
+                : juce::String ("Default Preset");
+
+        auto patch = project.captureCurrentPatch (patchName);
+        patch.isDefault = true;
+
+        int patchIndex = -1;
+        auto& patches = project.getPatches();
+        for (int i = 0; i < (int) patches.size(); ++i)
+        {
+            if (patches[(size_t) i].isDefault
+                || patches[(size_t) i].id == patch.id
+                || patches[(size_t) i].name == patch.name)
+            {
+                patchIndex = i;
+                break;
+            }
+        }
+        if (patchIndex >= 0)
+            patches[(size_t) patchIndex] = patch;
+        else
+        {
+            patches.push_back (patch);
+            patchIndex = (int) patches.size() - 1;
+        }
+        for (int i = 0; i < (int) patches.size(); ++i)
+            patches[(size_t) i].isDefault = i == patchIndex;
+
+        auto preset = patch.toPreset();
+        preset.isDefault = true;
+
+        int presetIndex = -1;
+        auto& presets = project.getPresets();
+        for (int i = 0; i < (int) presets.size(); ++i)
+        {
+            if (presets[(size_t) i].isDefault
+                || presets[(size_t) i].patchId == patch.id
+                || presets[(size_t) i].name == preset.name)
+            {
+                presetIndex = i;
+                break;
+            }
+        }
+        if (presetIndex >= 0)
+            presets[(size_t) presetIndex] = preset;
+        else
+        {
+            presets.push_back (preset);
+            presetIndex = (int) presets.size() - 1;
+        }
+        for (int i = 0; i < (int) presets.size(); ++i)
+            presets[(size_t) i].isDefault = i == presetIndex;
+
+        project.getManifest().defaultPreset = preset.name;
+        project.notifyChanged();
+        
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::AlertWindow::InfoIcon,
+            "Set Default Preset",
+            "Current sound has been captured as the default preset and will be restored when this project is reopened or exported.",
+            "OK",
+            nullptr, nullptr);
+    }
+
+    } // namespace patchcraft

@@ -1,11 +1,255 @@
 #include "PatchCraftPackWriter.h"
 #include "PatchCraftProject.h"
 #include "AssetManager.h"
+#include "LicenseValidator.h"
 
+#include <algorithm>
 #include <map>
 
 namespace patchcraft
 {
+    namespace
+    {
+        static bool tryAddRegistryParameter (ParameterModel& parameters,
+                                             const juce::String& parameterId,
+                                             const juce::String& engineId)
+        {
+            if (parameterId.isEmpty() || parameters.contains (parameterId))
+                return true;
+
+            if (parameters.addFromRegistry (parameterId, engineId))
+                return true;
+
+            for (const auto& fallbackEngine : { juce::String ("synth"),
+                                                juce::String ("sample"),
+                                                juce::String ("fx") })
+            {
+                if (fallbackEngine == engineId)
+                    continue;
+                if (parameters.addFromRegistry (parameterId, fallbackEngine))
+                    return true;
+            }
+
+            return false;
+        }
+
+        static bool graphHasBlock (const DspGraph& graph, const juce::String& id)
+        {
+            for (const auto& block : graph.blocks)
+                if (block.id == id)
+                    return true;
+            return false;
+        }
+
+        static void ensureMacroBlockParameters (ParameterModel& parameters,
+                                                const DspGraph& graph)
+        {
+            for (const auto& block : graph.blocks)
+            {
+                if (! block.type.containsIgnoreCase ("macro") || parameters.contains (block.id))
+                    continue;
+
+                ParameterDef def;
+                def.id = block.id;
+                def.name = block.name.isNotEmpty() ? block.name : block.id;
+                def.min = 0.0f;
+                def.max = 1.0f;
+                def.defaultValue = 0.5f;
+                def.category = "Macro";
+                def.section = "mod";
+                def.displayMode = "continuous";
+                def.hostAutomatable = true;
+                def.midiLearnable = true;
+                def.modulatable = true;
+                parameters.add (def);
+            }
+        }
+
+        static juce::String inferredRuntimeParameterForElement (const LayoutElement& element)
+        {
+            const auto id = element.id.toLowerCase();
+            const auto label = element.label.toLowerCase();
+
+            if (id == "modwheel" || id == "mod_wheel" || id == "mod-wheel"
+                || label == "mod" || label.contains ("mod wheel"))
+                return "modWheel";
+
+            if (id == "expression" || label == "expr" || label.contains ("expression"))
+                return "expression";
+
+            if (id == "pitchwheel" || id == "pitch_wheel" || id == "pitch-wheel"
+                || label.contains ("pitch wheel"))
+                return "pitchWheel";
+
+            if (id == "sustain" || id == "sustainpedal" || label.contains ("sustain"))
+                return "sustainPedal";
+
+            return {};
+        }
+
+        static void bindObviousRuntimeControls (LayoutModel& layout)
+        {
+            for (auto& element : layout.getAll())
+            {
+                if (! isRuntimeControlElement (element.type) || element.parameterId.isNotEmpty())
+                    continue;
+
+                const auto inferred = inferredRuntimeParameterForElement (element);
+                if (inferred.isNotEmpty())
+                    element.parameterId = inferred;
+            }
+        }
+
+        static void ensureReferencedParameters (ParameterModel& parameters,
+                                                const LayoutModel& layout,
+                                                const DspGraph& graph,
+                                                const std::vector<Preset>& presets,
+                                                const juce::String& engineId)
+        {
+            ensureMacroBlockParameters (parameters, graph);
+
+            for (const auto& element : layout.getAll())
+                tryAddRegistryParameter (parameters, element.parameterId, engineId);
+
+            for (const auto& block : graph.blocks)
+                tryAddRegistryParameter (parameters, block.targetId, engineId);
+
+            for (const auto& macro : graph.macros)
+            {
+                tryAddRegistryParameter (parameters, macro.macroId, engineId);
+                tryAddRegistryParameter (parameters, macro.targetId, engineId);
+            }
+
+            for (const auto& route : graph.modulation)
+            {
+                if (! graphHasBlock (graph, route.sourceId))
+                    tryAddRegistryParameter (parameters, route.sourceId, engineId);
+                tryAddRegistryParameter (parameters, route.targetId, engineId);
+            }
+
+            for (const auto& lane : graph.automation)
+                tryAddRegistryParameter (parameters, lane.targetId, engineId);
+
+            for (const auto& preset : presets)
+                for (const auto& value : preset.values)
+                    tryAddRegistryParameter (parameters, value.first, engineId);
+        }
+
+        static int prunePresetValuesMissingParameters (std::vector<Preset>& presets,
+                                                       const ParameterModel& parameters)
+        {
+            int removed = 0;
+            for (auto& preset : presets)
+            {
+                for (auto it = preset.values.begin(); it != preset.values.end();)
+                {
+                    if (parameters.find (it->first) == nullptr)
+                    {
+                        it = preset.values.erase (it);
+                        ++removed;
+                    }
+                    else
+                    {
+                        ++it;
+                    }
+                }
+            }
+            return removed;
+        }
+
+        static void pruneInvalidGraphReferences (DspGraph& graph,
+                                                 ParameterModel& parameters,
+                                                 const juce::String& engineId)
+        {
+            ensureMacroBlockParameters (parameters, graph);
+
+            for (auto& block : graph.blocks)
+                if (block.targetId.isNotEmpty()
+                    && ! tryAddRegistryParameter (parameters, block.targetId, engineId)
+                    && parameters.find (block.targetId) == nullptr)
+                    block.targetId.clear();
+
+            graph.macros.erase (std::remove_if (graph.macros.begin(), graph.macros.end(),
+                [&] (const MacroAssignment& macro)
+                {
+                    return (macro.macroId.isNotEmpty()
+                            && ! tryAddRegistryParameter (parameters, macro.macroId, engineId)
+                            && parameters.find (macro.macroId) == nullptr)
+                        || (macro.targetId.isNotEmpty()
+                            && ! tryAddRegistryParameter (parameters, macro.targetId, engineId)
+                            && parameters.find (macro.targetId) == nullptr);
+                }),
+                graph.macros.end());
+
+            graph.modulation.erase (std::remove_if (graph.modulation.begin(), graph.modulation.end(),
+                [&] (const ModRoute& route)
+                {
+                    const bool sourceOk = route.sourceId.isEmpty()
+                        || graphHasBlock (graph, route.sourceId)
+                        || tryAddRegistryParameter (parameters, route.sourceId, engineId)
+                        || parameters.find (route.sourceId) != nullptr;
+
+                    const bool targetOk = route.targetId.isNotEmpty()
+                        && (tryAddRegistryParameter (parameters, route.targetId, engineId)
+                            || parameters.find (route.targetId) != nullptr);
+
+                    return ! sourceOk || ! targetOk;
+                }),
+                graph.modulation.end());
+
+            graph.automation.erase (std::remove_if (graph.automation.begin(), graph.automation.end(),
+                [&] (const AutomationLane& lane)
+                {
+                    return lane.targetId.isEmpty()
+                        || (! tryAddRegistryParameter (parameters, lane.targetId, engineId)
+                            && parameters.find (lane.targetId) == nullptr);
+                }),
+                graph.automation.end());
+
+            auto nodes = graph.buildTypedNodes (engineId);
+            std::map<juce::String, DspNodeKind> nodeKinds;
+            for (const auto& node : nodes)
+                nodeKinds[node.id] = node.kind;
+
+            graph.edges.erase (std::remove_if (graph.edges.begin(), graph.edges.end(),
+                [&] (const DspGraphEdge& edge)
+                {
+                    if (! edge.enabled)
+                        return false;
+
+                    const auto source = nodeKinds.find (edge.sourceNodeId);
+                    const auto target = nodeKinds.find (edge.targetNodeId);
+                    if (edge.sourceNodeId.isEmpty() || edge.targetNodeId.isEmpty()
+                        || edge.sourceNodeId == edge.targetNodeId
+                        || source == nodeKinds.end()
+                        || target == nodeKinds.end())
+                        return true;
+
+                    return edge.signalType == DspSignalType::audio
+                        && (source->second == DspNodeKind::modulation
+                            || target->second == DspNodeKind::source);
+                }),
+                graph.edges.end());
+
+            bool routingStillInvalid = false;
+            for (const auto& issue : graph.validateTypedGraph (engineId))
+            {
+                if (issue.severity != "error")
+                    continue;
+
+                if (issue.message.containsIgnoreCase ("edge")
+                    || issue.message.containsIgnoreCase ("reachable"))
+                {
+                    routingStillInvalid = true;
+                    break;
+                }
+            }
+
+            if (routingStillInvalid)
+                graph.edges.clear();
+        }
+    }
+
     static bool writeJson (const juce::File& f, const juce::var& v, juce::String& error)
     {
         auto json = juce::JSON::toString (v, true);
@@ -47,7 +291,14 @@ namespace patchcraft
         assets.getChildFile ("images").createDirectory();
 
         auto manifestForPack = project.getManifest();
+        if (manifestForPack.licenseProductId.isEmpty()
+            && (manifestForPack.licenseRequired || manifestForPack.licenseServerUrl.isNotEmpty()))
+            manifestForPack.licenseProductId = LicenseValidator::hashInstrumentId (manifestForPack.instrumentName,
+                                                                                   manifestForPack.creator);
         auto layoutForPack = project.getLayout();
+        auto parametersForPack = project.getParameters();
+        parametersForPack.ensureRegistryMetadata (manifestForPack.engine);
+        auto dspGraphForPack = project.getDspGraph();
         auto backgroundForPack = project.backgroundImageRelative.isNotEmpty()
             ? project.backgroundImageRelative : manifestForPack.backgroundImage;
         auto exportPatches = project.getPatches();
@@ -264,10 +515,17 @@ namespace patchcraft
         {
             if (e.type == ElementType::Image)
             {
-                if (! copyAssetToPack (e.asset, "assets/images", {}))
+                // Image elements that point at a missing asset (typical of a
+                // freshly-created or never-saved project, or a template that
+                // references assets/hero.png without ever importing one) used
+                // to abort the entire export. Drop the asset reference instead
+                // - the Player renders an empty image gracefully and the user
+                // can re-import later. Background art is handled separately
+                // above with a synthesised default.
+                if (e.asset.isNotEmpty() && ! copyAssetToPack (e.asset, "assets/images", {}))
                 {
-                    error = "Failed to copy image asset: " + e.asset;
-                    return false;
+                    error.clear();
+                    e.asset.clear();
                 }
             }
 
@@ -275,22 +533,37 @@ namespace patchcraft
             {
                 auto sub = e.type == ElementType::Slider ? "assets/sliders"
                          : e.type == ElementType::Meter  ? "assets/meters"
-                                                         : "assets/knobs";
+                                                        : "assets/knobs";
                 if (! copyAssetToPack (e.filmstripAsset, sub, {}))
                 {
-                    error = "Failed to copy filmstrip asset: " + e.filmstripAsset;
-                    return false;
+                    // Same resilience as for image elements: clear the missing
+                    // filmstrip rather than blocking the export.
+                    error.clear();
+                    e.filmstripAsset.clear();
                 }
             }
         }
 
-        const auto validationIssues = project.getParameters().validateReferences (
-            layoutForPack.getAll(), project.getDspGraph(), exportPresets);
+        bindObviousRuntimeControls (layoutForPack);
+        ensureReferencedParameters (parametersForPack, layoutForPack, dspGraphForPack,
+                                    exportPresets, manifestForPack.engine);
+        pruneInvalidGraphReferences (dspGraphForPack, parametersForPack, manifestForPack.engine);
+        for (auto& patch : exportPatches)
+        {
+            const auto patchEngine = patch.engine.isNotEmpty() ? patch.engine : manifestForPack.engine;
+            ensureReferencedParameters (parametersForPack, layoutForPack, patch.dspGraph,
+                                        exportPresets, patchEngine);
+            pruneInvalidGraphReferences (patch.dspGraph, parametersForPack, patchEngine);
+        }
+        prunePresetValuesMissingParameters (exportPresets, parametersForPack);
+
+        const auto validationIssues = parametersForPack.validateReferences (
+            layoutForPack.getAll(), dspGraphForPack, exportPresets);
         juce::StringArray exportErrors;
         for (const auto& issue : validationIssues)
             if (issue.severity == "error")
                 exportErrors.add (issue.toString());
-        for (const auto& issue : project.getDspGraph().validateTypedGraph (project.getManifest().engine))
+        for (const auto& issue : dspGraphForPack.validateTypedGraph (manifestForPack.engine))
             if (issue.severity == "error")
                 exportErrors.add (issue.toString());
 
@@ -385,11 +658,7 @@ namespace patchcraft
                     exportErrors.add ("ERROR: " + expansion.name + " - Expansion references missing asset: " + asset);
         }
 
-        const auto hostSlots = project.getParameters().buildHostParameterSlots();
-        std::map<juce::String, int> parameterSlots;
-        for (const auto& slot : hostSlots)
-            if (! slot.overflow && slot.slotIndex >= 0)
-                parameterSlots[slot.parameterId] = slot.slotIndex;
+        const auto hostSlots = parametersForPack.buildHostParameterSlots();
 
         for (const auto& element : layoutForPack.getAll())
         {
@@ -401,6 +670,8 @@ namespace patchcraft
             {
                 if (element.type == ElementType::Dropdown && element.id == "presets")
                     continue;
+                if (element.action.isNotEmpty())
+                    continue;
 
                 if (element.parameterId.isEmpty())
                 {
@@ -408,16 +679,10 @@ namespace patchcraft
                     continue;
                 }
 
-                const auto* def = project.getParameters().find (element.parameterId);
+                const auto* def = parametersForPack.find (element.parameterId);
                 if (def == nullptr)
-                    continue;
-
-                if (! def->hostAutomatable)
-                    exportErrors.add ("ERROR: " + element.id + " - Parameter '" + element.parameterId
-                        + "' is internal and cannot be exposed as a Player host control.");
-                else if (parameterSlots.find (element.parameterId) == parameterSlots.end())
-                    exportErrors.add ("ERROR: " + element.id + " - Parameter '" + element.parameterId
-                        + "' is outside the Player host parameter slot budget.");
+                    exportErrors.add ("ERROR: " + element.id + " - Runtime control maps to missing parameter '"
+                        + element.parameterId + "'.");
             }
         }
 
@@ -435,49 +700,44 @@ namespace patchcraft
             return false;
         }
 
-        // -- Manifest ----------------------------------------------------------
-        if (! writeJson (packFolder.getChildFile ("manifest.json"),
-                         manifestForPack.toVar(), error))
-            return false;
-
-        // -- Layout ------------------------------------------------------------
-        if (! writeJson (packFolder.getChildFile ("layout.json"),
-                         layoutForPack.toVar (project.getCanvasSize()), error))
-            return false;
-
-        // -- Parameters --------------------------------------------------------
-        if (! writeJson (packFolder.getChildFile ("parameters.json"),
-                         project.getParameters().toVar(), error))
-            return false;
-
-        juce::Array<juce::var> hostSlotArr;
-        int overflowCount = 0;
-        for (const auto& slot : hostSlots)
-        {
-            hostSlotArr.add (slot.toVar());
-            if (slot.overflow)
-                ++overflowCount;
-        }
-        auto* hostMapObj = new juce::DynamicObject();
-        hostMapObj->setProperty ("strategy",
-            "First 128 host-automatable registry parameters are exposed as fixed Player APVTS slots p0-p127; overflow parameters remain internal and cannot drive exported runtime UI controls.");
-        hostMapObj->setProperty ("maxSlots", kPatchCraftHostParameterSlots);
-        hostMapObj->setProperty ("overflowCount", overflowCount);
-        hostMapObj->setProperty ("slots", hostSlotArr);
-        if (! writeJson (packFolder.getChildFile ("hostParameterMap.json"),
-                         juce::var (hostMapObj), error))
-            return false;
-
-        // -- DSP graph ---------------------------------------------------------
-        if (! writeJson (packFolder.getChildFile ("dspGraph.json"),
-                         project.getDspGraph().toVar(), error))
-            return false;
-
-        // -- Mappings (after copying sample files) -----------------------------
-        SampleMap copiedMap;
         juce::StringArray usedSampleNames;
         std::map<juce::String, juce::String> samplePathRewrites;
-        for (auto z : project.getSampleMap().getZones())
+
+        auto safeFileStem = [] (juce::String text)
+        {
+            text = text.trim();
+            if (text.isEmpty())
+                text = "layer";
+            text = text.replaceCharacters (" \\/:*?\"<>|#.", "____________");
+            while (text.contains ("__"))
+                text = text.replace ("__", "_");
+            return text.trimCharactersAtStart ("_").trimCharactersAtEnd ("_");
+        };
+
+        auto resolveSampleFile = [&] (const juce::String& path, const juce::File& mappingBase)
+        {
+            if (path.isEmpty())
+                return juce::File();
+            if (juce::File::isAbsolutePath (path))
+                return juce::File (path);
+            if (mappingBase.isDirectory())
+            {
+                const auto fromMapping = mappingBase.getChildFile (path);
+                if (fromMapping.existsAsFile())
+                    return fromMapping;
+            }
+            if (project.getProjectFolder().isDirectory())
+            {
+                const auto fromProject = project.getProjectFolder().getChildFile (path);
+                if (fromProject.existsAsFile())
+                    return fromProject;
+            }
+            return mappingBase.isDirectory() ? mappingBase.getChildFile (path) : juce::File (path);
+        };
+
+        auto copyZoneSampleToPack = [&] (SampleZoneDef& z,
+                                         const juce::File& mappingBase,
+                                         const juce::String& filePrefix) -> bool
         {
             const auto originalSamplePath = z.samplePath;
             if (z.lowNote < 0 || z.highNote > 127 || z.lowNote > z.highNote
@@ -487,24 +747,21 @@ namespace patchcraft
                 return false;
             }
 
-            juce::File src;
-            if (juce::File::isAbsolutePath (z.samplePath))
-                src = juce::File (z.samplePath);
-            else if (project.getProjectFolder().isDirectory())
-                src = project.getProjectFolder().getChildFile (z.samplePath);
-
+            auto src = resolveSampleFile (z.samplePath, mappingBase);
             if (! src.existsAsFile())
             {
                 error = "Missing sample during pack export: " + z.samplePath;
                 return false;
             }
 
+            const auto prefix = safeFileStem (filePrefix);
             const auto base = src.getFileNameWithoutExtension();
             const auto ext = src.getFileExtension();
-            auto dstName = src.getFileName();
+            auto dstName = (filePrefix.isNotEmpty() ? prefix + "_" : juce::String()) + src.getFileName();
             int suffix = 2;
             while (usedSampleNames.contains (dstName, true))
-                dstName = base + "_" + juce::String (suffix++) + ext;
+                dstName = (filePrefix.isNotEmpty() ? prefix + "_" : juce::String())
+                        + base + "_" + juce::String (suffix++) + ext;
             usedSampleNames.add (dstName);
 
             auto dst = samples.getChildFile (dstName);
@@ -524,6 +781,204 @@ namespace patchcraft
 
             z.samplePath = "samples/" + dst.getFileName();
             samplePathRewrites[originalSamplePath] = z.samplePath;
+            return true;
+        };
+
+        auto resolveProjectJson = [&] (const juce::String& path)
+        {
+            if (path.isEmpty())
+                return juce::File();
+            if (juce::File::isAbsolutePath (path))
+                return juce::File (path);
+            if (project.getProjectFolder().isDirectory())
+                return project.getProjectFolder().getChildFile (path);
+            return juce::File (path);
+        };
+
+        auto exportMultiInstrumentLayers = [&]() -> bool
+        {
+            const bool wantsMulti = manifestForPack.multiInstrumentMode
+                || manifestForPack.engine.equalsIgnoreCase ("multi");
+            if (! wantsMulti)
+                return true;
+
+            auto instruments = packFolder.getChildFile ("instruments");
+            if (! instruments.createDirectory())
+            {
+                error = "Could not create multi-instrument folder: " + instruments.getFullPathName();
+                return false;
+            }
+
+            const int layerCount = juce::jmax (manifestForPack.instrumentIds.size(),
+                                    juce::jmax (manifestForPack.instrumentFiles.size(),
+                                    juce::jmax (manifestForPack.instrumentNames.size(),
+                                               project.getSampleMap().getZones().empty() ? 0 : 1)));
+            if (layerCount <= 0)
+            {
+                error = "Pack export blocked: multi-instrument packs need at least one layer mapping.";
+                return false;
+            }
+
+            juce::StringArray nextIds, nextNames, nextFiles;
+            for (int i = 0; i < layerCount; ++i)
+            {
+                auto layerId = i < manifestForPack.instrumentIds.size()
+                    ? manifestForPack.instrumentIds[i].trim()
+                    : "layer_" + juce::String (i + 1);
+                if (layerId.isEmpty())
+                    layerId = "layer_" + juce::String (i + 1);
+                layerId = safeFileStem (layerId);
+
+                auto layerName = i < manifestForPack.instrumentNames.size()
+                    ? manifestForPack.instrumentNames[i].trim()
+                    : "Layer " + juce::String (i + 1);
+                if (layerName.isEmpty())
+                    layerName = "Layer " + juce::String (i + 1);
+
+                const auto fileRef = i < manifestForPack.instrumentFiles.size()
+                    ? manifestForPack.instrumentFiles[i].trim()
+                    : juce::String();
+                const auto sourceMapFile = resolveProjectJson (fileRef);
+
+                SampleMap layerMap;
+                juce::File mappingBase = project.getProjectFolder();
+                if (sourceMapFile.existsAsFile())
+                {
+                    auto mapVar = juce::JSON::parse (sourceMapFile);
+                    if (! mapVar.isObject())
+                    {
+                        error = "Multi-instrument layer map is not valid JSON: " + sourceMapFile.getFullPathName();
+                        return false;
+                    }
+                    layerMap.fromVar (mapVar);
+                    mappingBase = sourceMapFile.getParentDirectory();
+                }
+                else if (fileRef.isNotEmpty())
+                {
+                    error = "Missing multi-instrument layer map: " + fileRef;
+                    return false;
+                }
+                else if (i == 0 && ! project.getSampleMap().getZones().empty())
+                {
+                    layerMap = project.getSampleMap();
+                }
+                else
+                {
+                    error = "Multi-instrument layer " + layerName + " has no sample map.";
+                    return false;
+                }
+
+                if (layerMap.getZones().empty())
+                {
+                    error = "Multi-instrument layer " + layerName + " has no mapped sample zones.";
+                    return false;
+                }
+
+                SampleMap copiedLayerMap;
+                for (auto zone : layerMap.getZones())
+                {
+                    if (! copyZoneSampleToPack (zone, mappingBase, layerId))
+                        return false;
+                    copiedLayerMap.add (zone);
+                }
+
+                const auto layerFile = instruments.getChildFile (layerId + ".json");
+                if (! writeJson (layerFile, copiedLayerMap.toVar(), error))
+                    return false;
+
+                nextIds.add (layerId);
+                nextNames.add (layerName);
+                nextFiles.add (layerFile.getRelativePathFrom (packFolder).replaceCharacter ('\\', '/'));
+            }
+
+            manifestForPack.engine = "multi";
+            manifestForPack.multiInstrumentMode = true;
+            manifestForPack.instrumentIds = nextIds;
+            manifestForPack.instrumentNames = nextNames;
+            manifestForPack.instrumentFiles = nextFiles;
+            return true;
+        };
+
+        if (! exportMultiInstrumentLayers())
+            return false;
+
+        // -- Manifest ----------------------------------------------------------
+        if (! writeJson (packFolder.getChildFile ("manifest.json"),
+                         manifestForPack.toVar(), error))
+            return false;
+
+        if (manifestForPack.licenseRequired
+            || manifestForPack.licenseServerUrl.isNotEmpty()
+            || manifestForPack.licenseProductId.isNotEmpty())
+        {
+            LicenseValidator::LicenseInfo licenseInfo;
+            licenseInfo.licenseKey = manifestForPack.licenseKey;
+            licenseInfo.instrumentName = manifestForPack.instrumentName;
+            licenseInfo.creator = manifestForPack.creator;
+            licenseInfo.productId = manifestForPack.licenseProductId;
+            licenseInfo.licenseServerUrl = manifestForPack.licenseServerUrl;
+            licenseInfo.policy = manifestForPack.licensePolicy;
+            licenseInfo.trialDays = manifestForPack.trialDays;
+            licenseInfo.isTrial = manifestForPack.isTrial;
+            licenseInfo.expiryDate = manifestForPack.trialExpiryDate;
+            licenseInfo.offlineGraceDays = manifestForPack.licenseOfflineGraceDays;
+            licenseInfo.bindToMachine = manifestForPack.licenseBindToMachine;
+
+            auto* license = new juce::DynamicObject();
+            license->setProperty ("schema", "patchcraft.license.v1");
+            license->setProperty ("required", manifestForPack.licenseRequired);
+            license->setProperty ("productId", manifestForPack.licenseProductId);
+            license->setProperty ("serverUrl", manifestForPack.licenseServerUrl);
+            license->setProperty ("publicKey", manifestForPack.licensePublicKey);
+            license->setProperty ("policy", manifestForPack.licensePolicy);
+            license->setProperty ("trialDays", manifestForPack.trialDays);
+            license->setProperty ("offlineGraceDays", manifestForPack.licenseOfflineGraceDays);
+            license->setProperty ("bindToMachine", manifestForPack.licenseBindToMachine);
+            license->setProperty ("allowTrialConversion", manifestForPack.licenseAllowTrialConversion);
+            license->setProperty ("activationTemplate", LicenseValidator::buildActivationRequest (licenseInfo));
+            if (! writeJson (packFolder.getChildFile ("license.json"), juce::var (license), error))
+                return false;
+        }
+
+        // -- Layout ------------------------------------------------------------
+        if (! writeJson (packFolder.getChildFile ("layout.json"),
+                         layoutForPack.toVar (project.getCanvasSize()), error))
+            return false;
+
+        // -- Parameters --------------------------------------------------------
+        if (! writeJson (packFolder.getChildFile ("parameters.json"),
+                         parametersForPack.toVar(), error))
+            return false;
+
+        juce::Array<juce::var> hostSlotArr;
+        int overflowCount = 0;
+        for (const auto& slot : hostSlots)
+        {
+            hostSlotArr.add (slot.toVar());
+            if (slot.overflow)
+                ++overflowCount;
+        }
+        auto* hostMapObj = new juce::DynamicObject();
+        hostMapObj->setProperty ("strategy",
+            "First 128 host-automatable registry parameters are exposed as fixed Player APVTS slots p0-p127; internal and overflow parameters remain Player-runtime controllable but are not host automation slots.");
+        hostMapObj->setProperty ("maxSlots", kPatchCraftHostParameterSlots);
+        hostMapObj->setProperty ("overflowCount", overflowCount);
+        hostMapObj->setProperty ("slots", hostSlotArr);
+        if (! writeJson (packFolder.getChildFile ("hostParameterMap.json"),
+                         juce::var (hostMapObj), error))
+            return false;
+
+        // -- DSP graph ---------------------------------------------------------
+        if (! writeJson (packFolder.getChildFile ("dspGraph.json"),
+                         dspGraphForPack.toVar(), error))
+            return false;
+
+        // -- Mappings (after copying sample files) -----------------------------
+        SampleMap copiedMap;
+        for (auto z : project.getSampleMap().getZones())
+        {
+            if (! copyZoneSampleToPack (z, project.getProjectFolder(), {}))
+                return false;
             copiedMap.add (z);
         }
         if (! writeJson (packFolder.getChildFile ("mappings.json"),

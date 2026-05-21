@@ -4,6 +4,7 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "PatchCraftProject.h"
 #include "AssetManager.h"
+#include <atomic>
 #include <map>
 
 namespace patchcraft
@@ -31,6 +32,10 @@ namespace patchcraft
 
         void rebuild();
         void syncFromDesignerState (const CanvasEditor&);
+        void setAudioReactiveLevel (float level) noexcept
+        {
+            audioReactiveLevel.store (juce::jlimit (0.0f, 1.0f, level), std::memory_order_relaxed);
+        }
 
         void paint (juce::Graphics&) override;
         void resized() override;
@@ -42,6 +47,12 @@ namespace patchcraft
         // MIDI event callbacks - set these to receive keyboard input
         std::function<void(int note, float velocity)> onNoteOn;
         std::function<void(int note)> onNoteOff;
+        std::function<bool()> isTransportPlaying;
+        std::function<double(int steps)> getSequencerPlaybackPosition01;
+        std::function<void()> onToggleTransport;
+        std::function<bool(int pattern)> onSetDrumActivePattern;
+        std::function<bool(int pattern, int track, int step, bool active,
+                           float velocity, float gate, float probability, int divisions)> onSetDrumPatternCell;
 
     private:
         StudioMainComponent& owner;
@@ -51,6 +62,8 @@ namespace patchcraft
         juce::OwnedArray<juce::Slider> knobs;
         std::vector<juce::String> knobParamIds;
         std::map<juce::String, std::vector<int>> knobIndicesByParam;
+        std::atomic<float> audioReactiveLevel { 0.0f };
+        double lastGranularAdvanceSeconds = 0.0;
 
         juce::Image background;
         juce::Image heroImage;
@@ -59,12 +72,18 @@ namespace patchcraft
         juce::String currentTabGroup { "main" };
         std::map<juce::String, juce::String> activeTabGroupsByPanel;
         int lastPlayedNote = -1;
+        bool drumGridDragActive = false;
+        bool drumGridPaintValue = false;
+        int lastDrumGridPattern = -1;
+        int lastDrumGridTrack = -1;
+        int lastDrumGridStep = -1;
 
         // LiveValueStore::Listener
         void liveValueChanged (const juce::String& parameterId, float newValue) override;
 
         // PatchCraftProject::Listener
         void projectChanged() override;
+        void projectChanged (PatchCraftProject::ChangeScope scope) override;
 
         // Geometry helpers
         struct CanvasMetrics { float scale; juce::Rectangle<int> canvas; };
@@ -86,6 +105,15 @@ namespace patchcraft
         int hitTabIndex (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>) const;
         int hitKeyboardNote (juce::Rectangle<int>, juce::Point<int>) const;
         bool handleXYPadGesture (const juce::MouseEvent&);
+        bool handleGranularGesture (const juce::MouseEvent&);
+        bool handleDrumGridGesture (const juce::MouseEvent&, bool drag);
+        bool drumCellAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>,
+                         int& pattern, int& track, int& step, float& velocity,
+                         float& gate, float& probability, bool& active,
+                         int& note, int& divisions) const;
+        const LayoutElement* findElementAt (juce::Point<int>) const;
+        void showElementAnimationMenu (const LayoutElement&, const juce::Point<int>& screenPos);
+        bool advanceGranularFields();
         void syncKnobsToLiveValues();
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (StudioInstrumentRenderer)

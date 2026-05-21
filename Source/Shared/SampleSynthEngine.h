@@ -11,6 +11,7 @@
 #include "IInstrumentEngine.h"
 #include "SampleVoice.h"
 
+#include <array>
 #include <memory>
 
 namespace patchcraft
@@ -66,6 +67,20 @@ namespace patchcraft
             std::atomic<float> sampleReverse { 0.0f };
             std::atomic<float> sampleGlitch { 0.0f };
             std::atomic<float> sampleGlitchGrid { 16.0f };
+            std::atomic<float> granularOn { 0.0f };
+            std::atomic<float> granularDensity { 24.0f };
+            std::atomic<float> granularSizeMs { 90.0f };
+            std::atomic<float> granularSizeRandom { 0.25f };
+            std::atomic<float> granularSpread { 0.18f };
+            std::atomic<float> granularScan { 0.0f };
+            std::atomic<float> granularPitchSpread { 0.0f };
+            std::atomic<float> granularPanSpread { 0.45f };
+            std::atomic<float> granularReverse { 0.0f };
+            std::atomic<float> granularTexture { 0.20f };
+            std::atomic<float> granularMaxGrains { 16.0f };
+            std::atomic<float> granularDirection { 3.0f };
+            std::atomic<float> granularWindow { 0.0f };
+            std::atomic<float> granularFreeze { 0.0f };
             std::atomic<float> cutoff    { 4200.0f };
             std::atomic<float> resonance { 0.20f };
             std::atomic<float> reverbMix { 0.30f };
@@ -76,6 +91,20 @@ namespace patchcraft
             std::atomic<float> expression { 1.0f };
             std::atomic<float> pan       { 0.0f };
             std::atomic<float> retrigger { 1.0f };
+            std::atomic<float> bpmSync   { 1.0f };
+            std::array<std::atomic<float>, 16> padVolume {};
+            std::array<std::atomic<float>, 16> padPitch {};
+            std::array<std::atomic<float>, 16> padPan {};
+
+            AtomicParams()
+            {
+                for (auto& value : padVolume)
+                    value.store (1.0f, std::memory_order_relaxed);
+                for (auto& value : padPitch)
+                    value.store (0.0f, std::memory_order_relaxed);
+                for (auto& value : padPan)
+                    value.store (0.0f, std::memory_order_relaxed);
+            }
         } atomics;
 
         juce::ADSR::Parameters currentAdsr() const;
@@ -103,7 +132,9 @@ namespace patchcraft
         std::atomic<int> missedNoteCount { 0 };
 
         std::array<SampleVoice, kMaxVoices> voices;
+        std::array<GranularVoice, kMaxVoices> granularVoices;
         int nextVoiceIndex = 0;
+        int nextGranularVoiceIndex = 0;
         std::atomic<juce::uint32> triggerCounter { 0 };
 
         double sampleRate = 44100.0;
@@ -124,6 +155,8 @@ namespace patchcraft
         juce::AudioBuffer<float> tempBuffer;
 
         SampleVoice* findFreeVoice();
+        GranularVoice* findFreeGranularVoice();
+        GranularVoice::Params currentGranularParams (float tempoRatio = 1.0f) const;
         LoadedSamplePtr selectSample (int note, int velocity);
         std::array<int, 128> nextRoundRobinIndex {};
 

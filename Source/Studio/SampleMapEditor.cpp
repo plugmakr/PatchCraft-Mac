@@ -10,9 +10,94 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <numeric>
 
 namespace patchcraft
 {
+    namespace
+    {
+        class PrecisionSampleEditorPanel : public juce::Component
+        {
+        public:
+            PrecisionSampleEditorPanel()
+            {
+                title.setText ("Precision Sample Editor", juce::dontSendNotification);
+                title.setFont (juce::FontOptions (18.0f).withStyle ("bold"));
+                title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
+                addAndMakeVisible (title);
+
+                status.setText ("Drag start/end, loop, and fade handles. Shift-release keeps exact positions; normal release snaps start/end to zero crossings.",
+                                juce::dontSendNotification);
+                status.setFont (juce::FontOptions (11.5f));
+                status.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+                addAndMakeVisible (status);
+
+                for (auto* button : { &zoomInBtn, &zoomOutBtn, &fitBtn, &trimBtn, &fullBtn,
+                                      &fadeInBtn, &fadeOutBtn, &copyBtn, &cutBtn, &pasteBtn,
+                                      &fabricateRRBtn, &applyBtn, &closeBtn })
+                {
+                    button->getProperties().set ("smallButton", true);
+                    addAndMakeVisible (*button);
+                }
+
+                applyBtn.getProperties().set ("primaryAction", true);
+                fabricateRRBtn.setTooltip ("Create additional round-robin zones from this sample with small pitch, gain, pan, and start offsets.");
+                trimBtn.setTooltip ("Strip leading/trailing silence on the selected zone.");
+                addAndMakeVisible (waveform);
+            }
+
+            void resized() override
+            {
+                auto r = getLocalBounds().reduced (14);
+                auto header = r.removeFromTop (44);
+                title.setBounds (header.removeFromLeft (320));
+                status.setBounds (header);
+
+                r.removeFromTop (8);
+                auto toolbar = r.removeFromTop (34);
+                auto place = [&] (juce::TextButton& button, int width)
+                {
+                    button.setBounds (toolbar.removeFromLeft (width).reduced (2, 3));
+                    toolbar.removeFromLeft (4);
+                };
+                place (zoomInBtn, 76);
+                place (zoomOutBtn, 84);
+                place (fitBtn, 62);
+                place (trimBtn, 92);
+                place (fullBtn, 96);
+                place (fadeInBtn, 84);
+                place (fadeOutBtn, 88);
+                place (copyBtn, 66);
+                place (cutBtn, 58);
+                place (pasteBtn, 66);
+                place (fabricateRRBtn, 124);
+                closeBtn.setBounds (toolbar.removeFromRight (74).reduced (2, 3));
+                toolbar.removeFromRight (4);
+                applyBtn.setBounds (toolbar.removeFromRight (82).reduced (2, 3));
+
+                r.removeFromTop (10);
+                waveform.setBounds (r);
+            }
+
+            juce::Label title;
+            juce::Label status;
+            SampleWaveformViewer waveform;
+            juce::TextButton zoomInBtn { "Zoom +" };
+            juce::TextButton zoomOutBtn { "Zoom -" };
+            juce::TextButton fitBtn { "Fit" };
+            juce::TextButton trimBtn { "Trim" };
+            juce::TextButton fullBtn { "Full" };
+            juce::TextButton fadeInBtn { "Fade In" };
+            juce::TextButton fadeOutBtn { "Fade Out" };
+            juce::TextButton copyBtn { "Copy" };
+            juce::TextButton cutBtn { "Cut" };
+            juce::TextButton pasteBtn { "Paste" };
+            juce::TextButton fabricateRRBtn { "Fabricate RR" };
+            juce::TextButton applyBtn { "Apply" };
+            juce::TextButton closeBtn { "Close" };
+        };
+    }
+
     //============================================================================
     // StepperControl implementation
     //============================================================================
@@ -20,6 +105,7 @@ namespace patchcraft
     {
         nameLabel.setText (name, juce::dontSendNotification);
         nameLabel.setJustificationType (juce::Justification::centred);
+        nameLabel.setMinimumHorizontalScale (0.62f);
         addAndMakeVisible (nameLabel);
         addAndMakeVisible (minusBtn);
         addAndMakeVisible (plusBtn);
@@ -27,6 +113,12 @@ namespace patchcraft
 
         valueLabel.setJustificationType (juce::Justification::centred);
         valueLabel.setText ("0", juce::dontSendNotification);
+        valueLabel.setMinimumHorizontalScale (0.7f);
+        setTooltip ("Edit " + name);
+        nameLabel.setTooltip ("Edit " + name);
+        valueLabel.setTooltip ("Current " + name + " value");
+        minusBtn.setTooltip ("Decrease " + name);
+        plusBtn.setTooltip ("Increase " + name);
 
         minusBtn.onClick = [this] { setValue (value - 1); };
         plusBtn.onClick = [this] { setValue (value + 1); };
@@ -35,13 +127,14 @@ namespace patchcraft
     void SampleMapEditor::StepperControl::resized()
     {
         auto r = getLocalBounds();
-        nameLabel.setBounds (r.removeFromTop (16));
-        r.removeFromTop (2);
+        nameLabel.setBounds (r.removeFromTop (18));
+        r.removeFromTop (4);
 
-        minusBtn.setBounds (r.removeFromLeft (24));
-        r.removeFromLeft (2);
-        plusBtn.setBounds (r.removeFromRight (24));
-        r.removeFromRight (2);
+        const int buttonW = juce::jlimit (24, 30, getWidth() / 4);
+        minusBtn.setBounds (r.removeFromLeft (buttonW));
+        r.removeFromLeft (5);
+        plusBtn.setBounds (r.removeFromRight (buttonW));
+        r.removeFromRight (5);
         valueLabel.setBounds (r);
     }
 
@@ -51,6 +144,14 @@ namespace patchcraft
         valueLabel.setText (juce::String (value), juce::dontSendNotification);
         if (notify && onChange)
             onChange (value);
+    }
+
+    void SampleMapEditor::StepperControl::setTooltip (const juce::String& tooltip)
+    {
+        nameLabel.setTooltip (tooltip);
+        valueLabel.setTooltip (tooltip);
+        minusBtn.setTooltip (tooltip);
+        plusBtn.setTooltip (tooltip);
     }
 
     //============================================================================
@@ -74,6 +175,7 @@ namespace patchcraft
         addAndMakeVisible (selectAllBtn);
         addAndMakeVisible (clearAllBtn);
         addAndMakeVisible (autoMapBtn);
+        addAndMakeVisible (spanOnDropToggle);
         addAndMakeVisible (mapPresetBox);
 
         // Map preset dropdown — replaces the standalone Pad Map / Glitch Kit
@@ -96,6 +198,7 @@ namespace patchcraft
         mapPresetBox.addSectionHeading ("Build Patch");
         mapPresetBox.addItem ("Build Drum Kit (auto)",       401);
         mapPresetBox.addItem ("Build Multi-Sample Patch",    402);
+        mapPresetBox.addItem ("Build Remix Performance Kit", 403);
         mapPresetBox.addSeparator();
         mapPresetBox.addSectionHeading ("Levels");
         mapPresetBox.addItem ("Normalize selected to 0 dB",  301);
@@ -114,10 +217,109 @@ namespace patchcraft
         addAndMakeVisible (zoomOutBtn);
         addAndMakeVisible (auditionBtn);
         addAndMakeVisible (stopAuditionBtn);
+        addAndMakeVisible (playModeBtn);
         addAndMakeVisible (loopToggle);
         addAndMakeVisible (fadeInBtn);
         addAndMakeVisible (fadeOutBtn);
         addAndMakeVisible (zoomFitBtn);
+        for (auto* button : { &smartTrimBtn, &smartDrumBtn, &smartLoopBtn, &smartVelLayerBtn,
+                              &smartRRBtn, &smartHumanizeBtn, &smartResetBtn })
+        {
+            button->getProperties().set ("smallButton", true);
+            addAndMakeVisible (*button);
+        }
+        smartTrimBtn.setTooltip ("Strip silence non-destructively. Auto Trim trims selected zones; if nothing is selected, it trims every imported zone.");
+        smartDrumBtn.setTooltip ("Sets selected zones for drum playback: one-shot, no loop, tight fades, pad-friendly metadata.");
+        smartLoopBtn.setTooltip ("Creates a conservative sustain loop in the body of the selected sample.");
+        smartVelLayerBtn.setTooltip ("Splits selected zones into ordered velocity layers across 1-127.");
+        smartRRBtn.setTooltip ("Turns selected zones into round-robin alternates grouped by root note.");
+        smartHumanizeBtn.setTooltip ("Adds small gain/pan/probability variation across selected zones.");
+        smartResetBtn.setTooltip ("Resets playback edits on all selected zones.");
+
+        addAndMakeVisible (easyModeBtn);
+        addAndMakeVisible (advancedModeBtn);
+        addAndMakeVisible (easyTitleLabel);
+        addAndMakeVisible (easyHelpLabel);
+        addAndMakeVisible (easySummaryLabel);
+        addAndMakeVisible (easyImportBtn);
+        addAndMakeVisible (easyMapTypeBox);
+        addAndMakeVisible (easyKeyboardMapBtn);
+        addAndMakeVisible (easyDrumKitBtn);
+        addAndMakeVisible (easyGlitchKitBtn);
+        addAndMakeVisible (easyRemixKitBtn);
+        addAndMakeVisible (easyPlayModeBtn);
+        addAndMakeVisible (easyAuditionBtn);
+        addAndMakeVisible (easyStopBtn);
+        addAndMakeVisible (easyTestBtn);
+        addAndMakeVisible (easyClearBtn);
+
+        easyModeBtn.setClickingTogglesState (true);
+        advancedModeBtn.setClickingTogglesState (true);
+        easyModeBtn.setRadioGroupId (9142);
+        advancedModeBtn.setRadioGroupId (9142);
+        easyModeBtn.getProperties().set ("smallButton", true);
+        advancedModeBtn.getProperties().set ("smallButton", true);
+        easyTitleLabel.setFont (juce::Font (16.0f, juce::Font::bold));
+        easyTitleLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
+        easyHelpLabel.setFont (juce::FontOptions (11.0f));
+        easyHelpLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+        easyHelpLabel.setMinimumHorizontalScale (0.72f);
+        easySummaryLabel.setFont (juce::FontOptions (11.0f));
+        easySummaryLabel.setJustificationType (juce::Justification::centredRight);
+        easySummaryLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+        easyMapTypeBox.setTextWhenNothingSelected ("Choose map type...");
+        easyMapTypeBox.addItem ("Keyboard Map - pitched samples", 1);
+        easyMapTypeBox.addItem ("Drum Pads - one-shots to pads", 2);
+        easyMapTypeBox.addItem ("Slice / Glitch - chop selected sample", 3);
+        easyMapTypeBox.addItem ("Remix Kit - performance kit", 4);
+        easyMapTypeBox.setSelectedId (1, juce::dontSendNotification);
+        easyMapTypeBox.setTooltip ("Choose what PatchCraft should build from imported samples. This replaces the old separate kit buttons.");
+
+        for (auto* button : { &easyImportBtn, &easyKeyboardMapBtn, &easyDrumKitBtn,
+                              &easyGlitchKitBtn, &easyRemixKitBtn, &easyPlayModeBtn, &easyAuditionBtn, &easyStopBtn,
+                              &easyTestBtn, &easyClearBtn })
+        {
+            button->getProperties().set ("smallButton", true);
+        }
+        easyImportBtn.getProperties().set ("primaryAction", true);
+        easyKeyboardMapBtn.getProperties().set ("primaryAction", true);
+        easyTestBtn.getProperties().set ("primaryAction", true);
+
+        editModeBtn.setTooltip ("Open advanced sample-map edit actions including trim, split, chop, velocity, and round robin tools.");
+        autoBtn.setTooltip ("Automatically map imported samples across the keyboard using detected root notes where possible.");
+        zoneSoloBtn.setTooltip ("Audition only the selected zone while editing.");
+        selectByMidiBtn.setTooltip ("Select mapped zones by playing notes on software or hardware MIDI.");
+        gridViewBtn.setTooltip ("Show key/velocity zones visually.");
+        listViewBtn.setTooltip ("Show imported zones as an editable list.");
+        importBtn.setTooltip ("Import WAV, AIFF, FLAC, or folders of samples.");
+        removeBtn.setTooltip ("Delete the selected sample zones from the map.");
+        selectAllBtn.getProperties().set ("smallButton", true);
+        selectAllBtn.setTooltip ("Select every sample zone. Use before Auto Trim when you want to trim all imported samples explicitly.");
+        clearAllBtn.setTooltip ("Remove all sample zones from this instrument.");
+        autoMapBtn.setTooltip ("Build a playable keyboard map from imported sample names and pitch detection.");
+        spanOnDropToggle.setTooltip ("When enabled, dropped pitched samples span between root notes. When off, every dropped one-shot stays on a single key or pad.");
+        mapPresetBox.setTooltip ("Apply pad maps, glitch slicing, patch-building, and level presets.");
+        zoomInBtn.setTooltip ("Zoom in on the keyzone grid.");
+        zoomOutBtn.setTooltip ("Zoom out on the keyzone grid.");
+        auditionBtn.setTooltip ("Play the selected zone through the Sample Mapper audition engine.");
+        stopAuditionBtn.setTooltip ("Stop Sample Mapper audition playback.");
+        playModeBtn.setTooltip ("Turn the Sample Mapper keyboard/pad area into a playable audition surface.");
+        loopToggle.setTooltip ("Enable or disable looping for selected zones.");
+        fadeInBtn.setTooltip ("Add a short fade-in to selected zones.");
+        fadeOutBtn.setTooltip ("Add a short fade-out to selected zones.");
+        zoomFitBtn.setTooltip ("Fit the selected waveform view.");
+        easyModeBtn.setTooltip ("Show the guided Easy Sample Builder workflow.");
+        advancedModeBtn.setTooltip ("Show the full Sample Mapper editor with zone, velocity, RR, playback, and waveform tools.");
+        easyImportBtn.setTooltip ("Import samples into the current map. Then choose a map type and press Build Map.");
+        easyKeyboardMapBtn.setTooltip ("Build the selected map type: keyboard, drum pads, sliced glitch kit, or remix performance kit.");
+        easyDrumKitBtn.setTooltip ("Legacy shortcut hidden in Easy mode. Use the map-type dropdown instead.");
+        easyGlitchKitBtn.setTooltip ("Legacy shortcut hidden in Easy mode. Use the map-type dropdown instead.");
+        easyRemixKitBtn.setTooltip ("Legacy shortcut hidden in Easy mode. Use the map-type dropdown instead.");
+        easyPlayModeBtn.setTooltip ("Play mapped keys or pads directly on the Sample Mapper page.");
+        easyAuditionBtn.setTooltip ("Audition the selected sample zone.");
+        easyStopBtn.setTooltip ("Stop sample audition playback.");
+        easyTestBtn.setTooltip ("Open the runtime Player surface and verify that mapped samples respond to keys, pads, and controls.");
+        easyClearBtn.setTooltip ("Clear the current sample map.");
 
         editModeBtn.onClick = [this] { showEditMenu(); };
         autoBtn.onClick = [this] { autoMap(); };
@@ -161,9 +363,18 @@ namespace patchcraft
         zoomOutBtn.onClick = [this] { zoomLevel = juce::jmax (0.5f, zoomLevel / 1.2f); repaint(); };
         auditionBtn.onClick = [this] { auditionSelectedZone(); };
         stopAuditionBtn.onClick = [this] { stopAudition(); };
+        playModeBtn.setClickingTogglesState (true);
+        playModeBtn.onClick = [this] { setPlayModeEnabled (playModeBtn.getToggleState()); };
         loopToggle.onClick = [this] { toggleLoopForSelected(); };
         fadeInBtn.onClick = [this] { addDefaultFade (true); };
         fadeOutBtn.onClick = [this] { addDefaultFade (false); };
+        smartTrimBtn.onClick = [this] { applySmartTrimToSelected(); };
+        smartDrumBtn.onClick = [this] { applyDrumOneShotRecipeToSelected(); };
+        smartLoopBtn.onClick = [this] { applySustainLoopRecipeToSelected(); };
+        smartVelLayerBtn.onClick = [this] { applyVelocityLayersToSelected(); };
+        smartRRBtn.onClick = [this] { applyRoundRobinToSelected(); };
+        smartHumanizeBtn.onClick = [this] { applyHumanizeToSelected(); };
+        smartResetBtn.onClick = [this] { resetPlaybackEditsForSelectedZones(); };
         applyImportVelocitySelectedBtn.onClick = [this] { applyImportDefaultVelocity (false); };
         applyImportVelocityAllBtn.onClick = [this] { applyImportDefaultVelocity (true); };
         applyImportVelocitySelectedBtn.setTooltip ("Apply the Import Low/High velocity range to selected zones.");
@@ -176,6 +387,30 @@ namespace patchcraft
                 waveformViewer->setViewOffset (0);
             }
         };
+
+        easyModeBtn.onClick = [this] { setEasyMode (true); };
+        advancedModeBtn.onClick = [this] { setEasyMode (false); };
+        easyImportBtn.onClick = [this] { addSample(); };
+        easyKeyboardMapBtn.onClick = [this]
+        {
+            switch (easyMapTypeBox.getSelectedId())
+            {
+                case 2:  applyMapPreset (401); break;
+                case 3:  makeSelectedZoneGlitchKit(); break;
+                case 4:  applyMapPreset (403); break;
+                case 1:
+                default: autoMap(); break;
+            }
+        };
+        easyDrumKitBtn.onClick = [this] { applyMapPreset (401); };
+        easyGlitchKitBtn.onClick = [this] { makeSelectedZoneGlitchKit(); };
+        easyRemixKitBtn.onClick = [this] { applyMapPreset (403); };
+        easyPlayModeBtn.setClickingTogglesState (true);
+        easyPlayModeBtn.onClick = [this] { setPlayModeEnabled (easyPlayModeBtn.getToggleState()); };
+        easyAuditionBtn.onClick = [this] { auditionSelectedZone(); };
+        easyStopBtn.onClick = [this] { stopAudition(); };
+        easyTestBtn.onClick = [this] { goToTestFromHealth(); };
+        easyClearBtn.onClick = [this] { clearAllSamples(); };
 
         // Info bar
         addAndMakeVisible (keyRangeLabel);
@@ -195,6 +430,11 @@ namespace patchcraft
         healthAutoMapBtn.onClick = [this] { autoMapFromHealth(); };
         healthFindMissingBtn.onClick = [this] { findMissingSamplesFromHealth(); };
         healthGoTestBtn.onClick = [this] { goToTestFromHealth(); };
+        healthFixEngineBtn.setTooltip ("Switches the project engine to Sample when zones exist but the patch is still set to Synth or FX.");
+        healthAutoMapBtn.setTooltip ("Builds a playable key map from imported samples using filename metadata and pitch detection.");
+        healthFindMissingBtn.setTooltip ("Attempts to relink zones whose source files moved on disk.");
+        healthGoTestBtn.setButtonText ("Test Map");
+        healthGoTestBtn.setTooltip ("Opens Test so the current sample map can be played exactly like the exported Player.");
         
         // Sample list (for list view mode)
         addChildComponent (samplesList);
@@ -220,7 +460,7 @@ namespace patchcraft
         addAndMakeVisible (chokeGroupStepper);
         addAndMakeVisible (triggerChanceStepper);
         tuneStepper.minValue = -100; tuneStepper.maxValue = 100;
-        trackStepper.minValue = -100; trackStepper.maxValue = 100;
+        trackStepper.minValue = 0; trackStepper.maxValue = 200;
         padIndexStepper.minValue = -1; padIndexStepper.maxValue = 15;
         chokeGroupStepper.minValue = 0; chokeGroupStepper.maxValue = 127;
         triggerChanceStepper.minValue = 0; triggerChanceStepper.maxValue = 100;
@@ -230,13 +470,35 @@ namespace patchcraft
         addAndMakeVisible (panStepper);
         volumeStepper.minValue = -48; volumeStepper.maxValue = 24;
         panStepper.minValue = -64; panStepper.maxValue = 64;
-        trackStepper.setEnabled (false);
-        trackStepper.nameLabel.setTooltip ("Key tracking is planned for the advanced sampler engine. Root key and tune are active now.");
-        trackStepper.valueLabel.setTooltip ("Key tracking is planned for the advanced sampler engine. Root key and tune are active now.");
+        trackStepper.setEnabled (true);
+        trackStepper.setTooltip ("Keyboard pitch tracking for selected zones. 0% keeps one pitch, 100% follows keys normally, 200% exaggerates pitch movement.");
+        reverseBtn.setTooltip ("Reverse selected zones for risers, swells, and backwards one-shots.");
+        oneShotToggle.setTooltip ("Play selected zones to their end instead of stopping on note-off.");
+        sourceMode.setTooltip ("Choose the sampler playback source mode for selected zones.");
+        importLowVelocityStepper.setTooltip ("Default low velocity for imported or selected samples.");
+        importHighVelocityStepper.setTooltip ("Default high velocity for imported or selected samples.");
+        rrGroupStepper.setTooltip ("Round-robin group. Zones with the same group rotate on repeated notes.");
+        rrIndexStepper.setTooltip ("Round-robin index for this zone inside its group. One Shot Maker writes this automatically.");
+        rootStepper.setTooltip ("Root MIDI note used for pitch playback.");
+        loKeyStepper.setTooltip ("Lowest MIDI key that can trigger the selected zone.");
+        hiKeyStepper.setTooltip ("Highest MIDI key that can trigger the selected zone.");
+        loVelStepper.setTooltip ("Lowest MIDI velocity that can trigger the selected zone.");
+        hiVelStepper.setTooltip ("Highest MIDI velocity that can trigger the selected zone.");
+        padIndexStepper.setTooltip ("Drum pad index for pad-grid instruments. -1 means unassigned.");
+        chokeGroupStepper.setTooltip ("Choke group for mutually exclusive drum pads such as closed/open hats.");
+        triggerChanceStepper.setTooltip ("Probability that the selected zone triggers on note-on.");
+        gainStepper.setTooltip ("Playback gain for selected zones.");
+        volumeStepper.setTooltip ("Playback gain mirrored for selected zones.");
+        panStepper.setTooltip ("Stereo pan for selected zones.");
+        loopStartStepper.setTooltip ("Loop start position in samples.");
+        loopEndStepper.setTooltip ("Loop end position in samples.");
+        sampleStartStepper.setTooltip ("Playback start offset in samples. Auto Trim writes this value.");
+        sampleEndStepper.setTooltip ("Playback end offset in samples. Auto Trim writes this value.");
 
         // Set up stepper callbacks
         auto onStep = [this] (int) { updateZoneFromSteppers(); };
         rrGroupStepper.onChange = onStep;
+        rrIndexStepper.onChange = onStep;
         rootStepper.onChange = onStep;
         loKeyStepper.onChange = onStep;
         hiKeyStepper.onChange = onStep;
@@ -265,6 +527,7 @@ namespace patchcraft
         
         // Zone editing steppers (shown in properties panel, not bottom row)
         rrGroupStepper.minValue = 0; rrGroupStepper.maxValue = 127;
+        rrIndexStepper.minValue = 0; rrIndexStepper.maxValue = 127;
         rootStepper.minValue = 0; rootStepper.maxValue = 127;
         loKeyStepper.minValue = 0; loKeyStepper.maxValue = 127;
         hiKeyStepper.minValue = 0; hiKeyStepper.maxValue = 127;
@@ -281,6 +544,7 @@ namespace patchcraft
         sampleEndStepper.minValue = 0; sampleEndStepper.maxValue = 2000000;
 
         addAndMakeVisible (rrGroupStepper);
+        addAndMakeVisible (rrIndexStepper);
         addAndMakeVisible (rootStepper);
         addAndMakeVisible (loKeyStepper);
         addAndMakeVisible (hiKeyStepper);
@@ -303,11 +567,13 @@ namespace patchcraft
         waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
         addAndMakeVisible (waveformStatus);
 
+        updateModeVisibility();
         refresh();
     }
 
     SampleMapEditor::~SampleMapEditor()
     {
+        setPlayModeEnabled (false);
         setMidiZoneSelectEnabled (false);
         stopAudition();
     }
@@ -345,6 +611,9 @@ namespace patchcraft
     {
         g.fillAll (PatchCraftLookAndFeel::bg());
 
+        if (! easyGuideBounds.isEmpty())
+            paintEasyGuide (g, easyGuideBounds);
+
         if (! healthBounds.isEmpty())
             paintHealthPanel (g, healthBounds);
 
@@ -379,7 +648,7 @@ namespace patchcraft
         g.drawRoundedRectangle (panel.toFloat(), 6.0f, 1.0f);
 
         auto r = panel.reduced (10, 7);
-        auto title = r.removeFromLeft (138);
+        auto title = r.removeFromLeft (160);
         if (r.getWidth() > 740)
         {
             r.removeFromRight (326);
@@ -388,7 +657,7 @@ namespace patchcraft
 
         g.setFont (juce::Font (12.0f, juce::Font::bold));
         g.setColour (PatchCraftLookAndFeel::accent());
-        g.drawText ("SAMPLE HEALTH", title.removeFromTop (18), juce::Justification::centredLeft);
+        g.drawText ("MAP READINESS", title.removeFromTop (18), juce::Justification::centredLeft);
         g.setFont (juce::FontOptions (10.5f));
         g.setColour (status.exportReady ? PatchCraftLookAndFeel::textDim() : juce::Colour (0xffffc857));
         g.drawText (status.primaryIssue, title, juce::Justification::centredLeft);
@@ -475,6 +744,18 @@ namespace patchcraft
                     titleRow, juce::Justification::centredLeft);
 
         r.removeFromTop (6);
+        auto smartCaption = r.removeFromTop (20);
+        g.setFont (juce::Font (11.0f, juce::Font::bold));
+        g.setColour (PatchCraftLookAndFeel::accent());
+        g.drawText ("SMART ZONE TOOLS", smartCaption.removeFromLeft (124), juce::Justification::centredLeft);
+        g.setFont (juce::FontOptions (10.0f));
+        g.setColour (PatchCraftLookAndFeel::textDim());
+        g.drawText ("Recipe buttons apply to the current selection, so batch edits stay fast and reversible.",
+                    smartCaption, juce::Justification::centredLeft);
+        r.removeFromTop (8);
+        r.removeFromTop (36);
+        r.removeFromTop (6);
+
         const int gap = 8;
         const int totalW = r.getWidth();
         const int mappingW = juce::jlimit (420, 560, totalW / 3);
@@ -493,6 +774,315 @@ namespace patchcraft
         paintEditCard (g, playbackCard, "Playback");
         paintEditCard (g, ampCard, "Amp");
         paintEditCard (g, boundsCard, "Bounds + Loop");
+    }
+
+    juce::String SampleMapEditor::buildEasySummary()
+    {
+        const auto status = computeHealthStatus();
+        juce::String coverage = status.coveredNotes > 0
+            ? noteToString (status.firstCoveredNote) + "-" + noteToString (status.lastCoveredNote)
+            : "No key coverage";
+
+        return "Zones " + juce::String (status.playableZones) + "/" + juce::String (status.totalZones)
+             + "  |  " + coverage
+             + "  |  " + (status.exportReady ? "Ready" : "Needs attention");
+    }
+
+    void SampleMapEditor::paintEasyGuide (juce::Graphics& g, juce::Rectangle<int> bounds)
+    {
+        auto panel = bounds.reduced (0, 2).toFloat();
+        g.setColour (juce::Colour (0xff0d1117));
+        g.fillRoundedRectangle (panel, 10.0f);
+        g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.72f));
+        g.drawRoundedRectangle (panel, 10.0f, 1.25f);
+
+        auto r = bounds.reduced (12, 10);
+        auto titleRow = r.removeFromTop (26);
+        titleRow.removeFromRight (196);
+        g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.9f));
+        g.fillRect (titleRow.withY (titleRow.getBottom() + 4).withHeight (2).reduced (0, 0));
+
+        auto actionGuide = r.removeFromBottom (18);
+        g.setFont (juce::FontOptions (10.5f));
+        g.setColour (PatchCraftLookAndFeel::textDim());
+        g.drawText ("Default velocity applies to new imports. Select All + Auto Trim edits every zone. Play Mapper triggers pads, keyboard, or hardware MIDI.",
+                    actionGuide, juce::Justification::centredLeft);
+
+        auto cards = r.removeFromBottom (44);
+        const juce::StringArray titles { "DROP AUDIO", "MAP", "EDIT", "PLAY / EXPORT" };
+        const juce::StringArray bodies {
+            "WAV / AIFF / FLAC anywhere on this page",
+            "Keyboard, Drum Kit, Slice Kit, or Remix Kit",
+            "Trim, fades, velocity, RR, loops, pads",
+            "Audition here, then Test Player / export"
+        };
+        const int gap = 8;
+        const int cardW = juce::jmax (120, (cards.getWidth() - gap * 3) / 4);
+        for (int i = 0; i < 4; ++i)
+        {
+            auto card = cards.removeFromLeft (cardW);
+            cards.removeFromLeft (gap);
+            g.setColour (juce::Colour (0xff111820));
+            g.fillRoundedRectangle (card.toFloat(), 7.0f);
+            g.setColour (i == 0 ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::border().brighter (0.25f));
+            g.drawRoundedRectangle (card.toFloat(), 7.0f, 1.0f);
+            auto text = card.reduced (8, 5);
+            g.setFont (juce::Font (10.0f, juce::Font::bold));
+            g.setColour (PatchCraftLookAndFeel::accent());
+            g.drawText (juce::String (i + 1) + "  " + titles[i], text.removeFromTop (15), juce::Justification::centredLeft, true);
+            g.setFont (juce::FontOptions (9.5f));
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.drawFittedText (bodies[i], text, juce::Justification::centredLeft, 1);
+        }
+    }
+
+    void SampleMapEditor::setEasyMode (bool shouldUseEasyMode)
+    {
+        easyMode = shouldUseEasyMode;
+        if (easyMode && listViewMode)
+        {
+            listViewMode = false;
+            gridViewBtn.setToggleState (true, juce::dontSendNotification);
+            listViewBtn.setToggleState (false, juce::dontSendNotification);
+        }
+
+        updateModeVisibility();
+        resized();
+        repaint();
+    }
+
+    void SampleMapEditor::updateModeVisibility()
+    {
+        easyModeBtn.setToggleState (easyMode, juce::dontSendNotification);
+        advancedModeBtn.setToggleState (! easyMode, juce::dontSendNotification);
+
+        for (auto* component : { static_cast<juce::Component*> (&easyTitleLabel),
+                                 static_cast<juce::Component*> (&easyHelpLabel),
+                                 static_cast<juce::Component*> (&easySummaryLabel),
+                                 static_cast<juce::Component*> (&easyImportBtn),
+                                 static_cast<juce::Component*> (&easyMapTypeBox),
+                                 static_cast<juce::Component*> (&easyKeyboardMapBtn),
+                                 static_cast<juce::Component*> (&easyPlayModeBtn),
+                                 static_cast<juce::Component*> (&easyAuditionBtn),
+                                 static_cast<juce::Component*> (&easyStopBtn),
+                                 static_cast<juce::Component*> (&easyTestBtn),
+                                 static_cast<juce::Component*> (&easyClearBtn),
+                                 static_cast<juce::Component*> (&smartTrimBtn) })
+        {
+            component->setVisible (easyMode);
+        }
+        easyDrumKitBtn.setVisible (false);
+        easyGlitchKitBtn.setVisible (false);
+        easyRemixKitBtn.setVisible (false);
+
+        const bool showAdvanced = ! easyMode;
+        for (auto* component : { static_cast<juce::Component*> (&editModeBtn),
+                                 static_cast<juce::Component*> (&autoBtn),
+                                 static_cast<juce::Component*> (&zoneSoloBtn),
+                                 static_cast<juce::Component*> (&selectByMidiBtn),
+                                 static_cast<juce::Component*> (&gridViewBtn),
+                                 static_cast<juce::Component*> (&listViewBtn),
+                                 static_cast<juce::Component*> (&importBtn),
+                                 static_cast<juce::Component*> (&removeBtn),
+                                 static_cast<juce::Component*> (&selectAllBtn),
+                                 static_cast<juce::Component*> (&clearAllBtn),
+                                 static_cast<juce::Component*> (&autoMapBtn),
+                                 static_cast<juce::Component*> (&spanOnDropToggle),
+                                 static_cast<juce::Component*> (&mapPresetBox),
+                                 static_cast<juce::Component*> (&zoomInBtn),
+                                 static_cast<juce::Component*> (&zoomOutBtn),
+                                 static_cast<juce::Component*> (&auditionBtn),
+                                 static_cast<juce::Component*> (&stopAuditionBtn),
+                                 static_cast<juce::Component*> (&playModeBtn),
+                                 static_cast<juce::Component*> (&loopToggle),
+                                 static_cast<juce::Component*> (&fadeInBtn),
+                                 static_cast<juce::Component*> (&fadeOutBtn),
+                                 static_cast<juce::Component*> (&zoomFitBtn),
+                                 static_cast<juce::Component*> (&smartDrumBtn),
+                                 static_cast<juce::Component*> (&smartLoopBtn),
+                                 static_cast<juce::Component*> (&smartVelLayerBtn),
+                                 static_cast<juce::Component*> (&smartRRBtn),
+                                 static_cast<juce::Component*> (&smartHumanizeBtn),
+                                 static_cast<juce::Component*> (&smartResetBtn),
+                                 static_cast<juce::Component*> (&sourceMode),
+                                 static_cast<juce::Component*> (&reverseBtn),
+                                 static_cast<juce::Component*> (&oneShotToggle),
+                                 static_cast<juce::Component*> (&tuneStepper),
+                                 static_cast<juce::Component*> (&trackStepper),
+                                 static_cast<juce::Component*> (&padIndexStepper),
+                                 static_cast<juce::Component*> (&chokeGroupStepper),
+                                 static_cast<juce::Component*> (&triggerChanceStepper),
+                                 static_cast<juce::Component*> (&volumeStepper),
+                                 static_cast<juce::Component*> (&panStepper),
+                                 static_cast<juce::Component*> (&rrGroupStepper),
+                                 static_cast<juce::Component*> (&rrIndexStepper),
+                                 static_cast<juce::Component*> (&rootStepper),
+                                 static_cast<juce::Component*> (&loKeyStepper),
+                                 static_cast<juce::Component*> (&hiKeyStepper),
+                                 static_cast<juce::Component*> (&loVelStepper),
+                                 static_cast<juce::Component*> (&hiVelStepper),
+                                 static_cast<juce::Component*> (&applyImportVelocitySelectedBtn),
+                                 static_cast<juce::Component*> (&gainStepper),
+                                 static_cast<juce::Component*> (&loopStartStepper),
+                                 static_cast<juce::Component*> (&loopEndStepper),
+                                 static_cast<juce::Component*> (&sampleStartStepper),
+                                 static_cast<juce::Component*> (&sampleEndStepper) })
+        {
+            component->setVisible (showAdvanced);
+        }
+
+        importLowVelocityStepper.setVisible (true);
+        importHighVelocityStepper.setVisible (true);
+        applyImportVelocityAllBtn.setVisible (true);
+        smartTrimBtn.setVisible (true);
+        spanOnDropToggle.setVisible (true);
+        selectAllBtn.setVisible (true);
+        playModeBtn.setToggleState (playModeEnabled, juce::dontSendNotification);
+        easyPlayModeBtn.setToggleState (playModeEnabled, juce::dontSendNotification);
+        samplesHeader.setVisible (! easyMode && listViewMode);
+        samplesList.setVisible (! easyMode && listViewMode);
+    }
+
+    bool SampleMapEditor::ensureAuditionEngineForMap (juce::String& error)
+    {
+        if (! owner.getAudio().ensureOpen (error))
+            return false;
+
+        if (! auditionCallbackActive)
+        {
+            owner.getAudio().getDeviceManager().addAudioCallback (this);
+            auditionCallbackActive = true;
+        }
+
+        auto engine = std::make_unique<SampleSynthEngine>();
+        engine->prepare (auditionSampleRate, auditionBlockSize, auditionChannels);
+        engine->setRenderContext (RenderContext::forBlock (auditionSampleRate,
+                                                           auditionBlockSize,
+                                                           auditionBlockSize,
+                                                           0,
+                                                           auditionChannels,
+                                                           120.0));
+        engine->loadFromPack (owner.getProject().getProjectFolder(),
+                              owner.getProject().getSampleMap());
+
+        const juce::SpinLock::ScopedLockType lock (auditionLock);
+        auditionEngine = std::move (engine);
+        return true;
+    }
+
+    void SampleMapEditor::updateMidiCallbackRegistration()
+    {
+        auto& deviceManager = owner.getAudio().getDeviceManager();
+        const bool shouldListen = midiLearnMode || playModeEnabled;
+
+        if (shouldListen)
+        {
+            for (const auto& input : juce::MidiInput::getAvailableDevices())
+                deviceManager.setMidiInputDeviceEnabled (input.identifier, true);
+
+            if (! midiCallbackActive)
+            {
+                deviceManager.addMidiInputDeviceCallback ({}, this);
+                midiCallbackActive = true;
+            }
+        }
+        else if (midiCallbackActive)
+        {
+            deviceManager.removeMidiInputDeviceCallback ({}, this);
+            midiCallbackActive = false;
+        }
+    }
+
+    void SampleMapEditor::setPlayModeEnabled (bool enabled)
+    {
+        if (enabled == playModeEnabled && (! enabled || auditionEngine != nullptr))
+            return;
+
+        if (! enabled)
+        {
+            playModeEnabled = false;
+            stopPreviewNotesOnly();
+            updateMidiCallbackRegistration();
+            playModeBtn.setToggleState (false, juce::dontSendNotification);
+            easyPlayModeBtn.setToggleState (false, juce::dontSendNotification);
+            waveformStatus.setText ("Sample Mapper play mode off.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+            return;
+        }
+
+        juce::String error;
+        if (! ensureAuditionEngineForMap (error))
+        {
+            playModeEnabled = false;
+            playModeBtn.setToggleState (false, juce::dontSendNotification);
+            easyPlayModeBtn.setToggleState (false, juce::dontSendNotification);
+            waveformStatus.setText ("Play mode unavailable: " + error, juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        playModeEnabled = true;
+        updateMidiCallbackRegistration();
+        playModeBtn.setToggleState (true, juce::dontSendNotification);
+        easyPlayModeBtn.setToggleState (true, juce::dontSendNotification);
+        waveformStatus.setText ("Play mode on: click pads/keyboard or use hardware MIDI keys/pads.",
+                                juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+    }
+
+    void SampleMapEditor::triggerPreviewNoteOn (int midiNote, float velocity, bool selectMappedZone)
+    {
+        if (! playModeEnabled)
+            setPlayModeEnabled (true);
+        if (! playModeEnabled)
+            return;
+
+        midiNote = juce::jlimit (0, 127, midiNote);
+        velocity = juce::jlimit (0.01f, 1.0f, velocity);
+        {
+            const juce::SpinLock::ScopedLockType lock (auditionLock);
+            if (auditionEngine != nullptr)
+                auditionEngine->noteOn (midiNote, velocity);
+        }
+
+        if (selectMappedZone)
+            selectZoneForMidi (midiNote, juce::jlimit (1, 127, juce::roundToInt (velocity * 127.0f)));
+
+        auditionNote = midiNote;
+    }
+
+    void SampleMapEditor::triggerPreviewNoteOff (int midiNote)
+    {
+        midiNote = juce::jlimit (0, 127, midiNote);
+        const juce::SpinLock::ScopedLockType lock (auditionLock);
+        if (auditionEngine != nullptr)
+            auditionEngine->noteOff (midiNote);
+    }
+
+    void SampleMapEditor::stopPreviewNotesOnly()
+    {
+        const juce::SpinLock::ScopedLockType lock (auditionLock);
+        if (auditionEngine != nullptr)
+            auditionEngine->allNotesOff();
+        auditionNote = -1;
+        mousePreviewNote = -1;
+    }
+
+    int SampleMapEditor::noteAtKeyboardPosition (juce::Point<int> position) const
+    {
+        if (gridBounds.isEmpty())
+            return -1;
+
+        auto keyboard = gridBounds;
+        keyboard = keyboard.removeFromBottom (30);
+        if (! keyboard.contains (position))
+            return -1;
+
+        const float noteWidth = 12.0f * zoomLevel;
+        if (noteWidth <= 0.0f)
+            return -1;
+
+        return juce::jlimit (0, 127, scrollOffset + (int) ((position.x - keyboard.getX()) / noteWidth));
     }
 
     int SampleMapEditor::zoneIndexForPad (int padIndex) const
@@ -682,6 +1272,7 @@ namespace patchcraft
                     root.findChildFiles (candidates, juce::File::findFiles, true, wildcard);
 
                 auto& zones = editor->owner.getProject().getSampleMap().getZones();
+                auto before = zones;
                 int relinked = 0;
                 for (auto& zone : zones)
                 {
@@ -705,7 +1296,7 @@ namespace patchcraft
 
                 if (relinked > 0)
                 {
-                    editor->owner.getProject().notifyChanged();
+                    editor->commitSampleMapEdit ("Relink missing samples", std::move (before));
                     editor->waveformStatus.setText ("Relinked " + juce::String (relinked) + " missing sample"
                                                     + (relinked == 1 ? "." : "s."),
                                                     juce::dontSendNotification);
@@ -891,40 +1482,101 @@ namespace patchcraft
     void SampleMapEditor::resized()
     {
         auto r = getLocalBounds().reduced (4);
-        
-        // Main toolbar at top
-        auto toolbar = r.removeFromTop (28);
-        editModeBtn.setBounds (toolbar.removeFromLeft (60));
-        toolbar.removeFromLeft (4);
-        autoBtn.setBounds (toolbar.removeFromLeft (50));
-        toolbar.removeFromLeft (4);
-        zoneSoloBtn.setBounds (toolbar.removeFromLeft (70));
-        toolbar.removeFromLeft (4);
-        selectByMidiBtn.setBounds (toolbar.removeFromLeft (110));
-        toolbar.removeFromLeft (8);
-        gridViewBtn.setBounds (toolbar.removeFromLeft (50));
-        toolbar.removeFromLeft (3);
-        listViewBtn.setBounds (toolbar.removeFromLeft (68));
-        toolbar.removeFromLeft (6);
-        importBtn.setBounds (toolbar.removeFromLeft (60));
-        toolbar.removeFromLeft (4);
-        removeBtn.setBounds (toolbar.removeFromLeft (74));
-        toolbar.removeFromLeft (4);
-        selectAllBtn.setBounds (toolbar.removeFromLeft (70));
-        toolbar.removeFromLeft (4);
-        clearAllBtn.setBounds (toolbar.removeFromLeft (64));
-        toolbar.removeFromLeft (4);
-        autoMapBtn.setBounds (toolbar.removeFromLeft (70));
-        toolbar.removeFromLeft (4);
-        mapPresetBox.setBounds (toolbar.removeFromLeft (220));
-        toolbar.removeFromLeft (8);
-        zoomOutBtn.setBounds (toolbar.removeFromLeft (28));
-        toolbar.removeFromLeft (2);
-        zoomInBtn.setBounds (toolbar.removeFromLeft (28));
-        toolbar.removeFromLeft (10);
+
+        if (easyMode)
+        {
+            easyGuideBounds = r.removeFromTop (258);
+            auto guide = easyGuideBounds.reduced (12, 10);
+            auto titleRow = guide.removeFromTop (28);
+            auto modeArea = titleRow.removeFromRight (190);
+            easyModeBtn.setBounds (modeArea.removeFromLeft (88).reduced (2));
+            modeArea.removeFromLeft (4);
+            advancedModeBtn.setBounds (modeArea.reduced (2));
+            easyTitleLabel.setBounds (titleRow.removeFromLeft (260));
+            easySummaryLabel.setBounds (titleRow);
+
+            easyHelpLabel.setBounds (guide.removeFromTop (32));
+            guide.removeFromTop (6);
+            guide.removeFromBottom (70);
+
+            auto actionRow = guide.removeFromTop (36);
+
+            auto placeEasyButton = [] (juce::Rectangle<int>& row, juce::TextButton& button, int width)
+            {
+                const int w = juce::jmin (width, row.getWidth());
+                button.setBounds (row.removeFromLeft (w).reduced (2, 3));
+                row.removeFromLeft (4);
+            };
+
+            placeEasyButton (actionRow, easyImportBtn, 142);
+            spanOnDropToggle.setBounds (actionRow.removeFromLeft (118).reduced (2, 5));
+            easyMapTypeBox.setBounds (actionRow.removeFromLeft (220).reduced (2, 4));
+            actionRow.removeFromLeft (4);
+            placeEasyButton (actionRow, easyKeyboardMapBtn, 128);
+
+            guide.removeFromTop (6);
+            auto playbackRow = guide.removeFromTop (36);
+            placeEasyButton (playbackRow, smartTrimBtn, 96);
+            placeEasyButton (playbackRow, selectAllBtn, 88);
+            placeEasyButton (playbackRow, easyPlayModeBtn, 106);
+            placeEasyButton (playbackRow, easyAuditionBtn, 116);
+            placeEasyButton (playbackRow, easyStopBtn, 56);
+            placeEasyButton (playbackRow, easyTestBtn, 114);
+            placeEasyButton (playbackRow, easyClearBtn, 72);
+
+            guide.removeFromTop (10);
+            auto velocityArea = guide.removeFromTop (58);
+            importLowVelocityStepper.setBounds (velocityArea.removeFromLeft (160).reduced (3, 1));
+            velocityArea.removeFromLeft (16);
+            importHighVelocityStepper.setBounds (velocityArea.removeFromLeft (160).reduced (3, 1));
+            velocityArea.removeFromLeft (16);
+            applyImportVelocityAllBtn.setBounds (velocityArea.removeFromLeft (94).reduced (3, 12));
+        }
+        else
+        {
+            auto modeRow = r.removeFromTop (32);
+            easyGuideBounds = {};
+            auto modeArea = modeRow.removeFromRight (190);
+            easyModeBtn.setBounds (modeArea.removeFromLeft (88).reduced (2));
+            modeArea.removeFromLeft (4);
+            advancedModeBtn.setBounds (modeArea.reduced (2));
+
+            // Main toolbar at top
+            auto toolbar = r.removeFromTop (28);
+            editModeBtn.setBounds (toolbar.removeFromLeft (60));
+            toolbar.removeFromLeft (4);
+            autoBtn.setBounds (toolbar.removeFromLeft (50));
+            toolbar.removeFromLeft (4);
+            zoneSoloBtn.setBounds (toolbar.removeFromLeft (70));
+            toolbar.removeFromLeft (4);
+            selectByMidiBtn.setBounds (toolbar.removeFromLeft (110));
+            toolbar.removeFromLeft (8);
+            gridViewBtn.setBounds (toolbar.removeFromLeft (50));
+            toolbar.removeFromLeft (3);
+            listViewBtn.setBounds (toolbar.removeFromLeft (68));
+            toolbar.removeFromLeft (6);
+            importBtn.setBounds (toolbar.removeFromLeft (60));
+            toolbar.removeFromLeft (4);
+            spanOnDropToggle.setBounds (toolbar.removeFromLeft (112).reduced (2, 4));
+            toolbar.removeFromLeft (4);
+            removeBtn.setBounds (toolbar.removeFromLeft (74));
+            toolbar.removeFromLeft (4);
+            clearAllBtn.setBounds (toolbar.removeFromLeft (64));
+            toolbar.removeFromLeft (4);
+            autoMapBtn.setBounds (toolbar.removeFromLeft (70));
+            toolbar.removeFromLeft (4);
+            mapPresetBox.setBounds (toolbar.removeFromLeft (220));
+            toolbar.removeFromLeft (8);
+            zoomOutBtn.setBounds (toolbar.removeFromLeft (28));
+            toolbar.removeFromLeft (2);
+            zoomInBtn.setBounds (toolbar.removeFromLeft (28));
+            toolbar.removeFromLeft (10);
         auditionBtn.setBounds (toolbar.removeFromLeft (74));
         toolbar.removeFromLeft (4);
         stopAuditionBtn.setBounds (toolbar.removeFromLeft (54));
+        toolbar.removeFromLeft (4);
+        playModeBtn.setBounds (toolbar.removeFromLeft (82));
+        }
 
         // Info bar
         r.removeFromTop (4);
@@ -952,8 +1604,27 @@ namespace patchcraft
         drumPadBounds = r.removeFromTop (112).reduced (0, 2);
         r.removeFromTop (4);
 
+        if (easyMode)
+        {
+            editPanelBounds = {};
+            auto waveformArea = r.removeFromBottom (136).reduced (0, 4);
+            waveformStatus.setBounds (waveformArea.removeFromTop (20));
+            if (waveformViewer != nullptr)
+                waveformViewer->setBounds (waveformArea);
+            r.removeFromBottom (4);
+            gridBounds = r;
+            samplesHeader.setVisible (false);
+            samplesList.setVisible (false);
+            updateModeVisibility();
+            return;
+        }
+
         // Bottom editor: waveform plus professional zone/playback cards.
-        editPanelBounds = r.removeFromBottom (224).reduced (0, 2);
+        const int lowerAreaHeight = r.getHeight();
+        const int maxEditorHeight = juce::jmax (220, lowerAreaHeight - 132 - 96);
+        const int desiredEditorHeight = juce::jlimit (260, 320, juce::roundToInt ((float) lowerAreaHeight * 0.48f));
+        const int editPanelHeight = juce::jlimit (220, 320, juce::jmin (desiredEditorHeight, maxEditorHeight));
+        editPanelBounds = r.removeFromBottom (editPanelHeight).reduced (0, 2);
         auto waveformArea = r.removeFromBottom (132).reduced (0, 4);
         waveformStatus.setBounds (waveformArea.removeFromTop (18));
         if (waveformViewer != nullptr)
@@ -961,7 +1632,21 @@ namespace patchcraft
         r.removeFromBottom (4);
 
         auto editor = editPanelBounds.reduced (10);
-        editor.removeFromTop (30);
+        editor.removeFromTop (24);
+        editor.removeFromTop (6);
+        editor.removeFromTop (20);
+        editor.removeFromTop (8);
+        auto smartRow = editor.removeFromTop (36);
+        const int smartButtonW = juce::jmax (78, smartRow.getWidth() / 8);
+        selectAllBtn.setBounds (smartRow.removeFromLeft (smartButtonW).reduced (2, 4));
+        smartTrimBtn.setBounds (smartRow.removeFromLeft (smartButtonW).reduced (2, 4));
+        smartDrumBtn.setBounds (smartRow.removeFromLeft (smartButtonW).reduced (2, 4));
+        smartLoopBtn.setBounds (smartRow.removeFromLeft (smartButtonW).reduced (2, 4));
+        smartVelLayerBtn.setBounds (smartRow.removeFromLeft (smartButtonW).reduced (2, 4));
+        smartRRBtn.setBounds (smartRow.removeFromLeft (smartButtonW).reduced (2, 4));
+        smartHumanizeBtn.setBounds (smartRow.removeFromLeft (smartButtonW).reduced (2, 4));
+        smartResetBtn.setBounds (smartRow.reduced (2, 4));
+        editor.removeFromTop (6);
         const int gap = 8;
         const int totalW = editor.getWidth();
         const int mappingW = juce::jlimit (420, 560, totalW / 3);
@@ -979,10 +1664,12 @@ namespace patchcraft
         auto mapping = mappingCard.reduced (10);
         mapping.removeFromTop (28);
         auto mappingRow1 = mapping.removeFromTop (54);
-        rootStepper.setBounds (mappingRow1.removeFromLeft (88).reduced (3));
-        loKeyStepper.setBounds (mappingRow1.removeFromLeft (88).reduced (3));
-        hiKeyStepper.setBounds (mappingRow1.removeFromLeft (88).reduced (3));
-        rrGroupStepper.setBounds (mappingRow1.removeFromLeft (88).reduced (3));
+        const int mappingRow1W = juce::jmax (68, mappingRow1.getWidth() / 5);
+        rootStepper.setBounds (mappingRow1.removeFromLeft (mappingRow1W).reduced (3));
+        loKeyStepper.setBounds (mappingRow1.removeFromLeft (mappingRow1W).reduced (3));
+        hiKeyStepper.setBounds (mappingRow1.removeFromLeft (mappingRow1W).reduced (3));
+        rrGroupStepper.setBounds (mappingRow1.removeFromLeft (mappingRow1W).reduced (3));
+        rrIndexStepper.setBounds (mappingRow1.reduced (3));
         auto mappingRow2 = mapping.removeFromTop (54);
         const int mappingControlW = juce::jmax (70, mappingRow2.getWidth() / 5);
         loVelStepper.setBounds (mappingRow2.removeFromLeft (mappingControlW).reduced (3));
@@ -991,10 +1678,12 @@ namespace patchcraft
         chokeGroupStepper.setBounds (mappingRow2.removeFromLeft (mappingControlW).reduced (3));
         triggerChanceStepper.setBounds (mappingRow2.removeFromLeft (mappingControlW).reduced (3));
         auto mappingRow3 = mapping.removeFromTop (54);
-        importLowVelocityStepper.setBounds (mappingRow3.removeFromLeft (88).reduced (3));
-        importHighVelocityStepper.setBounds (mappingRow3.removeFromLeft (88).reduced (3));
-        applyImportVelocitySelectedBtn.setBounds (mappingRow3.removeFromLeft (86).reduced (3, 14));
-        applyImportVelocityAllBtn.setBounds (mappingRow3.removeFromLeft (82).reduced (3, 14));
+        importLowVelocityStepper.setBounds (mappingRow3.removeFromLeft (112).reduced (3));
+        mappingRow3.removeFromLeft (6);
+        importHighVelocityStepper.setBounds (mappingRow3.removeFromLeft (112).reduced (3));
+        mappingRow3.removeFromLeft (6);
+        applyImportVelocitySelectedBtn.setBounds (mappingRow3.removeFromLeft (88).reduced (3, 14));
+        applyImportVelocityAllBtn.setBounds (mappingRow3.removeFromLeft (84).reduced (3, 14));
 
         auto playback = playbackCard.reduced (10);
         playback.removeFromTop (28);
@@ -1040,8 +1729,8 @@ namespace patchcraft
         // List view mode
         if (listViewMode)
         {
-            samplesHeader.setVisible (true);
-            samplesList.setVisible (true);
+            samplesHeader.setVisible (! easyMode);
+            samplesList.setVisible (! easyMode);
             auto listArea = r.reduced (2);
             const auto count = owner.getProject().getSampleMap().getZones().size();
             samplesHeader.setText ("Imported Samples  |  " + juce::String ((int) count)
@@ -1055,6 +1744,7 @@ namespace patchcraft
             samplesHeader.setVisible (false);
             samplesList.setVisible (false);
         }
+        updateModeVisibility();
     }
 
     void SampleMapEditor::refresh()
@@ -1063,6 +1753,8 @@ namespace patchcraft
         samplesList.repaint();
         updateSteppersFromZone();
         updateHealthButtons();
+        easySummaryLabel.setText (buildEasySummary(), juce::dontSendNotification);
+        updateModeVisibility();
         repaint();
     }
 
@@ -1169,6 +1861,19 @@ namespace patchcraft
         for (int i = 0; i < (int) zones.size(); ++i)
             indexes.add (i);
         setSelectedZones (indexes, true);
+
+        if (indexes.isEmpty())
+        {
+            waveformStatus.setText ("Select All needs imported samples first.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+        }
+        else
+        {
+            waveformStatus.setText ("Selected all " + juce::String (indexes.size())
+                                    + " zones. Auto Trim will process the full selection.",
+                                    juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+        }
     }
 
     void SampleMapEditor::clearZoneSelection()
@@ -1191,6 +1896,7 @@ namespace patchcraft
         if (selectedZone < 0 || selectedZone >= (int) zones.size())
         {
             rrGroupStepper.setValue (0, false);
+            rrIndexStepper.setValue (0, false);
             rootStepper.setValue (60, false);
             loKeyStepper.setValue (0, false);
             hiKeyStepper.setValue (127, false);
@@ -1204,6 +1910,7 @@ namespace patchcraft
             sampleStartStepper.setValue (0, false);
             sampleEndStepper.setValue (0, false);
             tuneStepper.setValue (0, false);
+            trackStepper.setValue (100, false);
             padIndexStepper.setValue (-1, false);
             chokeGroupStepper.setValue (0, false);
             triggerChanceStepper.setValue (100, false);
@@ -1224,6 +1931,7 @@ namespace patchcraft
 
         auto& z = zones[(size_t) selectedZone];
         rrGroupStepper.setValue (z.roundRobinGroup, false);
+        rrIndexStepper.setValue (z.roundRobinIndex, false);
         rootStepper.setValue (z.rootNote, false);
         loKeyStepper.setValue (z.lowNote, false);
         hiKeyStepper.setValue (z.highNote, false);
@@ -1237,6 +1945,7 @@ namespace patchcraft
         sampleStartStepper.setValue (z.sampleStart, false);
         sampleEndStepper.setValue (z.sampleEnd, false);
         tuneStepper.setValue (juce::roundToInt (z.pitchOffset * 100.0f), false);
+        trackStepper.setValue (juce::roundToInt (juce::jlimit (0.0f, 2.0f, z.keyTracking) * 100.0f), false);
         padIndexStepper.setValue (juce::jlimit (-1, 15, z.padIndex), false);
         chokeGroupStepper.setValue (juce::jlimit (0, 127, z.chokeGroup), false);
         triggerChanceStepper.setValue (juce::jlimit (0, 100, z.triggerProbability), false);
@@ -1270,8 +1979,10 @@ namespace patchcraft
         auto& zones = owner.getProject().getSampleMap().getZones();
         if (selectedZone < 0 || selectedZone >= (int) zones.size()) return;
 
+        auto before = zones;
         auto& z = zones[(size_t) selectedZone];
         z.roundRobinGroup = rrGroupStepper.value;
+        z.roundRobinIndex = rrIndexStepper.value;
         z.rootNote = rootStepper.value;
         z.lowNote = juce::jmin (loKeyStepper.value, hiKeyStepper.value);
         z.highNote = juce::jmax (loKeyStepper.value, hiKeyStepper.value);
@@ -1285,6 +1996,7 @@ namespace patchcraft
         z.sampleStart = sampleStartStepper.value;
         z.sampleEnd = sampleEndStepper.value;
         z.pitchOffset = tuneStepper.value / 100.0f;
+        z.keyTracking = juce::jlimit (0.0f, 2.0f, trackStepper.value / 100.0f);
         z.reverse = reverseBtn.getToggleState();
         z.oneShot = oneShotToggle.getToggleState();
         z.padIndex = juce::jlimit (-1, 15, padIndexStepper.value);
@@ -1299,9 +2011,10 @@ namespace patchcraft
         loKeyStepper.valueLabel.setText (noteToString (z.lowNote), juce::dontSendNotification);
         hiKeyStepper.valueLabel.setText (noteToString (z.highNote), juce::dontSendNotification);
 
-        owner.getProject().notifyChanged();
+        const auto updatedZone = z;
+        commitSampleMapEdit ("Edit sample zone", std::move (before));
         if (waveformViewer != nullptr)
-            waveformViewer->setZone (z);
+            waveformViewer->setZone (updatedZone);
         updateHealthButtons();
         repaint();
     }
@@ -1315,13 +2028,32 @@ namespace patchcraft
             if (zoneIndex >= 0)
             {
                 selectZone (zoneIndex);
-                if (e.getNumberOfClicks() > 1)
+                const auto& zone = owner.getProject().getSampleMap().getZones()[(size_t) zoneIndex];
+                if (playModeEnabled || e.getNumberOfClicks() == 1)
+                {
+                    const auto inner = drumPadBounds.reduced (10);
+                    const float yNorm = juce::jlimit (0.0f, 1.0f,
+                        (float) (e.y - inner.getY()) / (float) juce::jmax (1, inner.getHeight()));
+                    const float velocity = juce::jlimit (0.2f, 1.0f, 0.45f + yNorm * 0.55f);
+                    mousePreviewNote = zone.rootNote;
+                    triggerPreviewNoteOn (mousePreviewNote, velocity, false);
+                }
+                else if (e.getNumberOfClicks() > 1)
+                {
                     auditionSelectedZone();
+                }
             }
             return;
         }
 
         if (! gridBounds.contains (e.getPosition())) return;
+
+        if (const int keyboardNote = noteAtKeyboardPosition (e.getPosition()); keyboardNote >= 0)
+        {
+            mousePreviewNote = keyboardNote;
+            triggerPreviewNoteOn (keyboardNote, 0.85f, true);
+            return;
+        }
 
         // Check if clicking on a zone
         auto& zones = owner.getProject().getSampleMap().getZones();
@@ -1392,6 +2124,8 @@ namespace patchcraft
                 dragStartRoot = z.rootNote;
                 dragStartLoVel = z.lowVelocity;
                 dragStartHiVel = z.highVelocity;
+                dragZonesBefore = owner.getProject().getSampleMap().getZones();
+                dragChangedSampleMap = false;
 
                 repaint();
                 return;
@@ -1444,6 +2178,18 @@ namespace patchcraft
 
     void SampleMapEditor::mouseDrag (const juce::MouseEvent& e)
     {
+        if (playModeEnabled && mousePreviewNote >= 0)
+        {
+            const int nextNote = noteAtKeyboardPosition (e.getPosition());
+            if (nextNote >= 0 && nextNote != mousePreviewNote)
+            {
+                triggerPreviewNoteOff (mousePreviewNote);
+                mousePreviewNote = nextNote;
+                triggerPreviewNoteOn (mousePreviewNote, 0.85f, true);
+            }
+            return;
+        }
+
         if (dragMode == DragMode::none || selectedZone < 0 || selectedZone >= (int) owner.getProject().getSampleMap().getZones().size()) return;
 
         auto& zones = owner.getProject().getSampleMap().getZones();
@@ -1505,14 +2251,24 @@ namespace patchcraft
         }
 
         updateSteppersFromZone();
-        owner.getProject().notifyChanged();
+        dragChangedSampleMap = true;
+        owner.getProject().markDirty();
         updateHealthButtons();
         repaint();
     }
 
     void SampleMapEditor::mouseUp (const juce::MouseEvent&)
     {
+        if (mousePreviewNote >= 0)
+        {
+            triggerPreviewNoteOff (mousePreviewNote);
+            mousePreviewNote = -1;
+        }
+        if (dragMode != DragMode::none && dragChangedSampleMap && ! dragZonesBefore.empty())
+            commitSampleMapEdit ("Edit sample zone", std::move (dragZonesBefore));
         dragMode = DragMode::none;
+        dragChangedSampleMap = false;
+        dragZonesBefore.clear();
     }
 
     void SampleMapEditor::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
@@ -1708,6 +2464,7 @@ namespace patchcraft
         if (waveformViewer == nullptr || selectedZone < 0 || selectedZone >= (int) zones.size())
             return;
 
+        auto before = zones;
         auto& zone = zones[(size_t) selectedZone];
         const auto edited = waveformViewer->getZone();
         zone.sampleStart = edited.sampleStart;
@@ -1726,7 +2483,7 @@ namespace patchcraft
         loopEndStepper.setValue (zone.loopEnd, false);
         loopToggle.setToggleState (zone.loopEnabled, juce::dontSendNotification);
 
-        owner.getProject().notifyChanged();
+        commitSampleMapEdit ("Edit sample waveform bounds", std::move (before));
         repaint();
     }
 
@@ -1787,20 +2544,17 @@ namespace patchcraft
 
         midiLearnMode = enabled;
         selectByMidiBtn.setToggleState (enabled, juce::dontSendNotification);
-        auto& deviceManager = owner.getAudio().getDeviceManager();
 
         if (enabled)
         {
-            for (const auto& input : juce::MidiInput::getAvailableDevices())
-                deviceManager.setMidiInputDeviceEnabled (input.identifier, true);
-            deviceManager.addMidiInputDeviceCallback ({}, this);
+            updateMidiCallbackRegistration();
             waveformStatus.setText ("MIDI zone select on: play a key to select its mapped zone.",
                                     juce::dontSendNotification);
             waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
         }
         else
         {
-            deviceManager.removeMidiInputDeviceCallback ({}, this);
+            updateMidiCallbackRegistration();
             waveformStatus.setText ("MIDI zone select off.", juce::dontSendNotification);
             waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
         }
@@ -1808,6 +2562,33 @@ namespace patchcraft
 
     void SampleMapEditor::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& message)
     {
+        if (playModeEnabled && (message.isNoteOn() || message.isNoteOff()))
+        {
+            const int note = message.getNoteNumber();
+            if (message.isNoteOn())
+            {
+                const float velocity = message.getFloatVelocity();
+                {
+                    const juce::SpinLock::ScopedLockType lock (auditionLock);
+                    if (auditionEngine != nullptr)
+                        auditionEngine->noteOn (note, velocity);
+                }
+
+                juce::Component::SafePointer<SampleMapEditor> safeThis (this);
+                juce::MessageManager::callAsync ([safeThis, note, velocity]
+                {
+                    if (safeThis != nullptr)
+                        safeThis->selectZoneForMidi (note, juce::jlimit (1, 127, juce::roundToInt (velocity * 127.0f)));
+                });
+            }
+            else
+            {
+                const juce::SpinLock::ScopedLockType lock (auditionLock);
+                if (auditionEngine != nullptr)
+                    auditionEngine->noteOff (note);
+            }
+        }
+
         if (! midiLearnMode || ! message.isNoteOn())
             return;
 
@@ -1873,6 +2654,7 @@ namespace patchcraft
 
         const int lowVelocity = juce::jmin (importLowVelocityStepper.value, importHighVelocityStepper.value);
         const int highVelocity = juce::jmax (importLowVelocityStepper.value, importHighVelocityStepper.value);
+        auto before = zones;
         int changed = 0;
 
         if (allZones)
@@ -1904,7 +2686,7 @@ namespace patchcraft
         if (changed == 0)
             return;
 
-        owner.getProject().notifyChanged();
+        commitSampleMapEdit ("Apply default import velocity", std::move (before));
         refresh();
         waveformStatus.setText ((allZones ? "Applied default velocity to all zones: "
                                           : "Applied default velocity to selected zones: ")
@@ -1967,10 +2749,22 @@ namespace patchcraft
             }
         }
         if (! collected.isEmpty())
-            importSampleFiles (collected);
+            importSampleFiles (collected, spanOnDropToggle.getToggleState());
     }
 
-    void SampleMapEditor::importSampleFiles (const juce::Array<juce::File>& files)
+    void SampleMapEditor::commitSampleMapEdit (const juce::String& actionName,
+                                               std::vector<SampleZoneDef> beforeZones)
+    {
+        auto afterZones = owner.getProject().getSampleMap().getZones();
+        owner.getProject().getSampleMap().getZones() = std::move (beforeZones);
+        owner.getProject().performSampleMapEdit (actionName,
+            [after = std::move (afterZones)] (SampleMap& map) mutable
+            {
+                map.getZones() = std::move (after);
+            });
+    }
+
+    void SampleMapEditor::importSampleFiles (const juce::Array<juce::File>& files, bool spanMappedRoots)
     {
         if (files.isEmpty())
             return;
@@ -2054,6 +2848,7 @@ namespace patchcraft
                     for (const auto& zone : importedZones)
                         ++rootCounts[zone.rootNote];
 
+                    auto before = owner.getProject().getSampleMap().getZones();
                     std::map<int, int> rootRoundRobinIndex;
                     int autoRoundRobin = 0;
                     for (auto& zone : importedZones)
@@ -2070,12 +2865,11 @@ namespace patchcraft
                         owner.getProject().getSampleMap().add (zone);
                     }
 
-                    if (anyParsedRoot)
+                    if (anyParsedRoot && spanMappedRoots)
                         owner.getProject().getSampleMap().autoMapByRootNotes();
+                    commitSampleMapEdit ("Import samples", std::move (before));
                     if (owner.getProject().getEngineType() != "sample")
                         owner.getProject().setEngineType ("sample");
-                    else
-                        owner.getProject().notifyChanged();
                     refresh();
 
                     juce::String status = "Imported " + juce::String (imported) + " sample"
@@ -2108,6 +2902,7 @@ namespace patchcraft
         if (selectedZoneIndexes.isEmpty())
             return;
 
+        auto before = zones;
         auto toRemove = selectedZoneIndexes;
         toRemove.sort();
         for (int i = toRemove.size() - 1; i >= 0; --i)
@@ -2119,7 +2914,7 @@ namespace patchcraft
 
         selectedZone = -1;
         selectedZoneIndexes.clear();
-        owner.getProject().notifyChanged();
+        commitSampleMapEdit ("Delete sample zones", std::move (before));
         refresh();
     }
 
@@ -2141,18 +2936,20 @@ namespace patchcraft
                 if (result != 1 || safeThis == nullptr)
                     return;
 
+                auto before = safeThis->owner.getProject().getSampleMap().getZones();
                 safeThis->owner.getProject().getSampleMap().clear();
                 safeThis->selectedZone = -1;
                 safeThis->selectedZoneIndexes.clear();
-                safeThis->owner.getProject().notifyChanged();
+                safeThis->commitSampleMapEdit ("Clear sample map", std::move (before));
                 safeThis->refresh();
             });
     }
 
     void SampleMapEditor::autoMap()
     {
+        auto before = owner.getProject().getSampleMap().getZones();
         owner.getProject().getSampleMap().autoMapByRootNotes();
-        owner.getProject().notifyChanged();
+        commitSampleMapEdit ("Auto-map samples", std::move (before));
         refresh();
     }
 
@@ -2171,11 +2968,11 @@ namespace patchcraft
             return;
         }
 
+        auto before = map.getZones();
         map.autoMapDrumPads (startNote, padCount);
+        commitSampleMapEdit ("Auto-map drum pads", std::move (before));
         if (owner.getProject().getEngineType() != "sample")
             owner.getProject().setEngineType ("sample");
-        else
-            owner.getProject().notifyChanged();
         refresh();
         const auto rootName = juce::MidiMessage::getMidiNoteName (startNote, true, true, 4);
         waveformStatus.setText ("Mapped imported samples to " + juce::String (padCount)
@@ -2192,6 +2989,7 @@ namespace patchcraft
         if (targets.isEmpty() && selectedZone >= 0)
             targets.add (selectedZone);
 
+        auto before = zones;
         int normalized = 0;
         for (const auto idx : targets)
         {
@@ -2242,7 +3040,7 @@ namespace patchcraft
             return;
         }
 
-        owner.getProject().notifyChanged();
+        commitSampleMapEdit ("Normalize sample zones", std::move (before));
         refresh();
         waveformStatus.setText ("Normalized " + juce::String (normalized) + " zone(s) to 0 dB peak.",
                                 juce::dontSendNotification);
@@ -2277,15 +3075,47 @@ namespace patchcraft
                     waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
                     break;
                 }
+                auto before = map.getZones();
                 map.autoMapByRootNotes();
+                commitSampleMapEdit ("Build multi-sample patch", std::move (before));
                 if (owner.getProject().getEngineType() != "sample")
                     owner.getProject().setEngineType ("sample");
-                else
-                    owner.getProject().notifyChanged();
                 refresh();
                 waveformStatus.setText ("Built multi-sample patch — zones spread across the keyboard by root note.",
                                          juce::dontSendNotification);
                 waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+                break;
+            }
+            case 403:                                            // Build Remix Performance Kit
+            {
+                auto& map = owner.getProject().getSampleMap();
+                if (map.getZones().empty())
+                {
+                    waveformStatus.setText ("Remix Kit needs imported audio first. Drop WAV/AIFF/FLAC files anywhere on this page.",
+                                             juce::dontSendNotification);
+                    waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+                    break;
+                }
+
+                if (selectedZone < 0)
+                    selectZone (0);
+
+                if (map.getZones().size() == 1)
+                {
+                    makeSelectedZoneGlitchKit();
+                    waveformStatus.setText ("Built Remix Kit: sliced the selected audio into playable chops for MIDI/drum performance.",
+                                             juce::dontSendNotification);
+                    waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+                }
+                else
+                {
+                    autoMapDrumPadsAt (36, juce::jmin (16, (int) map.getZones().size()));
+                    selectAllZones();
+                    applyDrumOneShotRecipeToSelected();
+                    waveformStatus.setText ("Built Remix Kit: mapped imported one-shots to performance pads. Add MIDI Playground Drum Machine to sequence them.",
+                                             juce::dontSendNotification);
+                    waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+                }
                 break;
             }
             default: break;
@@ -2302,6 +3132,7 @@ namespace patchcraft
             return;
         }
 
+        auto before = zones;
         auto base = zones[(size_t) selectedZone];
         if (selectedWaveformBuffer.getNumSamples() <= 0 || resolveSampleFile (base).getFullPathName() != loadedWaveformPath)
         {
@@ -2378,10 +3209,9 @@ namespace patchcraft
 
         zones.erase (zones.begin() + selectedZone);
         zones.insert (zones.begin() + selectedZone, slices.begin(), slices.end());
+        commitSampleMapEdit ("Create glitch kit", std::move (before));
         if (owner.getProject().getEngineType() != "sample")
             owner.getProject().setEngineType ("sample");
-        else
-            owner.getProject().notifyChanged();
         juce::Array<int> firstSlice;
         firstSlice.add (selectedZone);
         setSelectedZones (firstSlice, true);
@@ -2415,6 +3245,23 @@ namespace patchcraft
         menu.addItem (14, "Transient chop selected sample (up to 16)", hasSelection);
         menu.addItem (8, "Merge selected with next matching sample", canMergeNext);
         menu.addSeparator();
+        menu.addSectionHeader ("Precision Editor");
+        menu.addItem (26, "Open large waveform editor...", hasSelection);
+        menu.addItem (27, "Copy selected zone", hasSelection);
+        menu.addItem (28, "Cut selected zone", hasSelection);
+        menu.addItem (29, "Paste copied zone after selection", hasZoneClipboard && hasSelection);
+        menu.addItem (30, "Fabricate 4 round-robin variations", hasSelection);
+        menu.addSeparator();
+        menu.addSectionHeader ("Smart Zone Tools");
+        menu.addItem (19, "Auto-trim selected zones", hasSelection);
+        menu.addItem (20, "Make selected drum one-shots", hasSelection);
+        menu.addItem (21, "Make selected sustain loops", hasSelection);
+        menu.addItem (22, "Build velocity layers from selection", selectedZoneIndexes.size() >= 2);
+        menu.addItem (23, "Build round robin groups from selection", selectedZoneIndexes.size() >= 2);
+        menu.addItem (24, "Humanize selected zones", hasSelection);
+        menu.addItem (31, "Select all + round robin + humanize", ! zones.empty());
+        menu.addItem (25, "Reset playback edits on selection", hasSelection);
+        menu.addSeparator();
         menu.addItem (9, "Set selected bounds to full sample", hasSelection);
         menu.addItem (10, "Reset selected playback edits", hasSelection);
         menu.addSeparator();
@@ -2428,14 +3275,16 @@ namespace patchcraft
             {
                 if (result == 1)
                 {
+                    auto before = owner.getProject().getSampleMap().getZones();
                     owner.getProject().getSampleMap().autoMapByRootNotes();
-                    owner.getProject().notifyChanged();
+                    commitSampleMapEdit ("Auto-map samples by root", std::move (before));
                     refresh();
                 }
                 else if (result == 2)
                 {
+                    auto before = owner.getProject().getSampleMap().getZones();
                     owner.getProject().getSampleMap().autoMapAcrossKeyboard();
-                    owner.getProject().notifyChanged();
+                    commitSampleMapEdit ("Spread samples across keyboard", std::move (before));
                     refresh();
                 }
                 else if (result == 3)
@@ -2502,7 +3351,561 @@ namespace patchcraft
                 {
                     resetSelectedZonePlaybackEdits();
                 }
+                else if (result == 19)
+                {
+                    applySmartTrimToSelected();
+                }
+                else if (result == 20)
+                {
+                    applyDrumOneShotRecipeToSelected();
+                }
+                else if (result == 21)
+                {
+                    applySustainLoopRecipeToSelected();
+                }
+                else if (result == 22)
+                {
+                    applyVelocityLayersToSelected();
+                }
+                else if (result == 23)
+                {
+                    applyRoundRobinToSelected();
+                }
+                else if (result == 24)
+                {
+                    applyHumanizeToSelected();
+                }
+                else if (result == 31)
+                {
+                    selectAllRoundRobinAndHumanize();
+                }
+                else if (result == 25)
+                {
+                    resetPlaybackEditsForSelectedZones();
+                }
+                else if (result == 26)
+                {
+                    showPrecisionSampleEditor();
+                }
+                else if (result == 27)
+                {
+                    copySelectedZoneToClipboard();
+                }
+                else if (result == 28)
+                {
+                    cutSelectedZoneToClipboard();
+                }
+                else if (result == 29)
+                {
+                    pasteZoneClipboard();
+                }
+                else if (result == 30)
+                {
+                    fabricateRoundRobinVariations (4);
+                }
             });
+    }
+
+    juce::Array<int> SampleMapEditor::editableZoneIndexes() const
+    {
+        const auto& zones = owner.getProject().getSampleMap().getZones();
+        juce::Array<int> indexes;
+        for (int index : selectedZoneIndexes)
+            if (index >= 0 && index < (int) zones.size() && ! indexes.contains (index))
+                indexes.add (index);
+
+        if (indexes.isEmpty() && selectedZone >= 0 && selectedZone < (int) zones.size())
+            indexes.add (selectedZone);
+
+        indexes.sort();
+        return indexes;
+    }
+
+    void SampleMapEditor::applySmartTrimToSelected()
+    {
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        auto indexes = editableZoneIndexes();
+        const bool trimmingAllZones = indexes.isEmpty();
+        if (indexes.isEmpty())
+        {
+            for (int index = 0; index < (int) zones.size(); ++index)
+                indexes.add (index);
+        }
+
+        if (indexes.isEmpty())
+        {
+            waveformStatus.setText ("Auto Trim needs imported samples first.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        auto before = zones;
+        int changed = 0;
+        for (int index : indexes)
+        {
+            auto& zone = zones[(size_t) index];
+            juce::String status;
+            if (! loadWaveformForZone (zone, status))
+                continue;
+
+            const int sampleCount = selectedWaveformBuffer.getNumSamples();
+            if (sampleCount <= 8)
+                continue;
+
+            float peak = 0.0f;
+            for (int channel = 0; channel < selectedWaveformBuffer.getNumChannels(); ++channel)
+            {
+                const auto* data = selectedWaveformBuffer.getReadPointer (channel);
+                for (int sample = 0; sample < sampleCount; ++sample)
+                    peak = juce::jmax (peak, std::abs (data[sample]));
+            }
+
+            const float threshold = juce::jmax (0.0008f, peak * 0.015f);
+            int first = 0;
+            int last = sampleCount - 1;
+            auto sampleAmplitude = [this] (int sample)
+            {
+                float value = 0.0f;
+                for (int channel = 0; channel < selectedWaveformBuffer.getNumChannels(); ++channel)
+                    value = juce::jmax (value, std::abs (selectedWaveformBuffer.getSample (channel, sample)));
+                return value;
+            };
+
+            while (first < sampleCount - 1 && sampleAmplitude (first) < threshold)
+                ++first;
+            while (last > first + 1 && sampleAmplitude (last) < threshold)
+                --last;
+
+            const int preRoll = juce::jmax (1, juce::roundToInt (selectedWaveformRate * 0.002));
+            const int fadeSamples = juce::jmax (1, juce::roundToInt (selectedWaveformRate * 0.004));
+            zone.sampleStart = juce::jmax (0, first - preRoll);
+            zone.sampleEnd = juce::jmin (sampleCount, last + preRoll + 1);
+            zone.fadeInStart = zone.sampleStart;
+            zone.fadeInLength = juce::jmin (zone.sampleEnd - zone.sampleStart, fadeSamples);
+            zone.fadeOutLength = juce::jmin (zone.sampleEnd - zone.sampleStart, fadeSamples);
+            zone.fadeOutStart = zone.sampleEnd - zone.fadeOutLength;
+            ++changed;
+        }
+
+        if (changed <= 0)
+        {
+            waveformStatus.setText ("Auto Trim could not read any selected sample audio.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        commitSampleMapEdit ("Auto-trim samples", std::move (before));
+        refresh();
+        waveformStatus.setText ("Auto-trimmed " + juce::String (changed) + " zone"
+                                + (changed == 1 ? "." : "s.")
+                                + (trimmingAllZones ? " No selection: trimmed all samples." : " Selected samples only."),
+                                juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+    }
+
+    void SampleMapEditor::applyDrumOneShotRecipeToSelected()
+    {
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        const auto indexes = editableZoneIndexes();
+        if (indexes.isEmpty())
+            return;
+
+        auto before = zones;
+        int ordinal = 0;
+        for (int index : indexes)
+        {
+            auto& zone = zones[(size_t) index];
+            zone.oneShot = true;
+            zone.loopEnabled = false;
+            zone.loopStart = 0;
+            zone.loopEnd = 0;
+            zone.lowNote = zone.highNote = juce::jlimit (0, 127, zone.rootNote);
+            if (zone.padIndex < 0)
+                zone.padIndex = juce::jlimit (0, 15, ordinal);
+            if (zone.padLabel.isEmpty())
+                zone.padLabel = juce::File (zone.samplePath).getFileNameWithoutExtension();
+            zone.group = zone.group.isNotEmpty() ? zone.group : "Drum Kit";
+            zone.triggerProbability = 100;
+            zone.chokeGroup = juce::jlimit (0, 127, zone.chokeGroup);
+
+            const int playEnd = zone.sampleEnd > zone.sampleStart ? zone.sampleEnd : zone.sampleStart + juce::roundToInt (selectedWaveformRate);
+            const int fadeSamples = juce::jmax (1, juce::roundToInt (selectedWaveformRate * 0.003));
+            zone.fadeInStart = zone.sampleStart;
+            zone.fadeInLength = fadeSamples;
+            zone.fadeOutLength = fadeSamples;
+            zone.fadeOutStart = juce::jmax (zone.sampleStart, playEnd - fadeSamples);
+            ++ordinal;
+        }
+
+        commitSampleMapEdit ("Apply drum one-shot recipe", std::move (before));
+        if (owner.getProject().getEngineType() != "sample")
+            owner.getProject().setEngineType ("sample");
+
+        refresh();
+        waveformStatus.setText ("Applied Drum One-Shot recipe to " + juce::String (indexes.size()) + " zone"
+                                + (indexes.size() == 1 ? "." : "s."), juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+    }
+
+    void SampleMapEditor::applySustainLoopRecipeToSelected()
+    {
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        const auto indexes = editableZoneIndexes();
+        if (indexes.isEmpty())
+            return;
+
+        auto before = zones;
+        int changed = 0;
+        for (int index : indexes)
+        {
+            auto& zone = zones[(size_t) index];
+            juce::String status;
+            if (! loadWaveformForZone (zone, status))
+                continue;
+
+            const int sampleCount = selectedWaveformBuffer.getNumSamples();
+            const int sourceStart = juce::jlimit (0, juce::jmax (0, sampleCount - 2), zone.sampleStart);
+            const int sourceEnd = zone.sampleEnd > sourceStart
+                ? juce::jlimit (sourceStart + 2, sampleCount, zone.sampleEnd)
+                : sampleCount;
+            const int length = sourceEnd - sourceStart;
+            if (length < 2048)
+                continue;
+
+            zone.oneShot = false;
+            zone.reverse = false;
+            zone.loopEnabled = true;
+            zone.loopStart = sourceStart + juce::roundToInt ((float) length * 0.38f);
+            zone.loopEnd = sourceStart + juce::roundToInt ((float) length * 0.86f);
+            if (zone.loopEnd <= zone.loopStart + 256)
+                zone.loopEnd = juce::jmin (sourceEnd, zone.loopStart + 256);
+
+            const int fadeSamples = juce::jmax (1, juce::roundToInt (selectedWaveformRate * 0.012));
+            zone.fadeInStart = sourceStart;
+            zone.fadeInLength = juce::jmin (length, fadeSamples);
+            zone.fadeOutLength = juce::jmin (length, fadeSamples);
+            zone.fadeOutStart = juce::jmax (sourceStart, sourceEnd - zone.fadeOutLength);
+            ++changed;
+        }
+
+        if (changed <= 0)
+        {
+            waveformStatus.setText ("Loop Pad needs readable samples longer than a short one-shot.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        commitSampleMapEdit ("Apply sustain loop recipe", std::move (before));
+        refresh();
+        waveformStatus.setText ("Built conservative sustain loops for " + juce::String (changed) + " zone"
+                                + (changed == 1 ? "." : "s."), juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+    }
+
+    void SampleMapEditor::applyVelocityLayersToSelected()
+    {
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        const auto selectedIndexes = editableZoneIndexes();
+        if (selectedIndexes.size() < 2)
+        {
+            waveformStatus.setText ("Velocity Layers needs at least two selected zones.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        auto before = zones;
+        std::vector<int> indexes;
+        indexes.reserve ((size_t) selectedIndexes.size());
+        for (int index : selectedIndexes)
+            indexes.push_back (index);
+
+        std::sort (indexes.begin(), indexes.end(), [&] (int a, int b)
+        {
+            const auto& za = zones[(size_t) a];
+            const auto& zb = zones[(size_t) b];
+            if (za.rootNote != zb.rootNote)
+                return za.rootNote < zb.rootNote;
+            return juce::File (za.samplePath).getFileName().compareIgnoreCase (juce::File (zb.samplePath).getFileName()) < 0;
+        });
+
+        std::map<int, std::vector<int>> byRoot;
+        for (int index : indexes)
+            byRoot[zones[(size_t) index].rootNote].push_back (index);
+
+        int layered = 0;
+        for (const auto& group : byRoot)
+        {
+            const int count = (int) group.second.size();
+            if (count <= 1)
+                continue;
+
+            for (int ordinal = 0; ordinal < count; ++ordinal)
+            {
+                auto& zone = zones[(size_t) group.second[(size_t) ordinal]];
+                zone.lowVelocity = 1 + (ordinal * 127) / count;
+                zone.highVelocity = ((ordinal + 1) * 127) / count;
+                zone.velocityLowerVelXFade = ordinal > 0 ? 4.0f : 0.0f;
+                zone.velocityUpperVelXFade = ordinal + 1 < count ? 4.0f : 0.0f;
+                ++layered;
+            }
+        }
+
+        if (layered <= 0)
+        {
+            waveformStatus.setText ("Velocity Layers needs multiple selected zones sharing the same root note.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        commitSampleMapEdit ("Build velocity layers", std::move (before));
+        refresh();
+        waveformStatus.setText ("Built velocity layers for " + juce::String (layered) + " zones.", juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+    }
+
+    void SampleMapEditor::applyRoundRobinToSelected()
+    {
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        const auto indexes = editableZoneIndexes();
+        if (indexes.size() < 2)
+        {
+            waveformStatus.setText ("Round Robin needs at least two selected zones.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        std::map<int, std::vector<int>> byRoot;
+        for (int index : indexes)
+            byRoot[zones[(size_t) index].rootNote].push_back (index);
+
+        auto before = zones;
+        int assigned = 0;
+        for (const auto& group : byRoot)
+        {
+            const int count = (int) group.second.size();
+            if (count <= 1)
+                continue;
+
+            for (int ordinal = 0; ordinal < count; ++ordinal)
+            {
+                auto& zone = zones[(size_t) group.second[(size_t) ordinal]];
+                zone.roundRobinGroup = juce::jlimit (1, 127, group.first + 1);
+                zone.roundRobinIndex = ordinal + 1;
+                zone.lowVelocity = juce::jlimit (1, 127, zone.lowVelocity);
+                zone.highVelocity = juce::jlimit (zone.lowVelocity, 127, zone.highVelocity);
+                ++assigned;
+            }
+        }
+
+        if (assigned <= 0)
+        {
+            waveformStatus.setText ("Round Robin needs multiple selected zones sharing a root note.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        commitSampleMapEdit ("Assign round robin", std::move (before));
+        refresh();
+        waveformStatus.setText ("Assigned round-robin groups to " + juce::String (assigned) + " zones.", juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+    }
+
+    void SampleMapEditor::applyHumanizeToSelected()
+    {
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        const auto indexes = editableZoneIndexes();
+        if (indexes.isEmpty())
+            return;
+
+        auto before = zones;
+        for (int ordinal = 0; ordinal < indexes.size(); ++ordinal)
+        {
+            auto& zone = zones[(size_t) indexes[ordinal]];
+            const float phase = (float) ((ordinal * 37 + zone.rootNote * 11) % 101) / 100.0f;
+            const float phase2 = (float) ((ordinal * 19 + zone.rootNote * 7) % 101) / 100.0f;
+            zone.gainDb = juce::jlimit (-48.0f, 24.0f, zone.gainDb + (phase - 0.5f) * 1.6f);
+            zone.pan = juce::jlimit (-1.0f, 1.0f, zone.pan + (phase2 - 0.5f) * 0.22f);
+            if (zone.oneShot || zone.padIndex >= 0)
+                zone.triggerProbability = juce::jlimit (80, 100, 92 + ((ordinal * 5 + zone.rootNote) % 9));
+        }
+
+        commitSampleMapEdit ("Humanize sample zones", std::move (before));
+        refresh();
+        waveformStatus.setText ("Humanized " + juce::String (indexes.size()) + " selected zone"
+                                + (indexes.size() == 1 ? "." : "s."), juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+    }
+
+    void SampleMapEditor::selectAllRoundRobinAndHumanize()
+    {
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        if (zones.empty())
+        {
+            waveformStatus.setText ("Import samples before building round-robin groups.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        juce::Array<int> allIndexes;
+        for (int i = 0; i < (int) zones.size(); ++i)
+            allIndexes.add (i);
+        setSelectedZones (allIndexes, true);
+
+        auto before = zones;
+        std::map<int, std::vector<int>> byRoot;
+        for (int i = 0; i < (int) zones.size(); ++i)
+            byRoot[zones[(size_t) i].rootNote].push_back (i);
+
+        int rrAssigned = 0;
+        int rrGroups = 0;
+        for (const auto& group : byRoot)
+        {
+            const int count = (int) group.second.size();
+            if (count <= 1)
+                continue;
+
+            ++rrGroups;
+            for (int ordinal = 0; ordinal < count; ++ordinal)
+            {
+                auto& zone = zones[(size_t) group.second[(size_t) ordinal]];
+                zone.roundRobinGroup = juce::jlimit (1, 127, group.first + 1);
+                zone.roundRobinIndex = ordinal + 1;
+                zone.lowVelocity = juce::jlimit (1, 127, zone.lowVelocity);
+                zone.highVelocity = juce::jlimit (zone.lowVelocity, 127, zone.highVelocity);
+                ++rrAssigned;
+            }
+        }
+
+        for (int ordinal = 0; ordinal < (int) zones.size(); ++ordinal)
+        {
+            auto& zone = zones[(size_t) ordinal];
+            const float phase = (float) ((ordinal * 37 + zone.rootNote * 11) % 101) / 100.0f;
+            const float phase2 = (float) ((ordinal * 19 + zone.rootNote * 7) % 101) / 100.0f;
+            zone.gainDb = juce::jlimit (-48.0f, 24.0f, zone.gainDb + (phase - 0.5f) * 1.6f);
+            zone.pan = juce::jlimit (-1.0f, 1.0f, zone.pan + (phase2 - 0.5f) * 0.22f);
+            if (zone.oneShot || zone.padIndex >= 0)
+                zone.triggerProbability = juce::jlimit (80, 100, 92 + ((ordinal * 5 + zone.rootNote) % 9));
+        }
+
+        commitSampleMapEdit ("Round robin and humanize all samples", std::move (before));
+        refresh();
+        waveformStatus.setText (rrGroups > 0
+            ? ("Selected all " + juce::String ((int) zones.size()) + " zones, assigned "
+                + juce::String (rrAssigned) + " round-robin slots across "
+                + juce::String (rrGroups) + " root group" + (rrGroups == 1 ? ", and humanized playback." : "s, and humanized playback."))
+            : ("Selected all " + juce::String ((int) zones.size()) + " zones and humanized playback. Round robin needs multiple zones sharing the same root note."),
+            juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId,
+                                  rrGroups > 0 ? PatchCraftLookAndFeel::accent()
+                                               : juce::Colour (0xffffc857));
+    }
+
+    void SampleMapEditor::fabricateRoundRobinVariations (int variationCount)
+    {
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        if (selectedZone < 0 || selectedZone >= (int) zones.size())
+        {
+            waveformStatus.setText ("Select one zone before fabricating round-robin variations.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        auto base = zones[(size_t) selectedZone];
+        juce::String loadStatus;
+        const bool hasWaveform = loadWaveformForZone (base, loadStatus);
+        const int sampleCount = hasWaveform ? selectedWaveformBuffer.getNumSamples() : 0;
+        const int count = juce::jlimit (2, 8, variationCount);
+        const int group = base.roundRobinGroup > 0
+            ? juce::jlimit (1, 127, base.roundRobinGroup)
+            : juce::jlimit (1, 127, base.rootNote + 1);
+
+        auto before = zones;
+        zones[(size_t) selectedZone].roundRobinGroup = group;
+        zones[(size_t) selectedZone].roundRobinIndex = 1;
+
+        juce::Array<int> newSelection;
+        newSelection.add (selectedZone);
+        static constexpr float cents[] = { -5.0f, 4.0f, 7.0f, -8.0f, 2.0f, -3.0f, 9.0f };
+        static constexpr float gains[] = { -0.7f, 0.45f, -0.35f, 0.62f, -0.18f, 0.28f, -0.52f };
+        static constexpr float pans[]  = { -0.08f, 0.07f, 0.12f, -0.11f, 0.04f, -0.05f, 0.10f };
+
+        const int playStart = juce::jmax (0, base.sampleStart);
+        const int playEnd = sampleCount > 0
+            ? (base.sampleEnd > playStart ? juce::jmin (sampleCount, base.sampleEnd) : sampleCount)
+            : base.sampleEnd;
+        const int playLength = juce::jmax (1, playEnd - playStart);
+        const int maxShift = hasWaveform
+            ? juce::jlimit (1, juce::jmax (1, playLength / 12), juce::roundToInt (selectedWaveformRate * 0.010))
+            : 0;
+
+        for (int i = 1; i < count; ++i)
+        {
+            auto variation = base;
+            variation.roundRobinGroup = group;
+            variation.roundRobinIndex = i + 1;
+            variation.pitchOffset = juce::jlimit (-12.0f, 12.0f, variation.pitchOffset + cents[(i - 1) % 7] / 100.0f);
+            variation.gainDb = juce::jlimit (-48.0f, 24.0f, variation.gainDb + gains[(i - 1) % 7]);
+            variation.pan = juce::jlimit (-1.0f, 1.0f, variation.pan + pans[(i - 1) % 7]);
+            variation.triggerProbability = juce::jlimit (80, 100, variation.triggerProbability > 0 ? variation.triggerProbability : 96);
+
+            if (hasWaveform && sampleCount > 8 && maxShift > 0)
+            {
+                const int direction = (i % 2 == 0) ? -1 : 1;
+                const int shift = direction * juce::jmax (1, (maxShift * (i + 1)) / count);
+                const int shiftedStart = juce::jlimit (0, juce::jmax (0, sampleCount - 2), base.sampleStart + shift);
+                variation.sampleStart = shiftedStart;
+                if (base.sampleEnd > base.sampleStart)
+                    variation.sampleEnd = juce::jlimit (shiftedStart + 1, sampleCount, base.sampleEnd + shift);
+                if (variation.fadeInStart > 0)  variation.fadeInStart = juce::jlimit (0, sampleCount, variation.fadeInStart + shift);
+                if (variation.fadeOutStart > 0) variation.fadeOutStart = juce::jlimit (0, sampleCount, variation.fadeOutStart + shift);
+                if (variation.loopStart > 0)    variation.loopStart = juce::jlimit (0, sampleCount, variation.loopStart + shift);
+                if (variation.loopEnd > 0)      variation.loopEnd = juce::jlimit (variation.loopStart + 1, sampleCount, variation.loopEnd + shift);
+            }
+
+            zones.insert (zones.begin() + selectedZone + i, variation);
+            newSelection.add (selectedZone + i);
+        }
+
+        commitSampleMapEdit ("Fabricate round robin variations", std::move (before));
+        if (owner.getProject().getEngineType() != "sample")
+            owner.getProject().setEngineType ("sample");
+
+        setSelectedZones (newSelection, true);
+        refresh();
+        waveformStatus.setText ("Fabricated " + juce::String (count) + " round-robin variations from one sample. Minor pitch, gain, pan, and start offsets add realism without new recordings.",
+                                juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+    }
+
+    void SampleMapEditor::resetPlaybackEditsForSelectedZones()
+    {
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        const auto indexes = editableZoneIndexes();
+        if (indexes.isEmpty())
+            return;
+
+        auto before = zones;
+        for (int index : indexes)
+        {
+            auto& zone = zones[(size_t) index];
+            zone.sampleStart = 0;
+            zone.sampleEnd = 0;
+            zone.loopEnabled = false;
+            zone.loopStart = 0;
+            zone.loopEnd = 0;
+            zone.fadeInStart = 0;
+            zone.fadeInLength = 0;
+            zone.fadeOutStart = 0;
+            zone.fadeOutLength = 0;
+            zone.reverse = false;
+            zone.pitchOffset = 0.0f;
+        }
+
+        commitSampleMapEdit ("Reset sample playback edits", std::move (before));
+        refresh();
+        waveformStatus.setText ("Reset playback edits on " + juce::String (indexes.size()) + " selected zone"
+                                + (indexes.size() == 1 ? "." : "s."), juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
     }
 
     void SampleMapEditor::toggleReverseForSelected()
@@ -2514,8 +3917,9 @@ namespace patchcraft
             return;
         }
 
+        auto before = zones;
         zones[(size_t) selectedZone].reverse = reverseBtn.getToggleState();
-        owner.getProject().notifyChanged();
+        commitSampleMapEdit ("Toggle sample reverse", std::move (before));
         repaint();
     }
 
@@ -2586,6 +3990,11 @@ namespace patchcraft
 
     void SampleMapEditor::stopAudition()
     {
+        playModeEnabled = false;
+        playModeBtn.setToggleState (false, juce::dontSendNotification);
+        easyPlayModeBtn.setToggleState (false, juce::dontSendNotification);
+        updateMidiCallbackRegistration();
+
         if (auditionCallbackActive)
         {
             owner.getAudio().getDeviceManager().removeAudioCallback (this);
@@ -2614,6 +4023,7 @@ namespace patchcraft
             return;
         }
 
+        auto before = zones;
         auto& zone = zones[(size_t) selectedZone];
         zone.loopEnabled = loopToggle.getToggleState();
         const int length = waveformViewer != nullptr ? waveformViewer->getSampleLength() : 0;
@@ -2627,7 +4037,7 @@ namespace patchcraft
         }
 
         updateSteppersFromZone();
-        owner.getProject().notifyChanged();
+        commitSampleMapEdit ("Toggle sample loop", std::move (before));
     }
 
     void SampleMapEditor::addDefaultFade (bool fadeIn)
@@ -2636,6 +4046,7 @@ namespace patchcraft
         if (selectedZone < 0 || selectedZone >= (int) zones.size())
             return;
 
+        auto before = zones;
         auto& zone = zones[(size_t) selectedZone];
         const int length = waveformViewer != nullptr ? waveformViewer->getSampleLength() : 0;
         const int playEnd = zone.sampleEnd > zone.sampleStart ? zone.sampleEnd : length;
@@ -2657,7 +4068,7 @@ namespace patchcraft
 
         if (waveformViewer != nullptr)
             waveformViewer->setZone (zone);
-        owner.getProject().notifyChanged();
+        commitSampleMapEdit (fadeIn ? "Add sample fade in" : "Add sample fade out", std::move (before));
         repaint();
     }
 
@@ -2667,13 +4078,14 @@ namespace patchcraft
         if (selectedZone < 0 || selectedZone >= (int) zones.size())
             return;
 
+        auto before = zones;
         auto copy = zones[(size_t) selectedZone];
         if (copy.roundRobinGroup > 0)
             ++copy.roundRobinIndex;
 
         zones.insert (zones.begin() + selectedZone + 1, copy);
         ++selectedZone;
-        owner.getProject().notifyChanged();
+        commitSampleMapEdit ("Duplicate sample zone", std::move (before));
         refresh();
     }
 
@@ -2683,6 +4095,7 @@ namespace patchcraft
         if (selectedZone < 0 || selectedZone >= (int) zones.size())
             return;
 
+        auto before = zones;
         auto& original = zones[(size_t) selectedZone];
         if (original.highNote <= original.lowNote)
             return;
@@ -2698,7 +4111,7 @@ namespace patchcraft
         upper.rootNote = juce::jlimit (upper.lowNote, upper.highNote, upper.rootNote);
 
         zones.insert (zones.begin() + selectedZone + 1, upper);
-        owner.getProject().notifyChanged();
+        commitSampleMapEdit ("Split sample key range", std::move (before));
         refresh();
     }
 
@@ -2708,6 +4121,7 @@ namespace patchcraft
         if (selectedZone < 0 || selectedZone >= (int) zones.size())
             return;
 
+        auto before = zones;
         auto& original = zones[(size_t) selectedZone];
         if (original.highVelocity <= original.lowVelocity)
             return;
@@ -2718,7 +4132,7 @@ namespace patchcraft
         upper.lowVelocity = split + 1;
 
         zones.insert (zones.begin() + selectedZone + 1, upper);
-        owner.getProject().notifyChanged();
+        commitSampleMapEdit ("Split sample velocity range", std::move (before));
         refresh();
     }
 
@@ -2785,9 +4199,10 @@ namespace patchcraft
             slices.push_back (slice);
         }
 
+        auto before = zones;
         zones.erase (zones.begin() + selectedZone);
         zones.insert (zones.begin() + selectedZone, slices.begin(), slices.end());
-        owner.getProject().notifyChanged();
+        commitSampleMapEdit ("Chop sample into slices", std::move (before));
         refresh();
         waveformStatus.setText ("Created " + juce::String (sliceCount) + " key slices starting at "
                                 + noteToString (startKey) + ".", juce::dontSendNotification);
@@ -2893,6 +4308,7 @@ namespace patchcraft
         if (selectedZone < 0 || selectedZone >= (int) zones.size() || slicePoints.size() < 2)
             return;
 
+        auto before = zones;
         auto base = zones[(size_t) selectedZone];
         const int maxPlayableSlices = juce::jmax (1, 128 - juce::jlimit (0, 127, base.rootNote));
         const int sliceCount = juce::jmin ((int) slicePoints.size() - 1, maxPlayableSlices);
@@ -2935,7 +4351,7 @@ namespace patchcraft
 
         zones.erase (zones.begin() + selectedZone);
         zones.insert (zones.begin() + selectedZone, slices.begin(), slices.end());
-        owner.getProject().notifyChanged();
+        commitSampleMapEdit ("Chop sample at transients", std::move (before));
         refresh();
         waveformStatus.setText ("Created " + juce::String ((int) slices.size()) + " " + label + " slices starting at "
                                 + noteToString (startKey) + ".", juce::dontSendNotification);
@@ -2966,6 +4382,7 @@ namespace patchcraft
         if (selectedZone < 0 || selectedZone + 1 >= (int) zones.size())
             return;
 
+        auto before = zones;
         auto& first = zones[(size_t) selectedZone];
         const auto second = zones[(size_t) selectedZone + 1];
         if (first.samplePath != second.samplePath)
@@ -2980,8 +4397,198 @@ namespace patchcraft
         first.pan = (first.pan + second.pan) * 0.5f;
 
         zones.erase (zones.begin() + selectedZone + 1);
-        owner.getProject().notifyChanged();
+        commitSampleMapEdit ("Merge sample zones", std::move (before));
         refresh();
+    }
+
+    void SampleMapEditor::copySelectedZoneToClipboard()
+    {
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        if (selectedZone < 0 || selectedZone >= (int) zones.size())
+            return;
+
+        zoneClipboard = zones[(size_t) selectedZone];
+        hasZoneClipboard = true;
+        waveformStatus.setText ("Copied selected zone. Use Edit > Paste copied zone after selection.",
+                                juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+    }
+
+    void SampleMapEditor::cutSelectedZoneToClipboard()
+    {
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        if (selectedZone < 0 || selectedZone >= (int) zones.size())
+            return;
+
+        zoneClipboard = zones[(size_t) selectedZone];
+        hasZoneClipboard = true;
+        auto before = zones;
+        zones.erase (zones.begin() + selectedZone);
+        selectedZone = juce::jlimit (-1, (int) zones.size() - 1, selectedZone);
+        selectedZoneIndexes.clear();
+        if (selectedZone >= 0)
+            selectedZoneIndexes.add (selectedZone);
+
+        commitSampleMapEdit ("Cut sample zone", std::move (before));
+        refresh();
+        waveformStatus.setText ("Cut selected zone to clipboard.", juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+    }
+
+    void SampleMapEditor::pasteZoneClipboard()
+    {
+        if (! hasZoneClipboard)
+        {
+            waveformStatus.setText ("No copied sample zone is available to paste.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        auto before = zones;
+        const int insertAt = selectedZone >= 0 && selectedZone < (int) zones.size()
+            ? selectedZone + 1
+            : (int) zones.size();
+        zones.insert (zones.begin() + insertAt, zoneClipboard);
+        selectedZone = insertAt;
+        selectedZoneIndexes.clear();
+        selectedZoneIndexes.add (selectedZone);
+
+        commitSampleMapEdit ("Paste sample zone", std::move (before));
+        refresh();
+        waveformStatus.setText ("Pasted copied zone after selection.", juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+    }
+
+    void SampleMapEditor::showPrecisionSampleEditor()
+    {
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        if (selectedZone < 0 || selectedZone >= (int) zones.size())
+        {
+            waveformStatus.setText ("Select a sample zone before opening the Precision Sample Editor.",
+                                    juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        juce::String status;
+        if (! loadWaveformForZone (zones[(size_t) selectedZone], status))
+        {
+            waveformStatus.setText ("Precision editor could not load sample: " + status, juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        auto* panel = new PrecisionSampleEditorPanel();
+        panel->setSize (1060, 620);
+        panel->waveform.setSampleData (selectedWaveformBuffer, selectedWaveformRate);
+        panel->waveform.setZone (zones[(size_t) selectedZone]);
+        panel->zoomInBtn.onClick = [panel]
+        {
+            panel->waveform.setZoomLevel (panel->waveform.getZoomLevel() * 1.5);
+        };
+        panel->zoomOutBtn.onClick = [panel]
+        {
+            panel->waveform.setZoomLevel (panel->waveform.getZoomLevel() / 1.5);
+        };
+        panel->fitBtn.onClick = [panel]
+        {
+            panel->waveform.setZoomLevel (1.0);
+            panel->waveform.setViewOffset (0);
+        };
+
+        juce::Component::SafePointer<SampleMapEditor> safeThis (this);
+        auto refreshPanelZone = [safeThis, panel]
+        {
+            if (safeThis == nullptr)
+                return;
+            auto& currentZones = safeThis->owner.getProject().getSampleMap().getZones();
+            if (safeThis->selectedZone >= 0 && safeThis->selectedZone < (int) currentZones.size())
+                panel->waveform.setZone (currentZones[(size_t) safeThis->selectedZone]);
+        };
+
+        panel->applyBtn.onClick = [safeThis, panel]
+        {
+            if (safeThis == nullptr)
+                return;
+            auto& currentZones = safeThis->owner.getProject().getSampleMap().getZones();
+            if (safeThis->selectedZone < 0 || safeThis->selectedZone >= (int) currentZones.size())
+                return;
+
+            auto before = currentZones;
+            currentZones[(size_t) safeThis->selectedZone] = panel->waveform.getZone();
+            safeThis->commitSampleMapEdit ("Apply precision sample edit", std::move (before));
+            safeThis->updateSteppersFromZone();
+            safeThis->refreshWaveformFromSelectedZone();
+            safeThis->repaint();
+            panel->status.setText ("Applied precision waveform edits to the selected zone.", juce::dontSendNotification);
+        };
+        panel->trimBtn.onClick = [safeThis, panel, refreshPanelZone]
+        {
+            if (safeThis == nullptr) return;
+            safeThis->applySmartTrimToSelected();
+            refreshPanelZone();
+            panel->status.setText ("Auto-trim applied. Press Apply if you make more handle edits.", juce::dontSendNotification);
+        };
+        panel->fullBtn.onClick = [safeThis, panel, refreshPanelZone]
+        {
+            if (safeThis == nullptr) return;
+            safeThis->setSelectedZoneBoundsToFullSample();
+            refreshPanelZone();
+            panel->status.setText ("Selected zone now spans the full sample.", juce::dontSendNotification);
+        };
+        panel->fadeInBtn.onClick = [safeThis, panel, refreshPanelZone]
+        {
+            if (safeThis == nullptr) return;
+            safeThis->addDefaultFade (true);
+            refreshPanelZone();
+        };
+        panel->fadeOutBtn.onClick = [safeThis, panel, refreshPanelZone]
+        {
+            if (safeThis == nullptr) return;
+            safeThis->addDefaultFade (false);
+            refreshPanelZone();
+        };
+        panel->copyBtn.onClick = [safeThis]
+        {
+            if (safeThis != nullptr)
+                safeThis->copySelectedZoneToClipboard();
+        };
+        panel->cutBtn.onClick = [safeThis, panel]
+        {
+            if (safeThis == nullptr) return;
+            safeThis->cutSelectedZoneToClipboard();
+            panel->status.setText ("Cut selected zone. Close the editor or paste another zone.", juce::dontSendNotification);
+        };
+        panel->pasteBtn.onClick = [safeThis, panel, refreshPanelZone]
+        {
+            if (safeThis == nullptr) return;
+            safeThis->pasteZoneClipboard();
+            refreshPanelZone();
+            panel->status.setText ("Pasted zone from clipboard.", juce::dontSendNotification);
+        };
+        panel->fabricateRRBtn.onClick = [safeThis, panel, refreshPanelZone]
+        {
+            if (safeThis == nullptr) return;
+            safeThis->fabricateRoundRobinVariations (4);
+            refreshPanelZone();
+            panel->status.setText ("Fabricated round-robin variations from the selected sample.", juce::dontSendNotification);
+        };
+        panel->closeBtn.onClick = [panel]
+        {
+            if (auto* window = panel->findParentComponentOfClass<juce::DialogWindow>())
+                window->exitModalState (0);
+        };
+
+        juce::DialogWindow::LaunchOptions options;
+        options.dialogTitle = "Precision Sample Editor";
+        options.content.setOwned (panel);
+        options.componentToCentreAround = this;
+        options.dialogBackgroundColour = PatchCraftLookAndFeel::bg();
+        options.escapeKeyTriggersCloseButton = true;
+        options.useNativeTitleBar = false;
+        options.resizable = true;
+        options.launchAsync();
     }
 
     void SampleMapEditor::resetSelectedZonePlaybackEdits()
@@ -2990,6 +4597,7 @@ namespace patchcraft
         if (selectedZone < 0 || selectedZone >= (int) zones.size())
             return;
 
+        auto before = zones;
         auto& zone = zones[(size_t) selectedZone];
         zone.sampleStart = 0;
         zone.sampleEnd = 0;
@@ -3003,7 +4611,7 @@ namespace patchcraft
         zone.reverse = false;
         zone.pitchOffset = 0.0f;
 
-        owner.getProject().notifyChanged();
+        commitSampleMapEdit ("Reset selected sample playback edits", std::move (before));
         refresh();
     }
 
@@ -3013,6 +4621,7 @@ namespace patchcraft
         if (selectedZone < 0 || selectedZone >= (int) zones.size())
             return;
 
+        auto before = zones;
         auto& zone = zones[(size_t) selectedZone];
         if (selectedWaveformBuffer.getNumSamples() <= 0)
         {
@@ -3031,7 +4640,7 @@ namespace patchcraft
             zone.loopEnd = zone.sampleEnd;
         }
 
-        owner.getProject().notifyChanged();
+        commitSampleMapEdit ("Set sample bounds to full length", std::move (before));
         refresh();
     }
 

@@ -28,6 +28,83 @@ namespace patchcraft
                 ? buffer.getMagnitude (channel, 0, buffer.getNumSamples())
                 : 0.0f;
         }
+
+        static juce::Rectangle<int> fitCanvasIntoBounds (CanvasSize canvasSize,
+                                                         juce::Rectangle<int> bounds)
+        {
+            if (canvasSize.width <= 0) canvasSize.width = 1280;
+            if (canvasSize.height <= 0) canvasSize.height = 800;
+            if (bounds.isEmpty())
+                return bounds;
+
+            const float scale = juce::jmin ((float) bounds.getWidth() / (float) canvasSize.width,
+                                            (float) bounds.getHeight() / (float) canvasSize.height);
+            const int width = juce::jmax (1, juce::roundToInt ((float) canvasSize.width * scale));
+            const int height = juce::jmax (1, juce::roundToInt ((float) canvasSize.height * scale));
+            return bounds.withSizeKeepingCentre (width, height);
+        }
+
+        static DspBlock* findDrumMachineBlock (DspGraph& graph)
+        {
+            for (auto& block : graph.blocks)
+                if (block.type.containsIgnoreCase ("drum") || block.values.find ("dmTracks") != block.values.end())
+                    return &block;
+            return nullptr;
+        }
+
+        static int defaultDrumTrackNote (int track)
+        {
+            static const int notes[] =
+            {
+                36, 38, 42, 46, 39, 45, 48, 49,
+                51, 37, 44, 52, 53, 54, 55, 56
+            };
+            return track >= 0 && track < 16 ? notes[track] : 36 + track;
+        }
+
+        static DspBlock& ensureDrumMachineBlock (DspGraph& graph)
+        {
+            if (auto* existing = findDrumMachineBlock (graph))
+                return *existing;
+
+            DspBlock block;
+            block.id = "midi_drum_machine";
+            int suffix = 2;
+            auto idExists = [&] (const juce::String& id)
+            {
+                for (const auto& existing : graph.blocks)
+                    if (existing.id == id)
+                        return true;
+                return false;
+            };
+            while (idExists (block.id))
+                block.id = "midi_drum_machine_" + juce::String (suffix++);
+
+            block.section = "mod";
+            block.type = "drumMachine";
+            block.name = "Drum Machine Performance";
+            block.targetId = "midiDrumMachine";
+            block.enabled = true;
+            block.values["dmTracks"] = 8.0f;
+            block.values["dmSteps"] = 16.0f;
+            block.values["dmPattern"] = 0.0f;
+            block.values["dmTransport"] = 1.0f;
+            block.values["rate"] = 1.0f;
+            block.values["sync"] = 1.0f;
+            block.values["enabled"] = 1.0f;
+            for (int track = 0; track < 16; ++track)
+                block.values["dmTrack" + juce::String (track) + "Note"] = (float) defaultDrumTrackNote (track);
+
+            graph.blocks.push_back (std::move (block));
+            graph.userConfigured = true;
+            return graph.blocks.back();
+        }
+
+        static float blockValue (const DspBlock& block, const juce::String& key, float fallback)
+        {
+            const auto it = block.values.find (key);
+            return it != block.values.end() ? it->second : fallback;
+        }
     }
 
     class TestPage::MeterView : public juce::Component
@@ -66,7 +143,7 @@ namespace patchcraft
         }
     };
 
-    class TestPage::ClipView : public juce::Component
+    class TestPage::ClipView : public juce::Component, public juce::KeyListener
     {
     public:
         explicit ClipView (TestPage& p) : page (p)
@@ -149,16 +226,16 @@ namespace patchcraft
             page.dragClipIndex = -1;
         }
 
-        bool TestPage::keyPressed (const juce::KeyPress& key, juce::Component*)
+        bool keyPressed (const juce::KeyPress& key, juce::Component*) override
         {
             // Handle computer keyboard input for virtual keyboard
             if (key.isKeyCode (juce::KeyPress::spaceKey))
             {
                 // Space bar = toggle transport play/pause
-                if (playing.load())
-                    onTransportStopPressed();
+                if (page.playing.load())
+                    page.onTransportStopPressed();
                 else
-                    onTransportPlayPressed();
+                    page.onTransportPlayPressed();
                 return true;
             }
 
@@ -167,7 +244,7 @@ namespace patchcraft
             {
                 const int midiNote = 60 + (key.getTextCharacter() - 'A');
                 const float velocity = key.getModifiers().isShiftDown() ? 0.8f : 0.6f;
-                handleNoteOn (&keyboardState, 1, midiNote, velocity);
+                page.handleNoteOn (&page.keyboardState, 1, midiNote, velocity);
                 return true;
             }
 
@@ -179,11 +256,9 @@ namespace patchcraft
             {
                 page.clip.erase (page.clip.begin() + page.selectedClipIndex);
                 page.selectedClipIndex = -1;
-                page.dragClipIndex = -1;
-                repaint();
-                return true;
             }
-            return false;
+            repaint();
+            return true;
         }
 
     private:
@@ -296,6 +371,21 @@ namespace patchcraft
         {
             keyboardState.noteOff (1, note, 0.0f);
         };
+        instrumentRenderer->isTransportPlaying = [this] { return isTransportPlaying(); };
+        instrumentRenderer->getSequencerPlaybackPosition01 = [this] (int steps)
+        {
+            return getSequencerPlaybackPosition01 (steps);
+        };
+        instrumentRenderer->onToggleTransport = [this] { togglePreviewPlayback(); };
+        instrumentRenderer->onSetDrumActivePattern = [this] (int pattern)
+        {
+            return setDrumActivePatternFromUi (pattern);
+        };
+        instrumentRenderer->onSetDrumPatternCell = [this] (int pattern, int track, int step, bool active,
+                                                           float velocity, float gate, float probability, int divisions)
+        {
+            return setDrumPatternCellFromUi (pattern, track, step, active, velocity, gate, probability, divisions);
+        };
         addAndMakeVisible (*instrumentRenderer);
 
         keyboard = std::make_unique<juce::MidiKeyboardComponent> (
@@ -343,12 +433,17 @@ namespace patchcraft
         loopToggle.setToggleState (true, juce::dontSendNotification);
         loopToggle.onClick = [this] { looping.store (loopToggle.getToggleState()); };
         tempoSlider.setRange (40.0, 220.0, 1.0);
-        tempoSlider.setValue (120.0);
+        tempoSlider.setValue (owner.getProject().getLiveValues().getValue ("projectBpm", 120.0f));
         tempoSlider.setSliderStyle (juce::Slider::LinearHorizontal);
         tempoSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 50, 18);
         tempoSlider.setTextValueSuffix (" BPM");
         tempoSlider.setTooltip ("Global test BPM. Synced LFOs, automation lanes, and FX delay blocks follow this tempo.");
-        tempoSlider.onValueChange = [this] { bpm.store (tempoSlider.getValue()); };
+        tempoSlider.onValueChange = [this]
+        {
+            const auto value = tempoSlider.getValue();
+            bpm.store (value);
+            owner.getProject().getLiveValues().setValue ("projectBpm", (float) value);
+        };
         clearClipBtn.onClick = [this] { clearClip(); };
 
         for (auto* component : { static_cast<juce::Component*> (&playBtn),
@@ -372,6 +467,120 @@ namespace patchcraft
         keyboardState.removeListener (this);
         owner.getProject().getLiveValues().removeListener (this);
         owner.getProject().removeListener (this);
+    }
+
+    void TestPage::setBrandLabPreviewMode (bool shouldUse)
+    {
+        if (brandLabPreviewMode == shouldUse)
+            return;
+
+        brandLabPreviewMode = shouldUse;
+        resized();
+        repaint();
+    }
+
+    void TestPage::showMidiClipEditor()
+    {
+        struct ClipModalContent final : public juce::Component
+        {
+            explicit ClipModalContent (TestPage& p)
+                : page (p), clipView (p)
+            {
+                title.setText ("MIDI Clip Editor", juce::dontSendNotification);
+                title.setFont (juce::Font (15.0f, juce::Font::bold));
+                title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+                addAndMakeVisible (title);
+
+                subtitle.setText ("Record, draw, drag, lengthen, and delete notes without permanently occupying the Player preview.",
+                                  juce::dontSendNotification);
+                subtitle.setFont (juce::Font (11.0f));
+                subtitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+                addAndMakeVisible (subtitle);
+
+                for (auto* button : { &playButton, &stopButton, &recordButton, &clearButton })
+                    addAndMakeVisible (*button);
+
+                loopToggle.setButtonText ("Loop");
+                addAndMakeVisible (loopToggle);
+
+                tempo.setRange (40.0, 220.0, 1.0);
+                tempo.setSliderStyle (juce::Slider::LinearHorizontal);
+                tempo.setTextBoxStyle (juce::Slider::TextBoxRight, false, 58, 20);
+                tempo.setTextValueSuffix (" BPM");
+                addAndMakeVisible (tempo);
+
+                addAndMakeVisible (clipView);
+                setSize (860, 380);
+            }
+
+            void paint (juce::Graphics& g) override
+            {
+                g.fillAll (PatchCraftLookAndFeel::bg());
+                auto r = getLocalBounds().reduced (10);
+                g.setColour (PatchCraftLookAndFeel::border());
+                g.drawRoundedRectangle (r.toFloat(), 8.0f, 1.0f);
+            }
+
+            void resized() override
+            {
+                auto r = getLocalBounds().reduced (18);
+                title.setBounds (r.removeFromTop (24));
+                subtitle.setBounds (r.removeFromTop (22));
+                r.removeFromTop (8);
+
+                auto controls = r.removeFromTop (34);
+                playButton.setBounds (controls.removeFromLeft (74).reduced (2));
+                stopButton.setBounds (controls.removeFromLeft (74).reduced (2));
+                recordButton.setBounds (controls.removeFromLeft (92).reduced (2));
+                clearButton.setBounds (controls.removeFromLeft (78).reduced (2));
+                loopToggle.setBounds (controls.removeFromLeft (86).reduced (4, 0));
+                controls.removeFromLeft (12);
+                tempo.setBounds (controls.removeFromLeft (220));
+
+                r.removeFromTop (10);
+                clipView.setBounds (r);
+            }
+
+            TestPage& page;
+            TestPage::ClipView clipView;
+            juce::Label title, subtitle;
+            juce::TextButton playButton { "Play" };
+            juce::TextButton stopButton { "Stop" };
+            juce::TextButton recordButton { "Arm Rec" };
+            juce::TextButton clearButton { "Clear" };
+            juce::ToggleButton loopToggle;
+            juce::Slider tempo;
+        };
+
+        auto* content = new ClipModalContent (*this);
+        content->playButton.onClick = [this] { onTransportPlayPressed(); };
+        content->stopButton.onClick = [this] { onTransportStopPressed(); };
+        content->recordButton.setClickingTogglesState (true);
+        content->recordButton.setToggleState (recording.load(), juce::dontSendNotification);
+        content->recordButton.onClick = [this, content]
+        {
+            recordBtn.setToggleState (content->recordButton.getToggleState(), juce::dontSendNotification);
+            onTransportRecordPressed();
+        };
+        content->clearButton.onClick = [this] { clearClip(); };
+        content->loopToggle.setToggleState (looping.load(), juce::dontSendNotification);
+        content->loopToggle.onClick = [this, content] { looping.store (content->loopToggle.getToggleState()); };
+        content->tempo.setValue (bpm.load(), juce::dontSendNotification);
+        content->tempo.onValueChange = [this, content]
+        {
+            bpm.store (content->tempo.getValue());
+            tempoSlider.setValue (content->tempo.getValue(), juce::dontSendNotification);
+        };
+
+        juce::DialogWindow::LaunchOptions options;
+        options.dialogTitle = "MIDI Clip Editor";
+        options.dialogBackgroundColour = PatchCraftLookAndFeel::bg();
+        options.escapeKeyTriggersCloseButton = true;
+        options.useNativeTitleBar = true;
+        options.resizable = true;
+        options.componentToCentreAround = this;
+        options.content.setOwned (content);
+        options.launchAsync();
     }
 
     void TestPage::activate()
@@ -462,6 +671,10 @@ namespace patchcraft
         const juce::SpinLock::ScopedLockType lock (engineLock);
         if (engine == nullptr) return;
 
+        const auto projectTempo = owner.getProject().getLiveValues().getValue ("projectBpm", 120.0f);
+        bpm.store (juce::jlimit (40.0, 220.0, (double) projectTempo));
+        tempoSlider.setValue (bpm.load(), juce::dontSendNotification);
+
         for (const auto& def : owner.getProject().getParameters().getAll())
         {
             const auto value = owner.getProject().getLiveValues().getValue (def.id, def.defaultValue);
@@ -470,9 +683,9 @@ namespace patchcraft
         }
     }
 
-    void TestPage::syncRoutingFromProject()
+    void TestPage::syncRoutingFromProject (bool preserveActiveNotes)
     {
-        if (engine != nullptr)
+        if (! preserveActiveNotes && engine != nullptr)
             arpeggiator.allNotesOff (*engine);
         arpeggiator.bind (owner.getProject().getDspGraph());
         routingEngine.bind (owner.getProject().getDspGraph(), owner.getProject().getParameters());
@@ -482,11 +695,24 @@ namespace patchcraft
 
     void TestPage::projectChanged()
     {
-        ensureEngineMatchesProject();
+        projectChanged (PatchCraftProject::ChangeScope::structural);
+    }
+
+    void TestPage::projectChanged (PatchCraftProject::ChangeScope scope)
+    {
+        if (scope != PatchCraftProject::ChangeScope::dspRealtime || engine == nullptr
+            || engineId != owner.getProject().getEngineType())
+            ensureEngineMatchesProject();
         {
             const juce::SpinLock::ScopedLockType lock (engineLock);
-            syncRoutingFromProject();
+            syncRoutingFromProject (scope == PatchCraftProject::ChangeScope::dspRealtime);
         }
+        if (scope == PatchCraftProject::ChangeScope::dspRealtime)
+        {
+            repaint();
+            return;
+        }
+
         syncAllValuesToEngine();
         syncInstrumentRendererFromDesigner();
         refreshPlaybackStatus();
@@ -495,6 +721,13 @@ namespace patchcraft
 
     void TestPage::liveValueChanged (const juce::String& id, float value)
     {
+        if (id == "projectBpm")
+        {
+            const auto tempo = juce::jlimit (40.0, 220.0, (double) value);
+            bpm.store (tempo);
+            tempoSlider.setValue (tempo, juce::dontSendNotification);
+        }
+
         const juce::SpinLock::ScopedLockType lock (engineLock);
         routingEngine.setParameterValue (id, value);
         if (engine != nullptr)
@@ -618,6 +851,8 @@ namespace patchcraft
 
         peakL.store (peakForChannel (buffer, 0));
         peakR.store (peakForChannel (buffer, 1));
+        if (instrumentRenderer != nullptr)
+            instrumentRenderer->setAudioReactiveLevel (juce::jmax (peakL.load(), peakR.load()));
         for (int i = 0; i < numSamples; ++i)
         {
             const float l = buffer.getSample (0, i);
@@ -986,12 +1221,13 @@ namespace patchcraft
 
     RenderContext TestPage::makeRenderContext (int numSamples, int numInputs, int numOutputs) const
     {
+        const auto projectTempo = owner.getProject().getLiveValues().getValue ("projectBpm", (float) bpm.load());
         auto context = RenderContext::forBlock (currentSampleRate,
                                                numSamples,
                                                currentBlockSize,
                                                numInputs,
                                                numOutputs,
-                                               bpm.load());
+                                               projectTempo);
         const auto playSeconds = playPosSeconds.load();
         context.isPlaying = playing.load();
         context.isRecording = recording.load();
@@ -1006,6 +1242,96 @@ namespace patchcraft
     double TestPage::clipLengthSeconds() const noexcept
     {
         return (60.0 / bpm.load()) * 4.0 * clipBars;
+    }
+
+    void TestPage::startPreviewPlayback()
+    {
+        onTransportPlayPressed();
+    }
+
+    void TestPage::stopPreviewPlayback()
+    {
+        onTransportStopPressed();
+    }
+
+    void TestPage::togglePreviewPlayback()
+    {
+        if (playing.load())
+            onTransportStopPressed();
+        else
+            onTransportPlayPressed();
+    }
+
+    double TestPage::getSequencerPlaybackPosition01 (int) const noexcept
+    {
+        if (! playing.load())
+            return -1.0;
+
+        const auto length = clipLengthSeconds();
+        if (length <= 0.0)
+            return -1.0;
+
+        return juce::jlimit (0.0, 1.0, std::fmod (playPosSeconds.load(), length) / length);
+    }
+
+    bool TestPage::setDrumActivePatternFromUi (int pattern)
+    {
+        pattern = juce::jlimit (0, 7, pattern);
+        auto& graph = owner.getProject().getDspGraph();
+        auto& block = ensureDrumMachineBlock (graph);
+        block.values["dmPattern"] = (float) pattern;
+        block.values["dmTransport"] = 1.0f;
+        graph.userConfigured = true;
+        owner.getProject().markDirty();
+
+        {
+            const juce::SpinLock::ScopedLockType lock (engineLock);
+            syncRoutingFromProject();
+        }
+
+        if (instrumentRenderer != nullptr)
+            instrumentRenderer->repaint();
+
+        return true;
+    }
+
+    bool TestPage::setDrumPatternCellFromUi (int pattern, int track, int step, bool active,
+                                             float velocity, float gate, float probability, int divisions)
+    {
+        pattern = juce::jlimit (0, 7, pattern);
+        track = juce::jlimit (0, 15, track);
+        step = juce::jlimit (0, 63, step);
+
+        auto& graph = owner.getProject().getDspGraph();
+        auto& block = ensureDrumMachineBlock (graph);
+        const int tracks = juce::jlimit (1, 16, juce::roundToInt (blockValue (block, "dmTracks", 8.0f)));
+        const int steps = juce::jlimit (1, 64, juce::roundToInt (blockValue (block, "dmSteps", 16.0f)));
+        if (track >= tracks || step >= steps)
+            return false;
+
+        const auto prefix = "dmP" + juce::String (pattern)
+                          + "T" + juce::String (track)
+                          + "S" + juce::String (step);
+        block.values["dmPattern"] = (float) pattern;
+        block.values["dmTransport"] = 1.0f;
+        block.values[prefix + "On"] = active ? 1.0f : 0.0f;
+        if (active)
+        {
+            block.values[prefix + "Vel"] = juce::jlimit (0.08f, 1.0f, velocity);
+            block.values[prefix + "Gate"] = juce::jlimit (0.05f, 1.0f, gate);
+            block.values[prefix + "Prob"] = juce::jlimit (0.0f, 1.0f, probability);
+            block.values[prefix + "Div"] = (float) juce::jlimit (1, 4, divisions);
+        }
+
+        graph.userConfigured = true;
+        owner.getProject().markDirty();
+
+        {
+            const juce::SpinLock::ScopedLockType lock (engineLock);
+            syncRoutingFromProject();
+        }
+
+        return true;
     }
 
     void TestPage::onTransportPlayPressed()
@@ -1041,6 +1367,46 @@ namespace patchcraft
     void TestPage::resized()
     {
         auto r = getLocalBounds().reduced (12);
+
+        const bool showDiagnostics = ! brandLabPreviewMode;
+        for (auto* component : {
+                 static_cast<juce::Component*> (&transportLabel),
+                 static_cast<juce::Component*> (&playBtn),
+                 static_cast<juce::Component*> (&stopBtn),
+                 static_cast<juce::Component*> (&recordBtn),
+                 static_cast<juce::Component*> (&loopToggle),
+                 static_cast<juce::Component*> (&tempoSlider),
+                 static_cast<juce::Component*> (&clearClipBtn),
+                 static_cast<juce::Component*> (&clipLabel),
+                 static_cast<juce::Component*> (clipView.get()),
+                 static_cast<juce::Component*> (&metersLabel),
+                 static_cast<juce::Component*> (meterView.get()),
+                 static_cast<juce::Component*> (&spectrumLabel),
+                 static_cast<juce::Component*> (spectrumView.get()),
+                 static_cast<juce::Component*> (&monitorLabel),
+                 static_cast<juce::Component*> (paramMonitor.get()),
+                 static_cast<juce::Component*> (&statusLabel),
+                 static_cast<juce::Component*> (&keyboardLabel) })
+            if (component != nullptr)
+                component->setVisible (showDiagnostics);
+
+        if (brandLabPreviewMode)
+        {
+            const int keyboardHeight = juce::jlimit (62, 86, getHeight() / 8);
+            auto keyboardSlot = r.removeFromBottom (keyboardHeight);
+            brandPreviewInstrumentBounds = fitCanvasIntoBounds (owner.getProject().getCanvasSize(), r);
+            auto keyboardArea = keyboardSlot.withX (brandPreviewInstrumentBounds.getX())
+                                            .withWidth (brandPreviewInstrumentBounds.getWidth())
+                                            .reduced (0, 4);
+
+            if (keyboard != nullptr)
+                keyboard->setBounds (keyboardArea);
+
+            if (instrumentRenderer != nullptr)
+                instrumentRenderer->setBounds (brandPreviewInstrumentBounds);
+
+            return;
+        }
 
         auto top = r.removeFromTop (34);
         transportLabel.setBounds (top.removeFromLeft (110));
@@ -1078,5 +1444,11 @@ namespace patchcraft
 
         keyboardLabel.setBounds (r.removeFromTop (22));
         keyboard->setBounds (r);
+    }
+
+    bool TestPage::keyPressed (const juce::KeyPress& key, juce::Component*)
+    {
+        // Delegate to ClipView for keyboard handling
+        return clipView->keyPressed (key, nullptr);
     }
 }
