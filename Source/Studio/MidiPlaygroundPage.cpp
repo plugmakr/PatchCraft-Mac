@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 
 namespace patchcraft
 {
@@ -53,6 +54,39 @@ namespace patchcraft
             slider.setSliderStyle (juce::Slider::LinearHorizontal);
             slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 62, 20);
             slider.setRange (min, max, interval);
+        }
+
+        static constexpr int kAdvancedMidiMaxSteps = MidiPlaygroundPattern::kStepCount;
+
+        static int midiStepCount (const DspBlock& block, float fallback = 16.0f)
+        {
+            return juce::jlimit (1, kAdvancedMidiMaxSteps,
+                                 juce::roundToInt (valueFor (block, "arpSteps", fallback)));
+        }
+
+        static float arpBankValue (const DspBlock& block, int bank, const juce::String& key, float fallback)
+        {
+            const auto bankPrefix = "mpBank" + juce::String (juce::jlimit (0, MidiPlaygroundPattern::kPhraseBankCount - 1, bank) + 1) + "_";
+            if (bank > 0)
+            {
+                const auto bankIt = block.values.find (bankPrefix + key);
+                if (bankIt != block.values.end())
+                    return bankIt->second;
+            }
+
+            if (const auto directIt = block.values.find (key); directIt != block.values.end())
+                return directIt->second;
+
+            const auto bankOneIt = block.values.find (bankPrefix + key);
+            return bankOneIt != block.values.end() ? bankOneIt->second : fallback;
+        }
+
+        static juce::String arpStudioMidiFileName (juce::String laneName, int lane)
+        {
+            if (laneName.trim().isEmpty())
+                laneName = "ArpLane" + juce::String (lane + 1);
+            return juce::File::createLegalFileName ("PatchCraft_" + laneName.trim() + ".mid")
+                .replaceCharacter (' ', '_');
         }
 
         static int roundStepNote (float value)
@@ -343,6 +377,8 @@ namespace patchcraft
         midiTemplateBox.addItem ("Pattern Morph Performance", 8);
         midiTemplateBox.addItem ("Chord Pad Performer", 9);
         midiTemplateBox.addItem ("Riff Generator", 10);
+        midiTemplateBox.addItem ("Advanced Arp Instrument", 11);
+        midiTemplateBox.addItem ("CircleSEQ Flagship Instrument", 12);
         midiTemplateBox.setSelectedId (1, juce::dontSendNotification);
         addAndMakeVisible (midiTemplateBox);
 
@@ -352,6 +388,7 @@ namespace patchcraft
         guiTemplateBox.addItem ("MIDI Macro Panel", 4);
         guiTemplateBox.addItem ("XY Performance Pad", 5);
         guiTemplateBox.addItem ("Drum Song Controls", 6);
+        guiTemplateBox.addItem ("CircleSEQ Flagship Player", 7);
         guiTemplateBox.setSelectedId (1, juce::dontSendNotification);
         addAndMakeVisible (guiTemplateBox);
 
@@ -399,7 +436,7 @@ namespace patchcraft
         targetBox.setSelectedId (1, juce::dontSendNotification);
         addAndMakeVisible (targetBox);
 
-        styleSlider (stepsSlider, 1.0, 16.0, 1.0);
+        styleSlider (stepsSlider, 1.0, (double) kAdvancedMidiMaxSteps, 1.0);
         styleSlider (rateSlider, 0.0625, 16.0, 0.0625);
         styleSlider (gateSlider, 0.05, 1.0, 0.01);
         styleSlider (swingSlider, 0.0, 1.0, 0.01);
@@ -414,8 +451,8 @@ namespace patchcraft
         styleSlider (velocityCurveSlider, -1.0, 1.0, 0.01);
         styleSlider (strumSlider, 0.0, 1.0, 0.01);
         styleSlider (flamSlider, 0.0, 1.0, 0.01);
-        styleSlider (euclideanPulsesSlider, 0.0, 16.0, 1.0);
-        styleSlider (euclideanRotateSlider, 0.0, 15.0, 1.0);
+        styleSlider (euclideanPulsesSlider, 0.0, (double) kAdvancedMidiMaxSteps, 1.0);
+        styleSlider (euclideanRotateSlider, 0.0, (double) kAdvancedMidiMaxSteps - 1.0, 1.0);
 
         stepsSlider.setValue (8.0, juce::dontSendNotification);
         rateSlider.setValue (1.0, juce::dontSendNotification);
@@ -501,6 +538,20 @@ namespace patchcraft
             if (syncingControls)
                 return;
 
+            if (arpStudioMode)
+            {
+                if (auto* block = ensureMidiBlock())
+                {
+                    const int lane = juce::jlimit (0, MidiPlaygroundPattern::kPhraseBankCount - 1,
+                                                   phraseBankBox.getSelectedId() > 0 ? phraseBankBox.getSelectedId() - 1
+                                                                                     : juce::roundToInt (valueFor (*block, "mpActiveBank", 0.0f)));
+                    block->metadata["arpLane" + juce::String (lane + 1) + "Source"] = sourceBox.getText();
+                    notifyGraphChanged (true);
+                    repaint();
+                }
+                return;
+            }
+
             if (sourceBox.getSelectedId() == 2)
                 owner.getProject().setEngineType ("sample");
             else if (sourceBox.getSelectedId() == 3)
@@ -560,7 +611,48 @@ namespace patchcraft
 
     MidiPlaygroundPage::~MidiPlaygroundPage()
     {
+        setArpStudioHardwarePreviewActive (false);
         stopPatternPreview();
+    }
+
+    void MidiPlaygroundPage::showPlaygroundMode()
+    {
+        setArpStudioHardwarePreviewActive (false);
+        arpStudioMode = false;
+        title.setText ("MIDI + PERFORMANCE PLAYGROUND", juce::dontSendNotification);
+        subtitle.setText ("Drop musical MIDI ideas into the editor, then route them to the current Synth, Sampler, Drum Machine, sample chops, or modulation layer.",
+                          juce::dontSendNotification);
+        if (midiTemplateBox.getSelectedId() == 12)
+            midiTemplateBox.setSelectedId (1, juce::dontSendNotification);
+        if (guiTemplateBox.getSelectedId() == 7)
+            guiTemplateBox.setSelectedId (1, juce::dontSendNotification);
+        applyMidiTemplateButton.setButtonText ("Apply Behavior");
+        applyGuiTemplateButton.setButtonText ("Add Player UI");
+        activeSummary.setText (activeMidiBlock() != nullptr
+            ? blockSummary()
+            : "No Performance block yet. Choose a template: chords/arp generate notes, Drum Machine triggers pads, Sample Control moves slices/start/length.",
+            juce::dontSendNotification);
+        repaint();
+    }
+
+    void MidiPlaygroundPage::showArpStudioMode()
+    {
+        arpStudioMode = true;
+        setArpStudioHardwarePreviewActive (isShowing());
+        title.setText ("ARP STUDIO BUILDER", juce::dontSendNotification);
+        subtitle.setText ("Author arp/sequencer instruments, then generate the playable CircleSEQ-style Player UI from the workshop state.",
+                          juce::dontSendNotification);
+        sourceBox.setSelectedId (1, juce::dontSendNotification);
+        modeBox.setSelectedId (3, juce::dontSendNotification);
+        editorViewBox.setSelectedId (1, juce::dontSendNotification);
+        midiTemplateBox.setSelectedId (12, juce::dontSendNotification);
+        guiTemplateBox.setSelectedId (7, juce::dontSendNotification);
+        phraseBankBox.setSelectedId (1, juce::dontSendNotification);
+        applyMidiTemplateButton.setButtonText ("Build Arp Engine");
+        applyGuiTemplateButton.setButtonText ("Update Player UI");
+        activeSummary.setText ("Builder flow: create lane banks, edit steps and velocity, route sources/FX, export MIDI, then update the CircleSEQ-style runtime UI.",
+                               juce::dontSendNotification);
+        repaint();
     }
 
     void MidiPlaygroundPage::refresh()
@@ -571,6 +663,63 @@ namespace patchcraft
 
     void MidiPlaygroundPage::mouseDown (const juce::MouseEvent& e)
     {
+        if (arpStudioMode)
+        {
+            auto content = getLocalBounds().reduced (12, 10);
+            content.removeFromTop (104);
+
+            int hitLane = -1;
+            int hitStep = -1;
+            int hitBand = -1;
+            float hitValue = 0.0f;
+            if (arpStudioStepHitTest (content, e.getPosition(), hitLane, hitStep, hitBand, hitValue))
+            {
+                arpStudioMidiDragArmed = false;
+                arpStudioDragLane = -1;
+                arpStudioEditingLane = hitLane;
+                arpStudioEditingStep = hitStep;
+                arpStudioEditingBand = hitBand;
+                const bool toggleStep = e.mods.isPopupMenu() || e.mods.isCtrlDown();
+                arpStudioEditingVelocity = ! toggleStep;
+                editArpStudioStepFromMouse (e, toggleStep);
+                return;
+            }
+
+            for (int lane = 0; lane < MidiPlaygroundPattern::kPhraseBankCount; ++lane)
+            {
+                if (arpStudioMidiDragBounds (content, lane).contains (e.getPosition()))
+                {
+                    arpStudioMidiDragArmed = true;
+                    arpStudioDragLane = lane;
+                    arpStudioMidiDragStart = e.getPosition();
+                    arpStudioEditingVelocity = false;
+                    arpStudioEditingLane = -1;
+                    arpStudioEditingStep = -1;
+                    return;
+                }
+
+                if (arpStudioLaneBounds (content, lane).contains (e.getPosition()))
+                {
+                    arpStudioMidiDragArmed = false;
+                    arpStudioDragLane = -1;
+                    arpStudioEditingVelocity = false;
+                    arpStudioEditingLane = -1;
+                    arpStudioEditingStep = -1;
+                    phraseBankBox.setSelectedId (lane + 1, juce::dontSendNotification);
+                    switchPhraseBank (lane);
+                    repaint();
+                    return;
+                }
+            }
+
+            arpStudioMidiDragArmed = false;
+            arpStudioDragLane = -1;
+            arpStudioEditingLane = -1;
+            arpStudioEditingStep = -1;
+            arpStudioEditingVelocity = false;
+            return;
+        }
+
         auto r = getLocalBounds().reduced (18, 14);
         r.removeFromTop (88);
         r.removeFromTop (12);
@@ -588,6 +737,26 @@ namespace patchcraft
                 return;
             }
         }
+    }
+
+    void MidiPlaygroundPage::mouseDrag (const juce::MouseEvent& e)
+    {
+        if (arpStudioEditingVelocity)
+        {
+            editArpStudioStepFromMouse (e, false);
+            return;
+        }
+
+        if (! arpStudioMidiDragArmed || arpStudioDragLane < 0)
+            return;
+
+        const auto delta = e.getPosition() - arpStudioMidiDragStart;
+        if (std::abs (delta.x) + std::abs (delta.y) < 8)
+            return;
+
+        startArpStudioMidiDrag (arpStudioDragLane);
+        arpStudioMidiDragArmed = false;
+        arpStudioDragLane = -1;
     }
 
     DspBlock* MidiPlaygroundPage::activeMidiBlock()
@@ -694,6 +863,11 @@ namespace patchcraft
             block.values["mpStepProb" + juce::String (step)] = 1.0f;
             block.values["mpStep" + juce::String (step) + "On"] = 1.0f;
             block.values["mpSampleSlice" + juce::String (step)] = -1.0f;
+            block.values["mpStepDiv" + juce::String (step)] = 1.0f;
+            block.values["mpStepTranspose" + juce::String (step)] = 0.0f;
+            block.values["mpStepChordMode" + juce::String (step)] = -1.0f;
+            block.values["mpStepChordSize" + juce::String (step)] = -1.0f;
+            block.values["mpStepTie" + juce::String (step)] = 0.0f;
         }
 
         MidiPlaygroundPattern::storeActiveBank (block, 0);
@@ -1145,7 +1319,7 @@ namespace patchcraft
             return;
         }
 
-        const int steps = juce::jlimit (1, 16, juce::roundToInt (valueFor (*block, "arpSteps", 16.0f)));
+        const int steps = midiStepCount (*block);
 
         // Scale degrees (semitones from root) for each scale id; mirrors what
         // the runtime uses. Index by scaleBox selectedId-1.
@@ -1410,6 +1584,9 @@ namespace patchcraft
         m.addItem (19, "19. Whole-note progression frame");
         m.addItem (20, "20. Sparse melodic skeleton");
         m.addSeparator();
+        m.addSectionHeader ("Advanced Arp Instrument");
+        m.addItem (21, "21. 64-step performance arp");
+        m.addSeparator();
         m.addItem (99, "Clear pattern");
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&phraseLibraryButton),
             [this] (int r) { if (r > 0) applyPhraseFromLibrary (r); });
@@ -1423,6 +1600,44 @@ namespace patchcraft
         if (isDrumMachineBlock (*block))
         {
             applyDrumTemplate (phraseId);
+            return;
+        }
+
+        if (phraseId == 21)
+        {
+            block->name = "64-step Performance Arp";
+            block->values["arpSteps"] = 64.0f;
+            block->values["arpPattern"] = 0.0f;
+            block->values["arpGate"] = 0.50f;
+            block->values["arpSwing"] = 0.10f;
+            block->values["mpRatchet"] = 1.0f;
+            block->values["mpChordMode"] = 0.0f;
+            block->values["mpChordSize"] = 1.0f;
+            static constexpr std::array<float, 16> notes {{
+                0, 7, 12, 14, 19, 14, 12, 7, 3, 10, 15, 17, 22, 17, 15, 10
+            }};
+            for (int s = 0; s < 64; ++s)
+            {
+                const int local = s % 16;
+                const auto suffix = juce::String (s);
+                block->values["arpNote" + suffix] = notes[(size_t) local] + (s >= 32 ? 12.0f : 0.0f);
+                block->values["mpStep" + suffix + "On"] = 1.0f;
+                block->values["mpVelocity" + suffix] = local % 4 == 0 ? 0.98f : 0.58f + 0.08f * (float) (local % 4);
+                block->values["mpGate" + suffix] = local % 4 == 0 ? 0.70f : 0.36f;
+                block->values["mpStepProb" + suffix] = local == 15 ? 0.76f : 1.0f;
+                block->values["mpSampleSlice" + suffix] = -1.0f;
+                block->values["mpStepDiv" + suffix] = (local == 6 || local == 14) ? 3.0f : (local == 7 ? 2.0f : 1.0f);
+                block->values["mpStepTranspose" + suffix] = (s / 16 == 1) ? 5.0f : (s / 16 == 2 ? 7.0f : 0.0f);
+                block->values["mpStepChordMode" + suffix] = local % 8 == 0 ? 15.0f : -1.0f;
+                block->values["mpStepChordSize" + suffix] = local % 8 == 0 ? 3.0f : -1.0f;
+                block->values["mpStepTie" + suffix] = local == 3 ? 1.0f : 0.0f;
+            }
+            modeBox.setSelectedId (3, juce::dontSendNotification);
+            editorViewBox.setSelectedId (2, juce::dontSendNotification);
+            MidiPlaygroundPattern::storeActiveBank (*block, MidiPlaygroundPattern::getActiveBank (*block));
+            notifyGraphChanged (true);
+            syncControlsFromBlock();
+            repaint();
             return;
         }
 
@@ -1941,6 +2156,11 @@ namespace patchcraft
                 block->values["mpGate" + suffix] = juce::jlimit (0.05f, 1.0f, gate);
                 block->values["mpStepProb" + suffix] = juce::jlimit (0.0f, 1.0f, probability);
                 block->values["mpSampleSlice" + suffix] = -1.0f;
+                block->values["mpStepDiv" + suffix] = 1.0f;
+                block->values["mpStepTranspose" + suffix] = 0.0f;
+                block->values["mpStepChordMode" + suffix] = -1.0f;
+                block->values["mpStepChordSize" + suffix] = -1.0f;
+                block->values["mpStepTie" + suffix] = 0.0f;
             };
 
             if (templateId == 2)
@@ -2093,6 +2313,147 @@ namespace patchcraft
                 modeBox.setSelectedId (3, juce::dontSendNotification);
                 editorViewBox.setSelectedId (2, juce::dontSendNotification);
             }
+            else if (templateId == 11)
+            {
+                block->name = "Advanced Arp Instrument";
+                block->values["arpSteps"] = 64.0f;
+                block->values["arpPattern"] = 0.0f;
+                block->values["arpGate"] = 0.52f;
+                block->values["arpSwing"] = 0.12f;
+                block->values["arpOctaves"] = 3.0f;
+                block->values["mpChordMode"] = 0.0f;
+                block->values["mpChordSize"] = 1.0f;
+                block->values["mpChordSpread"] = 0.0f;
+                block->values["mpProbability"] = 0.96f;
+                block->values["mpHumanize"] = 0.08f;
+                block->values["mpMutation"] = 0.06f;
+                block->values["mpRatchet"] = 1.0f;
+                block->values["mpVelocityCurve"] = -0.08f;
+                block->values["mpEuclideanPulses"] = 0.0f;
+                block->values["mpEuclideanRotate"] = 0.0f;
+                block->values["mpPatternMorph"] = 0.0f;
+                block->values["mpKeySwitchEnabled"] = 1.0f;
+                block->values["mpKeySwitchBase"] = 24.0f;
+                static constexpr std::array<float, 16> motif {{
+                    0, 7, 12, 16, 19, 16, 12, 7, 3, 10, 15, 19, 22, 19, 15, 10
+                }};
+
+                for (int step = 0; step < 64; ++step)
+                {
+                    const int barStep = step % 16;
+                    const auto suffix = juce::String (step);
+                    const float note = motif[(size_t) barStep] + (step >= 32 ? 12.0f : 0.0f);
+                    const bool downbeat = barStep % 4 == 0;
+                    fillStep (step, note, true,
+                              downbeat ? 0.98f : (barStep % 2 == 0 ? 0.78f : 0.60f),
+                              downbeat ? 0.72f : 0.38f,
+                              (barStep == 15 || barStep == 31) ? 0.78f : 1.0f);
+                    block->values["mpStepDiv" + suffix] = (barStep == 6 || barStep == 14) ? 3.0f
+                                                        : (barStep == 7 || barStep == 15) ? 2.0f : 1.0f;
+                    block->values["mpStepTranspose" + suffix] = (step / 16 == 1) ? 5.0f
+                                                            : (step / 16 == 2) ? 7.0f
+                                                            : (step / 16 == 3) ? -2.0f : 0.0f;
+                    block->values["mpStepTie" + suffix] = (barStep == 3 || barStep == 11) ? 1.0f : 0.0f;
+                    block->values["mpStepChordMode" + suffix] = downbeat ? 15.0f : -1.0f;
+                    block->values["mpStepChordSize" + suffix] = downbeat ? 3.0f : -1.0f;
+                }
+
+                for (int bank = 1; bank < 4; ++bank)
+                {
+                    const auto prefix = "mpBank" + juce::String (bank + 1) + "_";
+                    for (int step = 0; step < 64; ++step)
+                    {
+                        const auto suffix = juce::String (step);
+                        const int barStep = step % 16;
+                        const float bankOffset = bank == 1 ? -12.0f : (bank == 2 ? 5.0f : 7.0f);
+                        block->values[prefix + "arpNote" + suffix] = motif[(size_t) ((barStep + bank * 3) % 16)] + bankOffset;
+                        block->values[prefix + "mpStep" + suffix + "On"] = (barStep + bank) % 5 == 0 ? 0.0f : 1.0f;
+                        block->values[prefix + "mpVelocity" + suffix] = barStep % 4 == 0 ? 0.96f : 0.55f + 0.08f * (float) ((barStep + bank) % 4);
+                        block->values[prefix + "mpGate" + suffix] = barStep % 2 == 0 ? 0.42f : 0.62f;
+                        block->values[prefix + "mpStepProb" + suffix] = barStep == 15 ? 0.72f : 1.0f;
+                        block->values[prefix + "mpSampleSlice" + suffix] = -1.0f;
+                        block->values[prefix + "mpStepDiv" + suffix] = (barStep + bank) % 8 == 0 ? 4.0f : ((barStep + bank) % 6 == 0 ? 3.0f : 1.0f);
+                        block->values[prefix + "mpStepTranspose" + suffix] = (float) (bank * 2);
+                        block->values[prefix + "mpStepChordMode" + suffix] = barStep % 8 == 0 ? 23.0f : -1.0f;
+                        block->values[prefix + "mpStepChordSize" + suffix] = barStep % 8 == 0 ? 4.0f : -1.0f;
+                        block->values[prefix + "mpStepTie" + suffix] = barStep == 3 ? 1.0f : 0.0f;
+                    }
+                }
+
+                modeBox.setSelectedId (3, juce::dontSendNotification);
+                editorViewBox.setSelectedId (2, juce::dontSendNotification);
+            }
+            else if (templateId == 12)
+            {
+                block->name = "CircleSEQ Flagship Instrument";
+                block->values["arpSteps"] = 16.0f;
+                block->values["arpPattern"] = 0.0f;
+                block->values["arpGate"] = 0.58f;
+                block->values["arpSwing"] = 0.10f;
+                block->values["arpOctaves"] = 3.0f;
+                block->values["mpActiveBank"] = 0.0f;
+                block->values["mpChordMode"] = 0.0f;
+                block->values["mpChordSize"] = 1.0f;
+                block->values["mpChordSpread"] = 0.0f;
+                block->values["mpProbability"] = 0.97f;
+                block->values["mpHumanize"] = 0.05f;
+                block->values["mpMutation"] = 0.05f;
+                block->values["mpRatchet"] = 1.0f;
+                block->values["mpVelocityCurve"] = -0.06f;
+                block->values["mpPatternMorph"] = 0.18f;
+                block->values["mpKeySwitchEnabled"] = 1.0f;
+                block->values["mpKeySwitchBase"] = 24.0f;
+
+                static constexpr std::array<std::array<float, 16>, 5> laneNotes {{
+                    {{ 0, 7, 12, 16, 19, 16, 12, 7, 3, 10, 15, 19, 22, 19, 15, 10 }},
+                    {{ 0, 3, 7, 12, 15, 12, 7, 3, 5, 8, 12, 17, 20, 17, 12, 8 }},
+                    {{ 0, 12, 7, 15, 10, 19, 14, 22, 17, 10, 15, 7, 12, 5, 10, 3 }},
+                    {{ 0, 5, -2, 10, 3, 12, 7, 15, 10, 2, 14, 5, 17, 9, 21, 12 }},
+                    {{ 0, 4, 7, 11, 14, 19, 23, 26, 24, 19, 16, 12, 9, 7, 4, 0 }}
+                }};
+                static constexpr std::array<std::array<int, 16>, 5> laneActive {{
+                    {{ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }},
+                    {{ 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0 }},
+                    {{ 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1 }},
+                    {{ 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0 }},
+                    {{ 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1 }}
+                }};
+
+                auto writeLaneStep = [&] (int lane, int step)
+                {
+                    const auto suffix = juce::String (step);
+                    const auto prefix = lane == 0 ? juce::String()
+                                                  : "mpBank" + juce::String (lane + 1) + "_";
+                    const bool downbeat = step % 4 == 0;
+                    const bool active = laneActive[(size_t) lane][(size_t) step] != 0;
+                    const float velocity = downbeat ? 0.98f : 0.58f + 0.08f * (float) ((step + lane) % 5);
+                    const float gate = lane == 1 ? 0.72f
+                                     : lane == 2 ? 0.46f
+                                     : lane == 3 ? 0.34f
+                                                 : 0.58f;
+                    block->values[prefix + "arpNote" + suffix] = laneNotes[(size_t) lane][(size_t) step];
+                    block->values[prefix + "mpStep" + suffix + "On"] = active ? 1.0f : 0.0f;
+                    block->values[prefix + "mpVelocity" + suffix] = juce::jlimit (0.0f, 1.0f, velocity);
+                    block->values[prefix + "mpGate" + suffix] = juce::jlimit (0.05f, 1.0f, gate);
+                    block->values[prefix + "mpStepProb" + suffix] = lane == 3 && step % 5 == 0 ? 0.76f : 1.0f;
+                    block->values[prefix + "mpSampleSlice" + suffix] = -1.0f;
+                    block->values[prefix + "mpStepDiv" + suffix] = (lane == 3 && (step == 6 || step == 14)) ? 4.0f
+                                                        : (lane == 2 && step % 5 == 0) ? 3.0f
+                                                        : (lane == 1 && step % 7 == 0) ? 2.0f
+                                                        : 1.0f;
+                    block->values[prefix + "mpStepTranspose" + suffix] = lane == 4 && step >= 8 ? 12.0f : 0.0f;
+                    block->values[prefix + "mpStepChordMode" + suffix] = downbeat && (lane == 1 || lane == 4) ? 15.0f : -1.0f;
+                    block->values[prefix + "mpStepChordSize" + suffix] = downbeat && (lane == 1 || lane == 4) ? 3.0f : -1.0f;
+                    block->values[prefix + "mpStepTie" + suffix] = (lane == 4 && (step == 3 || step == 11)) ? 1.0f : 0.0f;
+                };
+
+                for (int lane = 0; lane < 5; ++lane)
+                    for (int step = 0; step < 16; ++step)
+                        writeLaneStep (lane, step);
+
+                modeBox.setSelectedId (3, juce::dontSendNotification);
+                editorViewBox.setSelectedId (2, juce::dontSendNotification);
+            }
             else
             {
                 block->name = "Melodic Lead Line";
@@ -2175,6 +2536,19 @@ namespace patchcraft
                 return element;
             };
 
+            auto miniKnob = [] (juce::String label, juce::String parameterId, int x, int y)
+            {
+                LayoutElement element;
+                element.type = ElementType::Knob;
+                element.label = label;
+                element.parameterId = parameterId;
+                element.x = x; element.y = y; element.width = 38; element.height = 44;
+                element.knobStyle = "Vintage 01";
+                element.labelPosition = "bottom";
+                element.labelSize = 8.0f;
+                return element;
+            };
+
             auto button = [] (juce::String label, int x, int y, int w, int h)
             {
                 LayoutElement element;
@@ -2185,7 +2559,166 @@ namespace patchcraft
                 return element;
             };
 
-            if (templateId == 2)
+            if (templateId == 7)
+            {
+                addElement (panel ("CircleSEQ Flagship", 24, 72, 1232, 682), "arp_studio_shell_");
+
+                LayoutElement title;
+                title.type = ElementType::Label;
+                title.label = "CIRCLESEQ";
+                title.x = 48; title.y = 90; title.width = 220; title.height = 32;
+                title.labelSize = 24.0f;
+                title.textColour = juce::Colour (0xfff2f6ff);
+                addElement (title, "arp_studio_title_");
+
+                LayoutElement subtitle;
+                subtitle.type = ElementType::Label;
+                subtitle.label = "Five playable circular phrase engines";
+                subtitle.x = 50; subtitle.y = 122; subtitle.width = 310; subtitle.height = 20;
+                subtitle.labelSize = 11.0f;
+                subtitle.textColour = juce::Colour (0xff8e96a6);
+                addElement (subtitle, "arp_studio_subtitle_");
+
+                auto topButton = [&] (juce::String label, int x, int y, int w, juce::Colour accent)
+                {
+                    auto element = button (label, x, y, w, 34);
+                    element.backgroundColour = juce::Colour (0x6610141a);
+                    element.borderColour = accent.withAlpha (0.55f);
+                    element.accentColour = accent;
+                    element.labelPosition = "hidden";
+                    return element;
+                };
+
+                addElement (topButton ("SYNC ON", 300, 92, 86, juce::Colour (0xff16d6e9)), "arp_studio_btn_");
+                addElement (topButton ("POLY", 398, 92, 80, juce::Colour (0xff8f67ff)), "arp_studio_btn_");
+                addElement (topButton ("HOST", 490, 92, 82, juce::Colour (0xff8f67ff)), "arp_studio_btn_");
+                addElement (topButton ("HOLD", 988, 92, 80, juce::Colour (0xff8f67ff)), "arp_studio_btn_");
+                addElement (topButton ("RND", 1080, 92, 74, juce::Colour (0xfff5a623)), "arp_studio_btn_");
+
+                addElement (panel ("Pattern Transport", 596, 82, 320, 58), "arp_studio_transport_");
+                LayoutElement bpm;
+                bpm.type = ElementType::ValueDisplay;
+                bpm.label = "120.00 BPM";
+                bpm.parameterId = "projectBpm";
+                bpm.x = 620; bpm.y = 94; bpm.width = 130; bpm.height = 32;
+                bpm.textColour = juce::Colour (0xfff2f6ff);
+                addElement (bpm, "arp_studio_bpm_");
+
+                addElement (knob ("Swing", "bpmSync", 922, 82), "arp_studio_global_knob_");
+                addElement (knob ("Groove", "lfoAmount", 1014, 82), "arp_studio_global_knob_");
+                addElement (knob ("Mix", "volume", 1160, 76), "arp_studio_global_knob_");
+
+                addElement (panel ("Scale + Key", 34, 154, 1180, 58), "arp_studio_scale_");
+                const juce::StringArray scaleLabels { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+                for (int i = 0; i < scaleLabels.size(); ++i)
+                {
+                    auto noteButton = topButton (scaleLabels[i], 360 + i * 54, 166, 48,
+                                                 i == 9 ? juce::Colour (0xffa266ff) : juce::Colour (0xff334052));
+                    noteButton.cornerRadius = 5.0f;
+                    addElement (noteButton, "arp_studio_note_");
+                }
+
+                static const juce::Colour laneColours[] =
+                {
+                    juce::Colour (0xff16d6e9),
+                    juce::Colour (0xff9b6dff),
+                    juce::Colour (0xffff5bb9),
+                    juce::Colour (0xffffa32b),
+                    juce::Colour (0xff8df04b)
+                };
+                static const char* laneLabels[] = { "Spiral", "Ascent", "Bounce", "Random", "Rondo" };
+                const int laneY = 226;
+                const int laneW = 224;
+                const int laneH = 332;
+                for (int lane = 0; lane < 5; ++lane)
+                {
+                    LayoutElement arp;
+                    arp.type = ElementType::ArpLane;
+                    arp.label = laneLabels[lane];
+                    arp.x = 34 + lane * 240;
+                    arp.y = laneY;
+                    arp.width = laneW;
+                    arp.height = laneH;
+                    arp.arpLaneIndex = lane;
+                    arp.arpLaneSteps = 16;
+                    arp.cornerRadius = 12.0f;
+                    arp.strokeWidth = 1.4f;
+                    arp.accentColour = laneColours[lane];
+                    arp.borderColour = laneColours[lane].withAlpha (0.55f);
+                    arp.backgroundColour = juce::Colour (0xdd10141a);
+                    arp.labelPosition = "hidden";
+                    addElement (arp, "arp_studio_lane_");
+                }
+
+                addElement (panel ("Global Mods", 34, 580, 214, 130), "arp_studio_mods_");
+                addElement (knob ("Random", "lfoAmount", 58, 615), "arp_studio_mod_knob_");
+                addElement (knob ("Gate", "lfoRate", 150, 615), "arp_studio_mod_knob_");
+
+                addElement (panel ("Macro", 270, 580, 300, 130), "arp_studio_macro_");
+                addElement (knob ("Cutoff", "filterCutoff", 294, 615), "arp_studio_macro_knob_");
+                addElement (knob ("Reso", "filterResonance", 386, 615), "arp_studio_macro_knob_");
+                addElement (knob ("Delay", "delayMix", 478, 615), "arp_studio_macro_knob_");
+
+                LayoutElement xy;
+                xy.type = ElementType::XYPad;
+                xy.label = "XY Mutate";
+                xy.x = 592; xy.y = 580; xy.width = 250; xy.height = 130;
+                xy.cornerRadius = 10.0f;
+                xy.accentColour = juce::Colour (0xff5ea2ff);
+                xy.backgroundColour = juce::Colour (0xaa10141a);
+                addElement (xy, "arp_studio_xy_");
+
+                addElement (panel ("Direction", 862, 580, 194, 130), "arp_studio_direction_");
+                addElement (topButton ("→", 888, 616, 46, juce::Colour (0xff80a6ff)), "arp_studio_dir_");
+                addElement (topButton ("←", 942, 616, 46, juce::Colour (0xff80a6ff)), "arp_studio_dir_");
+                addElement (topButton ("↑", 996, 616, 46, juce::Colour (0xff80a6ff)), "arp_studio_dir_");
+                addElement (topButton ("RND", 910, 660, 112, juce::Colour (0xff80a6ff)), "arp_studio_dir_");
+
+                addElement (panel ("Output", 1074, 580, 154, 130), "arp_studio_output_");
+                LayoutElement meter;
+                meter.type = ElementType::Meter;
+                meter.label = "Output";
+                meter.x = 1094; meter.y = 622; meter.width = 92; meter.height = 22;
+                meter.accentColour = juce::Colour (0xff85e85f);
+                addElement (meter, "arp_studio_meter_");
+                addElement (knob ("Out", "volume", 1120, 644), "arp_studio_out_knob_");
+
+                addElement (panel ("Group FX", 34, 718, 1194, 54), "arp_studio_group_fx_shell_");
+                addElement (topButton ("LINK ON", 50, 730, 70, juce::Colour (0xff8f67ff)), "arp_studio_group_link_");
+                static const char* fxGroupNames[] = { "G1 MUTE", "G2 DELAY", "G3 VERB", "G4 FILTER", "G5 GATE" };
+                static const char* fxGroupParams[][3] =
+                {
+                    { "lfoAmount", "filterCutoff", "volume" },
+                    { "delayTime", "delayFeedback", "delayMix" },
+                    { "reverbMix", "stereoWidth", "outputGainDb" },
+                    { "filterCutoff", "filterResonance", "eqMix" },
+                    { "dynThresholdDb", "dynRatio", "dynMix" }
+                };
+                static const char* fxGroupLabels[][3] =
+                {
+                    { "Amt", "Tone", "Out" },
+                    { "Time", "Feed", "Wet" },
+                    { "Verb", "Wide", "Out" },
+                    { "Cut", "Res", "Mix" },
+                    { "Thrs", "Ratio", "Mix" }
+                };
+                for (int group = 0; group < 5; ++group)
+                {
+                    const int groupX = 140 + group * 188;
+                    auto groupButton = topButton (fxGroupNames[group], groupX, 730, 78,
+                                                  laneColours[group]);
+                    groupButton.cornerRadius = 8.0f;
+                    addElement (groupButton, "arp_studio_fx_group_btn_");
+                    for (int control = 0; control < 3; ++control)
+                        addElement (miniKnob (fxGroupLabels[group][control],
+                                              fxGroupParams[group][control],
+                                              groupX + 80 + control * 34,
+                                              724),
+                                    "arp_studio_fx_group_knob_");
+                }
+                addElement (panel ("FX Library", 1084, 724, 126, 42), "arp_studio_fx_library_");
+            }
+            else if (templateId == 2)
             {
                 addElement (panel ("Sample Performance", 590, 600, 610, 150), "sample_gui_panel_");
                 addElement (knob ("Glitch", "sampleGlitch", 620, 628), "sample_gui_knob_");
@@ -2393,8 +2926,10 @@ namespace patchcraft
 
         owner.getAudio().getDeviceManager().addAudioCallback (this);
         patternPreviewActive = true;
+        arpStudioPreviewStartMs = juce::Time::getMillisecondCounterHiRes();
         playPatternButton.setButtonText ("Playing");
         activeSummary.setText (blockSummary() + "  |  preview playing on this page", juce::dontSendNotification);
+        startTimerHz (30);
         repaint();
     }
 
@@ -2404,6 +2939,7 @@ namespace patchcraft
             owner.getAudio().getDeviceManager().removeAudioCallback (this);
 
         patternPreviewActive = false;
+        arpStudioPreviewStartMs = 0.0;
         {
             const juce::SpinLock::ScopedLockType lock (previewLock);
             if (previewEngine != nullptr)
@@ -2416,7 +2952,78 @@ namespace patchcraft
         }
         previewRuntime.reset();
         playPatternButton.setButtonText ("Play Pattern");
+        if (! pendingGraphNotification)
+            stopTimer();
         repaint();
+    }
+
+    void MidiPlaygroundPage::setArpStudioHardwarePreviewActive (bool active)
+    {
+        if (arpStudioHardwareMidiActive == active)
+            return;
+
+        auto& deviceManager = owner.getAudio().getDeviceManager();
+        if (active)
+        {
+            for (const auto& input : juce::MidiInput::getAvailableDevices())
+                deviceManager.setMidiInputDeviceEnabled (input.identifier, true);
+
+            deviceManager.addMidiInputDeviceCallback ({}, this);
+        }
+        else
+        {
+            deviceManager.removeMidiInputDeviceCallback ({}, this);
+        }
+
+        arpStudioHardwareMidiActive = active;
+    }
+
+    void MidiPlaygroundPage::triggerArpStudioPreviewNote (int note, float velocity, bool noteOn)
+    {
+        if (! arpStudioMode || ! isShowing())
+            return;
+
+        if (! patternPreviewActive)
+            startPatternPreview();
+
+        const juce::SpinLock::ScopedLockType lock (previewLock);
+        if (previewEngine == nullptr)
+            return;
+
+        if (noteOn)
+        {
+            if (previewHeldNote >= 0 && previewHeldNote != note)
+                previewRuntime.handleNoteOff (*previewEngine, previewHeldNote);
+
+            previewHeldNote = juce::jlimit (0, 127, note);
+            previewRuntime.handleNoteOn (*previewEngine, previewHeldNote, juce::jlimit (0.0f, 1.0f, velocity));
+            arpStudioPreviewStartMs = juce::Time::getMillisecondCounterHiRes();
+            activeSummary.setText (blockSummary() + "  |  hardware key preview: "
+                                   + juce::MidiMessage::getMidiNoteName (previewHeldNote, true, true, 3),
+                                   juce::dontSendNotification);
+        }
+        else if (note == previewHeldNote)
+        {
+            previewRuntime.handleNoteOff (*previewEngine, note);
+        }
+
+        repaint();
+    }
+
+    void MidiPlaygroundPage::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& message)
+    {
+        if (! arpStudioMode || (! message.isNoteOn() && ! message.isNoteOff()))
+            return;
+
+        juce::Component::SafePointer<MidiPlaygroundPage> safeThis (this);
+        const int note = message.getNoteNumber();
+        const float velocity = message.getFloatVelocity();
+        const bool noteOn = message.isNoteOn();
+        juce::MessageManager::callAsync ([safeThis, note, velocity, noteOn]
+        {
+            if (safeThis != nullptr)
+                safeThis->triggerArpStudioPreviewNote (note, velocity, noteOn);
+        });
     }
 
     void MidiPlaygroundPage::audioDeviceAboutToStart (juce::AudioIODevice* device)
@@ -2501,7 +3108,7 @@ namespace patchcraft
             }
             else
             {
-                stepsSlider.setRange (1.0, 16.0, 1.0);
+                stepsSlider.setRange (1.0, (double) kAdvancedMidiMaxSteps, 1.0);
                 sliceCountSlider.setRange (1.0, 32.0, 1.0);
                 phraseBankBox.setSelectedId (MidiPlaygroundPattern::getActiveBank (*block) + 1, juce::dontSendNotification);
                 progressionBox.setSelectedId (juce::roundToInt (valueFor (*block, "mpProgressionPreset", 0.0f)) + 1,
@@ -2668,7 +3275,8 @@ namespace patchcraft
 
         if (immediate)
         {
-            stopTimer();
+            if (! patternPreviewActive)
+                stopTimer();
             pendingGraphNotification = false;
             owner.getProject().notifyChanged();
             return;
@@ -2676,17 +3284,24 @@ namespace patchcraft
 
         pendingGraphNotification = true;
         if (! isTimerRunning())
-            startTimer (75);
+            startTimer (patternPreviewActive ? 33 : 75);
     }
 
     void MidiPlaygroundPage::timerCallback()
     {
-        stopTimer();
-        if (! pendingGraphNotification)
-            return;
+        if (pendingGraphNotification)
+        {
+            pendingGraphNotification = false;
+            owner.getProject().notifyChanged();
+        }
 
-        pendingGraphNotification = false;
-        owner.getProject().notifyChanged();
+        if (patternPreviewActive)
+        {
+            repaint();
+            return;
+        }
+
+        stopTimer();
     }
 
     void MidiPlaygroundPage::setStepValueFromEditor (int step, int noteOffset, float velocity, float gate,
@@ -2695,7 +3310,7 @@ namespace patchcraft
     {
         if (auto* block = ensureMidiBlock())
         {
-            step = juce::jlimit (0, 15, step);
+            step = juce::jlimit (0, kAdvancedMidiMaxSteps - 1, step);
             const auto suffix = juce::String (step);
 
             if (editNote)
@@ -2836,7 +3451,7 @@ namespace patchcraft
             ? rootBox.getText() + " " + scaleBox.getText()
             : juce::String ("(no MIDI block)");
         const int steps = block != nullptr
-            ? juce::jlimit (1, 16, juce::roundToInt (valueFor (*block, "arpSteps", 16.0f)))
+            ? midiStepCount (*block)
             : 0;
 
         auto inner = area.reduced (12, 0);
@@ -2901,9 +3516,10 @@ namespace patchcraft
 
         auto area = rollArea();
         area.removeFromLeft (kRollKeyWidth);
-        const int steps = juce::jlimit (1, 16, juce::roundToInt (valueFor (*block, "arpSteps", 16.0f)));
-        const int gap = 2;
-        const int cellW = juce::jmax (14, (area.getWidth() - gap * juce::jmax (0, steps - 1)) / steps);
+        const int steps = midiStepCount (*block);
+        const int gap = steps > 64 ? 1 : 2;
+        const int cellW = juce::jmax (steps > 64 ? 3 : 8,
+                                      (area.getWidth() - gap * juce::jmax (0, steps - 1)) / steps);
         const int relative = x - area.getX();
         if (relative < 0)
             return -1;
@@ -2932,9 +3548,10 @@ namespace patchcraft
 
         auto area = rollArea();
         area.removeFromLeft (kRollKeyWidth);
-        const int steps = juce::jlimit (1, 16, juce::roundToInt (valueFor (*block, "arpSteps", 16.0f)));
-        const int gap = 2;
-        const int cellW = juce::jmax (14, (area.getWidth() - gap * juce::jmax (0, steps - 1)) / steps);
+        const int steps = midiStepCount (*block);
+        const int gap = steps > 64 ? 1 : 2;
+        const int cellW = juce::jmax (steps > 64 ? 3 : 8,
+                                      (area.getWidth() - gap * juce::jmax (0, steps - 1)) / steps);
         const int stepX = area.getX() + juce::jlimit (0, steps - 1, step) * (cellW + gap);
         const float position = juce::jlimit (0.0f, 1.0f, (float) (x - stepX) / (float) juce::jmax (1, cellW));
         return juce::jlimit (0.08f, 1.0f, 0.10f + position * 0.90f);
@@ -3063,9 +3680,10 @@ namespace patchcraft
         auto area = rollArea();
         auto keyArea = area.removeFromLeft (kRollKeyWidth);
         const int rH = rowHeight (area);
-        const int steps = juce::jlimit (1, 16, juce::roundToInt (valueFor (*block, "arpSteps", 16.0f)));
-        const int gap = 2;
-        const int cellW = juce::jmax (14, (area.getWidth() - gap * juce::jmax (0, steps - 1)) / steps);
+        const int steps = midiStepCount (*block);
+        const int gap = steps > 64 ? 1 : 2;
+        const int cellW = juce::jmax (steps > 64 ? 3 : 8,
+                                      (area.getWidth() - gap * juce::jmax (0, steps - 1)) / steps);
         const int rootMidi = 60 + juce::jmax (0, owner.rootBox.getSelectedId() - 1);
         const int centreRow = kRollRows / 2;
 
@@ -3179,7 +3797,7 @@ namespace patchcraft
                 const int row = centreRow - noteOffset;
                 auto noteRect = juce::Rectangle<int> (area.getX() + step * (cellW + gap) + 1,
                                                        keyArea.getY() + row * rH + 1,
-                                                       juce::jmax (8, juce::roundToInt ((float) cellW * gate)) - 2,
+                                                       juce::jmax (2, juce::roundToInt ((float) cellW * gate)) - 1,
                                                        juce::jmax (6, rH - 2));
                 const float alpha = i == 0 ? 0.55f + velocity * 0.40f : 0.32f + velocity * 0.36f;
                 g.setColour (PatchCraftLookAndFeel::accent().withAlpha (alpha));
@@ -3440,13 +4058,20 @@ namespace patchcraft
 
     int MidiPlaygroundPage::MidiOutputLane::stepAt (int x) const
     {
+        const auto* block = owner.activeMidiBlock();
+        if (block == nullptr)
+            return -1;
+
         auto area = getLocalBounds().reduced (12, 38);
-        const int gap = 4;
-        const int cellW = juce::jmax (8, (area.getWidth() - gap * 15) / 16);
+        const int steps = midiStepCount (*block, 16.0f);
+        const int gap = steps > 64 ? 1 : (steps > 32 ? 2 : 4);
+        const int cellW = juce::jmax (steps > 64 ? 3 : 6,
+                                      (area.getWidth() - gap * juce::jmax (0, steps - 1)) / steps);
         const int relative = x - area.getX();
         if (relative < 0)
             return -1;
-        return juce::jlimit (0, 15, relative / (cellW + gap));
+        const int step = relative / (cellW + gap);
+        return step >= 0 && step < steps ? step : -1;
     }
 
     MidiPlaygroundPage::MidiOutputLane::EditLane MidiPlaygroundPage::MidiOutputLane::laneAt (int y) const
@@ -3553,9 +4178,10 @@ namespace patchcraft
 
         if (const auto* block = owner.activeMidiBlock())
         {
-            const int steps = juce::jlimit (1, 16, juce::roundToInt (valueFor (*block, "arpSteps", 8.0f)));
-            const int gap = 4;
-            const int cellW = juce::jmax (8, (content.getWidth() - gap * 15) / 16);
+            const int steps = midiStepCount (*block, 8.0f);
+            const int gap = steps > 64 ? 1 : (steps > 32 ? 2 : 4);
+            const int cellW = juce::jmax (steps > 64 ? 3 : 6,
+                                          (content.getWidth() - gap * juce::jmax (0, steps - 1)) / steps);
             auto editor = content.removeFromTop (juce::jmax (112, content.getHeight() - 38));
             const int noteH = juce::roundToInt (editor.getHeight() * 0.48f);
             const int velocityH = juce::roundToInt (editor.getHeight() * 0.18f);
@@ -3572,10 +4198,10 @@ namespace patchcraft
                 g.drawHorizontalLine (y, (float) noteLane.getX(), (float) noteLane.getRight());
             }
 
-            for (int step = 0; step < 16; ++step)
+            for (int step = 0; step < steps; ++step)
             {
                 auto cell = juce::Rectangle<int> (noteLane.getX() + step * (cellW + gap), noteLane.getY(), cellW, noteLane.getHeight());
-                const bool active = step < steps && valueFor (*block, "mpStep" + juce::String (step) + "On", 1.0f) >= 0.5f;
+                const bool active = valueFor (*block, "mpStep" + juce::String (step) + "On", 1.0f) >= 0.5f;
                 const auto velocity = valueFor (*block, "mpVelocity" + juce::String (step), 1.0f);
                 const auto gate = valueFor (*block, "mpGate" + juce::String (step), valueFor (*block, "arpGate", 0.55f));
                 const auto probability = valueFor (*block, "mpStepProb" + juce::String (step), 1.0f);
@@ -3643,8 +4269,682 @@ namespace patchcraft
         return "Synth source = DSP Builder Source blocks. Performance Builder creates the MIDI and modulation behavior that plays those sources.";
     }
 
+    juce::Rectangle<int> MidiPlaygroundPage::arpStudioLaneBounds (juce::Rectangle<int> area, int lane) const
+    {
+        auto laneList = area.removeFromLeft (252);
+        laneList.removeFromTop (54);
+        const int gap = 8;
+        const int rowH = juce::jmax (56, (laneList.getHeight() - gap * (MidiPlaygroundPattern::kPhraseBankCount - 1)) / MidiPlaygroundPattern::kPhraseBankCount);
+        return juce::Rectangle<int> (laneList.getX(),
+                                     laneList.getY() + lane * (rowH + gap),
+                                     laneList.getWidth(),
+                                     rowH).reduced (1);
+    }
+
+    juce::Rectangle<int> MidiPlaygroundPage::arpStudioMidiDragBounds (juce::Rectangle<int> area, int lane) const
+    {
+        return arpStudioLaneBounds (area, lane).reduced (10, 8).removeFromRight (76).withTrimmedBottom (18);
+    }
+
+    bool MidiPlaygroundPage::arpStudioStepHitTest (juce::Rectangle<int> area, juce::Point<int> pos,
+                                                   int& lane, int& step, int& band, float& value) const
+    {
+        lane = -1;
+        step = -1;
+        band = -1;
+        value = 0.0f;
+
+        const auto* block = activeMidiBlock();
+        static constexpr int fallbackSteps[] = { 16, 12, 16, 8, 16 };
+
+        lane = block != nullptr
+            ? juce::jlimit (0, MidiPlaygroundPattern::kPhraseBankCount - 1, juce::roundToInt (valueFor (*block, "mpActiveBank", 0.0f)))
+            : juce::jlimit (0, MidiPlaygroundPattern::kPhraseBankCount - 1, phraseBankBox.getSelectedId() - 1);
+
+        auto editor = area;
+        editor.removeFromLeft (264);
+        editor.removeFromRight (330);
+        editor.removeFromTop (54);
+        editor = editor.removeFromTop (282).reduced (12, 10);
+        editor.removeFromTop (38);
+        editor.removeFromLeft (78);
+        if (! editor.contains (pos))
+            return false;
+
+        const int steps = block != nullptr
+            ? juce::jlimit (1, 128, juce::roundToInt (arpBankValue (*block, lane, "arpSteps", (float) fallbackSteps[lane])))
+            : fallbackSteps[lane];
+        const int drawSteps = juce::jmin (steps, 64);
+        const int gap = drawSteps > 32 ? 2 : 4;
+        const int cellW = juce::jmax (5, (editor.getWidth() - gap * juce::jmax (0, drawSteps - 1)) / drawSteps);
+        const int bandH = juce::jmax (20, editor.getHeight() / 4);
+        const int relative = pos.x - editor.getX();
+        if (relative < 0)
+            return false;
+
+        const int stride = cellW + gap;
+        step = relative / stride;
+        if (step < 0 || step >= drawSteps)
+            return false;
+        if ((relative % stride) >= cellW)
+            return false;
+
+        band = juce::jlimit (0, 3, (pos.y - editor.getY()) / bandH);
+        const auto cell = juce::Rectangle<int> (editor.getX() + step * stride,
+                                                editor.getY() + band * bandH + 2,
+                                                cellW,
+                                                juce::jmax (8, bandH - 4));
+        if (! cell.contains (pos))
+            return false;
+
+        value = 1.0f - juce::jlimit (0.0f, 1.0f, (float) (pos.y - cell.getY()) / (float) juce::jmax (1, cell.getHeight()));
+        return true;
+    }
+
+    void MidiPlaygroundPage::editArpStudioStepFromMouse (const juce::MouseEvent& e, bool toggleStep)
+    {
+        auto content = getLocalBounds().reduced (12, 10);
+        content.removeFromTop (104);
+
+        int lane = -1;
+        int step = -1;
+        int band = -1;
+        float value = 0.0f;
+        if (! arpStudioStepHitTest (content, e.getPosition(), lane, step, band, value))
+            return;
+
+        auto* block = ensureMidiBlock();
+        if (block == nullptr)
+            return;
+
+        const int activeBank = MidiPlaygroundPattern::getActiveBank (*block);
+        if (activeBank != lane)
+        {
+            phraseBankBox.setSelectedId (lane + 1, juce::dontSendNotification);
+            switchPhraseBank (lane);
+            block = ensureMidiBlock();
+            if (block == nullptr)
+                return;
+        }
+
+        const auto suffix = juce::String (step);
+        const auto activeKey = "mpStep" + suffix + "On";
+        const bool wasActive = valueFor (*block, activeKey, 0.0f) >= 0.5f;
+        block->values[activeKey] = toggleStep ? (wasActive ? 0.0f : 1.0f) : 1.0f;
+        if (block->values.find ("mpGate" + suffix) == block->values.end())
+            block->values["mpGate" + suffix] = valueFor (*block, "arpGate", 0.58f);
+        if (block->values.find ("mpStepProb" + suffix) == block->values.end())
+            block->values["mpStepProb" + suffix] = 1.0f;
+        if (block->values.find ("arpNote" + suffix) == block->values.end())
+            block->values["arpNote" + suffix] = 0.0f;
+        if (block->values.find ("mpStepDiv" + suffix) == block->values.end())
+            block->values["mpStepDiv" + suffix] = 1.0f;
+
+        const juce::StringArray bandNames { "note", "velocity", "gate", "chance" };
+        juce::String editedValue;
+        if (! toggleStep)
+        {
+            switch (band)
+            {
+                case 0:
+                {
+                    const float note = (float) roundStepNote (juce::jmap (value, 0.0f, 1.0f, -12.0f, 24.0f));
+                    block->values["arpNote" + suffix] = note;
+                    editedValue = juce::String ((int) note) + " st";
+                    break;
+                }
+                case 1:
+                    block->values["mpVelocity" + suffix] = juce::jlimit (0.0f, 1.0f, value);
+                    editedValue = juce::String (juce::roundToInt (value * 127.0f));
+                    break;
+                case 2:
+                    block->values["mpGate" + suffix] = juce::jlimit (0.05f, 1.0f, value);
+                    editedValue = juce::String (juce::roundToInt (value * 100.0f)) + "%";
+                    break;
+                case 3:
+                    block->values["mpStepProb" + suffix] = juce::jlimit (0.0f, 1.0f, value);
+                    editedValue = juce::String (juce::roundToInt (value * 100.0f)) + "%";
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        MidiPlaygroundPattern::storeActiveBank (*block, lane);
+        arpStudioEditingLane = lane;
+        arpStudioEditingStep = step;
+        arpStudioEditingBand = band;
+        activeSummary.setText ("Bank " + juce::String (lane + 1)
+                               + " step " + juce::String (step + 1)
+                               + ": " + bandNames[juce::jlimit (0, bandNames.size() - 1, band)]
+                               + (editedValue.isNotEmpty() ? " " + editedValue : "")
+                               + (block->values[activeKey] >= 0.5f ? " on" : " off"),
+                               juce::dontSendNotification);
+        notifyGraphChanged (false);
+        syncControlsFromBlock();
+        repaint();
+    }
+
+    void MidiPlaygroundPage::drawArpStudioKnob (juce::Graphics& g, juce::Rectangle<int> bounds,
+                                                const juce::String& label, const juce::String& value,
+                                                juce::Colour accent, float normalised) const
+    {
+        auto knob = bounds.withTrimmedBottom (20).toFloat().reduced (3.0f);
+        const float diameter = (float) juce::jmin (knob.getWidth(), knob.getHeight());
+        knob = juce::Rectangle<float> (knob.getCentreX() - diameter * 0.5f, knob.getY(), diameter, diameter);
+        g.setColour (juce::Colour (0xff05070a));
+        g.fillEllipse (knob);
+        g.setColour (accent.withAlpha (0.34f));
+        g.drawEllipse (knob.reduced (1.0f), 2.0f);
+        const float start = juce::MathConstants<float>::pi * 1.25f;
+        const float end = juce::MathConstants<float>::pi * 2.75f;
+        const float angle = juce::jmap (juce::jlimit (0.0f, 1.0f, normalised), 0.0f, 1.0f, start, end);
+        g.setColour (accent);
+        juce::Path arc;
+        arc.addCentredArc (knob.getCentreX(), knob.getCentreY(), diameter * 0.43f, diameter * 0.43f, 0.0f, start, angle, true);
+        g.strokePath (arc, juce::PathStrokeType (2.0f));
+        auto pointer = knob.getCentre() + juce::Point<float> (std::cos (angle) * diameter * 0.28f,
+                                                              std::sin (angle) * diameter * 0.28f);
+        g.drawLine (knob.getCentreX(), knob.getCentreY(), pointer.x, pointer.y, 2.0f);
+        g.setFont (juce::Font (8.2f, juce::Font::bold));
+        g.drawText (label, bounds.withTrimmedTop (bounds.getHeight() - 22), juce::Justification::centred, true);
+        g.setFont (juce::Font (8.0f));
+        g.setColour (PatchCraftLookAndFeel::accent());
+        g.drawText (value, bounds.withTrimmedTop (bounds.getHeight() - 11), juce::Justification::centred, true);
+    }
+
+    void MidiPlaygroundPage::drawArpStudioLane (juce::Graphics& g, juce::Rectangle<int> bounds,
+                                                int lane, const DspBlock* block) const
+    {
+        static const juce::Colour laneColours[] =
+        {
+            juce::Colour (0xff16d6e9), juce::Colour (0xff9b6dff), juce::Colour (0xffff5bb9),
+            juce::Colour (0xffffa32b), juce::Colour (0xff8df04b)
+        };
+        static const char* laneNames[] = { "SPIRAL", "ASCENT", "BOUNCE", "RANDOM", "RONDO" };
+        static const int fallbackSteps[] = { 16, 12, 16, 8, 16 };
+        const auto accent = laneColours[juce::jlimit (0, 4, lane)];
+        const int activeLane = block != nullptr
+            ? juce::jlimit (0, MidiPlaygroundPattern::kPhraseBankCount - 1, juce::roundToInt (valueFor (*block, "mpActiveBank", 0.0f)))
+            : 0;
+        const bool selected = lane == activeLane;
+        const int steps = block != nullptr
+            ? juce::jlimit (1, 128, juce::roundToInt (arpBankValue (*block, lane, "arpSteps", (float) fallbackSteps[lane])))
+            : fallbackSteps[lane];
+        const int drawSteps = juce::jmin (steps, 64);
+        int activeCount = 0;
+        for (int step = 0; step < drawSteps; ++step)
+            if (block == nullptr || arpBankValue (*block, lane, "mpStep" + juce::String (step) + "On", step % 2 == 0 ? 1.0f : 0.0f) >= 0.5f)
+                ++activeCount;
+
+        g.setColour (selected ? juce::Colour (0xff0d141d) : juce::Colour (0xff080c12));
+        g.fillRoundedRectangle (bounds.toFloat(), 8.0f);
+        g.setColour (accent.withAlpha (selected ? 0.95f : 0.42f));
+        g.drawRoundedRectangle (bounds.toFloat().reduced (0.5f), 8.0f, selected ? 1.8f : 1.0f);
+
+        auto area = bounds.reduced (10, 8);
+        auto dragHandle = area.removeFromRight (76).withTrimmedBottom (18);
+        auto meterArea = area.removeFromBottom (18);
+        auto titleArea = area.removeFromTop (22);
+
+        g.setFont (juce::Font (13.0f, juce::Font::bold));
+        g.setColour (accent);
+        g.drawText (juce::String (lane + 1) + "  " + laneNames[lane], titleArea, juce::Justification::centredLeft, true);
+
+        g.setColour (PatchCraftLookAndFeel::textDim());
+        g.setFont (9.5f);
+        g.drawText (juce::String (steps) + " steps  |  " + juce::String (activeCount) + " active",
+                    area.removeFromTop (16), juce::Justification::centredLeft, true);
+        g.drawText (lane == 0 ? "Synth lane / Group 1"
+                  : lane == 1 ? "Sample lane / Group 2"
+                  : lane == 2 ? "Accent lane / Group 3"
+                  : lane == 3 ? "Random lane / Group 4"
+                              : "Macro lane / Group 5",
+                    area.removeFromTop (16), juce::Justification::centredLeft, true);
+
+        g.setColour (juce::Colour (0xff141a22));
+        g.fillRoundedRectangle (dragHandle.toFloat(), 5.0f);
+        g.setColour (accent.withAlpha (0.80f));
+        g.drawRoundedRectangle (dragHandle.toFloat().reduced (0.5f), 5.0f, 1.0f);
+        g.setFont (juce::Font (7.4f, juce::Font::bold));
+        g.drawText ("DRAG MIDI", dragHandle, juce::Justification::centred, true);
+
+        meterArea.removeFromRight (84);
+        const int gap = drawSteps > 32 ? 1 : 2;
+        const int cellW = juce::jmax (2, (meterArea.getWidth() - gap * juce::jmax (0, drawSteps - 1)) / drawSteps);
+        for (int step = 0; step < drawSteps; ++step)
+        {
+            const juce::String suffix (step);
+            const bool active = block != nullptr
+                ? arpBankValue (*block, lane, "mpStep" + suffix + "On", step % 2 == 0 ? 1.0f : 0.0f) >= 0.5f
+                : step % 2 == 0;
+            const float velocity = block != nullptr
+                ? juce::jlimit (0.0f, 1.0f, arpBankValue (*block, lane, "mpVelocity" + suffix, 0.72f))
+                : (step % 4 == 0 ? 0.96f : 0.62f);
+            auto cell = juce::Rectangle<int> (meterArea.getX() + step * (cellW + gap),
+                                              meterArea.getY(), cellW, meterArea.getHeight());
+            g.setColour (PatchCraftLookAndFeel::panelAlt());
+            g.fillRect (cell);
+            if (active)
+            {
+                auto fill = cell.withTrimmedTop (juce::roundToInt ((1.0f - velocity) * (float) cell.getHeight()));
+                g.setColour (accent.withAlpha (selected ? 0.82f : 0.46f));
+                g.fillRect (fill);
+            }
+        }
+    }
+
+    void MidiPlaygroundPage::drawArpStudioFxGroup (juce::Graphics& g, juce::Rectangle<int> bounds, int group,
+                                                   const juce::String& name, const juce::String& mode,
+                                                   juce::Colour accent) const
+    {
+        g.setColour (juce::Colour (0xff080c12).withAlpha (0.98f));
+        g.fillRoundedRectangle (bounds.toFloat(), 10.0f);
+        g.setColour (accent.withAlpha (0.55f));
+        g.drawRoundedRectangle (bounds.toFloat().reduced (0.5f), 10.0f, 1.0f);
+        auto area = bounds.reduced (10, 8);
+        auto header = area.removeFromTop (22);
+        g.setFont (juce::Font (10.5f, juce::Font::bold));
+        g.setColour (accent);
+        g.drawText ("GROUP " + juce::String (group + 1), header.removeFromLeft (66), juce::Justification::centredLeft, true);
+        g.setColour (PatchCraftLookAndFeel::text());
+        g.drawText (name, header.removeFromLeft (90), juce::Justification::centredLeft, true);
+        g.setColour (PatchCraftLookAndFeel::textDim());
+        g.drawText (mode, header, juce::Justification::centredRight, true);
+
+        drawArpStudioKnob (g, area.removeFromLeft (area.getWidth() / 4), group == 1 ? "TIME" : group == 3 ? "CUT" : "AMT",
+                           group == 1 ? "1/4" : group == 3 ? "2.1k" : "65%", accent, group == 3 ? 0.42f : 0.65f);
+        drawArpStudioKnob (g, area.removeFromLeft (area.getWidth() / 3), group == 2 ? "DECAY" : "WET",
+                           group == 2 ? "2.4s" : "60%", accent, group == 2 ? 0.56f : 0.60f);
+        drawArpStudioKnob (g, area.removeFromLeft (area.getWidth() / 2), group == 4 ? "RATIO" : "OUT",
+                           group == 4 ? "1.8" : "0dB", accent, 0.50f);
+        g.setColour (accent.withAlpha (0.18f));
+        g.fillRoundedRectangle (area.reduced (4, 14).toFloat(), 4.0f);
+    }
+
+    bool MidiPlaygroundPage::startArpStudioMidiDrag (int lane)
+    {
+        auto* block = activeMidiBlock();
+        if (block == nullptr)
+            block = ensureMidiBlock();
+        if (block == nullptr)
+            return false;
+
+        DspBlock exportBlock = *block;
+        lane = juce::jlimit (0, MidiPlaygroundPattern::kPhraseBankCount - 1, lane);
+        MidiPlaygroundPattern::loadBank (exportBlock, lane, false);
+        auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory)
+            .getChildFile ("PatchCraft")
+            .getChildFile ("MidiDrag");
+        if (! folder.createDirectory())
+        {
+            activeSummary.setText ("MIDI drag failed: could not create temp MIDI folder.", juce::dontSendNotification);
+            return false;
+        }
+
+        static const char* names[] = { "Spiral", "Ascent", "Bounce", "Random", "Rondo" };
+        auto target = folder.getChildFile (arpStudioMidiFileName (names[lane], lane));
+        int duplicateIndex = 2;
+        while (target.existsAsFile())
+            target = folder.getChildFile (arpStudioMidiFileName (juce::String (names[lane]) + "_" + juce::String (duplicateIndex++), lane));
+
+        juce::String error;
+        if (! MidiPlaygroundPattern::writeMidiClip (exportBlock, target, 120.0, 60, error))
+        {
+            activeSummary.setText ("MIDI drag failed: " + error, juce::dontSendNotification);
+            return false;
+        }
+
+        juce::StringArray files;
+        files.add (target.getFullPathName());
+        const bool started = juce::DragAndDropContainer::performExternalDragDropOfFiles (files, false, this);
+        activeSummary.setText (started ? "Dragging MIDI clip: " + target.getFileName()
+                                       : "MIDI drag failed: OS did not start an external file drag.",
+                               juce::dontSendNotification);
+        return started;
+    }
+
+    void MidiPlaygroundPage::drawArpStudio (juce::Graphics& g)
+    {
+        {
+            juce::Component* hidden[] =
+            {
+                &title, &subtitle, &activeSummary, &modeBox, &editorViewBox, &musicalPresetBox,
+                &chordPresetBox, &drumPatternBox, &progressionBox, &sliceCountSlider,
+                &chordSizeSlider, &chordSpreadSlider, &octaveSlider, &flamSlider,
+                &euclideanPulsesSlider, &euclideanRotateSlider, &octaveFoldToggle,
+                &addPlaygroundButton, &chordPhraseButton, &sampleSliceButton, &drumMachineButton,
+                &operatorsButton, &phraseLibraryButton, &applyMusicalPresetButton,
+                &storeBankButton, &duplicateBankButton, &applyProgressionButton,
+                &midiOutputLane, &pianoRollEditor, &drumPatternGrid
+            };
+            for (auto* component : hidden)
+                component->setVisible (false);
+
+            juce::Component* visible[] =
+            {
+                &sourceBox, &midiTemplateBox, &guiTemplateBox, &rootBox, &scaleBox, &targetBox,
+                &phraseBankBox, &stepsSlider, &rateSlider, &gateSlider, &swingSlider,
+                &probabilitySlider, &humanizeSlider, &mutationSlider, &ratchetSlider,
+                &velocityCurveSlider, &strumSlider, &applyMidiTemplateButton, &applyGuiTemplateButton,
+                &exportMidiButton, &playPatternButton, &stopPatternButton, &sourceBuilderButton,
+                &sampleMapperButton, &testButton
+            };
+            for (auto* component : visible)
+                component->setVisible (true);
+
+            static const juce::Colour laneColours[] =
+            {
+                juce::Colour (0xff16d6e9), juce::Colour (0xff9b6dff), juce::Colour (0xffff5bb9),
+                juce::Colour (0xffffa32b), juce::Colour (0xff8df04b)
+            };
+            static const char* laneNames[] = { "Spiral", "Ascent", "Bounce", "Random", "Rondo" };
+
+            auto full = getLocalBounds().reduced (12, 10);
+            g.fillAll (juce::Colour (0xff05080d));
+
+            const auto* block = activeMidiBlock();
+            const int selectedLane = block != nullptr
+                ? juce::jlimit (0, MidiPlaygroundPattern::kPhraseBankCount - 1, juce::roundToInt (valueFor (*block, "mpActiveBank", 0.0f)))
+                : juce::jlimit (0, MidiPlaygroundPattern::kPhraseBankCount - 1, phraseBankBox.getSelectedId() - 1);
+            const auto selectedAccent = laneColours[juce::jlimit (0, 4, selectedLane)];
+
+            auto top = full.removeFromTop (92);
+            PatchCraftLookAndFeel::drawDarkPanel (g, top, 10.0f);
+            auto topArea = top.reduced (16, 10);
+            auto brand = topArea.removeFromLeft (360);
+            g.setColour (PatchCraftLookAndFeel::textBright());
+            g.setFont (juce::Font (22.0f, juce::Font::bold));
+            g.drawText ("ARP STUDIO BUILDER", brand.removeFromTop (28), juce::Justification::centredLeft, true);
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (12.0f);
+            g.drawText ("Author lanes, routing, banks, macros, and export/update the finished Player UI.",
+                        brand.removeFromTop (22), juce::Justification::centredLeft, true);
+            g.setColour (selectedAccent);
+            g.setFont (juce::Font (10.0f, juce::Font::bold));
+            g.drawText ("Selected lane: " + juce::String (selectedLane + 1) + " " + laneNames[selectedLane],
+                        brand, juce::Justification::centredLeft, true);
+
+            auto actions = topArea.removeFromRight (620);
+            auto actionTop = actions.removeFromTop (32);
+            playPatternButton.setBounds (actionTop.removeFromLeft (104).reduced (2));
+            stopPatternButton.setBounds (actionTop.removeFromLeft (70).reduced (2));
+            sourceBuilderButton.setBounds (actionTop.removeFromLeft (118).reduced (2));
+            sampleMapperButton.setBounds (actionTop.removeFromLeft (122).reduced (2));
+            testButton.setBounds (actionTop.removeFromLeft (112).reduced (2));
+            auto actionBottom = actions.removeFromTop (34);
+            applyMidiTemplateButton.setBounds (actionBottom.removeFromLeft (142).reduced (2));
+            applyGuiTemplateButton.setBounds (actionBottom.removeFromLeft (142).reduced (2));
+            exportMidiButton.setBounds (actionBottom.removeFromLeft (110).reduced (2));
+            midiTemplateBox.setBounds (actionBottom.removeFromLeft (176).reduced (2));
+
+            full.removeFromTop (12);
+            auto body = full;
+            auto leftPanel = body.removeFromLeft (252);
+            body.removeFromLeft (12);
+            auto rightPanel = body.removeFromRight (318);
+            body.removeFromRight (12);
+            auto main = body;
+
+            PatchCraftLookAndFeel::drawDarkPanel (g, leftPanel, 10.0f);
+            auto left = leftPanel.reduced (12, 10);
+            g.setColour (PatchCraftLookAndFeel::accent());
+            g.setFont (juce::Font (12.0f, juce::Font::bold));
+            g.drawText ("LANES / CIRCLES", left.removeFromTop (22), juce::Justification::centredLeft, true);
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (10.0f);
+            g.drawText ("Click a lane to edit its bank. Drag MIDI from a lane into a DAW.",
+                        left.removeFromTop (20), juce::Justification::centredLeft, true);
+            for (int lane = 0; lane < MidiPlaygroundPattern::kPhraseBankCount; ++lane)
+                drawArpStudioLane (g, arpStudioLaneBounds (full, lane), lane, block);
+
+            auto sourceCard = leftPanel.reduced (12, 10).removeFromBottom (112);
+            PatchCraftLookAndFeel::drawPanel (g, sourceCard, 8.0f);
+            auto sourceInner = sourceCard.reduced (10, 8);
+            g.setColour (selectedAccent);
+            g.setFont (juce::Font (11.0f, juce::Font::bold));
+            g.drawText ("SELECTED LANE SOURCE", sourceInner.removeFromTop (18), juce::Justification::centredLeft, true);
+            auto sourceRow = sourceInner.removeFromTop (28);
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (9.5f);
+            g.drawText ("Sound", sourceRow.removeFromLeft (52), juce::Justification::centredLeft, true);
+            sourceBox.setBounds (sourceRow.reduced (2));
+            auto targetRow = sourceInner.removeFromTop (28);
+            g.drawText ("Target", targetRow.removeFromLeft (52), juce::Justification::centredLeft, true);
+            targetBox.setBounds (targetRow.reduced (2));
+            g.drawText ("Runtime currently plays one active phrase bank. Lane source choices are stored for builder/export work.",
+                        sourceInner, juce::Justification::centredLeft, true);
+
+            auto projectStrip = main.removeFromTop (46);
+            PatchCraftLookAndFeel::drawPanel (g, projectStrip, 8.0f);
+            auto strip = projectStrip.reduced (10, 8);
+            auto placeBox = [&] (const juce::String& label, juce::Component& component, int w)
+            {
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (juce::Font (10.0f, juce::Font::bold));
+                g.drawText (label, strip.removeFromLeft (54), juce::Justification::centredLeft, true);
+                component.setBounds (strip.removeFromLeft (w).reduced (2));
+                strip.removeFromLeft (10);
+            };
+            placeBox ("Bank", phraseBankBox, 92);
+            placeBox ("Key", rootBox, 82);
+            placeBox ("Scale", scaleBox, 140);
+            placeBox ("UI", guiTemplateBox, 178);
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (juce::Font (10.5f, juce::Font::bold));
+            g.drawText ("Player lane buttons switch the active bank; they do not layer all five banks at once yet.",
+                        strip, juce::Justification::centredLeft, true);
+
+            main.removeFromTop (8);
+            auto stepPanel = main.removeFromTop (282);
+            PatchCraftLookAndFeel::drawDarkPanel (g, stepPanel, 10.0f);
+            auto stepArea = stepPanel.reduced (12, 10);
+            auto stepHeader = stepArea.removeFromTop (30);
+            g.setColour (selectedAccent);
+            g.setFont (juce::Font (13.0f, juce::Font::bold));
+            g.drawText ("STEP EDITOR - " + juce::String (laneNames[selectedLane]).toUpperCase(),
+                        stepHeader.removeFromLeft (260), juce::Justification::centredLeft, true);
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (10.0f);
+            g.drawText ("Click/drag Note, Velocity, Gate, or Chance cells. Ctrl-click or right-click toggles the step.",
+                        stepHeader, juce::Justification::centredRight, true);
+
+            auto grid = stepArea;
+            auto labels = grid.removeFromLeft (78);
+            const int steps = block != nullptr
+                ? juce::jlimit (1, 128, juce::roundToInt (arpBankValue (*block, selectedLane, "arpSteps", 16.0f)))
+                : 16;
+            const int drawSteps = juce::jmin (steps, 64);
+            const int gap = drawSteps > 32 ? 2 : 4;
+            const int cellW = juce::jmax (5, (grid.getWidth() - gap * juce::jmax (0, drawSteps - 1)) / drawSteps);
+            const int bandH = juce::jmax (20, grid.getHeight() / 4);
+            const juce::StringArray bandLabels { "Note", "Velocity", "Gate", "Chance" };
+            for (int band = 0; band < 4; ++band)
+            {
+                auto bandLabel = labels.withY (grid.getY() + band * bandH).withHeight (bandH);
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (juce::Font (9.5f, juce::Font::bold));
+                g.drawText (bandLabels[band], bandLabel, juce::Justification::centredLeft, true);
+                g.setColour (PatchCraftLookAndFeel::borderSoft());
+                g.drawHorizontalLine (bandLabel.getY(), (float) grid.getX(), (float) grid.getRight());
+            }
+
+            const int playbackStep = patternPreviewActive && arpStudioPreviewStartMs > 0.0
+                ? juce::jlimit (0, drawSteps - 1,
+                                (int) std::floor (std::fmod ((juce::Time::getMillisecondCounterHiRes() - arpStudioPreviewStartMs) * 0.008,
+                                                             (double) drawSteps)))
+                : -1;
+
+            for (int step = 0; step < drawSteps; ++step)
+            {
+                const juce::String suffix (step);
+                const bool active = block != nullptr
+                    ? arpBankValue (*block, selectedLane, "mpStep" + suffix + "On", 1.0f) >= 0.5f
+                    : true;
+                const float note = block != nullptr ? arpBankValue (*block, selectedLane, "arpNote" + suffix, 0.0f) : 0.0f;
+                const float velocity = block != nullptr ? juce::jlimit (0.0f, 1.0f, arpBankValue (*block, selectedLane, "mpVelocity" + suffix, 0.72f)) : 0.72f;
+                const float gate = block != nullptr ? juce::jlimit (0.05f, 1.0f, arpBankValue (*block, selectedLane, "mpGate" + suffix, 0.58f)) : 0.58f;
+                const float probability = block != nullptr ? juce::jlimit (0.0f, 1.0f, arpBankValue (*block, selectedLane, "mpStepProb" + suffix, 1.0f)) : 1.0f;
+                const bool editing = selectedLane == arpStudioEditingLane && step == arpStudioEditingStep;
+                const bool playing = step == playbackStep;
+                const float values[] =
+                {
+                    juce::jlimit (0.0f, 1.0f, juce::jmap (note, -12.0f, 24.0f, 0.0f, 1.0f)),
+                    velocity,
+                    gate,
+                    probability
+                };
+
+                const int x = grid.getX() + step * (cellW + gap);
+                for (int band = 0; band < 4; ++band)
+                {
+                    auto cell = juce::Rectangle<int> (x, grid.getY() + band * bandH + 2,
+                                                      cellW, juce::jmax (8, bandH - 4));
+                    g.setColour (active ? juce::Colour (0xff101823) : juce::Colour (0xff0a0d12));
+                    g.fillRoundedRectangle (cell.toFloat(), 3.0f);
+                    auto fill = cell.withTrimmedTop (juce::roundToInt ((1.0f - values[band]) * (float) cell.getHeight()));
+                    g.setColour (selectedAccent.withAlpha (active ? (band == 1 ? 0.84f : 0.55f) : 0.16f));
+                    g.fillRoundedRectangle (fill.toFloat(), 3.0f);
+                    const bool editingBand = editing && band == arpStudioEditingBand;
+                    if (playing || editingBand)
+                    {
+                        g.setColour (playing ? juce::Colours::white.withAlpha (0.75f) : selectedAccent);
+                        g.drawRoundedRectangle (cell.toFloat().reduced (0.5f), 3.0f, playing ? 1.4f : 1.1f);
+                    }
+                }
+            }
+
+            main.removeFromTop (8);
+            auto lower = main;
+            auto macroPanel = lower.removeFromLeft (juce::jmax (320, lower.getWidth() / 2));
+            lower.removeFromLeft (10);
+            PatchCraftLookAndFeel::drawPanel (g, macroPanel, 8.0f);
+            auto macro = macroPanel.reduced (12, 10);
+            g.setColour (PatchCraftLookAndFeel::accent());
+            g.setFont (juce::Font (12.0f, juce::Font::bold));
+            g.drawText ("PERFORMANCE / MODULATION", macro.removeFromTop (20), juce::Justification::centredLeft, true);
+            auto sliderRow = [&] (const juce::String& label, juce::Slider& slider)
+            {
+                auto row = macro.removeFromTop (28);
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (juce::Font (9.5f, juce::Font::bold));
+                g.drawText (label, row.removeFromLeft (92), juce::Justification::centredLeft, true);
+                slider.setBounds (row.reduced (2));
+            };
+            sliderRow ("Steps", stepsSlider);
+            sliderRow ("Rate", rateSlider);
+            sliderRow ("Gate", gateSlider);
+            sliderRow ("Swing", swingSlider);
+            sliderRow ("Probability", probabilitySlider);
+            sliderRow ("Humanize", humanizeSlider);
+            sliderRow ("Mutation", mutationSlider);
+            sliderRow ("Ratchet", ratchetSlider);
+            sliderRow ("Strum", strumSlider);
+
+            PatchCraftLookAndFeel::drawPanel (g, lower, 8.0f);
+            auto routing = lower.reduced (12, 10);
+            g.setColour (PatchCraftLookAndFeel::accent());
+            g.setFont (juce::Font (12.0f, juce::Font::bold));
+            g.drawText ("FX GROUP ROUTING", routing.removeFromTop (20), juce::Justification::centredLeft, true);
+            const juce::StringArray groups { "Group 1: Harmonic mute", "Group 2: Delay throw", "Group 3: Reverb space", "Group 4: Filter motion", "Group 5: Gate/pulse" };
+            for (int i = 0; i < groups.size(); ++i)
+            {
+                auto row = routing.removeFromTop (28).reduced (0, 2);
+                g.setColour (juce::Colour (0xff0b1017));
+                g.fillRoundedRectangle (row.toFloat(), 5.0f);
+                g.setColour (laneColours[i].withAlpha (i == selectedLane ? 0.95f : 0.45f));
+                g.drawRoundedRectangle (row.toFloat().reduced (0.5f), 5.0f, 1.0f);
+                g.setColour (PatchCraftLookAndFeel::text());
+                g.setFont (juce::Font (9.5f, juce::Font::bold));
+                g.drawText (groups[i], row.reduced (8, 0), juce::Justification::centredLeft, true);
+            }
+
+            PatchCraftLookAndFeel::drawDarkPanel (g, rightPanel, 10.0f);
+            auto right = rightPanel.reduced (12, 10);
+            g.setColour (PatchCraftLookAndFeel::accent());
+            g.setFont (juce::Font (12.0f, juce::Font::bold));
+            g.drawText ("LIVE PLAYER PREVIEW", right.removeFromTop (20), juce::Justification::centredLeft, true);
+            auto preview = right.removeFromTop (172);
+            PatchCraftLookAndFeel::drawPanel (g, preview, 8.0f);
+            auto previewContent = preview.reduced (12, 12);
+            const int circleW = juce::jmax (44, previewContent.getWidth() / 5 - 6);
+            for (int lane = 0; lane < 5; ++lane)
+            {
+                auto circleBox = previewContent.removeFromLeft (circleW).reduced (2);
+                previewContent.removeFromLeft (6);
+                const float d = (float) juce::jmin (circleBox.getWidth(), circleBox.getHeight() - 26);
+                const juce::Point<float> c ((float) circleBox.getCentreX(), (float) circleBox.getY() + d * 0.48f);
+                const auto accent = laneColours[lane];
+                g.setColour (juce::Colour (0xff080c12));
+                g.fillEllipse (c.x - d * 0.5f, c.y - d * 0.5f, d, d);
+                g.setColour (accent.withAlpha (lane == selectedLane ? 0.95f : 0.35f));
+                g.drawEllipse (c.x - d * 0.5f, c.y - d * 0.5f, d, d, lane == selectedLane ? 2.0f : 1.0f);
+                for (int step = 0; step < 16; ++step)
+                {
+                    const bool active = block == nullptr || arpBankValue (*block, lane, "mpStep" + juce::String (step) + "On", step % 2 == 0 ? 1.0f : 0.0f) >= 0.5f;
+                    if (! active)
+                        continue;
+                    const float angle = -juce::MathConstants<float>::halfPi + juce::MathConstants<float>::twoPi * (float) step / 16.0f;
+                    const float velocity = block != nullptr ? arpBankValue (*block, lane, "mpVelocity" + juce::String (step), 0.72f) : 0.72f;
+                    const float radius = d * juce::jmap (juce::jlimit (0.18f, 1.0f, velocity), 0.18f, 1.0f, 0.12f, 0.42f);
+                    const auto p = c + juce::Point<float> (std::cos (angle) * radius, std::sin (angle) * radius);
+                    g.setColour (accent.withAlpha (0.76f));
+                    g.fillEllipse (p.x - 2.0f, p.y - 2.0f, 4.0f, 4.0f);
+                }
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (juce::Font (8.5f, juce::Font::bold));
+                g.drawText (laneNames[lane], circleBox.removeFromBottom (18), juce::Justification::centred, true);
+            }
+
+            right.removeFromTop (10);
+            auto inspector = right.removeFromTop (134);
+            PatchCraftLookAndFeel::drawPanel (g, inspector, 8.0f);
+            auto inspect = inspector.reduced (10, 8);
+            g.setColour (selectedAccent);
+            g.setFont (juce::Font (11.0f, juce::Font::bold));
+            g.drawText ("STEP INSPECTOR", inspect.removeFromTop (18), juce::Justification::centredLeft, true);
+            const int step = juce::jlimit (0, 63, arpStudioEditingStep >= 0 ? arpStudioEditingStep : 0);
+            auto info = [&] (const juce::String& label, const juce::String& value)
+            {
+                auto row = inspect.removeFromTop (22);
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (9.5f);
+                g.drawText (label, row.removeFromLeft (86), juce::Justification::centredLeft, true);
+                g.setColour (PatchCraftLookAndFeel::textBright());
+                g.drawText (value, row, juce::Justification::centredLeft, true);
+            };
+            info ("Lane", juce::String (selectedLane + 1) + " " + laneNames[selectedLane]);
+            info ("Step", juce::String (step + 1));
+            info ("Velocity", block != nullptr ? juce::String (juce::roundToInt (arpBankValue (*block, selectedLane, "mpVelocity" + juce::String (step), 0.72f) * 127.0f)) : "91");
+            info ("Gate", block != nullptr ? juce::String (juce::roundToInt (arpBankValue (*block, selectedLane, "mpGate" + juce::String (step), 0.58f) * 100.0f)) + "%" : "58%");
+
+            right.removeFromTop (10);
+            auto exportPanel = right;
+            PatchCraftLookAndFeel::drawPanel (g, exportPanel, 8.0f);
+            auto exportInfo = exportPanel.reduced (10, 8);
+            g.setColour (PatchCraftLookAndFeel::accent());
+            g.setFont (juce::Font (11.0f, juce::Font::bold));
+            g.drawText ("OUTPUT CONTRACT", exportInfo.removeFromTop (18), juce::Justification::centredLeft, true);
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (10.0f);
+            g.drawFittedText ("Build Arp Engine writes five-bank runtime data. Update Player UI generates the finished CircleSEQ-style template. MIDI export writes the selected bank as a DAW-ready clip.",
+                              exportInfo, juce::Justification::topLeft, 5);
+        }
+        return;
+    }
+
     void MidiPlaygroundPage::paint (juce::Graphics& g)
     {
+        if (arpStudioMode)
+        {
+            drawArpStudio (g);
+            return;
+        }
+
+        for (auto* component : { static_cast<juce::Component*> (&title), static_cast<juce::Component*> (&subtitle),
+                                 static_cast<juce::Component*> (&activeSummary) })
+            component->setVisible (true);
+
         g.fillAll (PatchCraftLookAndFeel::bg());
 
         auto r = getLocalBounds().reduced (18, 14);
@@ -3851,5 +5151,10 @@ namespace patchcraft
     void MidiPlaygroundPage::resized()
     {
         repaint();
+    }
+
+    void MidiPlaygroundPage::visibilityChanged()
+    {
+        setArpStudioHardwarePreviewActive (arpStudioMode && isShowing());
     }
 }

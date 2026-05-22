@@ -24,6 +24,8 @@ namespace patchcraft
         public:
             StudioWindow (juce::String name, PatchCraftLookAndFeel& laf);
 
+            bool keyPressed (const juce::KeyPress& key) override;
+
             void closeButtonPressed() override
             {
                 juce::JUCEApplication::getInstance()->systemRequestedQuit();

@@ -1235,6 +1235,56 @@ namespace
                  "MIDI key switch did not switch to the selected phrase bank");
         require (engine.noteOnCount >= 2, "MIDI echo performer did not retrigger notes inside the step");
 
+        patchcraft::DspBlock longArp;
+        longArp.id = "midi_playground_advanced_arp_64";
+        longArp.section = "mod";
+        longArp.type = "midiPlayground";
+        longArp.name = "Advanced Arp Instrument";
+        longArp.enabled = true;
+        longArp.values = {
+            { "rate", 64.0f },
+            { "sync", 0.0f },
+            { "arpSteps", 64.0f },
+            { "arpGate", 0.90f },
+            { "arpPattern", 0.0f },
+            { "mpScaleType", 0.0f },
+            { "mpChordMode", 0.0f },
+            { "mpChordSize", 1.0f },
+            { "mpProbability", 1.0f },
+            { "mpRatchet", 1.0f }
+        };
+        for (int step = 0; step < 64; ++step)
+        {
+            const auto suffix = juce::String (step);
+            longArp.values["arpNote" + suffix] = (float) (step % 12);
+            longArp.values["mpStep" + suffix + "On"] = 1.0f;
+            longArp.values["mpVelocity" + suffix] = 1.0f;
+            longArp.values["mpGate" + suffix] = 0.80f;
+            longArp.values["mpStepProb" + suffix] = 1.0f;
+            longArp.values["mpStepDiv" + suffix] = step == 0 ? 4.0f : 1.0f;
+            longArp.values["mpStepTranspose" + suffix] = step == 32 ? 12.0f : 0.0f;
+            longArp.values["mpStepChordMode" + suffix] = step == 16 ? 15.0f : -1.0f;
+            longArp.values["mpStepChordSize" + suffix] = step == 16 ? 4.0f : -1.0f;
+            longArp.values["mpStepTie" + suffix] = step == 8 ? 1.0f : 0.0f;
+        }
+
+        patchcraft::DspGraph longGraph;
+        longGraph.blocks.push_back (longArp);
+        patchcraft::MidiPlaygroundRuntime longRuntime;
+        longRuntime.bind (longGraph);
+        require (longRuntime.isEnabled(), "advanced 64-step arp runtime did not bind");
+        CountingEngine longEngine;
+        auto longContext = makeContext (0);
+        require (longRuntime.handleNoteOn (longEngine, 60, 1.0f), "advanced 64-step arp did not consume note-on");
+        for (int blockIndex = 0; blockIndex < 220; ++blockIndex)
+        {
+            longRuntime.process (longEngine, longContext);
+            advanceContext (longContext);
+        }
+        require (longEngine.noteOnCount >= 68, "advanced 64-step arp did not emit extended sequence and per-step ratchets");
+        require (std::find (longEngine.noteOns.begin(), longEngine.noteOns.end(), 80) != longEngine.noteOns.end(),
+                 "advanced 64-step arp did not apply per-step transpose or octave motion");
+
         patchcraft::DspBlock exactChord;
         exactChord.id = "midi_playground_export_exact";
         exactChord.section = "mod";
@@ -1332,6 +1382,68 @@ namespace
         require (kickEvents >= 3, "drum machine MIDI export did not include cell divisions");
 
         pass ("MIDI Playground advanced runtime and MIDI export");
+    }
+
+    void smokeMidiPlaygroundActiveBankIsolation()
+    {
+        patchcraft::DspBlock block;
+        block.id = "circle_seq_bank_isolation";
+        block.section = "mod";
+        block.type = "midiPlayground";
+        block.name = "CircleSEQ Bank Isolation";
+        block.enabled = true;
+        block.values = {
+            { "rate", 1.0f },
+            { "sync", 0.0f },
+            { "arpSteps", 1.0f },
+            { "arpGate", 1.0f },
+            { "arpPattern", 0.0f },
+            { "mpActiveBank", 1.0f },
+            { "mpScaleType", 0.0f },
+            { "mpChordMode", 0.0f },
+            { "mpChordSize", 1.0f },
+            { "mpProbability", 1.0f },
+            { "mpRatchet", 1.0f }
+        };
+
+        for (int bank = 0; bank < 2; ++bank)
+        {
+            const auto prefix = "mpBank" + juce::String (bank + 1) + "_";
+            block.values[prefix + "arpSteps"] = 1.0f;
+            block.values[prefix + "arpNote0"] = bank == 0 ? 0.0f : 12.0f;
+            block.values[prefix + "mpStep0On"] = 1.0f;
+            block.values[prefix + "mpVelocity0"] = 1.0f;
+            block.values[prefix + "mpGate0"] = 1.0f;
+            block.values[prefix + "mpStepProb0"] = 1.0f;
+            block.values[prefix + "mpSampleSlice0"] = -1.0f;
+            block.values[prefix + "mpStepDiv0"] = 1.0f;
+        }
+
+        patchcraft::DspGraph graph;
+        graph.blocks.push_back (block);
+
+        patchcraft::MidiPlaygroundRuntime runtime;
+        runtime.bind (graph);
+        require (runtime.isEnabled(), "CircleSEQ bank isolation runtime did not bind");
+
+        CountingEngine engine;
+        auto context = makeContext (0);
+        require (runtime.handleNoteOn (engine, 60, 1.0f),
+                 "CircleSEQ bank isolation runtime did not consume note-on");
+
+        for (int blockIndex = 0; blockIndex < 12; ++blockIndex)
+        {
+            runtime.process (engine, context);
+            advanceContext (context);
+        }
+
+        require (std::find (engine.noteOns.begin(), engine.noteOns.end(), 72) != engine.noteOns.end(),
+                 "CircleSEQ active bank did not play its selected lane note");
+        require (std::find (engine.noteOns.begin(), engine.noteOns.end(), 60) == engine.noteOns.end(),
+                 "CircleSEQ runtime layered an inactive lane instead of isolating the selected bank");
+        require (runtime.handleNoteOff (engine, 60), "CircleSEQ bank isolation runtime did not consume note-off");
+
+        pass ("MIDI Playground active bank isolation");
     }
 
     void smokeMidiPlaygroundDspModulationRouting()
@@ -2544,6 +2656,7 @@ int main()
         smokeMidiPlaygroundTimingTransformers();
         smokeMidiPlaygroundPhraseBanksAndExport();
         smokeMidiPlaygroundAdvancedRuntimeAndExport();
+        smokeMidiPlaygroundActiveBankIsolation();
         smokeMidiPlaygroundDspModulationRouting();
         smokePlayerInstrumentFactory();
         smokePlayerFxFactory();

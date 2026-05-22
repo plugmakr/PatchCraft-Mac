@@ -31,6 +31,34 @@ namespace patchcraft
             return nullptr;
         }
 
+        static const DspBlock* findArpBlock (const DspGraph& graph)
+        {
+            for (const auto& block : graph.blocks)
+                if (block.type.containsIgnoreCase ("arp")
+                    || block.type.containsIgnoreCase ("midi")
+                    || block.values.find ("arpSteps") != block.values.end())
+                    return &block;
+            return nullptr;
+        }
+
+        static float arpLaneValue (const DspBlock& block, int bank, const juce::String& key, float fallback)
+        {
+            const auto bankPrefix = "mpBank" + juce::String (juce::jlimit (0, 15, bank) + 1) + "_";
+            if (bank > 0)
+            {
+                const auto bankIt = block.values.find (bankPrefix + key);
+                if (bankIt != block.values.end())
+                    return bankIt->second;
+            }
+
+            const auto directIt = block.values.find (key);
+            if (directIt != block.values.end())
+                return directIt->second;
+
+            const auto bankOneIt = block.values.find (bankPrefix + key);
+            return bankOneIt != block.values.end() ? bankOneIt->second : fallback;
+        }
+
         static juce::String defaultDrumTrackLabel (int track)
         {
             static const char* labels[] =
@@ -101,6 +129,140 @@ namespace patchcraft
             graph.blocks.push_back (std::move (block));
             graph.userConfigured = true;
             return graph.blocks.back();
+        }
+
+        static void drawArpLanePreview (juce::Graphics& g,
+                                        juce::Rectangle<int> r,
+                                        const LayoutElement& element,
+                                        const DspGraph& graph)
+        {
+            const auto* block = findArpBlock (graph);
+            const int lane = juce::jlimit (0, 15, element.arpLaneIndex);
+            const int activeLane = block != nullptr ? juce::jlimit (0, 15, juce::roundToInt (blockValue (*block, "mpActiveBank", 0.0f))) : 0;
+            const bool laneSelected = lane == activeLane;
+            const int steps = block != nullptr
+                ? juce::jlimit (1, 128, juce::roundToInt (arpLaneValue (*block, lane, "arpSteps", (float) element.arpLaneSteps)))
+                : juce::jlimit (1, 128, element.arpLaneSteps);
+
+            const auto bg = element.backgroundColour.isTransparent() ? juce::Colour (0xff10141a) : element.backgroundColour;
+            const auto border = element.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : element.borderColour;
+            const auto accent = element.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : element.accentColour;
+            const auto text = PatchCraftLookAndFeel::text();
+            const auto dim = PatchCraftLookAndFeel::textDim();
+
+            g.setColour (bg);
+            g.fillRoundedRectangle (r.toFloat(), juce::jmax (6.0f, element.cornerRadius));
+            g.setColour (laneSelected ? accent : border);
+            g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (6.0f, element.cornerRadius), laneSelected ? 2.0f : 1.0f);
+
+            auto area = r.reduced (12);
+            auto header = area.removeFromTop (28);
+            auto dragHandle = header.removeFromRight (78).reduced (2, 4);
+            g.setFont (juce::FontOptions (12.5f).withStyle ("bold"));
+            g.setColour (accent);
+            g.drawText (juce::String (lane + 1), header.removeFromLeft (24), juce::Justification::centredLeft, true);
+            g.drawText (element.label.isNotEmpty() ? element.label.toUpperCase() : "ARP LANE",
+                        header, juce::Justification::centredLeft, true);
+            g.setColour (PatchCraftLookAndFeel::panelAlt().withAlpha (0.90f));
+            g.fillRoundedRectangle (dragHandle.toFloat(), 5.0f);
+            g.setColour (accent.withAlpha (0.78f));
+            g.drawRoundedRectangle (dragHandle.toFloat().reduced (0.5f), 5.0f, 1.0f);
+            g.setColour (text);
+            g.setFont (juce::FontOptions (7.4f).withStyle ("bold"));
+            g.drawText ("DRAG MIDI", dragHandle, juce::Justification::centred, true);
+
+            const float size = (float) juce::jmin (area.getWidth(), area.getHeight() - 42);
+            const juce::Point<float> centre ((float) area.getCentreX(),
+                                             (float) area.getY() + size * 0.52f);
+            const float radius = size * 0.40f;
+            const float innerRadius = radius * 0.70f;
+            const float noteRadius = radius * 1.10f;
+            const int maxDrawSteps = juce::jmin (steps, 64);
+
+            g.setColour (border.withAlpha (0.75f));
+            g.drawEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f, 1.0f);
+            g.setColour (border.withAlpha (0.24f));
+            g.drawEllipse (centre.x - innerRadius, centre.y - innerRadius, innerRadius * 2.0f, innerRadius * 2.0f, 1.0f);
+
+            static const char* noteLabels[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+            g.setFont (juce::FontOptions (8.5f));
+            for (int note = 0; note < 12; ++note)
+            {
+                const float angle = -juce::MathConstants<float>::halfPi
+                    + juce::MathConstants<float>::twoPi * (float) note / 12.0f;
+                const auto p = centre + juce::Point<float> (std::cos (angle) * noteRadius,
+                                                            std::sin (angle) * noteRadius);
+                g.setColour (dim);
+                g.drawText (noteLabels[note], juce::Rectangle<int> ((int) p.x - 12, (int) p.y - 6, 24, 12),
+                            juce::Justification::centred, true);
+            }
+
+            for (int step = 0; step < maxDrawSteps; ++step)
+            {
+                const float active = block != nullptr
+                    ? arpLaneValue (*block, lane, "mpStep" + juce::String (step) + "On", step % 2 == 0 ? 1.0f : 0.0f)
+                    : (step % 3 == 0 ? 1.0f : 0.0f);
+                const float velocity = block != nullptr
+                    ? juce::jlimit (0.15f, 1.0f, arpLaneValue (*block, lane, "mpVelocity" + juce::String (step), 0.74f))
+                    : 0.72f;
+                const int divisions = block != nullptr
+                    ? juce::jlimit (1, 8, juce::roundToInt (arpLaneValue (*block, lane, "mpStepDiv" + juce::String (step), 1.0f)))
+                    : 1;
+                const float angle = -juce::MathConstants<float>::halfPi
+                    + juce::MathConstants<float>::twoPi * (float) step / (float) maxDrawSteps;
+                const auto outer = centre + juce::Point<float> (std::cos (angle) * radius,
+                                                                std::sin (angle) * radius);
+                const auto gridStart = centre + juce::Point<float> (std::cos (angle) * radius * 0.18f,
+                                                                    std::sin (angle) * radius * 0.18f);
+                const auto velocityEnd = centre + juce::Point<float> (std::cos (angle) * juce::jmap (velocity, 0.0f, 1.0f, radius * 0.25f, radius * 0.93f),
+                                                                      std::sin (angle) * juce::jmap (velocity, 0.0f, 1.0f, radius * 0.25f, radius * 0.93f));
+                g.setColour (border.withAlpha (0.22f));
+                g.drawLine (gridStart.x, gridStart.y, outer.x, outer.y, 0.7f);
+                if (active >= 0.5f)
+                {
+                    const float dotSize = 3.0f + velocity * 5.0f;
+                    g.setColour (accent.withAlpha (0.58f));
+                    g.drawLine (centre.x, centre.y, velocityEnd.x, velocityEnd.y, 1.35f);
+                    g.setColour (accent.withAlpha (0.30f));
+                    g.fillEllipse (velocityEnd.x - dotSize, velocityEnd.y - dotSize, dotSize * 2.0f, dotSize * 2.0f);
+                    g.setColour (accent);
+                    g.fillEllipse (velocityEnd.x - dotSize * 0.42f, velocityEnd.y - dotSize * 0.42f, dotSize * 0.84f, dotSize * 0.84f);
+                    if (divisions > 1)
+                    {
+                        const auto badge = centre + juce::Point<float> (std::cos (angle) * radius * 1.06f,
+                                                                        std::sin (angle) * radius * 1.06f);
+                        g.setColour (bg.withAlpha (0.94f));
+                        g.fillEllipse (badge.x - 6.0f, badge.y - 6.0f, 12.0f, 12.0f);
+                        g.setColour (accent);
+                        g.drawEllipse (badge.x - 6.0f, badge.y - 6.0f, 12.0f, 12.0f, 1.0f);
+                        g.setFont (juce::FontOptions (7.0f).withStyle ("bold"));
+                        g.drawText (juce::String (divisions),
+                                    juce::Rectangle<int> ((int) badge.x - 6, (int) badge.y - 6, 12, 12),
+                                    juce::Justification::centred, true);
+                    }
+                }
+            }
+
+            g.setColour (text);
+            g.setFont (juce::FontOptions (26.0f));
+            g.drawText (juce::String (steps), juce::Rectangle<int> ((int) centre.x - 46, (int) centre.y - 24, 92, 32),
+                        juce::Justification::centred, true);
+            g.setColour (dim);
+            g.setFont (juce::FontOptions (9.5f).withStyle ("bold"));
+            g.drawText ("STEPS", juce::Rectangle<int> ((int) centre.x - 46, (int) centre.y + 6, 92, 18),
+                        juce::Justification::centred, true);
+
+            auto footer = r.reduced (12).removeFromBottom (34);
+            static const char* footerLabels[] = { "OCT", "STEPS", "GATE", "SWING" };
+            for (int i = 0; i < 4; ++i)
+            {
+                auto cell = footer.removeFromLeft (juce::jmax (1, footer.getWidth() / (4 - i))).reduced (3, 1);
+                g.setColour (dim);
+                g.setFont (juce::FontOptions (8.0f).withStyle ("bold"));
+                g.drawText (footerLabels[i], cell.removeFromTop (12), juce::Justification::centred, true);
+                g.setColour (accent.withAlpha (0.85f));
+                g.fillRoundedRectangle (cell.toFloat().withHeight (4.0f).withY ((float) cell.getCentreY() - 2.0f), 2.0f);
+            }
         }
 
         static void drawDrumGridPreview (juce::Graphics& g,
@@ -549,12 +711,14 @@ namespace patchcraft
                 make ("tabPanel", "Add Tab Panel", "Add tabs for multi-page instrument UIs.", "tabs pages container"),
                 make ("roundedRect", "Add Rounded Rectangle", "Add a shape with editable colour, opacity, and border.", "shape rect box"),
                 make ("ellipse", "Add Ellipse", "Add a circular/oval shape.", "shape circle"),
+                make ("circleSeqBg", "Build CircleSEQ Background Kit", "Add editable glow plates, radial rings, stage panels, and divider lines.", "background circles sequencer radial photoshop design"),
                 make ("mixer", "Add Mixer", "Add a mixer surface mapped to output or bus parameters.", "fader volume pan bus"),
                 make ("mixerChannel", "Add Single Mixer Channel", "Add one compact mixer strip instead of a full mixer group.", "fader channel strip volume pan"),
                 make ("explodeMixer", "Break Mixer Into Channels", "Convert a selected mixer into separate one-channel strips.", "ungroup split mixer channels"),
                 make ("macro", "Add Macro Control", "Add a performable macro control.", "macro performance"),
                 make ("modMatrix", "Add Mod Matrix", "Add a modulation matrix UI element.", "modulation routing"),
                 make ("granular", "Add Granular Field", "Add a runtime granular control surface.", "sample grain cloud"),
+                make ("arpLane", "Add Arp Studio Lane", "Add a circular arp lane that selects and visualizes a MIDI Playground bank.", "arp sequencer circle lane bank steps"),
                 make ("drumMachine", "Add Drum Machine Surface", "Add pads, pattern grid, bank controls, and mixer.", "drums sequencer pads"),
                 make ("bpm", "Add Project BPM Control", "Add a knob connected to the global preview/standalone BPM.", "tempo global sync"),
                 make ("bpmSync", "Add BPM Sync Toggle", "Add an on/off switch for tempo-synced blocks.", "tempo sync toggle"),
@@ -2026,6 +2190,10 @@ namespace patchcraft
         {
             drawDrumGridPreview (g, r, e, owner.getProject().getDspGraph());
         }
+        else if (e.type == ElementType::ArpLane)
+        {
+            drawArpLanePreview (g, r, e, owner.getProject().getDspGraph());
+        }
         else if (e.type == ElementType::Mixer)
         {
             const auto bg = e.backgroundColour.isTransparent() ? juce::Colour (0xff15171b) : e.backgroundColour;
@@ -2587,6 +2755,7 @@ namespace patchcraft
                  : type == ElementType::EqCurve ? 460
                  : type == ElementType::SpectrumAnalyzer ? 460
                  : type == ElementType::DrumGrid ? 560
+                 : type == ElementType::ArpLane ? 260
                  : type == ElementType::Mixer ? 520
                  : type == ElementType::MacroControl ? 190
                  : type == ElementType::ModMatrix ? 420
@@ -2600,6 +2769,7 @@ namespace patchcraft
                   : type == ElementType::EqCurve ? 180
                   : type == ElementType::SpectrumAnalyzer ? 160
                   : type == ElementType::DrumGrid ? 220
+                  : type == ElementType::ArpLane ? 330
                   : type == ElementType::Mixer ? 260
                   : type == ElementType::MacroControl ? 132
                   : type == ElementType::ModMatrix ? 220
@@ -2685,6 +2855,19 @@ namespace patchcraft
             el.cornerRadius = 8.0f;
             el.accentColour = PatchCraftLookAndFeel::accent();
             el.backgroundColour = juce::Colour (0x33141822);
+        }
+        if (type == ElementType::ArpLane)
+        {
+            el.label = "Arp Lane";
+            el.parameterId.clear();
+            el.arpLaneIndex = 0;
+            el.arpLaneSteps = 16;
+            el.arpLaneMode = "bank";
+            el.cornerRadius = 12.0f;
+            el.strokeWidth = 1.4f;
+            el.accentColour = PatchCraftLookAndFeel::accent();
+            el.backgroundColour = juce::Colour (0xdd10141a);
+            el.borderColour = PatchCraftLookAndFeel::border();
         }
         if (type == ElementType::GranularField)
         {
@@ -3027,6 +3210,110 @@ namespace patchcraft
         repaint();
     }
 
+    void CanvasEditor::addCircleSeqBackgroundKit (juce::Point<int> canvasPos)
+    {
+        const auto canvas = owner.getProject().getCanvasSize();
+        const int canvasW = juce::jmax (900, canvas.width);
+        const int canvasH = juce::jmax (540, canvas.height);
+        const auto tabGroup = currentTabGroup == "main" ? juce::String() : currentTabGroup;
+        juce::StringArray addedIds;
+
+        const int cx = canvasW / 2;
+        const int cy = juce::roundToInt ((float) canvasH * 0.43f);
+        const int ring = juce::jlimit (280, 680, juce::jmin (canvasW, canvasH) - 150);
+        const int panelY = juce::jmax (cy + ring / 2 + 22, canvasH - 182);
+
+        owner.getProject().performLayoutEdit ("Add CircleSEQ background kit",
+            [&] (LayoutModel& layout)
+            {
+                auto addShape = [&] (juce::String label,
+                                     juce::String shapeKind,
+                                     int x, int y, int w, int h,
+                                     juce::Colour fill,
+                                     juce::Colour border,
+                                     float stroke,
+                                     float radius,
+                                     float opacity = 1.0f)
+                {
+                    LayoutElement shape;
+                    shape.type = ElementType::Shape;
+                    shape.label = std::move (label);
+                    shape.shapeKind = std::move (shapeKind);
+                    shape.x = x;
+                    shape.y = y;
+                    shape.width = juce::jmax (1, w);
+                    shape.height = juce::jmax (1, h);
+                    shape.groupId = tabGroup;
+                    shape.backgroundColour = fill;
+                    shape.borderColour = border;
+                    shape.accentColour = border;
+                    shape.strokeWidth = stroke;
+                    shape.cornerRadius = radius;
+                    shape.opacity = opacity;
+                    auto& added = layout.add (shape);
+                    addedIds.add (added.id);
+                };
+
+                addShape ("Background plate", "roundedRect",
+                          0, 0, canvasW, canvasH,
+                          juce::Colour (0xff05080c), juce::Colour (0xff101722),
+                          1.0f, 18.0f);
+
+                addShape ("Top glass haze", "ellipse",
+                          cx - ring, cy - ring, ring * 2, ring * 2,
+                          juce::Colour (0x2210c6ff), juce::Colour (0x6630d9ff),
+                          2.0f, 0.0f, 0.70f);
+                addShape ("Outer radial ring", "ellipse",
+                          cx - ring / 2, cy - ring / 2, ring, ring,
+                          juce::Colour (0x1110c6ff), juce::Colour (0xaa00d4ff),
+                          2.0f, 0.0f);
+                addShape ("Middle radial ring", "ellipse",
+                          cx - ring * 39 / 100, cy - ring * 39 / 100, ring * 78 / 100, ring * 78 / 100,
+                          juce::Colour (0x0500d4ff), juce::Colour (0x7718a8ff),
+                          1.4f, 0.0f);
+                addShape ("Inner shadow hub", "ellipse",
+                          cx - ring * 16 / 100, cy - ring * 16 / 100, ring * 32 / 100, ring * 32 / 100,
+                          juce::Colour (0xcc03070b), juce::Colour (0x5530d9ff),
+                          1.0f, 0.0f);
+
+                addShape ("Horizontal orbit guide", "line",
+                          cx - ring / 2, cy - 1, ring, 2,
+                          juce::Colours::transparentBlack, juce::Colour (0x6600d4ff),
+                          1.2f, 0.0f);
+                addShape ("Vertical orbit guide", "line",
+                          cx - 1, cy - ring / 2, 2, ring,
+                          juce::Colours::transparentBlack, juce::Colour (0x6600d4ff),
+                          1.2f, 0.0f);
+
+                const int sideW = juce::jmax (180, (canvasW - ring) / 2 - 46);
+                addShape ("Left utility rail", "roundedRect",
+                          24, 72, sideW, juce::jmax (280, canvasH - 268),
+                          juce::Colour (0x77101822), juce::Colour (0x442b8cff),
+                          1.0f, 10.0f);
+                addShape ("Right inspector rail", "roundedRect",
+                          canvasW - sideW - 24, 72, sideW, juce::jmax (280, canvasH - 268),
+                          juce::Colour (0x77101822), juce::Colour (0x442b8cff),
+                          1.0f, 10.0f);
+
+                const int panelGap = 14;
+                const int panelW = juce::jmax (180, (canvasW - 48 - panelGap * 3) / 4);
+                for (int i = 0; i < 4; ++i)
+                {
+                    addShape ("Bottom control bay " + juce::String (i + 1), "roundedRect",
+                              24 + i * (panelW + panelGap), panelY, panelW, juce::jmax (112, canvasH - panelY - 24),
+                              juce::Colour (0x88101720),
+                              juce::Colour (i == 0 ? 0x8840d8ff : i == 1 ? 0x88a96bff : i == 2 ? 0x88ff4f82 : 0x88ffa600),
+                              1.2f, 9.0f);
+                }
+            });
+
+        if (! addedIds.isEmpty())
+            owner.setSelectedElementIds (addedIds);
+
+        repaint();
+        (void) canvasPos;
+    }
+
     void CanvasEditor::showContextMenu (juce::Point<int> screenPos)
     {
         const auto canvasPos = screenToCanvas (screenPos);
@@ -3055,6 +3342,7 @@ namespace patchcraft
         menu.addItem (21, "Add Mod Matrix");
         menu.addItem (22, "Add Granular Field");
         menu.addItem (23, "Add Drum Machine Surface");
+        menu.addItem (26, "Add Arp Studio Lane");
         menu.addSeparator();
 
         // Group parameters by ParameterDef::category so the menu doesn't dump
@@ -3212,12 +3500,14 @@ namespace patchcraft
                                             el->shapeKind = "ellipse";
                                     });
                             }
+                            else if (actionId == "circleSeqBg") c->addCircleSeqBackgroundKit (canvasPos);
                             else if (actionId == "mixer") c->addElementAt (ElementType::Mixer, canvasPos);
                             else if (actionId == "mixerChannel") c->addMixerChannelAt (canvasPos);
                             else if (actionId == "explodeMixer") c->explodeSelectedMixers();
                             else if (actionId == "macro") c->addElementAt (ElementType::MacroControl, canvasPos);
                             else if (actionId == "modMatrix") c->addElementAt (ElementType::ModMatrix, canvasPos);
                             else if (actionId == "granular") c->addElementAt (ElementType::GranularField, canvasPos);
+                            else if (actionId == "arpLane") c->addElementAt (ElementType::ArpLane, canvasPos);
                             else if (actionId == "drumMachine") c->addDrumMachineControlLayout (canvasPos);
                             else if (actionId == "bpm") c->addElementAt (ElementType::Knob, canvasPos, "projectBpm");
                             else if (actionId == "bpmSync") c->addElementAt (ElementType::Toggle, canvasPos, "bpmSync");
@@ -3276,6 +3566,10 @@ namespace patchcraft
                 else if (result == 23)
                 {
                     addDrumMachineControlLayout (canvasPos);
+                }
+                else if (result == 26)
+                {
+                    addElementAt (ElementType::ArpLane, canvasPos);
                 }
                 else if (result == 15)
                 {

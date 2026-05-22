@@ -2,6 +2,7 @@
 #include "PluginProcessor.h"
 #include "PatchCraftLookAndFeel.h"
 #include "LicenseValidator.h"
+#include "MidiPlaygroundPattern.h"
 
 #include <cmath>
 #include <algorithm>
@@ -50,6 +51,46 @@ namespace patchcraft
             if (block.type.containsIgnoreCase ("drum") || block.values.find ("dmTracks") != block.values.end())
                 return &block;
         return nullptr;
+    }
+
+    static const DspBlock* findArpBlock (const DspGraph& graph)
+    {
+        for (const auto& block : graph.blocks)
+            if (block.type.containsIgnoreCase ("arp")
+                || block.type.containsIgnoreCase ("midi")
+                || block.values.find ("arpSteps") != block.values.end())
+                return &block;
+        return nullptr;
+    }
+
+    static float arpLaneValue (const DspBlock& block, int bank, const juce::String& key, float fallback)
+    {
+        const auto bankPrefix = "mpBank" + juce::String (juce::jlimit (0, 15, bank) + 1) + "_";
+        if (bank > 0)
+        {
+            const auto bankIt = block.values.find (bankPrefix + key);
+            if (bankIt != block.values.end())
+                return bankIt->second;
+        }
+
+        const auto directIt = block.values.find (key);
+        if (directIt != block.values.end())
+            return directIt->second;
+
+        const auto bankOneIt = block.values.find (bankPrefix + key);
+        return bankOneIt != block.values.end() ? bankOneIt->second : fallback;
+    }
+
+    static juce::String arpLaneMidiFileName (juce::String instrumentName, juce::String laneName, int lane)
+    {
+        if (instrumentName.trim().isEmpty())
+            instrumentName = "PatchCraft";
+        if (laneName.trim().isEmpty())
+            laneName = "ArpLane" + juce::String (lane + 1);
+
+        auto name = juce::File::createLegalFileName (instrumentName.trim()
+            + "_" + laneName.trim() + "_midi");
+        return name.replaceCharacter (' ', '_') + ".mid";
     }
 
     static int defaultDrumTrackNote (int track)
@@ -275,6 +316,12 @@ namespace patchcraft
         repaint();
     }
 
+    juce::Rectangle<int> PlayerGuiRenderer::arpLaneMidiDragHandleBounds (juce::Rectangle<int> elementBounds) const
+    {
+        auto header = elementBounds.reduced (10).removeFromTop (26);
+        return header.removeFromRight (72).reduced (2, 3);
+    }
+
     juce::String PlayerGuiRenderer::getTooltip()
     {
         const auto* pack = proc.getPack();
@@ -299,6 +346,14 @@ namespace patchcraft
 
             if (e.type == ElementType::DrumGrid)
                 return "MIDI drum pattern grid. Click cells to add/remove hits, Ctrl-click cells for x2/x3/x4 divisions, then press DAW Play or the Player PLAY button to audition.";
+
+            if (e.type == ElementType::ArpLane)
+            {
+                if (arpLaneMidiDragHandleBounds (r).contains (pos))
+                    return "Drag this handle to a DAW track to export this Arp Studio lane as a MIDI clip.";
+
+                return "Circular Arp Studio lane. Click it to select that MIDI Playground bank; velocity spokes control MIDI note velocity.";
+            }
 
             if (e.type == ElementType::Keyboard)
                 return "Software keyboard. Click keys to audition this instrument and imported runtime samples.";
@@ -829,6 +884,7 @@ namespace patchcraft
                 || e.type == ElementType::Waveform
                 || e.type == ElementType::SpectrumAnalyzer
                 || e.type == ElementType::GranularField
+                || e.type == ElementType::ArpLane
                 || e.type == ElementType::Mixer)
             {
                 hasMeterOrReactiveElement = true;
@@ -1716,6 +1772,151 @@ namespace patchcraft
         }
     }
 
+    void PlayerGuiRenderer::drawArpLane (juce::Graphics& g,
+                                         juce::Rectangle<int> r,
+                                         const LayoutElement& e) const
+    {
+        const auto* pack = proc.getPack();
+        const auto* block = pack != nullptr ? findArpBlock (pack->dspGraph) : nullptr;
+        const int lane = juce::jlimit (0, 15, e.arpLaneIndex);
+        const int activeLane = block != nullptr
+            ? juce::jlimit (0, 15, juce::roundToInt (blockValue (*block, "mpActiveBank", 0.0f)))
+            : 0;
+        const bool laneSelected = lane == activeLane;
+        const int steps = block != nullptr
+            ? juce::jlimit (1, 128, juce::roundToInt (arpLaneValue (*block, lane, "arpSteps", (float) e.arpLaneSteps)))
+            : juce::jlimit (1, 128, e.arpLaneSteps);
+
+        const auto bg = e.backgroundColour.isTransparent() ? playerPanel().darker (0.08f) : e.backgroundColour;
+        const auto borderC = e.borderColour.isTransparent() ? playerBorder() : e.borderColour;
+        const auto accent = e.accentColour.isTransparent() ? playerAccent() : e.accentColour;
+
+        g.setColour (bg);
+        g.fillRoundedRectangle (r.toFloat(), juce::jmax (5.0f, e.cornerRadius));
+        g.setColour (laneSelected ? accent : borderC);
+        g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (5.0f, e.cornerRadius), laneSelected ? 2.0f : 1.0f);
+
+        auto area = r.reduced (10);
+        auto header = area.removeFromTop (26);
+        const auto dragHandle = arpLaneMidiDragHandleBounds (r);
+        header.removeFromRight (72);
+        g.setFont (juce::FontOptions (12.0f).withStyle ("bold"));
+        g.setColour (accent);
+        g.drawText (juce::String (lane + 1), header.removeFromLeft (24), juce::Justification::centredLeft, true);
+        g.drawText (e.label.isNotEmpty() ? e.label.toUpperCase() : "ARP LANE",
+                    header.removeFromLeft (120), juce::Justification::centredLeft, true);
+        g.setColour (laneSelected ? accent : playerTextDim());
+        g.setFont (juce::FontOptions (9.0f).withStyle ("bold"));
+        g.drawText (laneSelected ? "ACTIVE" : "CLICK TO SELECT", header, juce::Justification::centredRight, true);
+        g.setColour (playerPanel().brighter (0.10f).withAlpha (0.94f));
+        g.fillRoundedRectangle (dragHandle.toFloat(), 6.0f);
+        g.setColour (accent.withAlpha (0.82f));
+        g.drawRoundedRectangle (dragHandle.toFloat().reduced (0.5f), 6.0f, 1.0f);
+        g.setColour (playerText());
+        g.setFont (juce::FontOptions (7.8f).withStyle ("bold"));
+        g.drawText ("DRAG MIDI", dragHandle, juce::Justification::centred, true);
+
+        const float size = (float) juce::jmin (area.getWidth(), area.getHeight() - 34);
+        const juce::Point<float> centre ((float) area.getCentreX(),
+                                         (float) area.getY() + size * 0.52f);
+        const float radius = size * 0.40f;
+        const float innerRadius = radius * 0.70f;
+        const float noteRadius = radius * 1.09f;
+        const int maxDrawSteps = juce::jmin (steps, 64);
+
+        g.setColour (borderC.withAlpha (0.75f));
+        g.drawEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f, 1.0f);
+        g.setColour (borderC.withAlpha (0.20f));
+        g.drawEllipse (centre.x - innerRadius, centre.y - innerRadius, innerRadius * 2.0f, innerRadius * 2.0f, 1.0f);
+
+        static const char* noteLabels[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+        g.setFont (juce::FontOptions (8.0f));
+        for (int note = 0; note < 12; ++note)
+        {
+            const float angle = -juce::MathConstants<float>::halfPi
+                + juce::MathConstants<float>::twoPi * (float) note / 12.0f;
+            const auto p = centre + juce::Point<float> (std::cos (angle) * noteRadius,
+                                                        std::sin (angle) * noteRadius);
+            g.setColour (playerTextDim());
+            g.drawText (noteLabels[note], juce::Rectangle<int> ((int) p.x - 12, (int) p.y - 6, 24, 12),
+                        juce::Justification::centred, true);
+        }
+
+        const double playback01 = laneSelected ? proc.getSequencerPlaybackPosition01 (steps) : -1.0;
+        const int playbackStep = playback01 >= 0.0
+            ? juce::jlimit (0, maxDrawSteps - 1, (int) std::floor (playback01 * (double) maxDrawSteps))
+            : -1;
+
+        for (int step = 0; step < maxDrawSteps; ++step)
+        {
+            const float active = block != nullptr
+                ? arpLaneValue (*block, lane, "mpStep" + juce::String (step) + "On", step % 2 == 0 ? 1.0f : 0.0f)
+                : (step % 3 == 0 ? 1.0f : 0.0f);
+            const float velocity = block != nullptr
+                ? juce::jlimit (0.15f, 1.0f, arpLaneValue (*block, lane, "mpVelocity" + juce::String (step), 0.74f))
+                : 0.72f;
+            const int divisions = block != nullptr
+                ? juce::jlimit (1, 8, juce::roundToInt (arpLaneValue (*block, lane, "mpStepDiv" + juce::String (step), 1.0f)))
+                : 1;
+            const float angle = -juce::MathConstants<float>::halfPi
+                + juce::MathConstants<float>::twoPi * (float) step / (float) maxDrawSteps;
+            const auto outer = centre + juce::Point<float> (std::cos (angle) * radius,
+                                                            std::sin (angle) * radius);
+            const auto gridStart = centre + juce::Point<float> (std::cos (angle) * radius * 0.18f,
+                                                                std::sin (angle) * radius * 0.18f);
+            const auto velocityEnd = centre + juce::Point<float> (std::cos (angle) * juce::jmap (velocity, 0.0f, 1.0f, radius * 0.25f, radius * 0.93f),
+                                                                  std::sin (angle) * juce::jmap (velocity, 0.0f, 1.0f, radius * 0.25f, radius * 0.93f));
+            g.setColour (borderC.withAlpha (0.20f));
+            g.drawLine (gridStart.x, gridStart.y, outer.x, outer.y, 0.7f);
+            if (active >= 0.5f)
+            {
+                const float dotSize = (step == playbackStep ? 6.0f : 3.0f) + velocity * 4.0f;
+                g.setColour (accent.withAlpha (step == playbackStep ? 0.88f : 0.58f));
+                g.drawLine (centre.x, centre.y, velocityEnd.x, velocityEnd.y, step == playbackStep ? 2.3f : 1.4f);
+                g.setColour (accent.withAlpha (step == playbackStep ? 0.42f : 0.24f));
+                g.fillEllipse (velocityEnd.x - dotSize, velocityEnd.y - dotSize, dotSize * 2.0f, dotSize * 2.0f);
+                g.setColour (accent);
+                g.fillEllipse (velocityEnd.x - dotSize * 0.42f, velocityEnd.y - dotSize * 0.42f, dotSize * 0.84f, dotSize * 0.84f);
+                if (divisions > 1)
+                {
+                    const auto badge = centre + juce::Point<float> (std::cos (angle) * radius * 1.06f,
+                                                                    std::sin (angle) * radius * 1.06f);
+                    g.setColour (playerBg().withAlpha (0.92f));
+                    g.fillEllipse (badge.x - 6.5f, badge.y - 6.5f, 13.0f, 13.0f);
+                    g.setColour (accent);
+                    g.drawEllipse (badge.x - 6.5f, badge.y - 6.5f, 13.0f, 13.0f, 1.2f);
+                    g.setFont (juce::FontOptions (7.2f).withStyle ("bold"));
+                    g.drawText (juce::String (divisions),
+                                juce::Rectangle<int> ((int) badge.x - 7, (int) badge.y - 7, 14, 14),
+                                juce::Justification::centred, true);
+                }
+            }
+        }
+
+        g.setColour (playerText());
+        g.setFont (juce::FontOptions (24.0f));
+        g.drawText (juce::String (steps), juce::Rectangle<int> ((int) centre.x - 44, (int) centre.y - 22, 88, 30),
+                    juce::Justification::centred, true);
+        g.setColour (playerTextDim());
+        g.setFont (juce::FontOptions (9.0f).withStyle ("bold"));
+        g.drawText ("STEPS", juce::Rectangle<int> ((int) centre.x - 44, (int) centre.y + 7, 88, 18),
+                    juce::Justification::centred, true);
+
+        auto footer = r.reduced (10).removeFromBottom (30);
+        static const char* footerLabels[] = { "OCT", "GATE", "SPEED", "VEL" };
+        for (int i = 0; i < 4; ++i)
+        {
+            const int cellW = footer.getWidth() / (4 - i);
+            auto cell = footer.removeFromLeft (cellW).reduced (3, 1);
+            g.setColour (playerTextDim());
+            g.setFont (juce::FontOptions (7.6f).withStyle ("bold"));
+            g.drawText (footerLabels[i], cell.removeFromTop (11), juce::Justification::centred, true);
+            g.setColour (accent.withAlpha (0.88f));
+            const auto bar = cell.withHeight (4).withCentre (juce::Point<int> (cell.getCentreX(), cell.getCentreY()));
+            g.fillRoundedRectangle (bar.toFloat(), 2.0f);
+        }
+    }
+
     void PlayerGuiRenderer::drawMixer (juce::Graphics& g,
                                        juce::Rectangle<int> r,
                                        const LayoutElement& e) const
@@ -2537,6 +2738,88 @@ namespace patchcraft
         return false;
     }
 
+    bool PlayerGuiRenderer::handleArpLaneGesture (const juce::MouseEvent& event)
+    {
+        const auto* pack = proc.getPack();
+        if (pack == nullptr)
+            return false;
+
+        const auto m = metrics();
+        const auto pos = event.getPosition();
+        for (auto it = elementsCopy.rbegin(); it != elementsCopy.rend(); ++it)
+        {
+            const auto& e = *it;
+            if (! e.visible || e.type != ElementType::ArpLane || ! isElementOnCurrentTab (e))
+                continue;
+
+            const auto r = animatedElementRect (e, elementRect (e, m));
+            if (! r.contains (pos))
+                continue;
+
+            if (arpLaneMidiDragHandleBounds (r).contains (pos))
+            {
+                arpMidiDragArmed = true;
+                arpMidiDragStart = pos;
+                arpMidiDragElementId = e.id;
+                return true;
+            }
+
+            if (proc.setMidiPlaygroundActiveBankFromUi (e.arpLaneIndex))
+                repaint();
+            return true;
+        }
+
+        return false;
+    }
+
+    bool PlayerGuiRenderer::startArpLaneMidiDrag (const LayoutElement& element)
+    {
+        const auto* pack = proc.getPack();
+        const auto* block = pack != nullptr ? findArpBlock (pack->dspGraph) : nullptr;
+        if (block == nullptr)
+        {
+            if (onRuntimeImportReport)
+                onRuntimeImportReport ("MIDI drag failed: this Player has no Arp Studio or MIDI Playground block.");
+            return false;
+        }
+
+        DspBlock exportBlock = *block;
+        const int lane = juce::jlimit (0, MidiPlaygroundPattern::kPhraseBankCount - 1, element.arpLaneIndex);
+        MidiPlaygroundPattern::loadBank (exportBlock, lane, false);
+
+        auto outputFolder = juce::File::getSpecialLocation (juce::File::tempDirectory)
+            .getChildFile ("PatchCraft")
+            .getChildFile ("MidiDrag");
+        if (! outputFolder.createDirectory())
+        {
+            if (onRuntimeImportReport)
+                onRuntimeImportReport ("MIDI drag failed: could not create " + outputFolder.getFullPathName());
+            return false;
+        }
+
+        auto target = outputFolder.getChildFile (arpLaneMidiFileName (pack->manifest.instrumentName, element.label, lane));
+        int duplicateIndex = 2;
+        while (target.existsAsFile())
+            target = outputFolder.getChildFile (arpLaneMidiFileName (pack->manifest.instrumentName,
+                                                                     element.label + "_" + juce::String (duplicateIndex++),
+                                                                     lane));
+
+        juce::String error;
+        if (! MidiPlaygroundPattern::writeMidiClip (exportBlock, target, 120.0, 60, error))
+        {
+            if (onRuntimeImportReport)
+                onRuntimeImportReport ("MIDI drag failed: " + error);
+            return false;
+        }
+
+        juce::StringArray files;
+        files.add (target.getFullPathName());
+        const bool started = juce::DragAndDropContainer::performExternalDragDropOfFiles (files, false, this);
+        if (! started && onRuntimeImportReport)
+            onRuntimeImportReport ("MIDI drag failed: the operating system did not start an external file drag.");
+        return started;
+    }
+
     bool PlayerGuiRenderer::handlePadClick (const juce::MouseEvent& event)
     {
         const auto* pack = proc.getPack();
@@ -2993,6 +3276,9 @@ namespace patchcraft
                 case ElementType::DrumGrid:
                     drawDrumGrid (g, r, e);
                     break;
+                case ElementType::ArpLane:
+                    drawArpLane (g, r, e);
+                    break;
                 case ElementType::Mixer:
                     drawMixer (g, r, e);
                     break;
@@ -3203,6 +3489,9 @@ namespace patchcraft
         if (handleXYPadGesture (event))
             return;
 
+        if (handleArpLaneGesture (event))
+            return;
+
         if (handleDrumGridGesture (event, false))
             return;
 
@@ -3288,6 +3577,25 @@ namespace patchcraft
     {
         const auto event = evt.getEventRelativeTo (this);
         const auto m = metrics();
+        if (arpMidiDragArmed && arpMidiDragElementId.isNotEmpty())
+        {
+            const auto delta = event.getPosition() - arpMidiDragStart;
+            if (std::abs (delta.x) + std::abs (delta.y) >= 8)
+            {
+                for (const auto& element : elementsCopy)
+                {
+                    if (element.id == arpMidiDragElementId)
+                    {
+                        startArpLaneMidiDrag (element);
+                        break;
+                    }
+                }
+                arpMidiDragArmed = false;
+                arpMidiDragElementId.clear();
+            }
+            return;
+        }
+
         if (lastPlayedNote >= 0)
         {
             for (auto& e : elementsCopy)
@@ -3354,6 +3662,8 @@ namespace patchcraft
         mixerDragChannel = -1;
         mixerDragElementId.clear();
         mixerDragKind.clear();
+        arpMidiDragArmed = false;
+        arpMidiDragElementId.clear();
     }
 
     const LayoutElement* PlayerGuiRenderer::findBindableElementAt (juce::Point<int> position) const

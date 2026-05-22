@@ -280,7 +280,7 @@ namespace patchcraft
             const bool tempoSync = valueForKey (block.block, "sync", 1.0f) >= 0.5f
                 && (globalSync == nullptr || globalSync->current >= 0.5f);
             const int polymeterSteps = juce::roundToInt (valueForKey (block.block, "mpPolymeterSteps", 0.0f));
-            const int steps = juce::jlimit (1, 16,
+            const int steps = juce::jlimit (1, 128,
                 polymeterSteps > 0 ? polymeterSteps : juce::roundToInt (valueForKey (block.block, "arpSteps", 8.0f)));
             const double phase01 = block.phase - std::floor (block.phase);
             const double scaled = phase01 * (double) steps;
@@ -338,7 +338,7 @@ namespace patchcraft
             const bool tempoSync = valueForKey (block.block, "sync", 1.0f) >= 0.5f
                 && (globalSync == nullptr || globalSync->current >= 0.5f);
             const double cyclesPerSecond = tempoSync ? (context.bpm / 240.0) * rate : rate;
-            const int steps = juce::jlimit (1, 16, juce::roundToInt (valueForKey (block.block, "arpSteps", 8.0f)));
+            const int steps = juce::jlimit (1, 128, juce::roundToInt (valueForKey (block.block, "arpSteps", 8.0f)));
             const int pattern = juce::jlimit (0, 5, juce::roundToInt (valueForKey (block.block, "arpPattern", 0.0f)));
             const float gate = juce::jlimit (0.05f, 1.0f, valueForKey (block.block, "arpGate", 0.55f));
             const double phase01 = block.phase - std::floor (block.phase);

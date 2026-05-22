@@ -36,6 +36,7 @@ namespace patchcraft
             { &tabMapper,   (int) BottomPanel::Page::SampleMapper },
             { &tabOneShot,  (int) BottomPanel::Page::OneShotMaker },
             { &tabMidi,     (int) BottomPanel::Page::MidiPlayground },
+            { &tabArp,      (int) BottomPanel::Page::ArpStudio },
             { &tabDSP,      (int) BottomPanel::Page::DSP },
             { &tabBuild,    (int) BottomPanel::Page::Build },
             { &tabBranding, (int) BottomPanel::Page::Branding },
@@ -292,6 +293,7 @@ namespace patchcraft
         tabMapper.setToggleState   (p == BottomPanel::Page::SampleMapper,   juce::dontSendNotification);
         tabOneShot.setToggleState  (p == BottomPanel::Page::OneShotMaker,   juce::dontSendNotification);
         tabMidi  .setToggleState   (p == BottomPanel::Page::MidiPlayground, juce::dontSendNotification);
+        tabArp   .setToggleState   (p == BottomPanel::Page::ArpStudio,      juce::dontSendNotification);
         tabDSP   .setToggleState   (p == BottomPanel::Page::DSP,            juce::dontSendNotification);
         tabBuild .setToggleState   (p == BottomPanel::Page::Build,          juce::dontSendNotification);
         tabBranding.setToggleState (p == BottomPanel::Page::Branding
@@ -506,6 +508,7 @@ namespace patchcraft
         tabMapper.setBounds (r.removeFromLeft (62));
         tabOneShot.setBounds (r.removeFromLeft (64));
         tabMidi  .setBounds (r.removeFromLeft (44));
+        tabArp   .setBounds (r.removeFromLeft (80));
         tabDSP   .setBounds (r.removeFromLeft (42));
         tabBuild .setBounds (r.removeFromLeft (44));
         tabBranding.setBounds (r.removeFromLeft (58));

@@ -68,6 +68,7 @@ namespace patchcraft
         juce::TextButton tabMapper { "Samples" };
         juce::TextButton tabOneShot { "One Shot" };
         juce::TextButton tabMidi   { "MIDI" };
+        juce::TextButton tabArp    { "Arp Studio" };
         juce::TextButton tabDSP    { "DSP" };
         juce::TextButton tabBuild  { "Build" };
         juce::TextButton tabBranding { "Brand Lab" };

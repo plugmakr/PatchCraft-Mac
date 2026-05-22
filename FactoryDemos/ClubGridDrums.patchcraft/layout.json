@@ -30,7 +30,8 @@
         "Space"
       ],
       "backgroundColour": "cc0a0b0d",
-      "borderColour": "ffff5a2f"
+      "borderColour": "ffff5a2f",
+      "labelSize": 11.0
     },
     {
       "id": "hero_frame",
@@ -56,7 +57,10 @@
       "width": 34,
       "height": 205,
       "backgroundColour": "aa0a0b0d",
-      "accentColour": "ffff5a2f"
+      "accentColour": "ffff5a2f",
+      "labelPosition": "bottom",
+      "labelSpacing": 2.0,
+      "labelSize": 10.0
     },
     {
       "id": "modwheel",
@@ -68,7 +72,10 @@
       "width": 34,
       "height": 205,
       "backgroundColour": "aa0a0b0d",
-      "accentColour": "ffff5a2f"
+      "accentColour": "ffff5a2f",
+      "labelPosition": "bottom",
+      "labelSpacing": 2.0,
+      "labelSize": 10.0
     },
     {
       "id": "keyboard",
@@ -102,7 +109,13 @@
       "width": 72,
       "height": 78,
       "accentColour": "ffff5a2f",
-      "backgroundColour": "cc0a0b0d"
+      "backgroundColour": "cc0a0b0d",
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0,
+      "labelSize": 10.0
     },
     {
       "id": "outMeter",
@@ -125,7 +138,13 @@
       "width": 72,
       "height": 78,
       "accentColour": "ffff5a2f",
-      "backgroundColour": "cc0a0b0d"
+      "backgroundColour": "cc0a0b0d",
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0,
+      "labelSize": 10.0
     },
     {
       "id": "factory_pad_grid",
@@ -184,9 +203,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "main"
+      "groupId": "main",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "knob_main_sampleLength",
@@ -200,9 +222,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "main"
+      "groupId": "main",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "knob_main_samplePitch",
@@ -216,9 +241,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "main"
+      "groupId": "main",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "knob_main_sampleGlitch",
@@ -232,9 +260,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "main"
+      "groupId": "main",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "knob_main_volume",
@@ -248,9 +279,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "main"
+      "groupId": "main",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "panel_amp",
@@ -293,9 +327,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "amp"
+      "groupId": "amp",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "knob_amp_decay",
@@ -309,9 +346,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "amp"
+      "groupId": "amp",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "knob_amp_sustain",
@@ -325,9 +365,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "amp"
+      "groupId": "amp",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "knob_amp_release",
@@ -341,9 +384,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "amp"
+      "groupId": "amp",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "panel_filter",
@@ -386,9 +432,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "filter"
+      "groupId": "filter",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "knob_filter_filterResonance",
@@ -402,9 +451,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "filter"
+      "groupId": "filter",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "panel_motion",
@@ -447,9 +499,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "motion"
+      "groupId": "motion",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "knob_motion_retrigger",
@@ -463,9 +518,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "motion"
+      "groupId": "motion",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "panel_fx",
@@ -508,9 +566,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "fx"
+      "groupId": "fx",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "knob_fx_delayTime",
@@ -524,9 +585,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "fx"
+      "groupId": "fx",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "knob_fx_delayFeedback",
@@ -540,9 +604,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "fx"
+      "groupId": "fx",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "knob_fx_stereoWidth",
@@ -556,9 +623,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "fx"
+      "groupId": "fx",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "panel_space",
@@ -601,9 +671,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "space"
+      "groupId": "space",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "knob_space_outputGainDb",
@@ -617,9 +690,12 @@
       "style": "Factory Glass",
       "accentColour": "ffff5a2f",
       "backgroundColour": "cc0a0b0d",
-      "labelSize": 12,
+      "labelSize": 11,
       "labelPosition": "bottom",
-      "groupId": "space"
+      "groupId": "space",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     }
   ]
 }

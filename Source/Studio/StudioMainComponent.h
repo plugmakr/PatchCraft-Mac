@@ -61,6 +61,8 @@ namespace patchcraft
         void importSampleFiles (const juce::Array<juce::File>& files,
                                 bool switchToMapper = true,
                                 bool spanMappedRoots = true);
+        void toggleSampleLibraryDrawerForSamples();
+        void showSampleLibraryDrawer (bool shouldShow);
         void importBackground();
         void generateAiBackground();
         void generateAiImageAsset();
@@ -221,6 +223,7 @@ namespace patchcraft
         bool showLayersInsteadOfElements = false;
         bool showLibraryInsteadOfElements = false;
         bool showExpansionsInsteadOfElements = false;
+        bool sampleLibraryDrawerOpen = false;
         bool dspTutorialShownThisSession = false;
         int leftPanelWidth = 240;
         int inspectorPanelWidth = 300;

@@ -148,6 +148,7 @@ namespace patchcraft
         DrumPad,
         PadGrid,
         DrumGrid,
+        ArpLane,
         Mixer,
         MacroControl,
         ModMatrix,
@@ -235,6 +236,11 @@ namespace patchcraft
         int drumTracks = 8;
         int drumSteps = 16;
         int drumPattern = 0;
+
+        // Circular arpeggiator lane UI (ArpLane only).
+        int arpLaneIndex = 0;
+        int arpLaneSteps = 16;
+        juce::String arpLaneMode { "bank" };
 
         // Runtime mixer UI (Mixer only).
         // auto: multi-instrument layers when present, otherwise main output.

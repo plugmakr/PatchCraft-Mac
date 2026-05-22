@@ -24,9 +24,9 @@ namespace patchcraft
         void process (IInstrumentEngine&, const RenderContext&);
 
     private:
-        static constexpr int kMaxSteps = 16;
+        static constexpr int kMaxSteps = 128;
         static constexpr int kMaxChordNotes = 16;
-        static constexpr int kMaxPhraseBanks = 4;
+        static constexpr int kMaxPhraseBanks = 5;
         static constexpr int kMaxDrumPatterns = 8;
         static constexpr int kMaxDrumTracks = 16;
         static constexpr int kMaxDrumSteps = 64;
@@ -78,6 +78,11 @@ namespace patchcraft
             std::array<float, kMaxSteps> active {};
             std::array<float, kMaxSteps> probabilities {};
             std::array<float, kMaxSteps> sampleSlices {};
+            std::array<float, kMaxSteps> stepDivisions {};
+            std::array<float, kMaxSteps> stepTransposes {};
+            std::array<float, kMaxSteps> stepChordModes {};
+            std::array<float, kMaxSteps> stepChordSizes {};
+            std::array<float, kMaxSteps> stepTies {};
             std::array<float, kMaxPhraseBanks> bankHasData {};
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankNotes {};
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankVelocities {};
@@ -85,6 +90,11 @@ namespace patchcraft
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankActive {};
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankProbabilities {};
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankSampleSlices {};
+            std::array<float, kMaxPhraseBanks * kMaxSteps> bankStepDivisions {};
+            std::array<float, kMaxPhraseBanks * kMaxSteps> bankStepTransposes {};
+            std::array<float, kMaxPhraseBanks * kMaxSteps> bankStepChordModes {};
+            std::array<float, kMaxPhraseBanks * kMaxSteps> bankStepChordSizes {};
+            std::array<float, kMaxPhraseBanks * kMaxSteps> bankStepTies {};
             int drumTracks = 8;
             int drumSteps = 16;
             int drumPattern = 0;

@@ -60,6 +60,7 @@ namespace patchcraft
         bool setDrumActivePatternFromUi (int pattern);
         bool setDrumPatternCellFromUi (int pattern, int track, int step, bool active,
                                        float velocity, float gate, float probability, int divisions);
+        bool setArpLaneStepFromUi (int lane, int step, float velocity, bool active);
 
         struct ClipEvent
         {

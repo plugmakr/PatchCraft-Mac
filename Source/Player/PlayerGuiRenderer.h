@@ -73,9 +73,12 @@ namespace patchcraft
         juce::String lastPendingMidiLearn;
         bool drumGridDragActive = false;
         bool drumGridPaintValue = false;
+        bool arpMidiDragArmed = false;
         int lastDrumGridPattern = -1;
         int lastDrumGridTrack = -1;
         int lastDrumGridStep = -1;
+        juce::Point<int> arpMidiDragStart;
+        juce::String arpMidiDragElementId;
 
         // Geometry helpers
         struct CanvasMetrics { float scale; juce::Rectangle<int> canvas; };
@@ -113,6 +116,7 @@ namespace patchcraft
         void drawGranularField (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
         void drawPadGrid(juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
         void drawDrumGrid(juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
+        void drawArpLane(juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
         void drawMixer  (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
         void drawMultiLayerDock (juce::Graphics&, juce::Rectangle<int>);
         juce::String tabTargetGroup (const LayoutElement&, const juce::String& label) const;
@@ -139,6 +143,9 @@ namespace patchcraft
         bool advanceGranularFields();
         bool handlePadClick (const juce::MouseEvent&);
         bool handleDrumGridGesture (const juce::MouseEvent&, bool drag);
+        bool handleArpLaneGesture (const juce::MouseEvent&);
+        juce::Rectangle<int> arpLaneMidiDragHandleBounds (juce::Rectangle<int>) const;
+        bool startArpLaneMidiDrag (const LayoutElement&);
         bool handleMixerGesture (const juce::MouseEvent&, bool drag);
         int  padNoteAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>) const;
         bool drumCellAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>,

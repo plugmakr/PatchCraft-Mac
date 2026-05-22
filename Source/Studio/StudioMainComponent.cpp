@@ -486,6 +486,31 @@ namespace patchcraft
         repaint();
     }
 
+    void StudioMainComponent::toggleSampleLibraryDrawerForSamples()
+    {
+        showSampleLibraryDrawer (! sampleLibraryDrawerOpen);
+    }
+
+    void StudioMainComponent::showSampleLibraryDrawer (bool shouldShow)
+    {
+        sampleLibraryDrawerOpen = shouldShow;
+
+        if (sampleLibraryDrawerOpen)
+        {
+            if (bottomTab != BottomPanel::Page::SampleMapper)
+                setBottomTab (BottomPanel::Page::SampleMapper);
+
+            if (assetLibraryPanel != nullptr)
+            {
+                assetLibraryPanel->showSoundsLibrary();
+                assetLibraryPanel->refresh();
+            }
+        }
+
+        resized();
+        repaint();
+    }
+
     bool StudioMainComponent::captureTutorialScreenshots (const juce::File& outputFolder, juce::String& error)
     {
         if (! outputFolder.createDirectory())
@@ -506,6 +531,7 @@ namespace patchcraft
             { BottomPanel::Page::SampleMapper,   "studio-samples.png" },
             { BottomPanel::Page::OneShotMaker,   "studio-one-shot.png" },
             { BottomPanel::Page::MidiPlayground, "studio-midi.png" },
+            { BottomPanel::Page::ArpStudio,      "studio-arp-studio.png" },
             { BottomPanel::Page::DSP,            "studio-dsp.png" },
             { BottomPanel::Page::Build,          "studio-build.png" },
             { BottomPanel::Page::Branding,       "studio-brand-lab.png" },
@@ -1041,7 +1067,9 @@ namespace patchcraft
         const bool layersFloating = isPanelFloating (layersPanel.get());
         const bool presetsFloating = isPanelFloating (presetsPanel.get());
         const bool brandLabTab = (bottomTab == BottomPanel::Page::Branding);
+        const bool sampleMapperTab = (bottomTab == BottomPanel::Page::SampleMapper);
         const bool brandLibraryDocked = brandLabTab && ! libraryFloating;
+        const bool sampleLibraryDocked = sampleMapperTab && sampleLibraryDrawerOpen && ! libraryFloating;
         const bool leftLayersDocked = designTab && ! leftPanelCollapsed && showLayersInsteadOfElements;
 
         // Visibility: only Design shows sidebar / canvas / inspector.
@@ -1056,7 +1084,7 @@ namespace patchcraft
                                    && ! showLibraryInsteadOfElements
                                    && ! showLayersInsteadOfElements
                                    && ! showExpansionsInsteadOfElements));
-        assetLibraryPanel->setVisible (libraryFloating || brandLibraryDocked || (designTab && ! leftPanelCollapsed && showLibraryInsteadOfElements));
+        assetLibraryPanel->setVisible (libraryFloating || brandLibraryDocked || sampleLibraryDocked || (designTab && ! leftPanelCollapsed && showLibraryInsteadOfElements));
         expansionLibraryPanel->setVisible (packsFloating || (designTab && ! leftPanelCollapsed && showExpansionsInsteadOfElements));
 
         // Right column (Inspector / Layers / Presets).
@@ -1138,9 +1166,9 @@ namespace patchcraft
         {
             leftResizeHandle = {};
             rightResizeHandle = {};
-            if (brandLibraryDocked)
+            if (brandLibraryDocked || sampleLibraryDocked)
             {
-                auto libraryCol = r.removeFromRight (juce::jlimit (260, 340, getWidth() / 5));
+                auto libraryCol = r.removeFromRight (juce::jlimit (280, 380, getWidth() / 5));
                 r.removeFromRight (8);
                 assetLibraryPanel->setBounds (libraryCol);
             }
@@ -1311,8 +1339,9 @@ namespace patchcraft
             menu.addSeparator();
             menu.addItem (4006, "Go To Workflow");
             menu.addItem (4007, "Go To Design");
-            menu.addItem (4008, "Go To DSP Builder");
-            menu.addItem (4009, "Go To Launch");
+            menu.addItem (4008, "Go To Arp Studio");
+            menu.addItem (4009, "Go To DSP Builder");
+            menu.addItem (4010, "Go To Launch");
         }
         else if (menuName == "Help")
         {
@@ -1408,8 +1437,9 @@ namespace patchcraft
                 break;
             case 4006: setBottomTab (BottomPanel::Page::Workflow); break;
             case 4007: setBottomTab (BottomPanel::Page::Design); break;
-            case 4008: setBottomTab (BottomPanel::Page::DSP); break;
-            case 4009: setBottomTab (BottomPanel::Page::Launch); break;
+            case 4008: setBottomTab (BottomPanel::Page::ArpStudio); break;
+            case 4009: setBottomTab (BottomPanel::Page::DSP); break;
+            case 4010: setBottomTab (BottomPanel::Page::Launch); break;
             case 4100: fitCanvasToWindow(); break;
             case 2001: showDspBuilderTutorial(); break;
             case 2002: toggleHelpTooltips(); break;

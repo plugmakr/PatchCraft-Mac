@@ -7,8 +7,8 @@ namespace patchcraft
     class MidiPlaygroundPattern
     {
     public:
-        static constexpr int kStepCount = 16;
-        static constexpr int kPhraseBankCount = 4;
+        static constexpr int kStepCount = 128;
+        static constexpr int kPhraseBankCount = 5;
 
         static int getActiveBank (const DspBlock&);
         static void setActiveBank (DspBlock&, int bank);

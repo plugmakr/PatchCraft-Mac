@@ -20,6 +20,11 @@ namespace patchcraft
             k.label = label; k.parameterId = parameterId;
             k.style = "Vintage Gold";
             k.groupId = groupId;
+            k.labelPosition = "bottom";
+            k.labelSize = 11.0f;
+            k.labelSpacing = 2.0f;
+            k.labelOffsetX = 0.0f;
+            k.labelOffsetY = 0.0f;
             return k;
         }
 
@@ -101,11 +106,13 @@ namespace patchcraft
                 LayoutElement vol; vol.type = ElementType::Knob; vol.id = "masterVol";
                 vol.x = 1090; vol.y = 478; vol.width = 72; vol.height = 78;
                 vol.label = "Volume"; vol.parameterId = "volume";
+                vol.labelPosition = "bottom"; vol.labelSize = 10.0f; vol.labelSpacing = 2.0f;
                 layout.add (vol);
 
                 LayoutElement pan; pan.type = ElementType::Knob; pan.id = "masterPan";
                 pan.x = 1170; pan.y = 478; pan.width = 72; pan.height = 78;
                 pan.label = "Pan"; pan.parameterId = "pan";
+                pan.labelPosition = "bottom"; pan.labelSize = 10.0f; pan.labelSpacing = 2.0f;
                 layout.add (pan);
             }
 

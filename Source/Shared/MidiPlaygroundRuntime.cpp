@@ -134,12 +134,18 @@ namespace patchcraft
         reset();
         enabled = false;
         settings = {};
-        settings.notes = kDefaultNotes;
+        for (int step = 0; step < kMaxSteps; ++step)
+            settings.notes[(size_t) step] = kDefaultNotes[(size_t) (step % (int) kDefaultNotes.size())];
         settings.velocities.fill (1.0f);
         settings.gates.fill (0.55f);
         settings.active.fill (1.0f);
         settings.probabilities.fill (1.0f);
         settings.sampleSlices.fill (-1.0f);
+        settings.stepDivisions.fill (1.0f);
+        settings.stepTransposes.fill (0.0f);
+        settings.stepChordModes.fill (-1.0f);
+        settings.stepChordSizes.fill (-1.0f);
+        settings.stepTies.fill (0.0f);
         settings.bankHasData.fill (0.0f);
         settings.bankNotes.fill (0.0f);
         settings.bankVelocities.fill (1.0f);
@@ -147,6 +153,11 @@ namespace patchcraft
         settings.bankActive.fill (1.0f);
         settings.bankProbabilities.fill (1.0f);
         settings.bankSampleSlices.fill (-1.0f);
+        settings.bankStepDivisions.fill (1.0f);
+        settings.bankStepTransposes.fill (0.0f);
+        settings.bankStepChordModes.fill (-1.0f);
+        settings.bankStepChordSizes.fill (-1.0f);
+        settings.bankStepTies.fill (0.0f);
         settings.drumNotes.fill (36);
         settings.drumChain.fill (0);
         settings.drumActive.fill (0.0f);
@@ -268,12 +279,18 @@ namespace patchcraft
 
             for (int step = 0; step < kMaxSteps; ++step)
             {
-                settings.notes[(size_t) step] = valueForKey (block, "arpNote" + juce::String (step), kDefaultNotes[(size_t) step]);
+                settings.notes[(size_t) step] = valueForKey (block, "arpNote" + juce::String (step),
+                                                             kDefaultNotes[(size_t) (step % (int) kDefaultNotes.size())]);
                 settings.velocities[(size_t) step] = juce::jlimit (0.0f, 1.0f, valueForKey (block, "mpVelocity" + juce::String (step), 1.0f));
                 settings.gates[(size_t) step] = juce::jlimit (0.05f, 1.0f, valueForKey (block, "mpGate" + juce::String (step), settings.gate));
                 settings.active[(size_t) step] = valueForKey (block, "mpStep" + juce::String (step) + "On", 1.0f) >= 0.5f ? 1.0f : 0.0f;
                 settings.probabilities[(size_t) step] = juce::jlimit (0.0f, 1.0f, valueForKey (block, "mpStepProb" + juce::String (step), 1.0f));
                 settings.sampleSlices[(size_t) step] = valueForKey (block, "mpSampleSlice" + juce::String (step), -1.0f);
+                settings.stepDivisions[(size_t) step] = (float) juce::jlimit (1, 8, juce::roundToInt (valueForKey (block, "mpStepDiv" + juce::String (step), (float) settings.ratchet)));
+                settings.stepTransposes[(size_t) step] = juce::jlimit (-48.0f, 48.0f, valueForKey (block, "mpStepTranspose" + juce::String (step), 0.0f));
+                settings.stepChordModes[(size_t) step] = valueForKey (block, "mpStepChordMode" + juce::String (step), -1.0f);
+                settings.stepChordSizes[(size_t) step] = valueForKey (block, "mpStepChordSize" + juce::String (step), -1.0f);
+                settings.stepTies[(size_t) step] = valueForKey (block, "mpStepTie" + juce::String (step), 0.0f) >= 0.5f ? 1.0f : 0.0f;
             }
 
             for (int bank = 0; bank < kMaxPhraseBanks; ++bank)
@@ -305,6 +322,16 @@ namespace patchcraft
                         valueForKey (block, prefix + "mpStepProb" + suffix, settings.probabilities[(size_t) step]));
                     settings.bankSampleSlices[index] = valueForKey (block, prefix + "mpSampleSlice" + suffix,
                         settings.sampleSlices[(size_t) step]);
+                    settings.bankStepDivisions[index] = (float) juce::jlimit (1, 8, juce::roundToInt (
+                        valueForKey (block, prefix + "mpStepDiv" + suffix, settings.stepDivisions[(size_t) step])));
+                    settings.bankStepTransposes[index] = juce::jlimit (-48.0f, 48.0f,
+                        valueForKey (block, prefix + "mpStepTranspose" + suffix, settings.stepTransposes[(size_t) step]));
+                    settings.bankStepChordModes[index] = valueForKey (block, prefix + "mpStepChordMode" + suffix,
+                        settings.stepChordModes[(size_t) step]);
+                    settings.bankStepChordSizes[index] = valueForKey (block, prefix + "mpStepChordSize" + suffix,
+                        settings.stepChordSizes[(size_t) step]);
+                    settings.bankStepTies[index] = valueForKey (block, prefix + "mpStepTie" + suffix,
+                        settings.stepTies[(size_t) step]) >= 0.5f ? 1.0f : 0.0f;
                 }
             }
 
@@ -331,6 +358,11 @@ namespace patchcraft
             settings.active[(size_t) step] = settings.bankActive[index];
             settings.probabilities[(size_t) step] = settings.bankProbabilities[index];
             settings.sampleSlices[(size_t) step] = settings.bankSampleSlices[index];
+            settings.stepDivisions[(size_t) step] = settings.bankStepDivisions[index];
+            settings.stepTransposes[(size_t) step] = settings.bankStepTransposes[index];
+            settings.stepChordModes[(size_t) step] = settings.bankStepChordModes[index];
+            settings.stepChordSizes[(size_t) step] = settings.bankStepChordSizes[index];
+            settings.stepTies[(size_t) step] = settings.bankStepTies[index];
         }
     }
 
@@ -664,11 +696,19 @@ namespace patchcraft
         if (! stepIsEnabled (step) || ! stepPassesProbability (step))
             return;
 
-        const int root = baseNoteForSequenceIndex (sequenceIndexForStep (step));
+        step = juce::jlimit (0, kMaxSteps - 1, step);
+        const int root = baseNoteForSequenceIndex (sequenceIndexForStep (step))
+                       + juce::roundToInt (settings.stepTransposes[(size_t) step]);
         if (root < 0)
             return;
 
-        const bool exactSemitoneChord = settings.chordMode >= 7;
+        const int chordMode = settings.stepChordModes[(size_t) step] >= 0.0f
+            ? juce::jlimit (0, 32, juce::roundToInt (settings.stepChordModes[(size_t) step]))
+            : settings.chordMode;
+        const int chordSize = settings.stepChordSizes[(size_t) step] >= 1.0f
+            ? juce::jlimit (1, kMaxChordNotes, juce::roundToInt (settings.stepChordSizes[(size_t) step]))
+            : settings.chordSize;
+        const bool exactSemitoneChord = chordMode >= 7;
         auto addNote = [&] (int note)
         {
             note = juce::jlimit (0, 127, exactSemitoneChord ? note : quantizeToScale (note));
@@ -679,7 +719,7 @@ namespace patchcraft
                 notes[(size_t) count++] = note;
         };
 
-        if (settings.chordMode <= 0 || settings.chordSize <= 1)
+        if (chordMode <= 0 || chordSize <= 1)
         {
             addNote (root);
             return;
@@ -699,115 +739,115 @@ namespace patchcraft
                 intervals[(size_t) intervalCount++] = semitone;
         };
 
-        if (settings.chordMode == 1)
+        if (chordMode == 1)
         {
             addDegree (0); addDegree (2); addDegree (4);
         }
-        else if (settings.chordMode == 2)
+        else if (chordMode == 2)
         {
             addDegree (0); addDegree (2); addDegree (4); addDegree (6);
         }
-        else if (settings.chordMode == 3)
+        else if (chordMode == 3)
         {
             addSemitone (0); addSemitone (7); addSemitone (12);
         }
-        else if (settings.chordMode == 4)
+        else if (chordMode == 4)
         {
             addSemitone (0); addSemitone (5); addSemitone (7); addSemitone (12);
         }
-        else if (settings.chordMode == 5)
+        else if (chordMode == 5)
         {
             addSemitone (0); addSemitone (2); addSemitone (5); addSemitone (9);
         }
-        else if (settings.chordMode == 6)
+        else if (chordMode == 6)
         {
             addDegree (0); addDegree (4); addDegree (7); addDegree (11);
         }
-        else if (settings.chordMode == 7)
+        else if (chordMode == 7)
         {
             addSemitone (0); addSemitone (4); addSemitone (7);
         }
-        else if (settings.chordMode == 8)
+        else if (chordMode == 8)
         {
             addSemitone (0); addSemitone (3); addSemitone (7);
         }
-        else if (settings.chordMode == 9)
+        else if (chordMode == 9)
         {
             addSemitone (0); addSemitone (3); addSemitone (6);
         }
-        else if (settings.chordMode == 10)
+        else if (chordMode == 10)
         {
             addSemitone (0); addSemitone (4); addSemitone (8);
         }
-        else if (settings.chordMode == 11)
+        else if (chordMode == 11)
         {
             addSemitone (0); addSemitone (2); addSemitone (7);
         }
-        else if (settings.chordMode == 12)
+        else if (chordMode == 12)
         {
             addSemitone (0); addSemitone (5); addSemitone (7);
         }
-        else if (settings.chordMode == 13)
+        else if (chordMode == 13)
         {
             addSemitone (0); addSemitone (4); addSemitone (7); addSemitone (9);
         }
-        else if (settings.chordMode == 14)
+        else if (chordMode == 14)
         {
             addSemitone (0); addSemitone (3); addSemitone (7); addSemitone (9);
         }
-        else if (settings.chordMode == 15)
+        else if (chordMode == 15)
         {
             addSemitone (0); addSemitone (4); addSemitone (7); addSemitone (10);
         }
-        else if (settings.chordMode == 16)
+        else if (chordMode == 16)
         {
             addSemitone (0); addSemitone (4); addSemitone (7); addSemitone (11);
         }
-        else if (settings.chordMode == 17)
+        else if (chordMode == 17)
         {
             addSemitone (0); addSemitone (3); addSemitone (7); addSemitone (10);
         }
-        else if (settings.chordMode == 18)
+        else if (chordMode == 18)
         {
             addSemitone (0); addSemitone (3); addSemitone (6); addSemitone (10);
         }
-        else if (settings.chordMode == 19)
+        else if (chordMode == 19)
         {
             addSemitone (0); addSemitone (3); addSemitone (6); addSemitone (9);
         }
-        else if (settings.chordMode == 20)
+        else if (chordMode == 20)
         {
             addSemitone (0); addSemitone (3); addSemitone (7); addSemitone (11);
         }
-        else if (settings.chordMode == 21)
+        else if (chordMode == 21)
         {
             addSemitone (0); addSemitone (4); addSemitone (7); addSemitone (14);
         }
-        else if (settings.chordMode == 22)
+        else if (chordMode == 22)
         {
             addSemitone (0); addSemitone (3); addSemitone (7); addSemitone (14);
         }
-        else if (settings.chordMode == 23)
+        else if (chordMode == 23)
         {
             addSemitone (0); addSemitone (4); addSemitone (7); addSemitone (10); addSemitone (14);
         }
-        else if (settings.chordMode == 24)
+        else if (chordMode == 24)
         {
             addSemitone (0); addSemitone (3); addSemitone (7); addSemitone (10); addSemitone (14);
         }
-        else if (settings.chordMode == 25)
+        else if (chordMode == 25)
         {
             addSemitone (0); addSemitone (4); addSemitone (7); addSemitone (10); addSemitone (14); addSemitone (17);
         }
-        else if (settings.chordMode == 26)
+        else if (chordMode == 26)
         {
             addSemitone (0); addSemitone (4); addSemitone (7); addSemitone (10); addSemitone (14); addSemitone (21);
         }
-        else if (settings.chordMode == 27)
+        else if (chordMode == 27)
         {
             addSemitone (0); addSemitone (5); addSemitone (7); addSemitone (10);
         }
-        else if (settings.chordMode == 28)
+        else if (chordMode == 28)
         {
             addSemitone (0); addSemitone (5); addSemitone (10); addSemitone (15);
         }
@@ -816,7 +856,7 @@ namespace patchcraft
             addSemitone (0); addSemitone (7); addSemitone (12);
         }
 
-        const int wanted = juce::jlimit (1, kMaxChordNotes, juce::jmin (settings.chordSize, intervalCount));
+        const int wanted = juce::jlimit (1, kMaxChordNotes, juce::jmin (chordSize, intervalCount));
         for (int i = 0; i < wanted; ++i)
         {
             const int spreadOctave = settings.chordSpread > 0.5f && i >= 2 ? 12 : 0;
@@ -1222,12 +1262,14 @@ namespace patchcraft
         const int step = juce::jlimit (0, steps - 1, (int) std::floor (scaled));
         const double stepPhase = scaled - std::floor (scaled);
         const double swingDelay = (step % 2 == 1) ? (double) settings.swing * 0.5 : 0.0;
-        const double stepGate = (double) settings.gates[(size_t) step] * (1.0 - swingDelay);
+        const bool tieStep = settings.stepTies[(size_t) step] >= 0.5f;
+        const double stepGate = (tieStep ? 1.0 : (double) settings.gates[(size_t) step]) * (1.0 - swingDelay);
         const bool shouldGateOpen = stepPhase >= swingDelay && stepPhase <= juce::jmin (1.0, swingDelay + stepGate);
+        const int stepRatchet = juce::jlimit (1, 8, juce::roundToInt (settings.stepDivisions[(size_t) step]));
         const int ratchetSlot = shouldGateOpen
-            ? juce::jlimit (0, settings.ratchet - 1,
+            ? juce::jlimit (0, stepRatchet - 1,
                             (int) std::floor (juce::jlimit (0.0, 0.999999, (stepPhase - swingDelay) / juce::jmax (0.0001, stepGate))
-                                              * (double) settings.ratchet))
+                                              * (double) stepRatchet))
             : -1;
 
         if (currentStep >= 0 && step < currentStep)

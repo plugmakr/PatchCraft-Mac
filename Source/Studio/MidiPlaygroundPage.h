@@ -15,6 +15,7 @@ namespace patchcraft
 
     class MidiPlaygroundPage : public juce::Component,
                                public juce::AudioIODeviceCallback,
+                               public juce::MidiInputCallback,
                                private juce::Timer
     {
     public:
@@ -23,13 +24,18 @@ namespace patchcraft
 
         void paint (juce::Graphics&) override;
         void resized() override;
+        void visibilityChanged() override;
         void mouseDown (const juce::MouseEvent&) override;
+        void mouseDrag (const juce::MouseEvent&) override;
         void refresh();
         void audioDeviceIOCallbackWithContext (const float* const*, int,
                                                float* const*, int, int,
                                                const juce::AudioIODeviceCallbackContext&) override;
         void audioDeviceAboutToStart (juce::AudioIODevice*) override;
         void audioDeviceStopped() override;
+        void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage&) override;
+        void showPlaygroundMode();
+        void showArpStudioMode();
 
     private:
         StudioMainComponent& owner;
@@ -96,7 +102,17 @@ namespace patchcraft
         int selectedSectionCard = 0;
         bool syncingControls = false;
         bool pendingGraphNotification = false;
+        bool arpStudioMode = false;
+        bool arpStudioMidiDragArmed = false;
         bool patternPreviewActive = false;
+        bool arpStudioHardwareMidiActive = false;
+        int arpStudioDragLane = -1;
+        int arpStudioEditingLane = -1;
+        int arpStudioEditingStep = -1;
+        int arpStudioEditingBand = 1;
+        bool arpStudioEditingVelocity = false;
+        juce::Point<int> arpStudioMidiDragStart;
+        double arpStudioPreviewStartMs = 0.0;
         double previewSampleRate = 44100.0;
         int previewBlockSize = 512;
         int previewChannels = 2;
@@ -210,6 +226,8 @@ namespace patchcraft
         void exportMidiClip();
         void startPatternPreview();
         void stopPatternPreview();
+        void setArpStudioHardwarePreviewActive (bool active);
+        void triggerArpStudioPreviewNote (int note, float velocity, bool noteOn);
         void syncControlsFromBlock();
         void updateBlockFromControls();
         void notifyGraphChanged (bool immediate);
@@ -230,6 +248,18 @@ namespace patchcraft
         juce::Rectangle<int> drawControl (juce::Graphics&, juce::Rectangle<int>,
                                           const juce::String&, juce::Component&);
         void drawSectionCards (juce::Graphics&, juce::Rectangle<int>);
+        void drawArpStudio (juce::Graphics&);
+        void drawArpStudioLane (juce::Graphics&, juce::Rectangle<int>, int lane, const DspBlock*) const;
+        void drawArpStudioKnob (juce::Graphics&, juce::Rectangle<int>, const juce::String& label,
+                                const juce::String& value, juce::Colour accent, float normalised) const;
+        void drawArpStudioFxGroup (juce::Graphics&, juce::Rectangle<int>, int group, const juce::String& name,
+                                   const juce::String& mode, juce::Colour accent) const;
+        juce::Rectangle<int> arpStudioLaneBounds (juce::Rectangle<int> area, int lane) const;
+        juce::Rectangle<int> arpStudioMidiDragBounds (juce::Rectangle<int> area, int lane) const;
+        bool arpStudioStepHitTest (juce::Rectangle<int> area, juce::Point<int> pos,
+                                   int& lane, int& step, int& band, float& value) const;
+        void editArpStudioStepFromMouse (const juce::MouseEvent&, bool toggleStep);
+        bool startArpStudioMidiDrag (int lane);
         juce::Rectangle<int> sectionCardBounds (juce::Rectangle<int> area, int index) const;
         juce::String sectionCardName (int index) const;
         juce::String sectionCardDescription (int index) const;

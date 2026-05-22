@@ -1,0 +1,23 @@
+{
+  "formatVersion": 1,
+  "instrumentName": "CircleSEQ Flagship",
+  "creator": "PatchCraft",
+  "description": "A functional CircleSEQ-style five-lane circular arpeggiator demo with editable MIDI phrase banks, velocity spokes, DAW MIDI drag handles, and grouped performance FX controls.",
+  "category": "Arp Synth Demo",
+  "engine": "synth",
+  "backgroundImage": "assets/background.png",
+  "libraryThumbnail": "assets/thumbnail.png",
+  "defaultPreset": "CircleSEQ Evolution",
+  "createdWith": "PatchCraft Studio",
+  "version": "1.0",
+  "playerDisplayName": "CircleSEQ Flagship",
+  "playerTagline": "Five circular phrase engines for playable arps",
+  "playerAccentColour": "ff9b6dff",
+  "tags": [
+    "factory-demo",
+    "arp",
+    "synth",
+    "circleseq",
+    "flagship"
+  ]
+}

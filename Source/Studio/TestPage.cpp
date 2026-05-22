@@ -52,6 +52,16 @@ namespace patchcraft
             return nullptr;
         }
 
+        static DspBlock* findArpBlock (DspGraph& graph)
+        {
+            for (auto& block : graph.blocks)
+                if (block.type.containsIgnoreCase ("arp")
+                    || block.type.containsIgnoreCase ("midi")
+                    || block.values.find ("arpSteps") != block.values.end())
+                    return &block;
+            return nullptr;
+        }
+
         static int defaultDrumTrackNote (int track)
         {
             static const int notes[] =
@@ -95,6 +105,39 @@ namespace patchcraft
             for (int track = 0; track < 16; ++track)
                 block.values["dmTrack" + juce::String (track) + "Note"] = (float) defaultDrumTrackNote (track);
 
+            graph.blocks.push_back (std::move (block));
+            graph.userConfigured = true;
+            return graph.blocks.back();
+        }
+
+        static DspBlock& ensureArpBlock (DspGraph& graph)
+        {
+            if (auto* existing = findArpBlock (graph))
+                return *existing;
+
+            DspBlock block;
+            block.id = "midi_arp_sequencer";
+            int suffix = 2;
+            auto idExists = [&] (const juce::String& id)
+            {
+                for (const auto& existing : graph.blocks)
+                    if (existing.id == id)
+                        return true;
+                return false;
+            };
+            while (idExists (block.id))
+                block.id = "midi_arp_sequencer_" + juce::String (suffix++);
+
+            block.section = "mod";
+            block.type = "arpSequencer";
+            block.name = "Circle Sequencer";
+            block.targetId = "midiArpSequencer";
+            block.enabled = true;
+            block.values["arpSteps"] = 16.0f;
+            block.values["mpActiveBank"] = 0.0f;
+            block.values["rate"] = 1.0f;
+            block.values["sync"] = 1.0f;
+            block.values["enabled"] = 1.0f;
             graph.blocks.push_back (std::move (block));
             graph.userConfigured = true;
             return graph.blocks.back();
@@ -385,6 +428,10 @@ namespace patchcraft
                                                            float velocity, float gate, float probability, int divisions)
         {
             return setDrumPatternCellFromUi (pattern, track, step, active, velocity, gate, probability, divisions);
+        };
+        instrumentRenderer->onSetArpLaneStep = [this] (int lane, int step, float velocity, bool active)
+        {
+            return setArpLaneStepFromUi (lane, step, velocity, active);
         };
         addAndMakeVisible (*instrumentRenderer);
 
@@ -1323,6 +1370,44 @@ namespace patchcraft
             block.values[prefix + "Div"] = (float) juce::jlimit (1, 4, divisions);
         }
 
+        graph.userConfigured = true;
+        owner.getProject().markDirty();
+
+        {
+            const juce::SpinLock::ScopedLockType lock (engineLock);
+            syncRoutingFromProject();
+        }
+
+        return true;
+    }
+
+    bool TestPage::setArpLaneStepFromUi (int lane, int step, float velocity, bool active)
+    {
+        lane = juce::jlimit (0, 15, lane);
+        step = juce::jlimit (0, 127, step);
+        velocity = juce::jlimit (0.05f, 1.0f, velocity);
+
+        auto& graph = owner.getProject().getDspGraph();
+        auto& block = ensureArpBlock (graph);
+        const int steps = juce::jlimit (1, 128, juce::roundToInt (blockValue (block, "arpSteps", 16.0f)));
+        if (step >= steps)
+            return false;
+
+        const auto keyStep = juce::String (step);
+        const auto setLaneValue = [&] (const juce::String& key, float value)
+        {
+            if (lane == 0)
+                block.values[key] = value;
+
+            block.values["mpBank" + juce::String (lane + 1) + "_" + key] = value;
+        };
+
+        block.values["mpActiveBank"] = (float) lane;
+        setLaneValue ("mpStep" + keyStep + "On", active ? 1.0f : 0.0f);
+        setLaneValue ("mpVelocity" + keyStep, velocity);
+        setLaneValue ("mpGate" + keyStep, 0.72f);
+        setLaneValue ("mpProbability" + keyStep, 1.0f);
+        setLaneValue ("mpStepDiv" + keyStep, 1.0f);
         graph.userConfigured = true;
         owner.getProject().markDirty();
 

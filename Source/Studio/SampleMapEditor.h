@@ -24,7 +24,8 @@ namespace patchcraft
                             public juce::AudioIODeviceCallback,
                             public juce::MidiInputCallback,
                             public juce::ListBoxModel,
-                            public juce::FileDragAndDropTarget
+                            public juce::FileDragAndDropTarget,
+                            public juce::DragAndDropTarget
     {
     public:
         SampleMapEditor (StudioMainComponent& owner);
@@ -63,6 +64,9 @@ namespace patchcraft
         juce::TextButton gridViewBtn{ "Grid" };
         juce::TextButton listViewBtn{ "List View" };
         juce::TextButton importBtn{ "Import" };
+        juce::TextButton libraryDrawerBtn{ "Library" };
+        juce::TextButton recordVoiceBtn{ "Record Voice" };
+        juce::TextButton stopVoiceRecordBtn{ "Stop Rec" };
         juce::TextButton removeBtn{ "Delete Sel" };
         juce::TextButton selectAllBtn{ "Select All" };
         juce::TextButton clearAllBtn{ "Clear All" };
@@ -279,7 +283,11 @@ namespace patchcraft
 
         // Actions
         void addSample();
+        void startVoiceRecording();
+        void stopVoiceRecordingAndImport();
         void importSampleFiles (const juce::Array<juce::File>& files, bool spanMappedRoots = true);
+        void importDroppedSampleFiles (const juce::Array<juce::File>& files,
+                                       juce::Point<int> localPosition);
         void commitSampleMapEdit (const juce::String& actionName,
                                   std::vector<SampleZoneDef> beforeZones);
 
@@ -287,6 +295,8 @@ namespace patchcraft
         // folders (recurses one level deep collecting audio files).
         bool isInterestedInFileDrag (const juce::StringArray& files) override;
         void filesDropped (const juce::StringArray& files, int x, int y) override;
+        bool isInterestedInDragSource (const SourceDetails& dragSourceDetails) override;
+        void itemDropped (const SourceDetails& dragSourceDetails) override;
         void removeSample();
         void clearAllSamples();
         void autoMap();
@@ -334,6 +344,13 @@ namespace patchcraft
         int auditionChannels = 2;
         bool auditionCallbackActive = false;
         int auditionNote = -1;
+        bool voiceRecordingActive = false;
+        bool voiceRecordCallbackOwned = false;
+        juce::CriticalSection voiceRecordLock;
+        juce::AudioBuffer<float> voiceRecordBuffer;
+        int voiceRecordSamples = 0;
+        double voiceRecordSampleRate = 44100.0;
+        int voiceRecordMaxSamples = 0;
         bool playModeEnabled = false;
         int mousePreviewNote = -1;
         SampleZoneDef zoneClipboard;

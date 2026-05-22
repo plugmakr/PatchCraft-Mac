@@ -27,6 +27,7 @@ namespace patchcraft
 
         for (auto* button : { &refreshButton, &importButton, &folderButton, &deleteButton, &addButton, &previewButton })
             button->getProperties().set ("smallButton", true);
+        autoAuditionToggle.getProperties().set ("smallButton", true);
 
         refreshButton.onClick = [this] { refresh(); };
         importButton.onClick = [this] { importAssets(); };
@@ -34,11 +35,18 @@ namespace patchcraft
         deleteButton.onClick = [this] { deleteSelectedEntry(); };
         addButton.onClick = [this] { addSelectedToCanvas(); };
         previewButton.onClick = [this] { showSelectedPreview(); };
+        autoAuditionToggle.setToggleState (true, juce::dontSendNotification);
+        autoAuditionToggle.onClick = [this]
+        {
+            if (! autoAuditionToggle.getToggleState())
+                stopSoundPreview();
+        };
         refreshButton.setTooltip ("Rescan the PatchCraft app library and factory folders.");
         importButton.setTooltip ("Bulk import files into the selected library: backgrounds, templates, built assets, or factory sounds.");
         folderButton.setTooltip ("Create a new folder in the selected user library section for manual organization.");
         deleteButton.setTooltip ("Delete the selected user library item. Factory and installed demo assets are protected.");
         previewButton.setTooltip ("Open a larger preview of the selected background, template, or asset before loading it.");
+        autoAuditionToggle.setTooltip ("Turn automatic sample audition on or off while browsing the sound library.");
         addButton.setTooltip ("Add the selected asset. Templates replace the current project after confirmation. Sounds import into the Sample Mapper.");
         addAndMakeVisible (refreshButton);
         addAndMakeVisible (importButton);
@@ -46,12 +54,22 @@ namespace patchcraft
         addAndMakeVisible (deleteButton);
         addAndMakeVisible (addButton);
         addAndMakeVisible (previewButton);
+        addAndMakeVisible (autoAuditionToggle);
+
+        previewFormatManager.registerBasicFormats();
 
         list.setRowHeight (54);
         list.setOutlineThickness (0);
+        list.setMultipleSelectionEnabled (true);
+        list.setClickingTogglesRowSelection (false);
         list.setColour (juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
         addAndMakeVisible (list);
         refresh();
+    }
+
+    BuiltAssetLibraryComponent::~BuiltAssetLibraryComponent()
+    {
+        stopSoundPreview();
     }
 
     juce::File BuiltAssetLibraryComponent::getAssetLibraryRoot()
@@ -210,10 +228,11 @@ namespace patchcraft
         r.removeFromTop (3);
 
         auto actions = r.removeFromTop (28);
-        const int actionWidth = actions.getWidth() / 5;
+        const int actionWidth = actions.getWidth() / 6;
         importButton.setBounds (actions.removeFromLeft (actionWidth).reduced (2));
         folderButton.setBounds (actions.removeFromLeft (actionWidth).reduced (2));
         deleteButton.setBounds (actions.removeFromLeft (actionWidth).reduced (2));
+        autoAuditionToggle.setBounds (actions.removeFromLeft (actionWidth).reduced (2));
         previewButton.setBounds (actions.removeFromLeft (actionWidth).reduced (2));
         addButton.setBounds (actions.reduced (2));
         r.removeFromTop (5);
@@ -222,6 +241,7 @@ namespace patchcraft
 
     void BuiltAssetLibraryComponent::refresh()
     {
+        stopSoundPreview();
         entries.clear();
         selectedRow = -1;
         backgroundsButton.setToggleState (mode == LibraryMode::Backgrounds, juce::dontSendNotification);
@@ -229,6 +249,7 @@ namespace patchcraft
         assetsButton.setToggleState (mode == LibraryMode::Assets, juce::dontSendNotification);
         soundsButton.setToggleState (mode == LibraryMode::Sounds, juce::dontSendNotification);
         addButton.setButtonText (mode == LibraryMode::Sounds ? "To Mapper" : "Add");
+        autoAuditionToggle.setVisible (mode == LibraryMode::Sounds);
 
         if (mode == LibraryMode::Backgrounds)
             scanBackgrounds();
@@ -259,6 +280,14 @@ namespace patchcraft
             return;
 
         mode = newMode;
+        if (mode != LibraryMode::Sounds)
+            activeSoundFolder = {};
+        refresh();
+    }
+
+    void BuiltAssetLibraryComponent::showSoundsLibrary()
+    {
+        setMode (LibraryMode::Sounds);
         refresh();
     }
 
@@ -544,25 +573,44 @@ namespace patchcraft
             entries.push_back (std::move (entry));
         };
 
+        auto addSoundFile = [&] (const juce::File& root, const juce::File& file)
+        {
+            if (! isSupportedSoundFile (file))
+                return;
+
+            Entry entry;
+            entry.category = "sounds";
+            entry.file = file;
+            entry.title = file.getFileNameWithoutExtension();
+            entry.subtitle = "Sound Library";
+            entry.folderPath = folderLabelFor (root, file);
+            addEntry (std::move (entry));
+        };
+
+        if (activeSoundFolder.isDirectory())
+        {
+            Entry back;
+            back.category = "sounds";
+            back.title = "All Sounds";
+            back.subtitle = "Back to the main sound library";
+            back.folderPath = "Library";
+            back.isFolder = true;
+            entries.push_back (std::move (back));
+
+            addFolderEntriesForRoot (activeSoundFolder, "sounds", false);
+            for (auto file : activeSoundFolder.findChildFiles (juce::File::findFiles, false, "*.wav;*.aif;*.aiff;*.flac"))
+                addSoundFile (activeSoundFolder, file);
+            return;
+        }
+
         for (const auto& root : getSoundRoots())
         {
             if (isUserLibraryFile (root))
                 root.createDirectory();
             addFolderEntriesForRoot (root, "sounds", false);
 
-            for (auto file : root.findChildFiles (juce::File::findFiles, true, "*.wav;*.aif;*.aiff;*.flac"))
-            {
-                if (! isSupportedSoundFile (file))
-                    continue;
-
-                Entry entry;
-                entry.category = "sounds";
-                entry.file = file;
-                entry.title = file.getFileNameWithoutExtension();
-                entry.subtitle = "Sound Library";
-                entry.folderPath = folderLabelFor (root, file);
-                addEntry (std::move (entry));
-            }
+            for (auto file : root.findChildFiles (juce::File::findFiles, false, "*.wav;*.aif;*.aiff;*.flac"))
+                addSoundFile (root, file);
         }
     }
 
@@ -694,11 +742,14 @@ namespace patchcraft
             return;
 
         const auto& entry = entries[(size_t) row];
+        const bool isDropTarget = row == dropTargetRow && entry.isFolder && isUserLibraryFile (entry.file);
         auto bounds = juce::Rectangle<int> (0, 0, width, height).reduced (4, 3);
-        g.setColour (selected ? PatchCraftLookAndFeel::raised() : PatchCraftLookAndFeel::panelAlt());
+        g.setColour (selected ? PatchCraftLookAndFeel::raised()
+                              : (isDropTarget ? PatchCraftLookAndFeel::accent().withAlpha (0.18f)
+                                              : PatchCraftLookAndFeel::panelAlt()));
         g.fillRoundedRectangle (bounds.toFloat(), 6.0f);
-        g.setColour (selected ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::border());
-        g.drawRoundedRectangle (bounds.toFloat(), 6.0f, 1.0f);
+        g.setColour ((selected || isDropTarget) ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::border());
+        g.drawRoundedRectangle (bounds.toFloat(), 6.0f, isDropTarget ? 2.0f : 1.0f);
 
         auto thumb = bounds.removeFromLeft (46).reduced (5);
         juce::Image image;
@@ -777,11 +828,38 @@ namespace patchcraft
     void BuiltAssetLibraryComponent::selectedRowsChanged (int lastRowSelected)
     {
         selectedRow = lastRowSelected;
+        if (selectedRow >= 0
+            && selectedRow < (int) entries.size()
+            && mode == LibraryMode::Sounds
+            && list.getSelectedRows().size() == 1)
+        {
+            const auto& entry = entries[(size_t) selectedRow];
+            if (entry.isFolder)
+            {
+                activeSoundFolder = entry.file.isDirectory() ? entry.file : juce::File();
+                refresh();
+                return;
+            }
+
+            if (autoAuditionToggle.getToggleState() && entry.file.existsAsFile())
+                auditionSoundFile (entry.file);
+        }
     }
 
     void BuiltAssetLibraryComponent::listBoxItemDoubleClicked (int row, const juce::MouseEvent&)
     {
         selectedRow = row;
+        if (selectedRow >= 0
+            && selectedRow < (int) entries.size()
+            && mode == LibraryMode::Sounds
+            && entries[(size_t) selectedRow].isFolder)
+        {
+            const auto& entry = entries[(size_t) selectedRow];
+            activeSoundFolder = entry.file.isDirectory() ? entry.file : juce::File();
+            refresh();
+            return;
+        }
+
         addSelectedToCanvas();
     }
 
@@ -790,22 +868,215 @@ namespace patchcraft
         if (selectedRows.size() <= 0)
             return {};
 
-        const int row = selectedRows[0];
-        if (row < 0 || row >= (int) entries.size())
-            return {};
+        juce::Array<juce::var> paths;
+        juce::String category;
+        int frames = 1;
+        bool vertical = true;
+        juce::String title;
+        juce::String primaryPath;
 
-        const auto& entry = entries[(size_t) row];
-        if (entry.isFolder)
+        for (int i = 0; i < selectedRows.size(); ++i)
+        {
+            const int row = selectedRows[i];
+            if (row < 0 || row >= (int) entries.size())
+                continue;
+
+            const auto& entry = entries[(size_t) row];
+            if (entry.isFolder || ! entry.file.existsAsFile())
+                continue;
+
+            if (category.isEmpty())
+            {
+                category = entry.category;
+                frames = entry.frames;
+                vertical = entry.vertical;
+                title = entry.title.isNotEmpty() ? entry.title : entry.file.getFileNameWithoutExtension();
+                primaryPath = entry.file.getFullPathName();
+            }
+
+            if (entry.category == category)
+                paths.add (entry.file.getFullPathName());
+        }
+
+        if (paths.isEmpty() || primaryPath.isEmpty())
             return {};
 
         auto* object = new juce::DynamicObject();
         object->setProperty ("patchcraftDragType", "libraryAsset");
-        object->setProperty ("category", entry.category);
-        object->setProperty ("path", entry.file.getFullPathName());
-        object->setProperty ("frames", entry.frames);
-        object->setProperty ("vertical", entry.vertical);
-        object->setProperty ("title", entry.title.isNotEmpty() ? entry.title : entry.file.getFileNameWithoutExtension());
+        object->setProperty ("category", category);
+        object->setProperty ("path", primaryPath);
+        object->setProperty ("paths", juce::var (paths));
+        object->setProperty ("frames", frames);
+        object->setProperty ("vertical", vertical);
+        object->setProperty ("title", paths.size() > 1 ? juce::String (paths.size()) + " selected items" : title);
         return juce::var (object);
+    }
+
+    int BuiltAssetLibraryComponent::rowAtLocalPosition (juce::Point<int> localPosition) const
+    {
+        if (! list.getBounds().contains (localPosition))
+            return -1;
+
+        const auto listPoint = localPosition - list.getPosition();
+        return list.getRowContainingPosition (listPoint.x, listPoint.y);
+    }
+
+    juce::File BuiltAssetLibraryComponent::getTargetFolderForImport (juce::Point<int> localPosition) const
+    {
+        auto root = getWritableModeRoot();
+        root.createDirectory();
+
+        const int hoverRow = rowAtLocalPosition (localPosition);
+        if (hoverRow >= 0 && hoverRow < (int) entries.size())
+        {
+            const auto& hovered = entries[(size_t) hoverRow];
+            if (hovered.isFolder && hovered.file.isDirectory() && isUserLibraryFile (hovered.file))
+                return hovered.file;
+        }
+
+        if (selectedRow >= 0 && selectedRow < (int) entries.size())
+        {
+            const auto& selected = entries[(size_t) selectedRow];
+            if (selected.isFolder && selected.file.isDirectory() && isUserLibraryFile (selected.file))
+                return selected.file;
+            if (! selected.isFolder && selected.file.existsAsFile() && isUserLibraryFile (selected.file))
+                return selected.file.getParentDirectory();
+        }
+
+        return root.getChildFile ("Imported");
+    }
+
+    bool BuiltAssetLibraryComponent::entryCanBeDroppedIntoCurrentMode (const juce::File& file) const
+    {
+        if (file.isDirectory())
+            return mode == LibraryMode::Sounds || mode == LibraryMode::Templates;
+
+        if (mode == LibraryMode::Templates)
+            return false;
+        if (mode == LibraryMode::Sounds)
+            return file.existsAsFile() && isSupportedSoundFile (file);
+        if (mode == LibraryMode::Backgrounds)
+            return file.existsAsFile() && isSupportedImageFile (file);
+        return file.existsAsFile() && isSupportedAssetFile (file);
+    }
+
+    bool BuiltAssetLibraryComponent::isInterestedInFileDrag (const juce::StringArray& files)
+    {
+        for (const auto& path : files)
+            if (entryCanBeDroppedIntoCurrentMode (juce::File (path)))
+                return true;
+
+        return false;
+    }
+
+    void BuiltAssetLibraryComponent::fileDragMove (const juce::StringArray& files, int x, int y)
+    {
+        int newDropTarget = -1;
+        if (isInterestedInFileDrag (files))
+        {
+            const int row = rowAtLocalPosition ({ x, y });
+            if (row >= 0 && row < (int) entries.size())
+            {
+                const auto& entry = entries[(size_t) row];
+                if (entry.isFolder && entry.file.isDirectory() && isUserLibraryFile (entry.file))
+                    newDropTarget = row;
+            }
+        }
+
+        if (dropTargetRow != newDropTarget)
+        {
+            dropTargetRow = newDropTarget;
+            list.repaint();
+        }
+    }
+
+    void BuiltAssetLibraryComponent::fileDragExit (const juce::StringArray&)
+    {
+        if (dropTargetRow != -1)
+        {
+            dropTargetRow = -1;
+            list.repaint();
+        }
+    }
+
+    void BuiltAssetLibraryComponent::filesDropped (const juce::StringArray& files, int x, int y)
+    {
+        dropTargetRow = -1;
+        copyExternalFilesIntoFolder (files, getTargetFolderForImport ({ x, y }));
+        refresh();
+    }
+
+    bool BuiltAssetLibraryComponent::isInterestedInDragSource (const SourceDetails& details)
+    {
+        if (auto* object = details.description.getDynamicObject())
+        {
+            if (object->getProperty ("patchcraftDragType").toString() != "libraryAsset")
+                return false;
+
+            if (auto* paths = object->getProperty ("paths").getArray())
+            {
+                for (const auto& path : *paths)
+                    if (entryCanBeDroppedIntoCurrentMode (juce::File (path.toString())))
+                        return true;
+                return false;
+            }
+
+            return entryCanBeDroppedIntoCurrentMode (juce::File (object->getProperty ("path").toString()));
+        }
+
+        return false;
+    }
+
+    void BuiltAssetLibraryComponent::itemDragMove (const SourceDetails& details)
+    {
+        int newDropTarget = -1;
+        if (isInterestedInDragSource (details))
+        {
+            const int row = rowAtLocalPosition (details.localPosition);
+            if (row >= 0 && row < (int) entries.size())
+            {
+                const auto& entry = entries[(size_t) row];
+                if (entry.isFolder && entry.file.isDirectory() && isUserLibraryFile (entry.file))
+                    newDropTarget = row;
+            }
+        }
+
+        if (dropTargetRow != newDropTarget)
+        {
+            dropTargetRow = newDropTarget;
+            list.repaint();
+        }
+    }
+
+    void BuiltAssetLibraryComponent::itemDragExit (const SourceDetails&)
+    {
+        if (dropTargetRow != -1)
+        {
+            dropTargetRow = -1;
+            list.repaint();
+        }
+    }
+
+    void BuiltAssetLibraryComponent::itemDropped (const SourceDetails& details)
+    {
+        dropTargetRow = -1;
+        if (auto* object = details.description.getDynamicObject())
+            if (object->getProperty ("patchcraftDragType").toString() == "libraryAsset")
+            {
+                const auto targetFolder = getTargetFolderForImport (details.localPosition);
+                if (auto* paths = object->getProperty ("paths").getArray())
+                {
+                    for (const auto& path : *paths)
+                        moveOrCopyLibraryEntryToFolder (juce::File (path.toString()), targetFolder);
+                }
+                else
+                {
+                    moveOrCopyLibraryEntryToFolder (juce::File (object->getProperty ("path").toString()),
+                                                    targetFolder);
+                }
+            }
+
+        list.repaint();
     }
 
     void BuiltAssetLibraryComponent::addSelectedToCanvas()
@@ -832,14 +1103,7 @@ namespace patchcraft
     void BuiltAssetLibraryComponent::importAssets()
     {
         const auto modeToImport = mode;
-        auto targetRoot = getWritableModeRoot();
-        auto targetFolder = targetRoot.getChildFile ("Imported");
-        if (selectedRow >= 0 && selectedRow < (int) entries.size())
-        {
-            const auto& selected = entries[(size_t) selectedRow];
-            if (selected.isFolder && selected.file.isDirectory() && isUserLibraryFile (selected.file))
-                targetFolder = selected.file;
-        }
+        auto targetFolder = getTargetFolderForImport();
         targetFolder.createDirectory();
 
         const auto titleText = modeToImport == LibraryMode::Templates
@@ -854,9 +1118,12 @@ namespace patchcraft
                                                    : juce::String ("*.png;*.jpg;*.jpeg;*.gif;*.webp"));
 
         int flags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectMultipleItems;
-        flags |= modeToImport == LibraryMode::Templates
-            ? juce::FileBrowserComponent::canSelectDirectories
-            : juce::FileBrowserComponent::canSelectFiles;
+        if (modeToImport == LibraryMode::Templates)
+            flags |= juce::FileBrowserComponent::canSelectDirectories;
+        else
+            flags |= juce::FileBrowserComponent::canSelectFiles;
+        if (modeToImport == LibraryMode::Sounds)
+            flags |= juce::FileBrowserComponent::canSelectDirectories;
 
         importChooser = std::make_unique<juce::FileChooser> (titleText,
                                                              juce::File::getSpecialLocation (juce::File::userDesktopDirectory),
@@ -893,6 +1160,29 @@ namespace patchcraft
 
                 if (modeToImport == LibraryMode::Sounds)
                 {
+                    if (source.isDirectory())
+                    {
+                        const auto destinationFolder = makeUniqueChildFile (targetFolder, source.getFileName());
+                        destinationFolder.createDirectory();
+
+                        juce::Array<juce::File> children;
+                        source.findChildFiles (children, juce::File::findFiles, true, "*.wav;*.aif;*.aiff;*.flac");
+                        for (const auto& child : children)
+                        {
+                            const auto relative = child.getRelativePathFrom (source).replaceCharacter ('\\', '/');
+                            const auto childDestinationFolder = destinationFolder.getChildFile (relative).getParentDirectory();
+                            childDestinationFolder.createDirectory();
+                            if (child.copyFileTo (makeUniqueChildFile (childDestinationFolder, child.getFileName())))
+                                ++imported;
+                            else
+                                errors.add (child.getFileName() + ": sound copy failed");
+                        }
+
+                        if (children.isEmpty())
+                            errors.add (source.getFileName() + ": no supported audio files found");
+                        continue;
+                    }
+
                     if (! source.existsAsFile() || ! isSupportedSoundFile (source))
                     {
                         errors.add (source.getFileName() + ": unsupported sound file");
@@ -932,6 +1222,139 @@ namespace patchcraft
                                                     "Library Import",
                                                     message);
         });
+    }
+
+    void BuiltAssetLibraryComponent::copyExternalFilesIntoFolder (const juce::StringArray& paths,
+                                                                  const juce::File& targetFolder)
+    {
+        targetFolder.createDirectory();
+        juce::StringArray errors;
+        int imported = 0;
+
+        auto copySound = [&] (const juce::File& source, const juce::File& destinationFolder)
+        {
+            if (! source.existsAsFile() || ! isSupportedSoundFile (source))
+                return;
+
+            destinationFolder.createDirectory();
+            if (source.copyFileTo (makeUniqueChildFile (destinationFolder, source.getFileName())))
+                ++imported;
+            else
+                errors.add (source.getFileName() + ": copy failed");
+        };
+
+        for (const auto& path : paths)
+        {
+            const juce::File source (path);
+
+            if (mode == LibraryMode::Templates)
+            {
+                if (source.isDirectory() && source.getChildFile ("manifest.json").existsAsFile())
+                {
+                    const auto destination = makeUniqueChildFile (targetFolder,
+                        source.getFileName().endsWithIgnoreCase (".patchcraft")
+                            ? source.getFileName()
+                            : source.getFileName() + ".patchcraft");
+                    if (source.copyDirectoryTo (destination))
+                        ++imported;
+                    else
+                        errors.add (source.getFileName() + ": template copy failed");
+                }
+                continue;
+            }
+
+            if (mode == LibraryMode::Sounds)
+            {
+                if (source.isDirectory())
+                {
+                    const auto destinationFolder = makeUniqueChildFile (targetFolder, source.getFileName());
+                    destinationFolder.createDirectory();
+
+                    juce::Array<juce::File> children;
+                    source.findChildFiles (children, juce::File::findFiles, true, "*.wav;*.aif;*.aiff;*.flac");
+                    for (const auto& child : children)
+                    {
+                        const auto relative = child.getRelativePathFrom (source).replaceCharacter ('\\', '/');
+                        copySound (child, destinationFolder.getChildFile (relative).getParentDirectory());
+                    }
+                }
+                else
+                {
+                    copySound (source, targetFolder);
+                }
+                continue;
+            }
+
+            if (! source.existsAsFile() || ! isSupportedImageFile (source))
+            {
+                errors.add (source.getFileName() + ": unsupported file");
+                continue;
+            }
+
+            const auto errorCountBefore = errors.size();
+            copyAssetWithSidecars (source, targetFolder, errors);
+            if (errors.size() == errorCountBefore)
+                ++imported;
+        }
+
+        refresh();
+        selectEntryForFile (targetFolder);
+
+        juce::String message = juce::String (imported) + " item" + (imported == 1 ? "" : "s")
+            + " imported into:\n" + targetFolder.getFullPathName();
+        if (! errors.isEmpty())
+            message += "\n\nSkipped:\n" + errors.joinIntoString ("\n");
+
+        juce::AlertWindow::showMessageBoxAsync (errors.isEmpty() ? juce::MessageBoxIconType::InfoIcon
+                                                                  : juce::MessageBoxIconType::WarningIcon,
+                                                "Library Drop Import",
+                                                message);
+    }
+
+    void BuiltAssetLibraryComponent::moveOrCopyLibraryEntryToFolder (const juce::File& source,
+                                                                     const juce::File& targetFolder)
+    {
+        if (! source.existsAsFile() || ! entryCanBeDroppedIntoCurrentMode (source))
+            return;
+
+        targetFolder.createDirectory();
+        if (source.getParentDirectory() == targetFolder)
+            return;
+
+        const bool canMove = isUserLibraryFile (source);
+        const auto destination = makeUniqueChildFile (targetFolder, source.getFileName());
+        const bool ok = canMove ? source.moveFileTo (destination)
+                                : source.copyFileTo (destination);
+
+        if (! ok)
+        {
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                                    "Library Move Failed",
+                                                    "Could not move or copy:\n" + source.getFullPathName()
+                                                    + "\n\nInto:\n" + targetFolder.getFullPathName());
+            return;
+        }
+
+        if (mode == LibraryMode::Assets)
+        {
+            for (const auto& sidecarExtension : { juce::String ("patchcraft-knob.json"),
+                                                 juce::String ("patchcraft-slider.json"),
+                                                 juce::String ("patchcraft-meter.json") })
+            {
+                auto sidecar = source.withFileExtension (sidecarExtension);
+                if (! sidecar.existsAsFile())
+                    continue;
+
+                auto destinationSidecar = destination.withFileExtension (sidecarExtension);
+                if (canMove && isUserLibraryFile (sidecar))
+                    sidecar.moveFileTo (destinationSidecar);
+                else
+                    sidecar.copyFileTo (destinationSidecar);
+            }
+        }
+
+        refresh();
+        selectEntryForFile (destination);
     }
 
     void BuiltAssetLibraryComponent::deleteSelectedEntry()
@@ -1033,6 +1456,12 @@ namespace patchcraft
         const auto entry = entries[(size_t) selectedRow];
         if (entry.isFolder)
             return;
+
+        if (entry.category == "sounds")
+        {
+            auditionSoundFile (entry.file);
+            return;
+        }
 
         juce::File imageFile = entry.file;
         if (entry.category == "templates")
@@ -1178,5 +1607,46 @@ namespace patchcraft
         options.componentToCentreAround = this;
         options.content.setOwned (content);
         options.launchAsync();
+    }
+
+    void BuiltAssetLibraryComponent::auditionSoundFile (const juce::File& file)
+    {
+        if (! file.existsAsFile() || ! isSupportedSoundFile (file))
+            return;
+
+        stopSoundPreview();
+
+        juce::String error;
+        if (! owner.getAudio().ensureOpen (error))
+        {
+            title.setTooltip (error);
+            return;
+        }
+
+        std::unique_ptr<juce::AudioFormatReader> reader (previewFormatManager.createReaderFor (file));
+        if (reader == nullptr)
+            return;
+
+        const auto sourceSampleRate = reader->sampleRate;
+        previewReaderSource = std::make_unique<juce::AudioFormatReaderSource> (reader.release(), true);
+        previewTransport.setSource (previewReaderSource.get(), 0, nullptr, sourceSampleRate);
+        previewPlayer.setSource (&previewTransport);
+        owner.getAudio().getDeviceManager().addAudioCallback (&previewPlayer);
+        previewCallbackActive = true;
+        previewTransport.setPosition (0.0);
+        previewTransport.start();
+    }
+
+    void BuiltAssetLibraryComponent::stopSoundPreview()
+    {
+        previewTransport.stop();
+        previewTransport.setSource (nullptr);
+        previewPlayer.setSource (nullptr);
+        previewReaderSource.reset();
+        if (previewCallbackActive)
+        {
+            owner.getAudio().getDeviceManager().removeAudioCallback (&previewPlayer);
+            previewCallbackActive = false;
+        }
     }
 }

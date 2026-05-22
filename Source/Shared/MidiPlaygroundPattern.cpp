@@ -42,8 +42,9 @@ namespace patchcraft
             "mpPatternMorph", "mpKeySwitchEnabled", "mpKeySwitchBase"
         }};
 
-        static constexpr std::array<const char*, 5> kStepValuePrefixes {{
-            "arpNote", "mpVelocity", "mpGate", "mpStepProb", "mpSampleSlice"
+        static constexpr std::array<const char*, 10> kStepValuePrefixes {{
+            "arpNote", "mpVelocity", "mpGate", "mpStepProb", "mpSampleSlice",
+            "mpStepDiv", "mpStepTranspose", "mpStepChordMode", "mpStepChordSize", "mpStepTie"
         }};
 
         static int positiveMod (int value, int modulus)
@@ -485,7 +486,8 @@ namespace patchcraft
             block.targetId = "filterCutoff";
         block.enabled = true;
 
-        block.values["arpSteps"] = 16.0f;
+        static constexpr int kAuthoredProgressionSteps = 16;
+        block.values["arpSteps"] = (float) kAuthoredProgressionSteps;
         block.values["arpPattern"] = 0.0f;
         block.values["arpGate"] = preset.gate;
         block.values["arpOctaves"] = 1.0f;
@@ -507,7 +509,7 @@ namespace patchcraft
         block.values["mpEuclideanPulses"] = 0.0f;
         block.values["mpEuclideanRotate"] = 0.0f;
 
-        for (int step = 0; step < kStepCount; ++step)
+        for (int step = 0; step < kAuthoredProgressionSteps; ++step)
         {
             const int chord = juce::jlimit (0, 3, step / 4);
             const int localStep = step % 4;
@@ -601,6 +603,11 @@ namespace patchcraft
             block.values["mpGate" + suffix] = juce::jlimit (0.05f, 1.0f, gate);
             block.values["mpStepProb" + suffix] = active ? juce::jlimit (0.0f, 1.0f, probability) : 0.0f;
             block.values["mpSampleSlice" + suffix] = -1.0f;
+            block.values["mpStepDiv" + suffix] = 1.0f;
+            block.values["mpStepTranspose" + suffix] = 0.0f;
+            block.values["mpStepChordMode" + suffix] = -1.0f;
+            block.values["mpStepChordSize" + suffix] = -1.0f;
+            block.values["mpStepTie" + suffix] = 0.0f;
         }
 
         setActiveBank (block, bank);
@@ -628,7 +635,6 @@ namespace patchcraft
         const int scaleType = juce::jlimit (0, 9, juce::roundToInt (valueFor (block, "mpScaleType", 1.0f)));
         const int chordMode = juce::jlimit (0, 32, juce::roundToInt (valueFor (block, "mpChordMode", 0.0f)));
         const int chordSize = juce::jlimit (1, 8, juce::roundToInt (valueFor (block, "mpChordSize", chordMode > 0 ? 3.0f : 1.0f)));
-        const bool exactSemitoneChord = chordMode >= 7;
         const int midiRoot = juce::jlimit (0, 127, rootNote + scaleRoot);
 
         juce::MidiMessageSequence sequence;
@@ -642,12 +648,25 @@ namespace patchcraft
             if (valueFor (block, "mpStepProb" + juce::String (step), 1.0f) <= 0.0f)
                 continue;
 
+            const auto suffix = juce::String (step);
+            const int stepDivisions = juce::jlimit (1, 8, juce::roundToInt (
+                valueFor (block, "mpStepDiv" + suffix, valueFor (block, "mpRatchet", 1.0f))));
+            const int localChordMode = valueFor (block, "mpStepChordMode" + suffix, -1.0f) >= 0.0f
+                ? juce::jlimit (0, 32, juce::roundToInt (valueFor (block, "mpStepChordMode" + suffix, 0.0f)))
+                : chordMode;
+            const int localChordSize = valueFor (block, "mpStepChordSize" + suffix, -1.0f) >= 1.0f
+                ? juce::jlimit (1, 8, juce::roundToInt (valueFor (block, "mpStepChordSize" + suffix, 1.0f)))
+                : chordSize;
+            const bool localExactSemitoneChord = localChordMode >= 7;
+            const bool tieStep = valueFor (block, "mpStepTie" + suffix, 0.0f) >= 0.5f;
             const auto startTick = (double) (step * stepTicks);
             const auto durationTicks = (double) juce::jmax (1, juce::roundToInt ((float) stepTicks
-                * juce::jlimit (0.05f, 1.0f, valueFor (block, "mpGate" + juce::String (step), valueFor (block, "arpGate", 0.55f)))));
-            const int rawBaseNote = midiRoot + juce::roundToInt (valueFor (block, "arpNote" + juce::String (step), 0.0f));
-            const int baseNote = exactSemitoneChord ? juce::jlimit (0, 127, rawBaseNote)
-                                                    : quantizeToScale (rawBaseNote, scaleRoot, scaleType);
+                * (tieStep ? 1.0f : juce::jlimit (0.05f, 1.0f, valueFor (block, "mpGate" + suffix, valueFor (block, "arpGate", 0.55f))))));
+            const int rawBaseNote = midiRoot
+                + juce::roundToInt (valueFor (block, "arpNote" + suffix, 0.0f))
+                + juce::roundToInt (valueFor (block, "mpStepTranspose" + suffix, 0.0f));
+            const int baseNote = localExactSemitoneChord ? juce::jlimit (0, 127, rawBaseNote)
+                                                         : quantizeToScale (rawBaseNote, scaleRoot, scaleType);
             const float velocity = juce::jlimit (0.01f, 1.0f, valueFor (block, "mpVelocity" + juce::String (step), 1.0f));
             const auto strumTicks = juce::jlimit (0.0, durationTicks * 0.80,
                                                   (double) valueFor (block, "mpStrum", 0.0f) * (double) stepTicks * 0.75);
@@ -656,31 +675,38 @@ namespace patchcraft
                                 24.0 + (double) valueFor (block, "mpFlam", 0.0f) * (double) stepTicks * 0.30)
                 : 0.0;
 
-            std::set<int> emitted;
-            int rootChordNote = -1;
-            for (int chordIndex = 0; chordIndex < chordSize; ++chordIndex)
+            for (int div = 0; div < stepDivisions; ++div)
             {
-                const int chordNote = baseNote + chordIntervalForExport (chordIndex, chordMode, scaleType);
-                const int note = exactSemitoneChord ? juce::jlimit (0, 127, chordNote)
-                                                    : quantizeToScale (chordNote, scaleRoot, scaleType);
-                if (note < 0 || note > 127 || emitted.count (note) != 0)
-                    continue;
+                const auto subStart = startTick + ((double) div * (double) stepTicks / (double) stepDivisions);
+                const auto subDuration = juce::jmax (24.0, durationTicks / (double) stepDivisions);
+                const auto ratchetVelocity = velocity * (div == 0 ? 1.0f : juce::jmax (0.45f, 1.0f - 0.10f * (float) div));
 
-                emitted.insert (note);
-                if (rootChordNote < 0)
-                    rootChordNote = note;
-                const auto noteStart = startTick + (chordSize <= 1 ? 0.0 : strumTicks * (double) chordIndex / (double) (chordSize - 1));
-                sequence.addEvent (juce::MidiMessage::noteOn (1, note, velocity), noteStart);
-                sequence.addEvent (juce::MidiMessage::noteOff (1, note), noteStart + durationTicks);
-                ++eventCount;
-            }
+                std::set<int> emitted;
+                int rootChordNote = -1;
+                for (int chordIndex = 0; chordIndex < localChordSize; ++chordIndex)
+                {
+                    const int chordNote = baseNote + chordIntervalForExport (chordIndex, localChordMode, scaleType);
+                    const int note = localExactSemitoneChord ? juce::jlimit (0, 127, chordNote)
+                                                             : quantizeToScale (chordNote, scaleRoot, scaleType);
+                    if (note < 0 || note > 127 || emitted.count (note) != 0)
+                        continue;
 
-            if (rootChordNote >= 0 && flamTicks > 0.0)
-            {
-                const auto flamStart = startTick + flamTicks;
-                sequence.addEvent (juce::MidiMessage::noteOn (1, rootChordNote, velocity * 0.82f), flamStart);
-                sequence.addEvent (juce::MidiMessage::noteOff (1, rootChordNote), flamStart + durationTicks * 0.55);
-                ++eventCount;
+                    emitted.insert (note);
+                    if (rootChordNote < 0)
+                        rootChordNote = note;
+                    const auto noteStart = subStart + (localChordSize <= 1 ? 0.0 : strumTicks * (double) chordIndex / (double) (localChordSize - 1));
+                    sequence.addEvent (juce::MidiMessage::noteOn (1, note, ratchetVelocity), noteStart);
+                    sequence.addEvent (juce::MidiMessage::noteOff (1, note), noteStart + subDuration);
+                    ++eventCount;
+                }
+
+                if (div == 0 && rootChordNote >= 0 && flamTicks > 0.0)
+                {
+                    const auto flamStart = startTick + flamTicks;
+                    sequence.addEvent (juce::MidiMessage::noteOn (1, rootChordNote, velocity * 0.82f), flamStart);
+                    sequence.addEvent (juce::MidiMessage::noteOff (1, rootChordNote), flamStart + durationTicks * 0.55);
+                    ++eventCount;
+                }
             }
         }
 

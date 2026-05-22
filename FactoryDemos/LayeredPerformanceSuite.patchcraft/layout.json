@@ -20,36 +20,6 @@
       "strokeWidth": 1.4
     },
     {
-      "id": "title",
-      "type": "label",
-      "x": 58,
-      "y": 50,
-      "width": 430,
-      "height": 28,
-      "label": "LAYER PATCH PERFORMANCE",
-      "parameterId": "",
-      "accentColour": "ffffa62a",
-      "backgroundColour": "00000000",
-      "borderColour": "00000000",
-      "textColour": "fff2f7ff",
-      "labelSize": 20
-    },
-    {
-      "id": "subtitle",
-      "type": "label",
-      "x": 58,
-      "y": 82,
-      "width": 560,
-      "height": 26,
-      "label": "Five synced musical layers: drums, bassline, piano chords, guitar pulse, and atmosphere.",
-      "parameterId": "",
-      "accentColour": "ff39f5c8",
-      "backgroundColour": "00000000",
-      "borderColour": "00000000",
-      "textColour": "fff2f7ff",
-      "labelSize": 13
-    },
-    {
       "id": "focus_focus_drums_btn",
       "type": "button",
       "x": 620,
@@ -62,7 +32,7 @@
       "backgroundColour": "dd071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 11,
+      "labelSize": 11.0,
       "action": "showContainer:focus_drums",
       "cornerRadius": 10
     },
@@ -79,7 +49,7 @@
       "backgroundColour": "dd071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 11,
+      "labelSize": 11.0,
       "action": "showContainer:focus_bass",
       "cornerRadius": 10
     },
@@ -96,7 +66,7 @@
       "backgroundColour": "dd071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 11,
+      "labelSize": 11.0,
       "action": "showContainer:focus_piano",
       "cornerRadius": 10
     },
@@ -113,7 +83,7 @@
       "backgroundColour": "dd071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 11,
+      "labelSize": 11.0,
       "action": "showContainer:focus_guitar",
       "cornerRadius": 10
     },
@@ -130,7 +100,7 @@
       "backgroundColour": "dd071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 11,
+      "labelSize": 11.0,
       "action": "showContainer:focus_texture",
       "cornerRadius": 10
     },
@@ -147,8 +117,13 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
-      "cornerRadius": 14
+      "labelSize": 10.0,
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "top_motion",
@@ -163,8 +138,13 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
-      "cornerRadius": 14
+      "labelSize": 10.0,
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "top_energy",
@@ -179,8 +159,13 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
-      "cornerRadius": 14
+      "labelSize": 10.0,
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "top_sync",
@@ -195,7 +180,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "cornerRadius": 8
     },
     {
@@ -261,9 +246,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_drums",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "pan_focus_drums",
@@ -278,9 +268,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_drums",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "tone_focus_drums",
@@ -295,9 +290,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_drums",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "space_focus_drums",
@@ -312,9 +312,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_drums",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "mute_focus_drums",
@@ -329,7 +334,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_drums",
       "cornerRadius": 8
     },
@@ -346,7 +351,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_drums",
       "cornerRadius": 8
     },
@@ -413,9 +418,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_bass",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "pan_focus_bass",
@@ -430,9 +440,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_bass",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "tone_focus_bass",
@@ -447,9 +462,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_bass",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "space_focus_bass",
@@ -464,9 +484,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_bass",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "mute_focus_bass",
@@ -481,7 +506,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_bass",
       "cornerRadius": 8
     },
@@ -498,7 +523,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_bass",
       "cornerRadius": 8
     },
@@ -565,9 +590,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_piano",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "pan_focus_piano",
@@ -582,9 +612,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_piano",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "tone_focus_piano",
@@ -599,9 +634,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_piano",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "space_focus_piano",
@@ -616,9 +656,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_piano",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "mute_focus_piano",
@@ -633,7 +678,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_piano",
       "cornerRadius": 8
     },
@@ -650,7 +695,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_piano",
       "cornerRadius": 8
     },
@@ -717,9 +762,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_guitar",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "pan_focus_guitar",
@@ -734,9 +784,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_guitar",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "tone_focus_guitar",
@@ -751,9 +806,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_guitar",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "space_focus_guitar",
@@ -768,9 +828,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_guitar",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "mute_focus_guitar",
@@ -785,7 +850,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_guitar",
       "cornerRadius": 8
     },
@@ -802,7 +867,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_guitar",
       "cornerRadius": 8
     },
@@ -869,9 +934,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_texture",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "pan_focus_texture",
@@ -886,9 +956,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_texture",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "tone_focus_texture",
@@ -903,9 +978,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_texture",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "space_focus_texture",
@@ -920,9 +1000,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_texture",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "mute_focus_texture",
@@ -937,7 +1022,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_texture",
       "cornerRadius": 8
     },
@@ -954,7 +1039,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "focus_texture",
       "cornerRadius": 8
     },
@@ -964,14 +1049,14 @@
       "x": 170,
       "y": 286,
       "width": 940,
-      "height": 42,
+      "height": 38,
       "label": "",
       "parameterId": "",
       "accentColour": "ff39f5c8",
       "backgroundColour": "dd061018",
       "borderColour": "ff39f5c8",
       "textColour": "fff2f7ff",
-      "labelSize": 11,
+      "labelSize": 11.0,
       "tabs": [
         "Perform",
         "Mixer",
@@ -1077,9 +1162,11 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
-      "cornerRadius": 10
+      "cornerRadius": 10,
+      "labelPosition": "bottom",
+      "labelSpacing": 2.0
     },
     {
       "id": "perform_pan_0",
@@ -1094,9 +1181,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "perform_mute_0",
@@ -1111,7 +1203,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
       "cornerRadius": 8
     },
@@ -1128,7 +1220,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
       "cornerRadius": 8
     },
@@ -1179,9 +1271,11 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
-      "cornerRadius": 10
+      "cornerRadius": 10,
+      "labelPosition": "bottom",
+      "labelSpacing": 2.0
     },
     {
       "id": "perform_pan_1",
@@ -1196,9 +1290,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "perform_mute_1",
@@ -1213,7 +1312,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
       "cornerRadius": 8
     },
@@ -1230,7 +1329,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
       "cornerRadius": 8
     },
@@ -1281,9 +1380,11 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
-      "cornerRadius": 10
+      "cornerRadius": 10,
+      "labelPosition": "bottom",
+      "labelSpacing": 2.0
     },
     {
       "id": "perform_pan_2",
@@ -1298,9 +1399,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "perform_mute_2",
@@ -1315,7 +1421,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
       "cornerRadius": 8
     },
@@ -1332,7 +1438,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
       "cornerRadius": 8
     },
@@ -1383,9 +1489,11 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
-      "cornerRadius": 10
+      "cornerRadius": 10,
+      "labelPosition": "bottom",
+      "labelSpacing": 2.0
     },
     {
       "id": "perform_pan_3",
@@ -1400,9 +1508,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "perform_mute_3",
@@ -1417,7 +1530,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
       "cornerRadius": 8
     },
@@ -1434,7 +1547,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
       "cornerRadius": 8
     },
@@ -1485,9 +1598,11 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
-      "cornerRadius": 10
+      "cornerRadius": 10,
+      "labelPosition": "bottom",
+      "labelSpacing": 2.0
     },
     {
       "id": "perform_pan_4",
@@ -1502,9 +1617,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "perform_mute_4",
@@ -1519,7 +1639,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
       "cornerRadius": 8
     },
@@ -1536,7 +1656,7 @@
       "backgroundColour": "cc071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
       "cornerRadius": 8
     },
@@ -1553,9 +1673,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "perform_global_space",
@@ -1570,9 +1695,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "perform",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "keyboard",
@@ -1762,9 +1892,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_pitch_0",
@@ -1779,9 +1914,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_space_0",
@@ -1796,9 +1936,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_delay_0",
@@ -1813,9 +1958,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_card_1",
@@ -1864,9 +2014,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_pitch_1",
@@ -1881,9 +2036,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_space_1",
@@ -1898,9 +2058,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_delay_1",
@@ -1915,9 +2080,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_card_2",
@@ -1966,9 +2136,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_pitch_2",
@@ -1983,9 +2158,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_space_2",
@@ -2000,9 +2180,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_delay_2",
@@ -2017,9 +2202,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_card_3",
@@ -2068,9 +2258,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_pitch_3",
@@ -2085,9 +2280,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_space_3",
@@ -2102,9 +2302,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_delay_3",
@@ -2119,9 +2324,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_card_4",
@@ -2170,9 +2380,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_pitch_4",
@@ -2187,9 +2402,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_space_4",
@@ -2204,9 +2424,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "loop_delay_4",
@@ -2221,9 +2446,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "loops",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "fx_panel",
@@ -2263,137 +2493,177 @@
       "id": "fx_filterCutoff",
       "type": "knob",
       "x": 100,
-      "y": 426,
+      "y": 428,
       "width": 76,
-      "height": 94,
+      "height": 90,
       "label": "TONE",
       "parameterId": "filterCutoff",
       "accentColour": "ff39f5c8",
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "fx",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "fx_filterResonance",
       "type": "knob",
       "x": 232,
-      "y": 426,
+      "y": 428,
       "width": 76,
-      "height": 94,
+      "height": 90,
       "label": "RESO",
       "parameterId": "filterResonance",
       "accentColour": "ff39f5c8",
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "fx",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "fx_delayMix",
       "type": "knob",
       "x": 364,
-      "y": 426,
+      "y": 428,
       "width": 76,
-      "height": 94,
+      "height": 90,
       "label": "DELAY",
       "parameterId": "delayMix",
       "accentColour": "ff39f5c8",
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "fx",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "fx_delayFeedback",
       "type": "knob",
       "x": 496,
-      "y": 426,
+      "y": 428,
       "width": 76,
-      "height": 94,
+      "height": 90,
       "label": "FEED",
       "parameterId": "delayFeedback",
       "accentColour": "ff39f5c8",
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "fx",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "fx_reverbMix",
       "type": "knob",
       "x": 628,
-      "y": 426,
+      "y": 428,
       "width": 76,
-      "height": 94,
+      "height": 90,
       "label": "SPACE",
       "parameterId": "reverbMix",
       "accentColour": "ff39f5c8",
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "fx",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "fx_sampleGlitch",
       "type": "knob",
       "x": 760,
-      "y": 426,
+      "y": 428,
       "width": 76,
-      "height": 94,
+      "height": 90,
       "label": "GLITCH",
       "parameterId": "sampleGlitch",
       "accentColour": "ff39f5c8",
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "fx",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "fx_sampleSliceCount",
       "type": "knob",
       "x": 892,
-      "y": 426,
+      "y": 428,
       "width": 76,
-      "height": 94,
+      "height": 90,
       "label": "GRID",
       "parameterId": "sampleSliceCount",
       "accentColour": "ff39f5c8",
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "fx",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "fx_granularDensity",
       "type": "knob",
       "x": 1024,
-      "y": 426,
+      "y": 428,
       "width": 76,
-      "height": 94,
+      "height": 90,
       "label": "GRAIN",
       "parameterId": "granularDensity",
       "accentColour": "ff39f5c8",
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10,
+      "labelSize": 10.0,
       "groupId": "fx",
-      "cornerRadius": 14
+      "cornerRadius": 14,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "fx_spectrum",
@@ -2641,9 +2911,9 @@
       "id": "routing_master_volume",
       "type": "knob",
       "x": 1060,
-      "y": 468,
+      "y": 473,
       "width": 82,
-      "height": 100,
+      "height": 90,
       "label": "MASTER",
       "parameterId": "volume",
       "groupId": "routing",
@@ -2651,15 +2921,20 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10
+      "labelSize": 10.0,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "routing_scene_morph",
       "type": "knob",
       "x": 1144,
-      "y": 468,
+      "y": 473,
       "width": 82,
-      "height": 100,
+      "height": 90,
       "label": "SCENE",
       "parameterId": "macro_scene",
       "groupId": "routing",
@@ -2667,15 +2942,20 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10
+      "labelSize": 10.0,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     },
     {
       "id": "mixer_master_volume_knob",
       "type": "knob",
       "x": 1126,
-      "y": 544,
+      "y": 549,
       "width": 82,
-      "height": 100,
+      "height": 90,
       "label": "MASTER",
       "parameterId": "volume",
       "groupId": "mixer",
@@ -2683,7 +2963,12 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10
+      "labelSize": 10.0,
+      "style": "Vintage Gold",
+      "labelPosition": "bottom",
+      "labelSpacing": 2,
+      "labelOffsetX": 0,
+      "labelOffsetY": 0
     }
   ]
 }

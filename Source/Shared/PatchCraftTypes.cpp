@@ -403,6 +403,7 @@ namespace patchcraft
             case ElementType::DrumPad:      return "drumPad";
             case ElementType::PadGrid:      return "padGrid";
             case ElementType::DrumGrid:     return "drumGrid";
+            case ElementType::ArpLane:      return "arpLane";
             case ElementType::Mixer:        return "mixer";
             case ElementType::MacroControl: return "macroControl";
             case ElementType::ModMatrix:    return "modMatrix";
@@ -436,6 +437,7 @@ namespace patchcraft
         if (s == "drumPad")      return ElementType::DrumPad;
         if (s == "padGrid")      return ElementType::PadGrid;
         if (s == "drumGrid")     return ElementType::DrumGrid;
+        if (s == "arpLane")      return ElementType::ArpLane;
         if (s == "mixer")        return ElementType::Mixer;
         if (s == "macroControl") return ElementType::MacroControl;
         if (s == "modMatrix")    return ElementType::ModMatrix;
@@ -470,6 +472,7 @@ namespace patchcraft
             case ElementType::DrumPad:      return "Drum Pad";
             case ElementType::PadGrid:      return "Pad Grid";
             case ElementType::DrumGrid:     return "Drum Grid";
+            case ElementType::ArpLane:      return "Arp Lane";
             case ElementType::Mixer:        return "Mixer";
             case ElementType::MacroControl: return "Macro Control";
             case ElementType::ModMatrix:    return "Mod Matrix";
@@ -514,6 +517,7 @@ namespace patchcraft
             || type == ElementType::DrumPad
             || type == ElementType::PadGrid
             || type == ElementType::DrumGrid
+            || type == ElementType::ArpLane
             || type == ElementType::Mixer
             || type == ElementType::MacroControl
             || type == ElementType::ModMatrix
@@ -597,6 +601,12 @@ namespace patchcraft
             obj->setProperty ("drumSteps",   drumSteps);
             obj->setProperty ("drumPattern", drumPattern);
         }
+        if (type == ElementType::ArpLane)
+        {
+            obj->setProperty ("arpLaneIndex", arpLaneIndex);
+            obj->setProperty ("arpLaneSteps", arpLaneSteps);
+            obj->setProperty ("arpLaneMode",  arpLaneMode);
+        }
         if (type == ElementType::Mixer)
         {
             obj->setProperty ("mixerChannels", mixerChannels);
@@ -674,6 +684,12 @@ namespace patchcraft
                 e.drumSteps = juce::jlimit (1, 64, (int) o->getProperty ("drumSteps"));
             if (o->hasProperty ("drumPattern"))
                 e.drumPattern = juce::jlimit (0, 7, (int) o->getProperty ("drumPattern"));
+            if (o->hasProperty ("arpLaneIndex"))
+                e.arpLaneIndex = juce::jlimit (0, 15, (int) o->getProperty ("arpLaneIndex"));
+            if (o->hasProperty ("arpLaneSteps"))
+                e.arpLaneSteps = juce::jlimit (1, 128, (int) o->getProperty ("arpLaneSteps"));
+            if (o->hasProperty ("arpLaneMode"))
+                e.arpLaneMode = o->getProperty ("arpLaneMode").toString();
             if (o->hasProperty ("mixerChannels"))
                 e.mixerChannels = juce::jlimit (1, 16, (int) o->getProperty ("mixerChannels"));
             if (o->hasProperty ("mixerMode"))
@@ -691,6 +707,7 @@ namespace patchcraft
             if (e.labelPosition.isEmpty()) e.labelPosition = "bottom";
             if (e.audioReactiveMode.isEmpty()) e.audioReactiveMode = "level";
             if (e.animationMode.isEmpty()) e.animationMode = "none";
+            if (e.arpLaneMode.isEmpty()) e.arpLaneMode = "bank";
             if (e.mixerMode.isEmpty()) e.mixerMode = "auto";
         }
         return e;

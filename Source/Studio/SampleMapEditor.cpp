@@ -5,6 +5,7 @@
 #include "PatchCraftProject.h"
 #include "SampleSynthEngine.h"
 #include "SampleWaveformViewer.h"
+#include "BuiltAssetLibraryComponent.h"
 
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <algorithm>
@@ -171,6 +172,9 @@ namespace patchcraft
         addAndMakeVisible (gridViewBtn);
         addAndMakeVisible (listViewBtn);
         addAndMakeVisible (importBtn);
+        addAndMakeVisible (libraryDrawerBtn);
+        addAndMakeVisible (recordVoiceBtn);
+        addAndMakeVisible (stopVoiceRecordBtn);
         addAndMakeVisible (removeBtn);
         addAndMakeVisible (selectAllBtn);
         addAndMakeVisible (clearAllBtn);
@@ -292,6 +296,9 @@ namespace patchcraft
         gridViewBtn.setTooltip ("Show key/velocity zones visually.");
         listViewBtn.setTooltip ("Show imported zones as an editable list.");
         importBtn.setTooltip ("Import WAV, AIFF, FLAC, or folders of samples.");
+        libraryDrawerBtn.setTooltip ("Open the right-side Sound Library drawer so you can drag samples directly into this mapper.");
+        recordVoiceBtn.setTooltip ("Record from the selected audio input directly into the Sound Library and import the take as a mapped sample.");
+        stopVoiceRecordBtn.setTooltip ("Stop the active voice recording, write it as a WAV file, and add it to the Sample Mapper.");
         removeBtn.setTooltip ("Delete the selected sample zones from the map.");
         selectAllBtn.getProperties().set ("smallButton", true);
         selectAllBtn.setTooltip ("Select every sample zone. Use before Auto Trim when you want to trim all imported samples explicitly.");
@@ -355,6 +362,9 @@ namespace patchcraft
             repaint();
         };
         importBtn.onClick = [this] { addSample(); };
+        libraryDrawerBtn.onClick = [this] { this->owner.toggleSampleLibraryDrawerForSamples(); };
+        recordVoiceBtn.onClick = [this] { startVoiceRecording(); };
+        stopVoiceRecordBtn.onClick = [this] { stopVoiceRecordingAndImport(); };
         removeBtn.onClick = [this] { removeSample(); };
         selectAllBtn.onClick = [this] { selectAllZones(); };
         clearAllBtn.onClick = [this] { clearAllSamples(); };
@@ -573,9 +583,15 @@ namespace patchcraft
 
     SampleMapEditor::~SampleMapEditor()
     {
+        voiceRecordingActive = false;
         setPlayModeEnabled (false);
         setMidiZoneSelectEnabled (false);
         stopAudition();
+        if (auditionCallbackActive)
+        {
+            owner.getAudio().getDeviceManager().removeAudioCallback (this);
+            auditionCallbackActive = false;
+        }
     }
 
     juce::Colour SampleMapEditor::getZoneColour (int index)
@@ -860,6 +876,9 @@ namespace patchcraft
                                  static_cast<juce::Component*> (&easyHelpLabel),
                                  static_cast<juce::Component*> (&easySummaryLabel),
                                  static_cast<juce::Component*> (&easyImportBtn),
+                                 static_cast<juce::Component*> (&libraryDrawerBtn),
+                                 static_cast<juce::Component*> (&recordVoiceBtn),
+                                 static_cast<juce::Component*> (&stopVoiceRecordBtn),
                                  static_cast<juce::Component*> (&easyMapTypeBox),
                                  static_cast<juce::Component*> (&easyKeyboardMapBtn),
                                  static_cast<juce::Component*> (&easyPlayModeBtn),
@@ -883,6 +902,9 @@ namespace patchcraft
                                  static_cast<juce::Component*> (&gridViewBtn),
                                  static_cast<juce::Component*> (&listViewBtn),
                                  static_cast<juce::Component*> (&importBtn),
+                                 static_cast<juce::Component*> (&libraryDrawerBtn),
+                                 static_cast<juce::Component*> (&recordVoiceBtn),
+                                 static_cast<juce::Component*> (&stopVoiceRecordBtn),
                                  static_cast<juce::Component*> (&removeBtn),
                                  static_cast<juce::Component*> (&selectAllBtn),
                                  static_cast<juce::Component*> (&clearAllBtn),
@@ -937,6 +959,9 @@ namespace patchcraft
         smartTrimBtn.setVisible (true);
         spanOnDropToggle.setVisible (true);
         selectAllBtn.setVisible (true);
+        libraryDrawerBtn.setVisible (true);
+        recordVoiceBtn.setVisible (true);
+        stopVoiceRecordBtn.setVisible (voiceRecordingActive);
         playModeBtn.setToggleState (playModeEnabled, juce::dontSendNotification);
         easyPlayModeBtn.setToggleState (playModeEnabled, juce::dontSendNotification);
         samplesHeader.setVisible (! easyMode && listViewMode);
@@ -1509,6 +1534,10 @@ namespace patchcraft
             };
 
             placeEasyButton (actionRow, easyImportBtn, 142);
+            placeEasyButton (actionRow, libraryDrawerBtn, 92);
+            placeEasyButton (actionRow, recordVoiceBtn, 118);
+            if (voiceRecordingActive)
+                placeEasyButton (actionRow, stopVoiceRecordBtn, 84);
             spanOnDropToggle.setBounds (actionRow.removeFromLeft (118).reduced (2, 5));
             easyMapTypeBox.setBounds (actionRow.removeFromLeft (220).reduced (2, 4));
             actionRow.removeFromLeft (4);
@@ -1556,6 +1585,12 @@ namespace patchcraft
             listViewBtn.setBounds (toolbar.removeFromLeft (68));
             toolbar.removeFromLeft (6);
             importBtn.setBounds (toolbar.removeFromLeft (60));
+            toolbar.removeFromLeft (4);
+            libraryDrawerBtn.setBounds (toolbar.removeFromLeft (70));
+            toolbar.removeFromLeft (4);
+            recordVoiceBtn.setBounds (toolbar.removeFromLeft (98));
+            toolbar.removeFromLeft (4);
+            stopVoiceRecordBtn.setBounds (toolbar.removeFromLeft (74));
             toolbar.removeFromLeft (4);
             spanOnDropToggle.setBounds (toolbar.removeFromLeft (112).reduced (2, 4));
             toolbar.removeFromLeft (4);
@@ -2515,7 +2550,8 @@ namespace patchcraft
             auditionEngine->reset();
     }
 
-    void SampleMapEditor::audioDeviceIOCallbackWithContext (const float* const*, int,
+    void SampleMapEditor::audioDeviceIOCallbackWithContext (const float* const* inputChannelData,
+                                                            int numInputChannels,
                                                             float* const* outputChannelData,
                                                             int numOutputChannels,
                                                             int numSamples,
@@ -2534,6 +2570,19 @@ namespace patchcraft
                                                                        numOutputChannels,
                                                                        120.0));
             auditionEngine->process (output, 0, numSamples);
+        }
+
+        if (voiceRecordingActive && numInputChannels > 0 && inputChannelData != nullptr && inputChannelData[0] != nullptr)
+        {
+            const juce::ScopedLock recordLock (voiceRecordLock);
+            const int writable = juce::jmin (numSamples, voiceRecordMaxSamples - voiceRecordSamples);
+            if (writable > 0)
+            {
+                voiceRecordBuffer.copyFrom (0, voiceRecordSamples, inputChannelData[0], writable);
+                voiceRecordSamples += writable;
+            }
+            if (voiceRecordSamples >= voiceRecordMaxSamples)
+                voiceRecordingActive = false;
         }
     }
 
@@ -2711,6 +2760,125 @@ namespace patchcraft
             });
     }
 
+    void SampleMapEditor::startVoiceRecording()
+    {
+        if (voiceRecordingActive)
+            return;
+
+        juce::String error;
+        if (! owner.getAudio().ensureOpen (error, 1, 2))
+        {
+            waveformStatus.setText ("Voice recording unavailable: " + error, juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        auto* device = owner.getAudio().getDeviceManager().getCurrentAudioDevice();
+        voiceRecordSampleRate = device != nullptr ? device->getCurrentSampleRate() : 44100.0;
+        voiceRecordMaxSamples = juce::jmax (1, juce::roundToInt (voiceRecordSampleRate * 120.0));
+        {
+            const juce::ScopedLock lock (voiceRecordLock);
+            voiceRecordBuffer.setSize (1, voiceRecordMaxSamples, false, true, true);
+            voiceRecordBuffer.clear();
+            voiceRecordSamples = 0;
+            voiceRecordingActive = true;
+        }
+
+        if (! auditionCallbackActive)
+        {
+            owner.getAudio().getDeviceManager().addAudioCallback (this);
+            auditionCallbackActive = true;
+            voiceRecordCallbackOwned = true;
+        }
+        else
+        {
+            voiceRecordCallbackOwned = false;
+        }
+
+        waveformStatus.setText ("Recording voice input... speak or sing, then click Stop Rec. Max length: 2 minutes.",
+                                juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+        updateModeVisibility();
+        resized();
+    }
+
+    void SampleMapEditor::stopVoiceRecordingAndImport()
+    {
+        if (! voiceRecordingActive && voiceRecordSamples <= 0)
+            return;
+
+        juce::AudioBuffer<float> captured;
+        int capturedSamples = 0;
+        {
+            const juce::ScopedLock lock (voiceRecordLock);
+            voiceRecordingActive = false;
+            capturedSamples = voiceRecordSamples;
+            if (capturedSamples > 0)
+            {
+                captured.setSize (1, capturedSamples);
+                captured.copyFrom (0, 0, voiceRecordBuffer, 0, 0, capturedSamples);
+            }
+            voiceRecordBuffer.setSize (0, 0);
+            voiceRecordSamples = 0;
+        }
+
+        if (voiceRecordCallbackOwned)
+        {
+            owner.getAudio().getDeviceManager().removeAudioCallback (this);
+            auditionCallbackActive = false;
+            voiceRecordCallbackOwned = false;
+        }
+
+        updateModeVisibility();
+        resized();
+
+        if (capturedSamples <= 64)
+        {
+            waveformStatus.setText ("Voice recording discarded: take was too short.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        auto folder = BuiltAssetLibraryComponent::getCategoryFolder ("sounds")
+                          .getChildFile ("Voice Captures");
+        folder.createDirectory();
+        const auto stamp = juce::Time::getCurrentTime().formatted ("%Y%m%d_%H%M%S");
+        auto file = folder.getChildFile ("VoiceCapture_" + stamp + ".wav");
+        if (file.existsAsFile())
+            file = file.getNonexistentSibling();
+
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::FileOutputStream> stream (file.createOutputStream());
+        if (stream == nullptr || ! stream->openedOk())
+        {
+            waveformStatus.setText ("Voice recording failed: could not write " + file.getFullPathName(),
+                                    juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        std::unique_ptr<juce::AudioFormatWriter> writer (
+            wav.createWriterFor (stream.get(), voiceRecordSampleRate, 1, 24, {}, 0));
+        if (writer == nullptr)
+        {
+            waveformStatus.setText ("Voice recording failed: WAV writer could not be created.",
+                                    juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        stream.release();
+        writer->writeFromAudioSampleBuffer (captured, 0, capturedSamples);
+        writer.reset();
+
+        juce::Array<juce::File> files;
+        files.add (file);
+        importSampleFiles (files, false);
+        waveformStatus.setText ("Recorded and imported voice sample: " + file.getFileName(),
+                                juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+    }
+
     bool SampleMapEditor::isInterestedInFileDrag (const juce::StringArray& files)
     {
         for (const auto& path : files)
@@ -2724,7 +2892,7 @@ namespace patchcraft
         return false;
     }
 
-    void SampleMapEditor::filesDropped (const juce::StringArray& files, int, int)
+    void SampleMapEditor::filesDropped (const juce::StringArray& files, int x, int y)
     {
         // Walk dropped paths: a file goes straight in, a folder recurses one
         // level deep collecting any audio files. This makes "drop a kit
@@ -2749,7 +2917,145 @@ namespace patchcraft
             }
         }
         if (! collected.isEmpty())
-            importSampleFiles (collected, spanOnDropToggle.getToggleState());
+            importDroppedSampleFiles (collected, { x, y });
+    }
+
+    bool SampleMapEditor::isInterestedInDragSource (const SourceDetails& details)
+    {
+        if (auto* object = details.description.getDynamicObject())
+        {
+            if (object->getProperty ("patchcraftDragType").toString() != "libraryAsset")
+                return false;
+
+            const auto category = object->getProperty ("category").toString();
+            if (category != "sounds")
+                return false;
+
+            if (auto* paths = object->getProperty ("paths").getArray())
+            {
+                for (const auto& path : *paths)
+                {
+                    const juce::File file (path.toString());
+                    if (file.existsAsFile())
+                    {
+                        const auto ext = file.getFileExtension().toLowerCase();
+                        if (ext == ".wav" || ext == ".aiff" || ext == ".aif" || ext == ".flac")
+                            return true;
+                    }
+                }
+                return false;
+            }
+
+            const juce::File file (object->getProperty ("path").toString());
+            if (! file.existsAsFile())
+                return false;
+
+            const auto ext = file.getFileExtension().toLowerCase();
+            return ext == ".wav" || ext == ".aiff" || ext == ".aif" || ext == ".flac";
+        }
+
+        return false;
+    }
+
+    void SampleMapEditor::itemDropped (const SourceDetails& details)
+    {
+        if (auto* object = details.description.getDynamicObject())
+        {
+            juce::Array<juce::File> files;
+            if (auto* paths = object->getProperty ("paths").getArray())
+            {
+                for (const auto& path : *paths)
+                {
+                    const juce::File file (path.toString());
+                    if (file.existsAsFile())
+                        files.add (file);
+                }
+            }
+            else
+            {
+                const juce::File file (object->getProperty ("path").toString());
+                if (file.existsAsFile())
+                    files.add (file);
+            }
+
+            if (! files.isEmpty())
+                importDroppedSampleFiles (files, details.localPosition);
+        }
+    }
+
+    void SampleMapEditor::importDroppedSampleFiles (const juce::Array<juce::File>& files,
+                                                    juce::Point<int> localPosition)
+    {
+        if (files.isEmpty())
+            return;
+
+        const int padIndex = padIndexAtPosition (localPosition);
+        const auto zoneArea = getZoneArea (gridBounds);
+        int targetNote = -1;
+        int targetVelocity = 127;
+        bool drumPadDrop = false;
+
+        if (padIndex >= 0)
+        {
+            drumPadDrop = true;
+            targetNote = juce::jlimit (0, 127, 36 + padIndex);
+        }
+        else if (const int keyboardNote = noteAtKeyboardPosition (localPosition); keyboardNote >= 0)
+        {
+            targetNote = keyboardNote;
+        }
+        else if (zoneArea.contains (localPosition) || gridBounds.contains (localPosition))
+        {
+            targetNote = juce::jlimit (0, 127, noteAtX (localPosition.x));
+            targetVelocity = velocityAtY (localPosition.y, zoneArea);
+        }
+
+        if (targetNote < 0)
+        {
+            importSampleFiles (files, spanOnDropToggle.getToggleState());
+            return;
+        }
+
+        const auto beforeImportCount = (int) owner.getProject().getSampleMap().getZones().size();
+        importSampleFiles (files, false);
+
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        const int afterImportCount = (int) zones.size();
+        if (afterImportCount <= beforeImportCount)
+            return;
+
+        auto beforeTargetMap = zones;
+        juce::Array<int> mappedIndexes;
+        const int importCount = afterImportCount - beforeImportCount;
+        for (int i = 0; i < importCount; ++i)
+        {
+            const int zoneIndex = beforeImportCount + i;
+            auto& zone = zones[(size_t) zoneIndex];
+            const int note = juce::jlimit (0, 127, targetNote + i);
+            zone.rootNote = note;
+            zone.lowNote = note;
+            zone.highNote = note;
+            zone.lowVelocity = drumPadDrop ? 1 : juce::jlimit (1, 127, targetVelocity - 18);
+            zone.highVelocity = drumPadDrop ? 127 : juce::jlimit (1, 127, targetVelocity);
+            zone.oneShot = drumPadDrop;
+            zone.loopEnabled = false;
+            if (drumPadDrop)
+                zone.padLabel = zone.padLabel.isNotEmpty()
+                    ? zone.padLabel
+                    : juce::File (zone.samplePath).getFileNameWithoutExtension();
+            mappedIndexes.add (zoneIndex);
+        }
+
+        commitSampleMapEdit (drumPadDrop ? "Map samples to pads" : "Map dropped samples", std::move (beforeTargetMap));
+        setSelectedZones (mappedIndexes, true);
+        refresh();
+
+        waveformStatus.setText ((drumPadDrop ? "Mapped " : "Dropped ")
+                                    + juce::String (importCount)
+                                    + (importCount == 1 ? " sample at " : " samples from ")
+                                    + noteToString (targetNote) + ".",
+                                juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
     }
 
     void SampleMapEditor::commitSampleMapEdit (const juce::String& actionName,
@@ -3995,10 +4301,11 @@ namespace patchcraft
         easyPlayModeBtn.setToggleState (false, juce::dontSendNotification);
         updateMidiCallbackRegistration();
 
-        if (auditionCallbackActive)
+        if (auditionCallbackActive && ! voiceRecordingActive)
         {
             owner.getAudio().getDeviceManager().removeAudioCallback (this);
             auditionCallbackActive = false;
+            voiceRecordCallbackOwned = false;
         }
 
         {

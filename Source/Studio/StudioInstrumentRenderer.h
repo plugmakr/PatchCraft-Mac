@@ -53,6 +53,7 @@ namespace patchcraft
         std::function<bool(int pattern)> onSetDrumActivePattern;
         std::function<bool(int pattern, int track, int step, bool active,
                            float velocity, float gate, float probability, int divisions)> onSetDrumPatternCell;
+        std::function<bool(int lane, int step, float velocity, bool active)> onSetArpLaneStep;
 
     private:
         StudioMainComponent& owner;
@@ -77,6 +78,9 @@ namespace patchcraft
         int lastDrumGridPattern = -1;
         int lastDrumGridTrack = -1;
         int lastDrumGridStep = -1;
+        bool arpLaneDragActive = false;
+        int lastArpLane = -1;
+        int lastArpStep = -1;
 
         // LiveValueStore::Listener
         void liveValueChanged (const juce::String& parameterId, float newValue) override;
@@ -107,10 +111,13 @@ namespace patchcraft
         bool handleXYPadGesture (const juce::MouseEvent&);
         bool handleGranularGesture (const juce::MouseEvent&);
         bool handleDrumGridGesture (const juce::MouseEvent&, bool drag);
+        bool handleArpLaneGesture (const juce::MouseEvent&, bool drag);
         bool drumCellAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>,
                          int& pattern, int& track, int& step, float& velocity,
                          float& gate, float& probability, bool& active,
                          int& note, int& divisions) const;
+        bool arpLaneStepAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>,
+                            int& lane, int& step, float& velocity) const;
         const LayoutElement* findElementAt (juce::Point<int>) const;
         void showElementAnimationMenu (const LayoutElement&, const juce::Point<int>& screenPos);
         bool advanceGranularFields();

@@ -113,6 +113,7 @@ namespace patchcraft
                                        float velocity, float gate = 0.35f, float probability = 1.0f,
                                        int divisions = -1);
         bool setDrumActivePatternFromUi (int pattern);
+        bool setMidiPlaygroundActiveBankFromUi (int bank);
         bool allowsExternalPackLoading() const;
         bool applyPresetByIndex (int presetIndex);
         int getPresetCount() const;

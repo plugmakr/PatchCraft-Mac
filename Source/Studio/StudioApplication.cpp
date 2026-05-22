@@ -45,6 +45,36 @@ namespace patchcraft
         setVisible (true);
     }
 
+    bool StudioApplication::StudioWindow::keyPressed (const juce::KeyPress& key)
+    {
+        const auto mods = key.getModifiers();
+        const bool command = mods.isCommandDown() || mods.isCtrlDown();
+        const int code = key.getKeyCode();
+
+        if (command && ! mods.isAltDown() && (code == 'z' || code == 'Z'))
+        {
+            if (auto* studio = dynamic_cast<StudioMainComponent*> (getContentComponent()))
+            {
+                if (mods.isShiftDown())
+                    studio->redo();
+                else
+                    studio->undo();
+                return true;
+            }
+        }
+
+        if (command && ! mods.isAltDown() && (code == 'y' || code == 'Y'))
+        {
+            if (auto* studio = dynamic_cast<StudioMainComponent*> (getContentComponent()))
+            {
+                studio->redo();
+                return true;
+            }
+        }
+
+        return juce::DocumentWindow::keyPressed (key);
+    }
+
     namespace
     {
         juce::File screenshotOutputFolderFromCommandLine (const juce::String& commandLine)

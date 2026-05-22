@@ -281,6 +281,7 @@ namespace patchcraft
                 juce::Rectangle<int> bounds;
                 int blockIndex = -1;
                 int column = -1;
+                bool opensNodeMap = false;
             };
 
             DspPage& owner;

@@ -1653,6 +1653,34 @@ namespace patchcraft
         return true;
     }
 
+    bool PlayerProcessor::setMidiPlaygroundActiveBankFromUi (int bank)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (! loaded)
+            return false;
+
+        DspBlock* midiBlock = nullptr;
+        for (auto& block : pack.dspGraph.blocks)
+        {
+            if (block.type.containsIgnoreCase ("arp")
+                || block.type.containsIgnoreCase ("midi")
+                || block.values.find ("arpSteps") != block.values.end())
+            {
+                midiBlock = &block;
+                break;
+            }
+        }
+
+        if (midiBlock == nullptr)
+            return false;
+
+        midiBlock->values["mpActiveBank"] = (float) juce::jlimit (0, 4, bank);
+        arpeggiator.bind (pack.dspGraph);
+        routingEngine.bind (pack.dspGraph, pack.parameters);
+        routingEngine.prepare (makeRenderContext (currentBlockSize));
+        return true;
+    }
+
     bool PlayerProcessor::allowsExternalPackLoading() const
     {
         if (! loaded)

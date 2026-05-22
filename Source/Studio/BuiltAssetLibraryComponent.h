@@ -1,5 +1,6 @@
 #pragma once
 
+#include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_extra/juce_gui_extra.h>
 
 namespace patchcraft
@@ -7,10 +8,13 @@ namespace patchcraft
     class StudioMainComponent;
 
     class BuiltAssetLibraryComponent : public juce::Component,
-                                       private juce::ListBoxModel
+                                       private juce::ListBoxModel,
+                                       public juce::FileDragAndDropTarget,
+                                       public juce::DragAndDropTarget
     {
     public:
         explicit BuiltAssetLibraryComponent (StudioMainComponent& owner);
+        ~BuiltAssetLibraryComponent() override;
 
         static juce::File getAssetLibraryRoot();
         static juce::File getCategoryFolder (const juce::String& category);
@@ -18,6 +22,7 @@ namespace patchcraft
         void paint (juce::Graphics&) override;
         void resized() override;
         void refresh();
+        void showSoundsLibrary();
 
     private:
         enum class LibraryMode
@@ -46,6 +51,16 @@ namespace patchcraft
         void listBoxItemDoubleClicked (int row, const juce::MouseEvent&) override;
         juce::var getDragSourceDescription (const juce::SparseSet<int>& selectedRows) override;
 
+        bool isInterestedInFileDrag (const juce::StringArray& files) override;
+        void fileDragMove (const juce::StringArray& files, int x, int y) override;
+        void fileDragExit (const juce::StringArray& files) override;
+        void filesDropped (const juce::StringArray& files, int x, int y) override;
+
+        bool isInterestedInDragSource (const SourceDetails& dragSourceDetails) override;
+        void itemDragMove (const SourceDetails& dragSourceDetails) override;
+        void itemDragExit (const SourceDetails& dragSourceDetails) override;
+        void itemDropped (const SourceDetails& dragSourceDetails) override;
+
         void addSelectedToCanvas();
         void setMode (LibraryMode);
         void scanBackgrounds();
@@ -59,6 +74,14 @@ namespace patchcraft
         void deleteSelectedEntry();
         void createFolderForMode();
         juce::File getWritableModeRoot() const;
+        juce::File getTargetFolderForImport (juce::Point<int> localPosition = {}) const;
+        int rowAtLocalPosition (juce::Point<int> localPosition) const;
+        bool entryCanBeDroppedIntoCurrentMode (const juce::File& file) const;
+        void copyExternalFilesIntoFolder (const juce::StringArray& paths, const juce::File& targetFolder);
+        void moveOrCopyLibraryEntryToFolder (const juce::File& source, const juce::File& targetFolder);
+        juce::Array<juce::File> selectedEntriesForCurrentDrag() const;
+        void auditionSoundFile (const juce::File& file);
+        void stopSoundPreview();
         static bool isUserLibraryFile (const juce::File& file);
         static bool isSupportedImageFile (const juce::File& file);
         static bool isSupportedAssetFile (const juce::File& file);
@@ -86,7 +109,15 @@ namespace patchcraft
         juce::TextButton deleteButton { "Delete" };
         juce::TextButton addButton { "Add" };
         juce::TextButton previewButton { "Preview" };
+        juce::ToggleButton autoAuditionToggle { "Auto" };
         std::unique_ptr<juce::FileChooser> importChooser;
+        juce::AudioFormatManager previewFormatManager;
+        juce::AudioSourcePlayer previewPlayer;
+        juce::AudioTransportSource previewTransport;
+        std::unique_ptr<juce::AudioFormatReaderSource> previewReaderSource;
+        bool previewCallbackActive = false;
         int selectedRow = -1;
+        int dropTargetRow = -1;
+        juce::File activeSoundFolder;
     };
 }

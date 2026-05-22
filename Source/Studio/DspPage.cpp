@@ -659,17 +659,49 @@ namespace patchcraft
                             std::vector<NodeMapRouteSummary> routeSummaries,
                             std::function<void (int)> blockSelectedIn,
                             std::function<void (int)> blockEditIn,
-                            std::function<void (int, int)> routeSelectedIn)
+                            std::function<void (int)> blockToggleIn,
+                            std::function<void (int, int)> routeSelectedIn,
+                            std::function<void()> nodePresetIn)
                 : sectionName (std::move (sectionNameToUse)),
                   bank (bankToUse),
                   blocks (std::move (blockSummaries)),
                   routes (std::move (routeSummaries)),
                   blockSelected (std::move (blockSelectedIn)),
                   blockEdit (std::move (blockEditIn)),
-                  routeSelectedCallback (std::move (routeSelectedIn))
+                  blockToggle (std::move (blockToggleIn)),
+                  routeSelectedCallback (std::move (routeSelectedIn)),
+                  nodePresetCallback (std::move (nodePresetIn))
             {
                 setSize (920, 560);
                 setMouseCursor (juce::MouseCursor::PointingHandCursor);
+                for (auto* button : { &editBlockButton, &toggleBlockButton, &nodePresetsButton })
+                {
+                    button->getProperties().set ("smallButton", true);
+                    addAndMakeVisible (*button);
+                }
+                editBlockButton.onClick = [this]
+                {
+                    if (selectedBlock >= 0 && selectedBlock < (int) blocks.size()
+                        && blockEdit && blocks[(size_t) selectedBlock].graphIndex >= 0)
+                        blockEdit (blocks[(size_t) selectedBlock].graphIndex);
+                };
+                toggleBlockButton.onClick = [this]
+                {
+                    if (selectedBlock >= 0 && selectedBlock < (int) blocks.size()
+                        && blockToggle && blocks[(size_t) selectedBlock].graphIndex >= 0)
+                    {
+                        blockToggle (blocks[(size_t) selectedBlock].graphIndex);
+                        blocks[(size_t) selectedBlock].enabled = ! blocks[(size_t) selectedBlock].enabled;
+                        updateButtons();
+                        repaint();
+                    }
+                };
+                nodePresetsButton.onClick = [this]
+                {
+                    if (nodePresetCallback)
+                        nodePresetCallback();
+                };
+                updateButtons();
             }
 
             void paint (juce::Graphics& g) override
@@ -677,6 +709,11 @@ namespace patchcraft
                 g.fillAll (PatchCraftLookAndFeel::bg());
 
                 auto bounds = getLocalBounds().reduced (18);
+                auto actions = bounds.removeFromBottom (36);
+                editBlockButton.setBounds (actions.removeFromLeft (110).reduced (2));
+                toggleBlockButton.setBounds (actions.removeFromLeft (112).reduced (2));
+                nodePresetsButton.setBounds (actions.removeFromLeft (120).reduced (2));
+                bounds.removeFromBottom (10);
                 g.setColour (PatchCraftLookAndFeel::textBright());
                 g.setFont (juce::FontOptions (19.0f).withStyle ("Bold"));
                 g.drawText (sectionName + " Node Map - Bank " + juce::String (bank + 1),
@@ -704,6 +741,7 @@ namespace patchcraft
                         selectedRoute = -1;
                         if (blockSelected && blocks[(size_t) i].graphIndex >= 0)
                             blockSelected (blocks[(size_t) i].graphIndex);
+                        updateButtons();
                         repaint();
                         return;
                     }
@@ -717,6 +755,7 @@ namespace patchcraft
                         selectedBlock = -1;
                         if (routeSelectedCallback)
                             routeSelectedCallback (routes[(size_t) i].kind, routes[(size_t) i].index);
+                        updateButtons();
                         repaint();
                         return;
                     }
@@ -724,6 +763,7 @@ namespace patchcraft
 
                 selectedBlock = -1;
                 selectedRoute = -1;
+                updateButtons();
                 repaint();
             }
 
@@ -752,9 +792,21 @@ namespace patchcraft
             mutable std::vector<juce::Rectangle<int>> routeHitRects;
             std::function<void (int)> blockSelected;
             std::function<void (int)> blockEdit;
+            std::function<void (int)> blockToggle;
             std::function<void (int, int)> routeSelectedCallback;
+            std::function<void()> nodePresetCallback;
             int selectedBlock = -1;
             int selectedRoute = -1;
+            juce::TextButton editBlockButton { "Edit Formula" };
+            juce::TextButton toggleBlockButton { "Bypass/Enable" };
+            juce::TextButton nodePresetsButton { "Node Presets" };
+
+            void updateButtons()
+            {
+                const bool hasBlock = selectedBlock >= 0 && selectedBlock < (int) blocks.size();
+                editBlockButton.setEnabled (hasBlock);
+                toggleBlockButton.setEnabled (hasBlock);
+            }
 
             void drawPanel (juce::Graphics& g, juce::Rectangle<int> area, juce::String title) const
             {
@@ -3137,10 +3189,12 @@ namespace patchcraft
 
             if (count > drawn)
             {
+                auto overflow = column.removeFromTop (18);
                 g.setColour (PatchCraftLookAndFeel::textDim());
                 g.setFont (9.0f);
                 g.drawText ("+" + juce::String (count - drawn) + " more in Node Map",
-                            column.removeFromTop (16), juce::Justification::centred);
+                            overflow, juce::Justification::centred);
+                hitZones.push_back ({ overflow.expanded (2, 3), -1, -1, true });
             }
         }
     }
@@ -3175,7 +3229,7 @@ namespace patchcraft
         owner.markGraphEdited();
         owner.refreshFxPreviewRouting();
         owner.syncGraphEditor();
-        owner.project.notifyChanged();
+        owner.project.notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
         owner.builderPanel.repaint();
         owner.repaint();
         repaint();
@@ -3192,6 +3246,11 @@ namespace patchcraft
                 continue;
 
             activeHit = hit;
+            if (hit.opensNodeMap)
+            {
+                owner.showNodeMapPopout();
+                return;
+            }
             selectBlock (hit.blockIndex);
             if (hit.column >= 0)
             {
@@ -3209,6 +3268,11 @@ namespace patchcraft
             if (! hit.bounds.contains (e.getPosition()))
                 continue;
 
+            if (hit.opensNodeMap)
+            {
+                owner.showNodeMapPopout();
+                return;
+            }
             selectBlock (hit.blockIndex);
             owner.showBlockEditorPopout (hit.blockIndex);
             return;
@@ -7063,7 +7127,7 @@ namespace patchcraft
                     owner.markGraphEdited();
                     owner.refreshFxPreviewRouting();
                     owner.syncGraphEditor();
-                    owner.project.notifyChanged();
+                    owner.project.notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
                     owner.builderPanel.repaint();
                     owner.formulaPanel.repaint();
                     owner.repaint();
@@ -7550,7 +7614,78 @@ namespace patchcraft
                                              refreshBuilderPanel();
                                          },
                                          [this] (int blockIndex) { showBlockEditorPopout (blockIndex); },
-                                         [this] (int kind, int index) { selectNodeMapRoute (kind, index); });
+                                         [this] (int blockIndex)
+                                         {
+                                             auto& blocksRef = project.getDspGraph().blocks;
+                                             if (blockIndex < 0 || blockIndex >= (int) blocksRef.size())
+                                                 return;
+                                             blocksRef[(size_t) blockIndex].enabled = ! blocksRef[(size_t) blockIndex].enabled;
+                                             markGraphEdited();
+                                             refreshFxPreviewRouting();
+                                             project.notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
+                                             refreshBuilderPanel();
+                                             formulaPanel.repaint();
+                                             builderPanel.repaint();
+                                         },
+                                         [this] (int kind, int index) { selectNodeMapRoute (kind, index); },
+                                         [this]
+                                         {
+                                             juce::PopupMenu menu;
+                                             const auto sectionId = currentSectionId();
+                                             if (sectionId == "source")
+                                             {
+                                                 menu.addItem (301, "Wavetable Motion");
+                                                 menu.addItem (302, "Glass Pad Stack");
+                                                 menu.addItem (303, "Razor Bass Table");
+                                             }
+                                             else if (sectionId == "filter")
+                                             {
+                                                 menu.addItem (201, "Surgical Cleanup EQ");
+                                                 menu.addItem (202, "Modern Smile EQ");
+                                                 menu.addItem (203, "Resonance Hunter");
+                                                 menu.addItem (204, "Mid/Side Polish EQ");
+                                                 menu.addItem (205, "Dynamic Tamer EQ");
+                                             }
+                                             else if (sectionId == "amp")
+                                             {
+                                                 menu.addItem (501, "Pluck Envelope");
+                                             }
+                                             else if (sectionId == "mod")
+                                             {
+                                                 menu.addItem (401, "Audio Reactive Motion");
+                                                 menu.addItem (402, "Transient Gate Pump");
+                                                 menu.addItem (403, "Classic Up Arp");
+                                                 menu.addItem (404, "Down Octaves Arp");
+                                                 menu.addItem (405, "Up/Down Motion Arp");
+                                                 menu.addItem (406, "Chord Pulse Arp");
+                                                 menu.addItem (407, "Syncopated Odd Steps Arp");
+                                             }
+                                             else if (sectionId == "fx")
+                                             {
+                                                 menu.addItem (101, "1/4 Dub Delay");
+                                                 menu.addItem (102, "1/8 Ping-Pong");
+                                                 menu.addItem (103, "Triplet Wobble");
+                                                 menu.addItem (104, "Chop Gate Performer");
+                                                 menu.addItem (105, "Dirty Space Throw");
+                                                 menu.addSeparator();
+                                                 menu.addItem (106, "Vinyl Tape Wash");
+                                                 menu.addItem (107, "Vocal Throw Designer");
+                                                 menu.addItem (108, "LoFi Old Sampler");
+                                                 menu.addItem (109, "MultiTap Space Engine");
+                                                 menu.addItem (110, "Retro Destruction Chain");
+                                             }
+                                             else
+                                             {
+                                                 menu.addItem (1, "Clean Foundation");
+                                             }
+
+                                             menu.showMenuAsync (juce::PopupMenu::Options(),
+                                                 [this] (int result)
+                                                 {
+                                                     if (result > 0)
+                                                         applySectionPreset (result);
+                                                 });
+                                         });
 
         juce::DialogWindow::LaunchOptions options;
         options.dialogTitle = "DSP Node Map";

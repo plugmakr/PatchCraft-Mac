@@ -123,6 +123,13 @@ namespace patchcraft
     {
         if (currentPage == p) return;
         currentPage = p;
+        if (midiPlayground)
+        {
+            if (p == Page::ArpStudio)
+                midiPlayground->showArpStudioMode();
+            else if (p == Page::MidiPlayground)
+                midiPlayground->showPlaygroundMode();
+        }
         rebuildPageVisibility();
     }
 
@@ -130,18 +137,12 @@ namespace patchcraft
     {
         if (isPreviewActive() == active) return;
 
-        // The Brand Lab now hosts the live test instance; preview audio runs
-        // through it. The standalone testPage (still owned here for legacy
-        // bottom-panel routing) mirrors the call so existing toolbar
-        // integrations keep working in either place.
         if (active)
         {
-            if (brandingLab) brandingLab->activateTest();
             if (testPage != nullptr) testPage->activate();
         }
         else
         {
-            if (brandingLab) brandingLab->deactivateTest();
             if (testPage != nullptr)
                 testPage->deactivate();
         }
@@ -149,8 +150,7 @@ namespace patchcraft
 
     bool BottomPanel::isPreviewActive() const
     {
-        return (brandingLab != nullptr && brandingLab->isTestActive())
-            || (testPage != nullptr && testPage->isAudioRunning());
+        return testPage != nullptr && testPage->isAudioRunning();
     }
 
     const SampleZoneDef* BottomPanel::getSelectedSampleZone() const
@@ -217,14 +217,14 @@ namespace patchcraft
         const bool design  = currentPage == Page::Design;
         const bool mapper  = currentPage == Page::SampleMapper;
         const bool oneShot = currentPage == Page::OneShotMaker;
-        const bool midi    = currentPage == Page::MidiPlayground;
+        const bool midi    = currentPage == Page::MidiPlayground || currentPage == Page::ArpStudio;
         const bool dsp     = currentPage == Page::DSP;
         const bool build   = currentPage == Page::Build;
         const bool launch  = currentPage == Page::Launch;
         // "Test" now routes to the Brand Lab — the developer's live test
         // environment is the same surface as their branding workspace.
-        const bool brand   = currentPage == Page::Branding || currentPage == Page::Test;
-        const bool test    = false;
+        const bool brand   = currentPage == Page::Branding;
+        const bool test    = currentPage == Page::Test;
 
         if (workflowPage) workflowPage->setVisible (workflow);
         designDspHeader     .setVisible (design);
@@ -253,16 +253,10 @@ namespace patchcraft
         {
             brandingLab->setVisible (brand);
             if (brand)
-            {
                 brandingLab->refresh();
-                brandingLab->activateTest();
-            }
             else
-            {
                 brandingLab->deactivateTest();
-            }
         }
-        juce::ignoreUnused (test);
 
         resized();
         repaint();
@@ -321,6 +315,7 @@ namespace patchcraft
             }
 
             case Page::MidiPlayground:
+            case Page::ArpStudio:
             {
                 if (midiPlayground) midiPlayground->setBounds (r);
                 break;
@@ -335,9 +330,7 @@ namespace patchcraft
             case Page::Test:
             {
                 // Test page is now folded into the Brand Lab — route the
-                // bounds there so older callers that ask for Page::Test
-                // still display correctly.
-                if (brandingLab) brandingLab->setBounds (r);
+                if (testPage) testPage->setBounds (r);
                 break;
             }
 
