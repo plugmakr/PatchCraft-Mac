@@ -57,6 +57,19 @@ Build outputs:
 - Studio standalone: `build/PatchCraftStudio_artefacts/Release/PatchCraft Studio.exe`
 - Player VST3:        `build/PatchCraftPlayer_artefacts/Release/VST3/PatchCraft Player.vst3`
 
+Release validation:
+
+```sh
+cmake --build build --target PatchCraftReleaseChecklist --config Release --parallel 6
+build/bin/Release/PatchCraftAudioSmokeTests
+build/bin/Release/PatchCraftVstExportSmokeTest
+cmake --build build --target PatchCraftRcBundle --config Release --parallel 6
+```
+
+The RC bundle is written to `build/dist/PatchCraftStudio-RC` and includes
+Studio, factory demos, creator libraries, Player VST3 templates, docs, install
+notes, and `rc-manifest.json`.
+
 ## Studio quick tour
 
 The Studio window opens at 1600×1000 with a layout that mirrors the
@@ -126,26 +139,17 @@ MyInstrument.patchcraft/
 See `Templates/DefaultInstrument/` and `Examples/CinematicPad.patchcraft/`
 for canonical examples.
 
-## MVP limitations
+## Current limitations
 
-The MVP focuses on the core authoring + playback pipeline. Not yet
-implemented (architecture notes / TODOs left throughout the source):
+PatchCraft is release-candidate ready for VST3-first Studio/Player workflows.
+Remaining non-blocking work is tracked in `docs/SHIP_READY.md` and
+`IMPLEMENTATION_ROADMAP.md`:
 
-- encrypted / compressed packs
-- license validation
-- creator marketplace
-- white-label / branded Player builder
-- cloud preset library
-- AI image generation API
-- AI auto-mapping / auto-tagging
-- AAX format
-- a full Kontakt-level modulation/scripting system
-
-These features are intentionally out of scope for v0.1 — the priorities
-were (1) the visual builder feels right, (2) packs round-trip cleanly,
-(3) the Player loads any pack without recompiling, and (4) the audio
-engine is RT-safe.
+- production installer signing and auto-update pipeline
+- deeper multi-instrument authoring for layer routing and per-layer sends
+- high-quality time-stretch beyond current BPM-ratio sample resampling
+- AU/AAX export formats
+- expanded pScript runtime integrations beyond the built-in language core
 
 ## License
-
 Internal — see header files for per-source license terms.
