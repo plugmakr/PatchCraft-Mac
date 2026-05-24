@@ -19,5 +19,6 @@
     "sample",
     "granular sample instrument",
     "vocal"
-  ]
+  ],
+  "playerTitleBannerImage": "assets/player-title-banner.png"
 }

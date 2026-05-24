@@ -87,7 +87,7 @@ namespace patchcraft
 
             // Runtime Player title-bar artwork designation. The title bar is
             // hard-coded Player chrome above the canvas; this mock strip shows
-            // the exact displayed slot and the source thumbnail it pulls from.
+            // the wide banner area driven by manifest.playerTitleBannerImage.
             { LayoutElement e; e.type = ElementType::Shape; e.id = "player_titlebar_mock";
               e.semanticRole = "playerTitleBar";
               e.x = 40; e.y = 42; e.width = 1200; e.height = 38;
@@ -100,17 +100,17 @@ namespace patchcraft
               layout.add (e); }
 
             { LayoutElement e; e.type = ElementType::Image; e.id = "player_titlebar_artwork";
-              e.asset = "assets/library-artwork.png";
+              e.asset = "assets/player-title-banner.png";
               e.semanticRole = "playerTitleBarArtwork";
-              e.x = 56; e.y = 46; e.width = 30; e.height = 30;
+              e.x = 56; e.y = 46; e.width = 218; e.height = 30;
               e.cornerRadius = 5.0f;
               e.locked = true;
               layout.add (e); }
 
             { LayoutElement e; e.type = ElementType::Label; e.id = "player_titlebar_spec";
               e.semanticRole = "playerTitleBarArtworkSpec";
-              e.x = 98; e.y = 47; e.width = 650; e.height = 28;
-              e.label = "Player title bar artwork: 30 x 30 display inside 46px title bar  |  source: libraryThumbnail 300 x 200";
+              e.x = 286; e.y = 47; e.width = 650; e.height = 28;
+              e.label = "Player title banner: 640 x 120 source, displayed as a wide title strip above the instrument canvas";
               e.textColour = juce::Colour (0xffdce3ea);
               e.labelSize = 11.0f;
               e.locked = true;

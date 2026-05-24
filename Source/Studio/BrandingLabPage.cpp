@@ -67,6 +67,7 @@ namespace patchcraft
             { &versionLabel,     "Version",       &versionEdit,      "1.0" },
             { &websiteLabel,     "Website",       &websiteEdit,      "https://..." },
             { &logoLabel,        "Logo Image",    &logoPathEdit,     "assets/logo.png" },
+            { &titleBannerImageLabel, "Title Banner", &titleBannerImageEdit, "assets/player-title-banner.png  |  640 x 120" },
             { &playerBackgroundImageLabel, "Player BG", &playerBackgroundImageEdit, "assets/background.png" },
             { &thumbnailImageLabel, "Library Art", &thumbnailImageEdit, "assets/thumbnail.png" }
         };
@@ -124,6 +125,17 @@ namespace patchcraft
             writeToManifest();
         };
         addAndMakeVisible (clearLogoBtn);
+
+        browseTitleBannerBtn.setTooltip ("Pick the wide 640 x 120 image used by the Player title bar.");
+        browseTitleBannerBtn.onClick = [this] { chooseImagePath (titleBannerImageEdit, "Pick Player title banner image"); };
+        addAndMakeVisible (browseTitleBannerBtn);
+        clearTitleBannerBtn.setTooltip ("Clear the Player title banner image path.");
+        clearTitleBannerBtn.onClick = [this]
+        {
+            titleBannerImageEdit.setText (juce::String(), true);
+            writeToManifest();
+        };
+        addAndMakeVisible (clearTitleBannerBtn);
 
         browsePlayerBackgroundBtn.setTooltip ("Pick the image used behind the exported Player instrument canvas.");
         browsePlayerBackgroundBtn.onClick = [this] { chooseImagePath (playerBackgroundImageEdit, "Pick Player background image"); };
@@ -325,6 +337,8 @@ namespace patchcraft
                  static_cast<juce::Component*> (&versionLabel), static_cast<juce::Component*> (&versionEdit),
                  static_cast<juce::Component*> (&logoLabel), static_cast<juce::Component*> (&logoPathEdit),
                  static_cast<juce::Component*> (&browseLogoBtn), static_cast<juce::Component*> (&clearLogoBtn),
+                 static_cast<juce::Component*> (&titleBannerImageLabel), static_cast<juce::Component*> (&titleBannerImageEdit),
+                 static_cast<juce::Component*> (&browseTitleBannerBtn), static_cast<juce::Component*> (&clearTitleBannerBtn),
                  static_cast<juce::Component*> (&playerBackgroundImageLabel), static_cast<juce::Component*> (&playerBackgroundImageEdit),
                  static_cast<juce::Component*> (&browsePlayerBackgroundBtn), static_cast<juce::Component*> (&clearPlayerBackgroundBtn),
                  static_cast<juce::Component*> (&thumbnailImageLabel), static_cast<juce::Component*> (&thumbnailImageEdit),
@@ -516,6 +530,8 @@ namespace patchcraft
             versionLabel.setVisible (show);     versionEdit.setVisible (show);
             logoLabel.setVisible (show);        logoPathEdit.setVisible (show);
             browseLogoBtn.setVisible (show);    clearLogoBtn.setVisible (show);
+            titleBannerImageLabel.setVisible (show); titleBannerImageEdit.setVisible (show);
+            browseTitleBannerBtn.setVisible (show);  clearTitleBannerBtn.setVisible (show);
             accentLabel.setVisible (show);      accentSwatch.setVisible (show);
             panelLabel.setVisible (show);       panelSwatch.setVisible (show);
             bgLabel.setVisible (show);          bgSwatch.setVisible (show);
@@ -655,6 +671,7 @@ namespace patchcraft
         websiteEdit.setText (m.website, juce::dontSendNotification);
         versionEdit.setText (m.version, juce::dontSendNotification);
         logoPathEdit.setText (m.playerLogoImage, juce::dontSendNotification);
+        titleBannerImageEdit.setText (m.playerTitleBannerImage, juce::dontSendNotification);
         playerBackgroundImageEdit.setText (m.backgroundImage, juce::dontSendNotification);
         thumbnailImageEdit.setText (m.libraryThumbnail, juce::dontSendNotification);
         clientNameEdit.setText (m.playerClientName, juce::dontSendNotification);
@@ -700,6 +717,7 @@ namespace patchcraft
         m.website           = websiteEdit.getText().trim();
         m.version           = versionEdit.getText().trim();
         m.playerLogoImage   = logoPathEdit.getText().trim();
+        m.playerTitleBannerImage = titleBannerImageEdit.getText().trim();
         m.backgroundImage   = playerBackgroundImageEdit.getText().trim();
         m.libraryThumbnail  = thumbnailImageEdit.getText().trim();
         owner.getProject().backgroundImageRelative = m.backgroundImage;
@@ -1061,6 +1079,8 @@ namespace patchcraft
                                          &creatorLabel, &creatorEdit, &versionLabel, &versionEdit,
                                          &websiteLabel, &websiteEdit, &logoLabel, &logoPathEdit,
                                          &browseLogoBtn, &clearLogoBtn,
+                                         &titleBannerImageLabel, &titleBannerImageEdit,
+                                         &browseTitleBannerBtn, &clearTitleBannerBtn,
                                          &playerBackgroundImageLabel, &playerBackgroundImageEdit,
                                          &browsePlayerBackgroundBtn, &clearPlayerBackgroundBtn,
                                          &thumbnailImageLabel, &thumbnailImageEdit,
@@ -1081,6 +1101,14 @@ namespace patchcraft
             browseLogoBtn.setBounds (logoRow.removeFromRight (74));
             logoRow.removeFromRight (6);
             logoPathEdit.setBounds (logoRow);
+
+            auto bannerRow = row (28);
+            titleBannerImageLabel.setBounds (bannerRow.removeFromLeft (130));
+            clearTitleBannerBtn.setBounds (bannerRow.removeFromRight (60));
+            bannerRow.removeFromRight (4);
+            browseTitleBannerBtn.setBounds (bannerRow.removeFromRight (74));
+            bannerRow.removeFromRight (6);
+            titleBannerImageEdit.setBounds (bannerRow);
 
             auto backgroundRow = row (28);
             playerBackgroundImageLabel.setBounds (backgroundRow.removeFromLeft (130));

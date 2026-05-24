@@ -12,8 +12,8 @@ namespace patchcraft
     {
         static constexpr int kPlayerMenuBarHeight = 46;
         static constexpr int kPlayerTitleBarArtworkSize = 30;
-        static constexpr int kPlayerTitleBarArtworkSourceWidth = 300;
-        static constexpr int kPlayerTitleBarArtworkSourceHeight = 200;
+        static constexpr int kPlayerTitleBannerSourceWidth = 640;
+        static constexpr int kPlayerTitleBannerSourceHeight = 120;
 
         static juce::String playerInstrumentName (const PatchCraftPack* pack)
         {
@@ -2374,11 +2374,7 @@ namespace patchcraft
 
         // Library browser (hidden by default)
         libraryBrowser = std::make_unique<LibraryBrowser> (proc.getLibraryScanner(),
-           #if PATCHCRAFT_PLAYER_FX
             LibraryBrowser::PackFilter::Any
-           #else
-            LibraryBrowser::PackFilter::InstrumentsOnly
-           #endif
         );
         libraryBrowser->onPackSelected = [this] (const juce::File& folder) {
             juce::String err;
@@ -2655,21 +2651,48 @@ namespace patchcraft
         g.setColour (PatchCraftLookAndFeel::borderSoft());
         g.drawHorizontalLine (bar.getBottom() - 1, (float) bar.getX(), (float) bar.getRight());
 
-        const auto artworkBounds = juce::Rectangle<int> (bar.getX() + 12,
-                                                         bar.getY() + (bar.getHeight() - kPlayerTitleBarArtworkSize) / 2,
-                                                         kPlayerTitleBarArtworkSize,
-                                                         kPlayerTitleBarArtworkSize);
-        auto brand = bar.reduced (12, 6)
-                        .withTrimmedLeft (kPlayerTitleBarArtworkSize + 8)
-                        .removeFromLeft (bar.getWidth() < 980 ? 112 : 178);
+        const bool compactTitle = bar.getWidth() < 980;
+        const int bannerWidth = compactTitle ? 146 : 218;
+        const auto brandFrame = juce::Rectangle<int> (bar.getX() + 10,
+                                                      bar.getY() + 6,
+                                                      bannerWidth,
+                                                      bar.getHeight() - 12);
+        const auto artworkBounds = brandFrame.withWidth (kPlayerTitleBarArtworkSize)
+                                             .withHeight (kPlayerTitleBarArtworkSize)
+                                             .withY (bar.getY() + (bar.getHeight() - kPlayerTitleBarArtworkSize) / 2);
+        auto brand = brandFrame.withTrimmedLeft (kPlayerTitleBarArtworkSize + 8)
+                               .reduced (0, 1);
         bool drewLogo = false;
+        bool drewTitleBanner = false;
         if (const auto* pack = proc.getPack())
         {
+            if (pack->manifest.playerTitleBannerImage.isNotEmpty())
+            {
+                const auto bannerFile = juce::File::isAbsolutePath (pack->manifest.playerTitleBannerImage)
+                    ? juce::File (pack->manifest.playerTitleBannerImage)
+                    : pack->rootFolder.getChildFile (pack->manifest.playerTitleBannerImage);
+                if (auto banner = assets.loadImage (bannerFile); banner.isValid())
+                {
+                    g.saveState();
+                    juce::Path clip;
+                    clip.addRoundedRectangle (brandFrame.toFloat(), 7.0f);
+                    g.reduceClipRegion (clip);
+                    g.drawImage (banner, brandFrame.toFloat(), juce::RectanglePlacement::fillDestination);
+                    g.setColour (juce::Colour (0xaa05070a));
+                    g.fillRoundedRectangle (brandFrame.toFloat(), 7.0f);
+                    g.restoreState();
+                    g.setColour (PatchCraftLookAndFeel::borderSoft().withAlpha (0.86f));
+                    g.drawRoundedRectangle (brandFrame.toFloat().reduced (0.5f), 7.0f, 1.0f);
+                    drewTitleBanner = true;
+                    brand = brandFrame.reduced (11, 3);
+                }
+            }
+
             auto artworkPath = pack->manifest.playerLogoImage;
             if (artworkPath.isEmpty())
                 artworkPath = pack->manifest.libraryThumbnail;
 
-            if (artworkPath.isNotEmpty())
+            if (! drewTitleBanner && artworkPath.isNotEmpty())
             {
                 const auto logoFile = juce::File::isAbsolutePath (artworkPath)
                     ? juce::File (artworkPath)
@@ -2688,7 +2711,7 @@ namespace patchcraft
                 }
             }
         }
-        if (! drewLogo)
+        if (! drewTitleBanner && ! drewLogo)
             PatchCraftLookAndFeel::drawHexLogo (g, artworkBounds.toFloat().reduced (1.0f));
 
         const auto* pack = proc.getPack();
@@ -2697,13 +2720,12 @@ namespace patchcraft
             : juce::String ("PATCHCRAFT");
         const auto tagline = pack != nullptr && pack->manifest.playerTagline.isNotEmpty()
             ? pack->manifest.playerTagline
-            : juce::String ("Player title art ")
-                + juce::String (kPlayerTitleBarArtworkSize) + "x" + juce::String (kPlayerTitleBarArtworkSize)
-                + " from " + juce::String (kPlayerTitleBarArtworkSourceWidth) + "x"
-                + juce::String (kPlayerTitleBarArtworkSourceHeight);
+            : juce::String ("Title banner ")
+                + juce::String (kPlayerTitleBannerSourceWidth) + "x"
+                + juce::String (kPlayerTitleBannerSourceHeight);
         g.setColour (PatchCraftLookAndFeel::textBright());
         g.setFont (juce::FontOptions (15.0f).withStyle ("bold"));
-        g.drawText (brandName, brand.removeFromTop (19), juce::Justification::centredLeft, true);
+        g.drawText (brandName, brand.removeFromTop (drewTitleBanner ? 17 : 19), juce::Justification::centredLeft, true);
         g.setColour (PatchCraftLookAndFeel::textDim());
         g.setFont (juce::FontOptions (10.0f).withStyle ("bold"));
         g.drawText (tagline.toUpperCase(), brand, juce::Justification::centredLeft, true);

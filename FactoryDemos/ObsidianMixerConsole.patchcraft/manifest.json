@@ -33,5 +33,6 @@
     "synth",
     "player",
     "top-menu"
-  ]
+  ],
+  "playerTitleBannerImage": "assets/player-title-banner.png"
 }

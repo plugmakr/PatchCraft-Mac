@@ -32,11 +32,11 @@
     {
       "id": "player_titlebar_artwork",
       "type": "image",
-      "asset": "assets/library-artwork.png",
+      "asset": "assets/player-title-banner.png",
       "semanticRole": "playerTitleBarArtwork",
       "x": 56,
       "y": 46,
-      "width": 30,
+      "width": 218,
       "height": 30,
       "cornerRadius": 5,
       "locked": true
@@ -45,11 +45,11 @@
       "id": "player_titlebar_spec",
       "type": "label",
       "semanticRole": "playerTitleBarArtworkSpec",
-      "x": 98,
+      "x": 286,
       "y": 47,
-      "width": 740,
+      "width": 760,
       "height": 28,
-      "label": "Player title bar artwork: 30 x 30 display inside 46px title bar  |  source: libraryThumbnail 300 x 200",
+      "label": "Player title banner: 640 x 120 source, displayed as a wide title strip above the instrument canvas",
       "textColour": "ffdce3ea",
       "labelSize": 11,
       "locked": true

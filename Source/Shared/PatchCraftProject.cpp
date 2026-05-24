@@ -270,6 +270,7 @@ namespace patchcraft
         addAssetReference (patch.includedAssets, manifest.backgroundImage);
         addAssetReference (patch.includedAssets, manifest.libraryThumbnail);
         addAssetReference (patch.includedAssets, manifest.playerLogoImage);
+        addAssetReference (patch.includedAssets, manifest.playerTitleBannerImage);
         for (const auto& element : layout.getAll())
         {
             addAssetReference (patch.includedAssets, element.asset);

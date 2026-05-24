@@ -487,6 +487,17 @@ namespace patchcraft
             manifestForPack.playerLogoImage = logoPath;
         }
 
+        if (manifestForPack.playerTitleBannerImage.isNotEmpty())
+        {
+            auto bannerPath = manifestForPack.playerTitleBannerImage;
+            if (! copyAssetToPack (bannerPath, "assets/images", {}))
+            {
+                error = "Failed to copy Player title banner artwork into exported pack.";
+                return false;
+            }
+            manifestForPack.playerTitleBannerImage = bannerPath;
+        }
+
         for (auto& expansion : exportExpansions)
         {
             if (expansion.artworkPath.isNotEmpty())

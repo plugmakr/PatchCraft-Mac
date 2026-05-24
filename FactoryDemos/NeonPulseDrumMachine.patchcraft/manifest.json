@@ -27,5 +27,6 @@
     "sample",
     "pattern",
     "player-ready"
-  ]
+  ],
+  "playerTitleBannerImage": "assets/player-title-banner.png"
 }

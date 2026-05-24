@@ -766,7 +766,8 @@ namespace patchcraft
                     + plural ((int) project.getExpansions().size(), "expansion", "expansions") + ".");
         }
 
-        if (manifest.backgroundImage.trim().isEmpty() && manifest.libraryThumbnail.trim().isEmpty() && manifest.playerLogoImage.trim().isEmpty())
+        if (manifest.backgroundImage.trim().isEmpty() && manifest.libraryThumbnail.trim().isEmpty()
+            && manifest.playerLogoImage.trim().isEmpty() && manifest.playerTitleBannerImage.trim().isEmpty())
         {
             add (Severity::Warning,
                  "Branding artwork is missing",
@@ -776,7 +777,8 @@ namespace patchcraft
         }
         else if ((manifest.backgroundImage.isNotEmpty() && ! assetExists (project, manifest.backgroundImage))
               || (manifest.libraryThumbnail.isNotEmpty() && ! assetExists (project, manifest.libraryThumbnail))
-              || (manifest.playerLogoImage.isNotEmpty() && ! assetExists (project, manifest.playerLogoImage)))
+              || (manifest.playerLogoImage.isNotEmpty() && ! assetExists (project, manifest.playerLogoImage))
+              || (manifest.playerTitleBannerImage.isNotEmpty() && ! assetExists (project, manifest.playerTitleBannerImage)))
         {
             add (Severity::Error,
                  "Branding references missing files",
@@ -2098,6 +2100,7 @@ namespace patchcraft
         copyAsset (manifest.backgroundImage, "background");
         copyAsset (manifest.libraryThumbnail, "thumbnail");
         copyAsset (manifest.playerLogoImage, "logo");
+        copyAsset (manifest.playerTitleBannerImage, "title-banner");
 
         showMessage ("Launch Bundle Created",
                      "Created launch materials:\n" + folder.getFullPathName()

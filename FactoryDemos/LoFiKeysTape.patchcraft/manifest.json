@@ -19,5 +19,6 @@
     "sample",
     "keys sample instrument",
     "keys"
-  ]
+  ],
+  "playerTitleBannerImage": "assets/player-title-banner.png"
 }

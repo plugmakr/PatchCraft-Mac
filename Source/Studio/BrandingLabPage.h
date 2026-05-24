@@ -62,6 +62,10 @@ namespace patchcraft
         juce::TextEditor logoPathEdit;
         juce::TextButton browseLogoBtn { "Browse..." };
         juce::TextButton clearLogoBtn  { "Clear" };
+        juce::Label  titleBannerImageLabel;
+        juce::TextEditor titleBannerImageEdit;
+        juce::TextButton browseTitleBannerBtn { "Browse..." };
+        juce::TextButton clearTitleBannerBtn  { "Clear" };
         juce::Label  playerBackgroundImageLabel;
         juce::TextEditor playerBackgroundImageEdit;
         juce::TextButton browsePlayerBackgroundBtn { "Browse..." };

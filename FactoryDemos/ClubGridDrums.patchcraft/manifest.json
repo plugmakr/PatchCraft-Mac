@@ -19,5 +19,6 @@
     "sample",
     "drum machine",
     "drum"
-  ]
+  ],
+  "playerTitleBannerImage": "assets/player-title-banner.png"
 }

@@ -19,5 +19,6 @@
     "fx",
     "modulation fx",
     "motion-fx"
-  ]
+  ],
+  "playerTitleBannerImage": "assets/player-title-banner.png"
 }

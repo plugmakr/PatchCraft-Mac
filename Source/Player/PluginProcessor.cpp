@@ -1337,6 +1337,28 @@ namespace patchcraft
                 heldNotes.fill (false);
                 sustainPedalDown = false;
             }
+            if (libraryScanner != nullptr)
+            {
+                juce::Array<juce::File> rootsToScan;
+                auto addRoot = [&rootsToScan] (const juce::File& folder)
+                {
+                    if (folder.isDirectory())
+                        rootsToScan.addIfNotAlreadyThere (folder);
+                };
+
+                const auto packParent = packFolder.getParentDirectory();
+                const auto packGrandparent = packParent.getParentDirectory();
+                addRoot (packParent);
+                addRoot (packGrandparent.getChildFile ("FactoryDemos"));
+                addRoot (packGrandparent.getChildFile ("Library"));
+                addRoot (packGrandparent.getChildFile ("Library").getChildFile ("Instruments"));
+                addRoot (packGrandparent.getChildFile ("Library").getChildFile ("Templates"));
+                addRoot (packGrandparent.getChildFile ("Examples").getChildFile ("FactoryDemos"));
+
+                for (const auto& root : rootsToScan)
+                    libraryScanner->addSearchPath (root);
+                libraryScanner->scanLibrary();
+            }
             bindRoutingFromPack();
             rebuildApvtsFromPack();
             editorListeners.call ([] (EditorListener& l) { l.packChanged(); });

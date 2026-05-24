@@ -101,6 +101,7 @@ namespace patchcraft
         obj->setProperty ("playerDisplayName",       playerDisplayName);
         obj->setProperty ("playerTagline",           playerTagline);
         obj->setProperty ("playerLogoImage",         playerLogoImage);
+        obj->setProperty ("playerTitleBannerImage",  playerTitleBannerImage);
         obj->setProperty ("playerClientName",        playerClientName);
         obj->setProperty ("playerSupportEmail",      playerSupportEmail);
         obj->setProperty ("playerSupportUrl",        playerSupportUrl);
@@ -219,6 +220,8 @@ namespace patchcraft
                 m.playerTagline = o->getProperty ("playerTagline").toString();
             if (o->hasProperty ("playerLogoImage"))
                 m.playerLogoImage = o->getProperty ("playerLogoImage").toString();
+            if (o->hasProperty ("playerTitleBannerImage"))
+                m.playerTitleBannerImage = o->getProperty ("playerTitleBannerImage").toString();
             if (o->hasProperty ("playerClientName"))
                 m.playerClientName = o->getProperty ("playerClientName").toString();
             if (o->hasProperty ("playerSupportEmail"))

@@ -19,5 +19,6 @@
     "synth",
     "synth instrument",
     "pad"
-  ]
+  ],
+  "playerTitleBannerImage": "assets/player-title-banner.png"
 }

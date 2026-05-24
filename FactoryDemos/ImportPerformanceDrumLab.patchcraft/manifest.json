@@ -27,5 +27,6 @@
     "midi import",
     "performance",
     "player-ready"
-  ]
+  ],
+  "playerTitleBannerImage": "assets/player-title-banner.png"
 }

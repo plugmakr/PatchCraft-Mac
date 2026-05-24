@@ -19,5 +19,6 @@
     "synth",
     "circleseq",
     "flagship"
-  ]
+  ],
+  "playerTitleBannerImage": "assets/player-title-banner.png"
 }

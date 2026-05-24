@@ -19,5 +19,6 @@
     "fx",
     "cinematic fx",
     "braam"
-  ]
+  ],
+  "playerTitleBannerImage": "assets/player-title-banner.png"
 }

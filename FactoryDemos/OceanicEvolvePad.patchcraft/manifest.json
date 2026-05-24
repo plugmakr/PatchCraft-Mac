@@ -19,5 +19,6 @@
     "synth",
     "ambient synth",
     "evolve"
-  ]
+  ],
+  "playerTitleBannerImage": "assets/player-title-banner.png"
 }

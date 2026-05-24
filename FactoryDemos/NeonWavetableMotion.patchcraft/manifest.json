@@ -18,5 +18,6 @@
     "wavetable",
     "synth",
     "wavetable synth"
-  ]
+  ],
+  "playerTitleBannerImage": "assets/player-title-banner.png"
 }

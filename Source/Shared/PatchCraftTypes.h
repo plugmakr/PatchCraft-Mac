@@ -47,6 +47,7 @@ namespace patchcraft
         juce::String playerDisplayName;
         juce::String playerTagline;
         juce::String playerLogoImage;
+        juce::String playerTitleBannerImage;
         juce::String playerClientName;
         juce::String playerSupportEmail;
         juce::String playerSupportUrl;

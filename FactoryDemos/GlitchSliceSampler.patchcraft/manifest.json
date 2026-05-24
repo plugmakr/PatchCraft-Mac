@@ -18,5 +18,6 @@
     "glitch",
     "sample",
     "performance sampler"
-  ]
+  ],
+  "playerTitleBannerImage": "assets/player-title-banner.png"
 }

@@ -39,82 +39,84 @@ namespace patchcraft
     void LibraryItemComponent::paint (juce::Graphics& g)
     {
         auto bounds = getLocalBounds().toFloat();
-        const float corner = 10.0f;
+        const float corner = 8.0f;
 
-        // Background
-        g.setColour (isHovered ? juce::Colour (0xff1b202b) : juce::Colour (0xff12141a));
+        g.setColour (isHovered ? juce::Colour (0xff1a202c) : juce::Colour (0xff10131a));
         g.fillRoundedRectangle (bounds, corner);
 
-        // Border
-        g.setColour (isHovered ? PatchCraftLookAndFeel::accent() : juce::Colour (0xff2a2d35));
-        g.drawRoundedRectangle (bounds.reduced (1.0f), corner, isHovered ? 1.6f : 1.0f);
+        g.setColour (isHovered ? PatchCraftLookAndFeel::accent().withAlpha (0.88f)
+                                : juce::Colour (0xff2a303b));
+        g.drawRoundedRectangle (bounds.reduced (0.7f), corner, isHovered ? 1.5f : 1.0f);
 
-        // Thumbnail area
-        auto thumbArea = bounds.reduced (8.0f, 8.0f);
-        thumbArea = thumbArea.withHeight (104.0f);
+        auto thumbArea = bounds.reduced (9.0f, 9.0f);
+        thumbArea = thumbArea.withHeight (128.0f);
 
         if (thumbnail.isValid())
         {
             g.saveState();
-            g.reduceClipRegion (thumbArea.toNearestInt());
+            juce::Path clip;
+            clip.addRoundedRectangle (thumbArea, 6.0f);
+            g.reduceClipRegion (clip);
             g.drawImage (thumbnail, thumbArea, juce::RectanglePlacement::fillDestination);
+            juce::ColourGradient shade (juce::Colours::transparentBlack,
+                                        thumbArea.getCentreX(), thumbArea.getY(),
+                                        juce::Colour (0xaa000000),
+                                        thumbArea.getCentreX(), thumbArea.getBottom(),
+                                        false);
+            g.setGradientFill (shade);
+            g.fillRect (thumbArea);
             g.restoreState();
-            g.setColour (juce::Colour (0xaa000000));
-            g.fillRoundedRectangle (thumbArea.withY (thumbArea.getBottom() - 24.0f).withHeight (24.0f), 4.0f);
         }
         else
         {
-            // Placeholder
-            g.setColour (juce::Colour (0xff1e2028));
-            g.fillRoundedRectangle (thumbArea, 4.0f);
-            g.setColour (PatchCraftLookAndFeel::textDim());
-            g.setFont (juce::FontOptions (12.0f));
-            g.drawText ("No Image", thumbArea, juce::Justification::centred);
+            g.setColour (juce::Colour (0xff1e2430));
+            g.fillRoundedRectangle (thumbArea, 6.0f);
+            g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.30f));
+            g.drawRoundedRectangle (thumbArea.reduced (10.0f), 5.0f, 1.2f);
         }
 
-        // Text info area
         auto textArea = bounds.reduced (8.0f, 8.0f);
-        textArea = textArea.withTop (thumbArea.getBottom() + 8.0f);
+        textArea = textArea.withTop (thumbArea.getBottom() + 10.0f);
 
-        // Title
         g.setColour (PatchCraftLookAndFeel::textBright());
-        g.setFont (juce::FontOptions (14.0f).withStyle ("bold"));
-        auto title = entry.instrumentName;
-        if (title.length() > 25) title = title.substring (0, 22) + "...";
-        g.drawText (title, textArea.withHeight (20), juce::Justification::centredLeft, true);
+        g.setFont (juce::FontOptions (14.5f).withStyle ("bold"));
+        g.drawFittedText (entry.instrumentName,
+                          textArea.toNearestInt().removeFromTop (38),
+                          juce::Justification::centredLeft, 2, 0.88f);
 
-        // Creator
         g.setColour (PatchCraftLookAndFeel::textDim());
-        g.setFont (juce::FontOptions (11.0f));
+        g.setFont (juce::FontOptions (11.0f).withStyle ("bold"));
         auto creator = "by " + entry.creator;
-        if (creator.length() > 30) creator = creator.substring (0, 27) + "...";
-        g.drawText (creator, textArea.withY (textArea.getY() + 22).withHeight (16),
-                   juce::Justification::centredLeft, true);
+        g.drawText (creator, textArea.withY (textArea.getY() + 38.0f).withHeight (17.0f),
+                    juce::Justification::centredLeft, true);
 
         g.setColour (PatchCraftLookAndFeel::textDim().withAlpha (0.86f));
         g.setFont (juce::FontOptions (10.5f));
-        auto description = entry.description;
-        if (description.length() > 58) description = description.substring (0, 55) + "...";
-        if (description.isNotEmpty())
-            g.drawText (description, textArea.withY (textArea.getY() + 41).withHeight (16),
-                        juce::Justification::centredLeft, true);
+        if (entry.description.isNotEmpty())
+            g.drawFittedText (entry.description,
+                              textArea.withY (textArea.getY() + 60.0f)
+                                      .withHeight (42.0f)
+                                      .toNearestInt(),
+                              juce::Justification::topLeft, 2, 0.86f);
 
-        // Category badge
-        auto badge = textArea.withY (bounds.getBottom() - 32.0f).withHeight (20.0f).withWidth (82.0f);
-        g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.3f));
-        g.fillRoundedRectangle (badge, 4.0f);
+        auto badge = bounds.reduced (9.0f).withTop (bounds.getBottom() - 34.0f).withHeight (22.0f);
+        auto loadBadge = badge.removeFromRight (60.0f);
+        badge.removeFromRight (7.0f);
+        auto engineBadge = badge.removeFromRight (56.0f);
+        badge = badge.withWidth (juce::jmin (88.0f, badge.getWidth()));
+
+        g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.22f));
+        g.fillRoundedRectangle (badge, 5.0f);
         g.setColour (PatchCraftLookAndFeel::accent());
         g.setFont (juce::FontOptions (10.0f));
         g.drawText (entry.category, badge, juce::Justification::centred);
 
-        auto engineBadge = badge.translated (88.0f, 0.0f).withWidth (58.0f);
-        g.setColour (juce::Colour (0xff263140));
-        g.fillRoundedRectangle (engineBadge, 4.0f);
+        g.setColour (juce::Colour (0xff222b38));
+        g.fillRoundedRectangle (engineBadge, 5.0f);
         g.setColour (PatchCraftLookAndFeel::text());
         g.drawText (entry.engineId.isNotEmpty() ? entry.engineId.toUpperCase() : "PACK",
                     engineBadge, juce::Justification::centred, true);
 
-        auto loadBadge = bounds.reduced (8.0f).withTop (bounds.getBottom() - 34.0f).withLeft (bounds.getRight() - 58.0f);
         g.setColour (isHovered ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::accent().withAlpha (0.78f));
         g.fillRoundedRectangle (loadBadge, 5.0f);
         g.setColour (juce::Colour (0xff080a0d));
@@ -203,15 +205,15 @@ namespace patchcraft
 
     void LibraryBrowser::paint (juce::Graphics& g)
     {
-        g.fillAll (juce::Colour (0xff0a0b12));
+        g.fillAll (juce::Colour (0xff090b10));
 
-        auto header = getLocalBounds().reduced (12).removeFromTop (30);
+        auto header = getLocalBounds().reduced (14).removeFromTop (34);
         g.setColour (PatchCraftLookAndFeel::textBright());
-        g.setFont (juce::FontOptions (17.0f).withStyle ("bold"));
-        g.drawText ("PatchCraft Library", header.removeFromLeft (190), juce::Justification::centredLeft, true);
+        g.setFont (juce::FontOptions (18.5f).withStyle ("bold"));
+        g.drawText ("PatchCraft Library", header.removeFromLeft (205), juce::Justification::centredLeft, true);
         g.setColour (PatchCraftLookAndFeel::textDim());
         g.setFont (juce::FontOptions (12.0f));
-        g.drawText (juce::String (filteredEntries.size()) + " compatible "
+        g.drawText (juce::String (filteredEntries.size()) + " discovered "
                     + filterDisplayName (packFilter), header, juce::Justification::centredLeft, true);
 
         if (filteredEntries.isEmpty())
@@ -230,12 +232,11 @@ namespace patchcraft
 
     void LibraryBrowser::resized()
     {
-        auto bounds = getLocalBounds().reduced (10);
+        auto bounds = getLocalBounds().reduced (12);
 
-        bounds.removeFromTop (32);
+        bounds.removeFromTop (36);
 
-        // Top bar: search + category + close
-        auto topBar = bounds.removeFromTop (40);
+        auto topBar = bounds.removeFromTop (42);
         closeButton->setBounds (topBar.removeFromRight (90).reduced (0, 5));
         topBar.removeFromRight (10);
         refreshButton->setBounds (topBar.removeFromRight (84).reduced (0, 5));
@@ -244,7 +245,7 @@ namespace patchcraft
         topBar.removeFromRight (10);
         searchBox->setBounds (topBar.reduced (0, 5));
 
-        bounds.removeFromTop (6);
+        bounds.removeFromTop (8);
 
         // Grid viewport
         viewport->setBounds (bounds);
@@ -276,8 +277,8 @@ namespace patchcraft
         gridContainer->removeAllChildren();
         gridContainer->setSize (viewport->getMaximumVisibleWidth(), 0);
 
-        const int itemWidth = 200;
-        const int itemHeight = 240;
+        const int itemWidth = 214;
+        const int itemHeight = 286;
         const int padding = 16;
         const int cols = std::max (1, viewport->getWidth() / (itemWidth + padding));
 

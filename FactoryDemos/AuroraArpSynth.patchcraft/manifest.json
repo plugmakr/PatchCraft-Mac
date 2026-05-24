@@ -18,5 +18,6 @@
     "arp",
     "synth",
     "arp synth"
-  ]
+  ],
+  "playerTitleBannerImage": "assets/player-title-banner.png"
 }
