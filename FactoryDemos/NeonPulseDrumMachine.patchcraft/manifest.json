@@ -6,7 +6,7 @@
   "category": "Drum Machine",
   "engine": "sample",
   "backgroundImage": "assets/background.png",
-  "libraryThumbnail": "assets/thumbnail.png",
+  "libraryThumbnail": "assets/library-artwork.png",
   "defaultPreset": "Neon Pulse Kit",
   "createdWith": "PatchCraft Studio",
   "version": "1.0",

@@ -6,7 +6,7 @@
   "category": "Cinematic FX",
   "engine": "fx",
   "backgroundImage": "assets/background.png",
-  "libraryThumbnail": "assets/thumbnail.png",
+  "libraryThumbnail": "assets/library-artwork.png",
   "defaultPreset": "Destroyed Throw",
   "createdWith": "PatchCraft Studio",
   "version": "1.0",

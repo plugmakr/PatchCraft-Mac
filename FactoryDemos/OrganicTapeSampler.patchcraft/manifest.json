@@ -6,7 +6,7 @@
   "category": "Sample Instrument",
   "engine": "sample",
   "backgroundImage": "assets/background.png",
-  "libraryThumbnail": "assets/thumbnail.png",
+  "libraryThumbnail": "assets/library-artwork.png",
   "defaultPreset": "Tape Felt Pad",
   "createdWith": "PatchCraft Studio",
   "version": "1.0",

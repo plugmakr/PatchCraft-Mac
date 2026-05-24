@@ -6,7 +6,7 @@
   "category": "Keys Sample Instrument",
   "engine": "sample",
   "backgroundImage": "assets/background.png",
-  "libraryThumbnail": "assets/thumbnail.png",
+  "libraryThumbnail": "assets/library-artwork.png",
   "defaultPreset": "Dusty Tape Keys",
   "createdWith": "PatchCraft Studio",
   "version": "1.0",

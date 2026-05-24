@@ -6,7 +6,7 @@
   "category": "Performance Sampler",
   "engine": "sample",
   "backgroundImage": "assets/background.png",
-  "libraryThumbnail": "assets/thumbnail.png",
+  "libraryThumbnail": "assets/library-artwork.png",
   "defaultPreset": "Slice Runner",
   "createdWith": "PatchCraft Studio",
   "version": "1.0",

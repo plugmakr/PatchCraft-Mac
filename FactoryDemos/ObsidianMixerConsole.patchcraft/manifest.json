@@ -6,7 +6,7 @@
   "category": "Premium Synth Template",
   "engine": "synth",
   "backgroundImage": "assets/background.png",
-  "libraryThumbnail": "assets/thumbnail.png",
+  "libraryThumbnail": "assets/library-artwork.png",
   "defaultPreset": "Obsidian Console Init",
   "createdWith": "PatchCraft Studio",
   "version": "1.0",

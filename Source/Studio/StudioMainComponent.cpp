@@ -1075,8 +1075,8 @@ namespace patchcraft
         // Right column (Inspector / Layers / Presets).
         const bool rightVisible = designTab && ! rightPanelCollapsed;
         rightTabs.setVisible (rightVisible);
-        layersPanel  ->setVisible (layersFloating || leftLayersDocked || (rightVisible && rightTabIndex == 1 && ! leftLayersDocked));
-        presetsPanel ->setVisible (presetsFloating || (rightVisible && rightTabIndex == 2));
+        layersPanel  ->setVisible (layersFloating || leftLayersDocked);
+        presetsPanel ->setVisible (presetsFloating || (rightVisible && rightTabIndex == 1));
         canvasEditor ->setVisible (designTab);
         inspectorViewport->setVisible (inspectorFloating || (rightVisible && rightTabIndex == 0));
 

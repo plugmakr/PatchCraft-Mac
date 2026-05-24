@@ -92,6 +92,9 @@ namespace patchcraft
             int roundRobinCount = 1;
             bool normalize = true;
             bool trimStartSilence = true;
+            bool hardwareCaptureMode = false;
+            juce::String hardwareMidiOutputId;
+            juce::String hardwareMidiOutputName;
         };
 
         struct PackLibraryEntry
@@ -144,10 +147,16 @@ namespace patchcraft
         int livePluginChannels = 2;
         bool audioCallbackRegistered = false;
         bool livePluginCallbackActive = false;
+        bool hardwareCaptureCallbackActive = false;
         std::atomic<bool> livePluginEnabled { false };
         std::atomic<bool> livePluginPrepared { false };
         std::atomic<float> livePluginPeak { 0.0f };
         bool resumeLivePluginAfterRender = false;
+        juce::CriticalSection hardwareCaptureLock;
+        juce::AudioBuffer<float> hardwareCaptureBuffer;
+        std::atomic<bool> hardwareCaptureActive { false };
+        std::atomic<int> hardwareCaptureWritePosition { 0 };
+        double hardwareCaptureSampleRate = 48000.0;
         juce::AudioBuffer<float> reviewBuffer;
         double reviewSampleRate = 48000.0;
         double reviewOutputSampleRate = 48000.0;
@@ -201,6 +210,9 @@ namespace patchcraft
         juce::TextButton floatPluginEditorButton { "Float Editor" };
         juce::TextButton closePluginEditorButton { "Close Editor" };
         juce::ToggleButton livePluginToggle { "Live Monitor" };
+        juce::ToggleButton hardwareCaptureToggle { "Hardware Input" };
+        juce::Label hardwareMidiOutputLabel;
+        juce::ComboBox hardwareMidiOutputBox;
         juce::TextButton previewSampleButton { "Preview One Shot" };
         juce::TextButton stopSampleButton { "Stop" };
 
@@ -274,6 +286,7 @@ namespace patchcraft
         void ensureSharedAudioCallback();
         void releaseSharedAudioCallbackIfIdle();
         void prepareLivePluginForDevice (juce::AudioIODevice*);
+        void populateHardwareMidiOutputs();
         void auditionCurrentPluginSound();
         void updateRenderPlan();
         void setControlsEnabledForRenderState();
@@ -297,6 +310,8 @@ namespace patchcraft
         bool renderSingleNote (const RenderSettings&, const RenderNote&, const juce::File&, juce::String& error);
         bool renderPreparedSingleNote (const RenderSettings&, const RenderNote&, const juce::File&,
                                        bool resetPluginState, juce::String& error);
+        bool renderHardwareSingleNote (const RenderSettings&, const RenderNote&, const juce::File&,
+                                       juce::String& error);
         bool writeWavFile (const juce::File&, juce::AudioBuffer<float>&, int numSamples,
                            double sampleRate, juce::String& error) const;
         bool writeMetadata (const RenderSettings&, const std::vector<RenderedSample>&, juce::String& error) const;

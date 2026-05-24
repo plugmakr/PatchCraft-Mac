@@ -6,7 +6,7 @@
   "category": "Modulation FX",
   "engine": "fx",
   "backgroundImage": "assets/background.png",
-  "libraryThumbnail": "assets/thumbnail.png",
+  "libraryThumbnail": "assets/library-artwork.png",
   "defaultPreset": "Gate Matrix",
   "createdWith": "PatchCraft Studio",
   "version": "1.0",

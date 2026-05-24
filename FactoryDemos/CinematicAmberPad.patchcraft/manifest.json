@@ -6,7 +6,7 @@
   "category": "Synth Instrument",
   "engine": "synth",
   "backgroundImage": "assets/background.png",
-  "libraryThumbnail": "assets/thumbnail.png",
+  "libraryThumbnail": "assets/library-artwork.png",
   "defaultPreset": "Amber Horizon",
   "createdWith": "PatchCraft Studio",
   "version": "1.0",

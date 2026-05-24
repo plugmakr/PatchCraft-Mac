@@ -100,7 +100,7 @@ namespace patchcraft
               layout.add (e); }
 
             { LayoutElement e; e.type = ElementType::Image; e.id = "player_titlebar_artwork";
-              e.asset = "assets/thumbnail.png";
+              e.asset = "assets/library-artwork.png";
               e.semanticRole = "playerTitleBarArtwork";
               e.x = 56; e.y = 46; e.width = 30; e.height = 30;
               e.cornerRadius = 5.0f;
@@ -132,7 +132,7 @@ namespace patchcraft
             // with companion product-info labels so templates show how the
             // buyer-facing Library card will read before final art is dropped in.
             { LayoutElement e; e.type = ElementType::Image; e.id = "player_artwork";
-              e.asset = "assets/thumbnail.png";
+              e.asset = "assets/library-artwork.png";
               e.semanticRole = "playerLibraryArtwork";
               e.x = 76; e.y = 124; e.width = 390; e.height = 260;
               e.cornerRadius = 16.0f;
@@ -161,7 +161,7 @@ namespace patchcraft
 
             { LayoutElement e; e.type = ElementType::Label; e.id = "player_artwork_badge";
               e.semanticRole = "playerArtworkInfo";
-              e.x = 510; e.y = 128; e.width = 250; e.height = 22;
+              e.x = 510; e.y = 128; e.width = 260; e.height = 22;
               e.label = "LIBRARY CARD ARTWORK 300 x 200";
               e.textColour = juce::Colour (0xff58f0c8);
               e.labelSize = 11.0f;
@@ -170,7 +170,7 @@ namespace patchcraft
 
             { LayoutElement e; e.type = ElementType::Label; e.id = "player_product_name";
               e.semanticRole = "playerHeaderTitle";
-              e.x = 510; e.y = 158; e.width = 600; e.height = 40;
+              e.x = 510; e.y = 158; e.width = 270; e.height = 40;
               e.label = productName;
               e.textColour = juce::Colour (0xfff7f7ff);
               e.labelSize = 24.0f;
@@ -179,7 +179,7 @@ namespace patchcraft
 
             { LayoutElement e; e.type = ElementType::Label; e.id = "player_product_kind";
               e.semanticRole = "playerHeaderMetadata";
-              e.x = 512; e.y = 206; e.width = 420; e.height = 22;
+              e.x = 512; e.y = 206; e.width = 270; e.height = 22;
               e.label = productKind + "  |  PLAYER LIBRARY PREVIEW";
               e.textColour = juce::Colour (0xffb8c8d6);
               e.labelSize = 12.0f;
@@ -188,7 +188,7 @@ namespace patchcraft
 
             { LayoutElement e; e.type = ElementType::Label; e.id = "player_product_description";
               e.semanticRole = "playerHeaderDescription";
-              e.x = 512; e.y = 238; e.width = 590; e.height = 44;
+              e.x = 512; e.y = 238; e.width = 270; e.height = 72;
               e.label = "Mock product info preview: final library art, title, category, and creator metadata are reviewed here before export.";
               e.textColour = juce::Colour (0xffdce3ea);
               e.labelSize = 13.0f;
@@ -197,10 +197,29 @@ namespace patchcraft
 
             { LayoutElement e; e.type = ElementType::Label; e.id = "player_artwork_dimensions";
               e.semanticRole = "playerArtworkSpec";
-              e.x = 512; e.y = 318; e.width = 420; e.height = 24;
+              e.x = 512; e.y = 318; e.width = 270; e.height = 34;
               e.label = "Library preview: x76 y124  w390 h260  (3:2 mock)";
               e.textColour = juce::Colour (0xff8fa0ad);
               e.labelSize = 11.0f;
+              e.locked = true;
+              layout.add (e); }
+
+            { LayoutElement e; e.type = ElementType::Image; e.id = "player_library_modal_mock";
+              e.asset = "assets/player-library-modal.png";
+              e.semanticRole = "playerLibraryModalMock";
+              e.x = 818; e.y = 124; e.width = 382; e.height = 232;
+              e.cornerRadius = 14.0f;
+              e.locked = true;
+              layout.add (e); }
+
+            { LayoutElement e; e.type = ElementType::Shape; e.id = "player_library_modal_frame";
+              e.semanticRole = "playerLibraryModalFrame";
+              e.x = 818; e.y = 124; e.width = 382; e.height = 232;
+              e.shapeKind = "roundedRect";
+              e.cornerRadius = 14.0f;
+              e.backgroundColour = juce::Colour (0x00000000);
+              e.borderColour = juce::Colour (0x8858f0c8);
+              e.strokeWidth = 1.0f;
               e.locked = true;
               layout.add (e); }
 

@@ -6,7 +6,7 @@
   "category": "Wavetable Synth",
   "engine": "synth",
   "backgroundImage": "assets/background.png",
-  "libraryThumbnail": "assets/thumbnail.png",
+  "libraryThumbnail": "assets/library-artwork.png",
   "defaultPreset": "Neon Glass Arp",
   "createdWith": "PatchCraft Studio",
   "version": "1.0",

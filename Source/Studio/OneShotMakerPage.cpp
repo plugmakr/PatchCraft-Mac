@@ -65,6 +65,7 @@ namespace patchcraft
         setupLabel (pluginStatusLabel,
                     pluginFormatManager.getNumFormats() > 0 ? "Ready for a VST3 instrument." : "VST3 hosting is not enabled in this build.",
                     12.0f, false, PatchCraftLookAndFeel::textDim());
+        setupFieldLabel (hardwareMidiOutputLabel, "MIDI Out");
         setupLabel (outputPathLabel, outputBaseFolder.getFullPathName(), 12.0f, false, PatchCraftLookAndFeel::textDim());
         setupLabel (planLabel, {}, 12.0f, false, PatchCraftLookAndFeel::text());
         setupLabel (statusLabel, "Idle.", 12.0f, false, PatchCraftLookAndFeel::textDim());
@@ -73,7 +74,7 @@ namespace patchcraft
                              &exportSectionTitle, &planSectionTitle, &pluginEditorTitle,
                              &pluginEditorStatusLabel, &sampleEditorTitle, &sampleEditorStatusLabel,
                              &pluginPathLabel, &pluginStatusLabel, &outputPathLabel, &planLabel,
-                             &statusLabel })
+                             &statusLabel, &hardwareMidiOutputLabel })
             addAndMakeVisible (*label);
 
         for (auto* button : { &builderViewButton, &libraryViewButton, &refreshLibraryButton,
@@ -113,6 +114,8 @@ namespace patchcraft
         floatPluginEditorButton.setTooltip ("Pop the plugin editor into a floating window.");
         closePluginEditorButton.setTooltip ("Close the embedded/floating plugin editor.");
         livePluginToggle.setTooltip ("Route hardware/software MIDI through the loaded plugin for live sound design before rendering.");
+        hardwareCaptureToggle.setTooltip ("Record one-shots from your audio interface input. Optionally sends the render notes to a selected MIDI output for external synths.");
+        hardwareMidiOutputBox.setTooltip ("Optional MIDI output used to trigger an external keyboard or synth during hardware capture.");
         previewSampleButton.setTooltip ("Preview the selected rendered WAV with current edit settings.");
         stopSampleButton.setTooltip ("Stop rendered sample preview playback.");
 
@@ -336,12 +339,34 @@ namespace patchcraft
             else
                 stopLivePluginHost (true);
         };
+        hardwareCaptureToggle.onClick = [this]
+        {
+            if (hardwareCaptureToggle.getToggleState())
+            {
+                stopLivePluginHost (false);
+                pluginStatusLabel.setText ("Hardware input capture armed. Audio input will be recorded into one-shot WAVs.",
+                                           juce::dontSendNotification);
+            }
+            else
+            {
+                pluginStatusLabel.setText (pluginInstance != nullptr ? "Plugin loaded. Ready to render."
+                                                                      : "Ready for a VST3 instrument or hardware input.",
+                                           juce::dontSendNotification);
+            }
+            updateRenderPlan();
+            setControlsEnabledForRenderState();
+        };
 
-        for (auto* toggle : { &normalizeToggle, &trimStartToggle, &replaceMapperToggle, &editReverseToggle, &livePluginToggle })
+        for (auto* toggle : { &normalizeToggle, &trimStartToggle, &replaceMapperToggle, &editReverseToggle,
+                              &livePluginToggle, &hardwareCaptureToggle })
         {
             toggle->setColour (juce::ToggleButton::textColourId, PatchCraftLookAndFeel::text());
             addAndMakeVisible (*toggle);
         }
+
+        populateHardwareMidiOutputs();
+        hardwareMidiOutputBox.onChange = [this] { updateRenderPlan(); };
+        addAndMakeVisible (hardwareMidiOutputBox);
 
         renderedSampleBox.onChange = [this] { loadRenderedSampleForReview (renderedSampleBox.getSelectedId() - 1); };
         addAndMakeVisible (renderedSampleBox);
@@ -372,6 +397,8 @@ namespace patchcraft
 
     OneShotMakerPage::~OneShotMakerPage()
     {
+        hardwareCaptureActive.store (false);
+        hardwareCaptureCallbackActive = false;
         stopLivePluginHost (true);
         stopReviewPreview();
         destroyPluginEditor();
@@ -462,6 +489,9 @@ namespace patchcraft
                  static_cast<juce::Component*> (&floatPluginEditorButton),
                  static_cast<juce::Component*> (&closePluginEditorButton),
                  static_cast<juce::Component*> (&livePluginToggle),
+                 static_cast<juce::Component*> (&hardwareCaptureToggle),
+                 static_cast<juce::Component*> (&hardwareMidiOutputLabel),
+                 static_cast<juce::Component*> (&hardwareMidiOutputBox),
                  static_cast<juce::Component*> (&previewSampleButton),
                  static_cast<juce::Component*> (&stopSampleButton),
                  static_cast<juce::Component*> (&packNameLabel),
@@ -784,7 +814,7 @@ namespace patchcraft
 
     void OneShotMakerPage::releaseSharedAudioCallbackIfIdle()
     {
-        if (audioCallbackRegistered && ! livePluginCallbackActive && ! reviewCallbackActive)
+        if (audioCallbackRegistered && ! livePluginCallbackActive && ! reviewCallbackActive && ! hardwareCaptureCallbackActive)
         {
             owner.getAudio().getDeviceManager().removeAudioCallback (this);
             audioCallbackRegistered = false;
@@ -808,6 +838,21 @@ namespace patchcraft
                                      livePluginBlockSize);
         pluginProcessBuffer.clear();
         livePluginPrepared.store (true);
+    }
+
+    void OneShotMakerPage::populateHardwareMidiOutputs()
+    {
+        const auto previousText = hardwareMidiOutputBox.getText();
+        hardwareMidiOutputBox.clear (juce::dontSendNotification);
+        hardwareMidiOutputBox.addItem ("No MIDI output", 1);
+
+        int id = 2;
+        for (const auto& output : juce::MidiOutput::getAvailableDevices())
+            hardwareMidiOutputBox.addItem (output.name, id++);
+
+        hardwareMidiOutputBox.setSelectedId (1, juce::dontSendNotification);
+        if (previousText.isNotEmpty())
+            hardwareMidiOutputBox.setText (previousText, juce::dontSendNotification);
     }
 
     void OneShotMakerPage::startLivePluginHost()
@@ -952,6 +997,12 @@ namespace patchcraft
             summary += "  |  " + juce::String (velocityLayersBox.getSelectedId()) + " vel layers";
         if (roundRobinBox.getSelectedId() > 1)
             summary += "  |  " + juce::String (roundRobinBox.getSelectedId()) + " RR";
+        if (hardwareCaptureToggle.getToggleState())
+        {
+            summary += "  |  hardware input";
+            if (hardwareMidiOutputBox.getSelectedId() > 1)
+                summary += " -> " + hardwareMidiOutputBox.getText();
+        }
         if (! notes.empty())
             summary += "  |  " + notes.front().label + " to " + notes.back().label;
         planLabel.setText (summary, juce::dontSendNotification);
@@ -964,6 +1015,7 @@ namespace patchcraft
         const bool busy = rendering.load();
         const bool canEdit = ! busy;
         const bool hasPlugin = pluginInstance != nullptr;
+        const bool hardwareMode = hardwareCaptureToggle.getToggleState();
         const bool hasPlan = ! buildRenderPlan().empty();
 
         for (auto* c : { static_cast<juce::Component*> (&importPluginButton),
@@ -993,6 +1045,8 @@ namespace patchcraft
                          static_cast<juce::Component*> (&floatPluginEditorButton),
                          static_cast<juce::Component*> (&closePluginEditorButton),
                          static_cast<juce::Component*> (&livePluginToggle),
+                         static_cast<juce::Component*> (&hardwareCaptureToggle),
+                         static_cast<juce::Component*> (&hardwareMidiOutputBox),
                          static_cast<juce::Component*> (&renderedSampleBox),
                          static_cast<juce::Component*> (&editGainSlider),
                          static_cast<juce::Component*> (&editReverseToggle),
@@ -1000,12 +1054,14 @@ namespace patchcraft
                          static_cast<juce::Component*> (&stopSampleButton) })
             c->setEnabled (canEdit);
 
-        renderButton.setEnabled (canEdit && hasPlugin && hasPlan);
+        renderButton.setEnabled (canEdit && hasPlan && (hasPlugin || hardwareMode));
         auditionPluginButton.setEnabled (canEdit && hasPlugin && hasPlan);
         refreshPluginEditorButton.setEnabled (canEdit && hasPlugin);
         floatPluginEditorButton.setEnabled (canEdit && pluginEditor != nullptr);
         closePluginEditorButton.setEnabled (canEdit && pluginEditor != nullptr);
-        livePluginToggle.setEnabled (canEdit && hasPlugin);
+        livePluginToggle.setEnabled (canEdit && hasPlugin && ! hardwareMode);
+        hardwareCaptureToggle.setEnabled (canEdit);
+        hardwareMidiOutputBox.setEnabled (canEdit && hardwareMode);
         previewSampleButton.setEnabled (canEdit && reviewBuffer.getNumSamples() > 0);
         stopSampleButton.setEnabled (reviewCallbackActive || reviewPreviewPlaying.load());
         sendToMapperButton.setEnabled (canEdit && ! renderedSamples.empty());
@@ -1085,6 +1141,17 @@ namespace patchcraft
         settings.templateName = selectedTemplateName();
         settings.sourcePluginName = pluginDescription.name;
         settings.sourcePluginPath = pluginDescription.fileOrIdentifier;
+        settings.hardwareCaptureMode = hardwareCaptureToggle.getToggleState();
+        if (settings.hardwareCaptureMode)
+        {
+            settings.sourcePluginName = "Hardware Input";
+            settings.sourcePluginPath = "audio-interface-input";
+            const auto selectedMidi = hardwareMidiOutputBox.getText();
+            settings.hardwareMidiOutputName = selectedMidi == "No MIDI output" ? juce::String() : selectedMidi;
+            for (const auto& output : juce::MidiOutput::getAvailableDevices())
+                if (output.name == selectedMidi)
+                    settings.hardwareMidiOutputId = output.identifier;
+        }
         settings.artworkPath = artworkFile.getFullPathName();
         settings.packFolder = outputBaseFolder.getChildFile (legalStem (settings.packName));
         settings.templateId = templateBox.getSelectedId();
@@ -1199,10 +1266,11 @@ namespace patchcraft
         stopReviewPreview();
         resumeLivePluginAfterRender = livePluginEnabled.load();
         stopLivePluginHost (false);
-        if (pluginInstance == nullptr)
+        const bool hardwareMode = hardwareCaptureToggle.getToggleState();
+        if (! hardwareMode && pluginInstance == nullptr)
         {
             resumeLivePluginAfterRender = false;
-            showMessage ("One Shot Maker", "Load a VST3 instrument before rendering.", juce::MessageBoxIconType::WarningIcon);
+            showMessage ("One Shot Maker", "Load a VST3 instrument, or enable Hardware Input to record an external synth.", juce::MessageBoxIconType::WarningIcon);
             return;
         }
 
@@ -1230,8 +1298,9 @@ namespace patchcraft
         renderedSamples.clear();
         renderProgress.store (0.0f);
         rendering.store (true);
-        statusLabel.setText ("Rendering " + juce::String ((int) notes.size()) + " one-shots...", juce::dontSendNotification);
-        appendLog ("Rendering pack: " + settings.packName);
+        statusLabel.setText ((hardwareMode ? "Recording " : "Rendering ") + juce::String ((int) notes.size()) + " one-shots...",
+                             juce::dontSendNotification);
+        appendLog ((hardwareMode ? "Recording hardware pack: " : "Rendering pack: ") + settings.packName);
         setControlsEnabledForRenderState();
         startTimerHz (20);
 
@@ -1258,6 +1327,41 @@ namespace patchcraft
                                                std::vector<RenderedSample>& rendered,
                                                juce::String& error)
     {
+        if (settings.hardwareCaptureMode)
+        {
+            auto metadataSettings = settings;
+            if (! settings.packFolder.createDirectory())
+            {
+                error = "Could not create output folder: " + settings.packFolder.getFullPathName();
+                return false;
+            }
+
+            for (size_t i = 0; i < notes.size(); ++i)
+            {
+                const auto& note = notes[i];
+                const auto file = fileForRenderedNote (settings, note, (int) i);
+                juce::String noteError;
+                if (! renderHardwareSingleNote (settings, note, file, noteError))
+                {
+                    error = "Failed recording " + note.label + ": " + noteError;
+                    return false;
+                }
+
+                rendered.push_back ({ note.midiNote,
+                                      note.velocity,
+                                      note.velocityLayerIndex,
+                                      note.velocityLayerCount,
+                                      note.roundRobinIndex,
+                                      note.roundRobinCount,
+                                      note.label,
+                                      file });
+                renderProgress.store ((float) (i + 1) / (float) juce::jmax ((size_t) 1, notes.size()));
+                metadataSettings.sampleRate = hardwareCaptureSampleRate;
+            }
+
+            return writeMetadata (metadataSettings, rendered, error);
+        }
+
         const juce::SpinLock::ScopedLockType processLock (pluginProcessLock);
         if (pluginInstance == nullptr)
         {
@@ -1453,6 +1557,147 @@ namespace patchcraft
         return writeWavFile (file, finalBuffer, renderedSamplesCount, settings.sampleRate, error);
     }
 
+    bool OneShotMakerPage::renderHardwareSingleNote (const RenderSettings& settings,
+                                                     const RenderNote& note,
+                                                     const juce::File& file,
+                                                     juce::String& error)
+    {
+        juce::String audioError;
+        if (! owner.getAudio().ensureOpen (audioError, 1, 2))
+        {
+            error = "Hardware input is not available: " + audioError;
+            return false;
+        }
+
+        auto& deviceManager = owner.getAudio().getDeviceManager();
+        auto* device = deviceManager.getCurrentAudioDevice();
+        if (device == nullptr || device->getActiveInputChannels().countNumberOfSetBits() <= 0)
+        {
+            error = "Choose an audio device with at least one active input in Settings.";
+            return false;
+        }
+
+        hardwareCaptureSampleRate = device->getCurrentSampleRate();
+        const int noteSamples = juce::roundToInt ((60.0 / juce::jmax (1.0, settings.bpm)) * 4.0 * settings.bars * hardwareCaptureSampleRate);
+        const int tailSamples = juce::roundToInt ((settings.tailMs / 1000.0) * hardwareCaptureSampleRate);
+        const int totalSamples = juce::jmax (device->getCurrentBufferSizeSamples(), noteSamples + tailSamples);
+        const int captureChannels = juce::jmax (1, juce::jmin (2, device->getActiveInputChannels().countNumberOfSetBits()));
+
+        {
+            const juce::ScopedLock lock (hardwareCaptureLock);
+            hardwareCaptureBuffer.setSize (captureChannels, totalSamples, false, false, true);
+            hardwareCaptureBuffer.clear();
+            hardwareCaptureWritePosition.store (0);
+        }
+
+        std::unique_ptr<juce::MidiOutput> midiOutput;
+        if (settings.hardwareMidiOutputId.isNotEmpty())
+            midiOutput = juce::MidiOutput::openDevice (settings.hardwareMidiOutputId);
+
+        hardwareCaptureCallbackActive = true;
+        ensureSharedAudioCallback();
+        hardwareCaptureActive.store (true);
+
+        if (midiOutput != nullptr)
+            midiOutput->sendMessageNow (juce::MidiMessage::noteOn (1, note.midiNote,
+                                                                    juce::jlimit (0.0f, 1.0f,
+                                                                        (float) note.velocity / 127.0f)));
+
+        const auto started = juce::Time::getMillisecondCounterHiRes();
+        const auto noteOffAt = started + (1000.0 * noteSamples / hardwareCaptureSampleRate);
+        const auto stopAt = started + (1000.0 * totalSamples / hardwareCaptureSampleRate);
+        bool sentNoteOff = false;
+        while (juce::Time::getMillisecondCounterHiRes() < stopAt
+               && hardwareCaptureWritePosition.load() < totalSamples)
+        {
+            if (! sentNoteOff && juce::Time::getMillisecondCounterHiRes() >= noteOffAt)
+            {
+                if (midiOutput != nullptr)
+                    midiOutput->sendMessageNow (juce::MidiMessage::noteOff (1, note.midiNote));
+                sentNoteOff = true;
+            }
+            juce::Thread::sleep (3);
+        }
+
+        if (! sentNoteOff && midiOutput != nullptr)
+            midiOutput->sendMessageNow (juce::MidiMessage::noteOff (1, note.midiNote));
+
+        hardwareCaptureActive.store (false);
+        hardwareCaptureCallbackActive = false;
+        releaseSharedAudioCallbackIfIdle();
+
+        juce::AudioBuffer<float> finalBuffer;
+        int renderedSamplesCount = 0;
+        {
+            const juce::ScopedLock lock (hardwareCaptureLock);
+            renderedSamplesCount = juce::jlimit (0, totalSamples, hardwareCaptureWritePosition.load());
+            if (renderedSamplesCount <= 0)
+            {
+                error = "No hardware input was captured. Check your input device, gain, and cables.";
+                return false;
+            }
+            finalBuffer.setSize (hardwareCaptureBuffer.getNumChannels(), renderedSamplesCount);
+            for (int ch = 0; ch < finalBuffer.getNumChannels(); ++ch)
+                finalBuffer.copyFrom (ch, 0, hardwareCaptureBuffer, ch, 0, renderedSamplesCount);
+        }
+
+        if (settings.trimStartSilence)
+        {
+            constexpr float silenceThreshold = 0.0005f;
+            const int keepPreRoll = juce::jlimit (0, 128, juce::roundToInt (hardwareCaptureSampleRate * 0.0005));
+            int firstAudible = renderedSamplesCount;
+            for (int sample = 0; sample < renderedSamplesCount; ++sample)
+            {
+                float peak = 0.0f;
+                for (int ch = 0; ch < finalBuffer.getNumChannels(); ++ch)
+                    peak = juce::jmax (peak, std::abs (finalBuffer.getSample (ch, sample)));
+                if (peak >= silenceThreshold)
+                {
+                    firstAudible = sample;
+                    break;
+                }
+            }
+
+            const int trimStart = juce::jlimit (0, juce::jmax (0, renderedSamplesCount - 1), firstAudible - keepPreRoll);
+            if (trimStart > 0 && trimStart < renderedSamplesCount)
+            {
+                const int newCount = renderedSamplesCount - trimStart;
+                for (int ch = 0; ch < finalBuffer.getNumChannels(); ++ch)
+                    finalBuffer.copyFrom (ch, 0, finalBuffer, ch, trimStart, newCount);
+                renderedSamplesCount = newCount;
+            }
+        }
+
+        auto applyLinearFade = [&] (int startSample, int fadeSamples, bool fadeOut)
+        {
+            const int start = juce::jlimit (0, renderedSamplesCount, startSample);
+            const int end = juce::jlimit (start, renderedSamplesCount, start + fadeSamples);
+            const int length = end - start;
+            for (int i = 0; i < length; ++i)
+            {
+                const float t = (float) i / (float) juce::jmax (1, length - 1);
+                const float gain = fadeOut ? (1.0f - t) : t;
+                for (int ch = 0; ch < finalBuffer.getNumChannels(); ++ch)
+                    finalBuffer.setSample (ch, start + i, finalBuffer.getSample (ch, start + i) * gain);
+            }
+        };
+
+        applyLinearFade (0, juce::roundToInt ((settings.fadeInMs / 1000.0) * hardwareCaptureSampleRate), false);
+        const int fadeOutSamples = juce::roundToInt ((settings.fadeOutMs / 1000.0) * hardwareCaptureSampleRate);
+        applyLinearFade (juce::jmax (0, renderedSamplesCount - fadeOutSamples), fadeOutSamples, true);
+
+        if (settings.normalize)
+        {
+            float peak = 0.0f;
+            for (int ch = 0; ch < finalBuffer.getNumChannels(); ++ch)
+                peak = juce::jmax (peak, finalBuffer.getMagnitude (ch, 0, renderedSamplesCount));
+            if (peak > 0.0001f)
+                finalBuffer.applyGain (0, renderedSamplesCount, juce::jmin (8.0f, 0.98f / peak));
+        }
+
+        return writeWavFile (file, finalBuffer, renderedSamplesCount, hardwareCaptureSampleRate, error);
+    }
+
     bool OneShotMakerPage::writeWavFile (const juce::File& file, juce::AudioBuffer<float>& buffer,
                                          int numSamples, double sampleRate, juce::String& error) const
     {
@@ -1502,6 +1747,9 @@ namespace patchcraft
         root->setProperty ("name", settings.packName);
         root->setProperty ("sourcePlugin", settings.sourcePluginName);
         root->setProperty ("sourcePluginPath", settings.sourcePluginPath);
+        root->setProperty ("hardwareCaptureMode", settings.hardwareCaptureMode);
+        if (settings.hardwareMidiOutputName.isNotEmpty())
+            root->setProperty ("hardwareMidiOutput", settings.hardwareMidiOutputName);
         root->setProperty ("template", settings.templateName);
         root->setProperty ("creator", settings.creatorName);
         root->setProperty ("category", settings.categoryName);
@@ -2998,6 +3246,8 @@ namespace patchcraft
     {
         reviewPreviewPlaying.store (false);
         reviewPreviewFinished.store (true);
+        hardwareCaptureActive.store (false);
+        hardwareCaptureWritePosition.store (0);
         livePluginPrepared.store (false);
         {
             const juce::ScopedLock midiGuard (liveMidiLock);
@@ -3019,7 +3269,7 @@ namespace patchcraft
         liveMidiBuffer.addEvent (message, 0);
     }
 
-    void OneShotMakerPage::audioDeviceIOCallbackWithContext (const float* const*, int,
+    void OneShotMakerPage::audioDeviceIOCallbackWithContext (const float* const* inputChannelData, int numInputChannels,
                                                              float* const* outputChannelData,
                                                              int numOutputChannels,
                                                              int numSamples,
@@ -3027,6 +3277,25 @@ namespace patchcraft
     {
         juce::AudioBuffer<float> output (outputChannelData, numOutputChannels, numSamples);
         output.clear();
+
+        if (hardwareCaptureActive.load())
+        {
+            const juce::ScopedLock lock (hardwareCaptureLock);
+            const int writePos = hardwareCaptureWritePosition.load();
+            const int writable = juce::jmin (numSamples, hardwareCaptureBuffer.getNumSamples() - writePos);
+            if (writable > 0)
+            {
+                for (int ch = 0; ch < hardwareCaptureBuffer.getNumChannels(); ++ch)
+                {
+                    const int srcCh = juce::jmin (ch, juce::jmax (0, numInputChannels - 1));
+                    if (inputChannelData != nullptr && numInputChannels > 0 && inputChannelData[srcCh] != nullptr)
+                        hardwareCaptureBuffer.copyFrom (ch, writePos, inputChannelData[srcCh], writable);
+                    else
+                        hardwareCaptureBuffer.clear (ch, writePos, writable);
+                }
+                hardwareCaptureWritePosition.store (writePos + writable);
+            }
+        }
 
         if (livePluginCallbackActive && pluginInstance != nullptr)
         {
@@ -3236,6 +3505,12 @@ namespace patchcraft
         livePluginToggle.setBounds (pluginButtons.removeFromLeft (112));
         pluginButtons.removeFromLeft (8);
         auditionPluginButton.setBounds (pluginButtons);
+        p.removeFromTop (8);
+        auto hardwareRow = p.removeFromTop (28);
+        hardwareCaptureToggle.setBounds (hardwareRow.removeFromLeft (132));
+        hardwareRow.removeFromLeft (8);
+        hardwareMidiOutputLabel.setBounds (hardwareRow.removeFromLeft (58));
+        hardwareMidiOutputBox.setBounds (hardwareRow);
 
         auto s = settingsCard.reduced (18, 16);
         settingsSectionTitle.setBounds (s.removeFromTop (24));

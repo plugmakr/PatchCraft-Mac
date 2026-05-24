@@ -6,7 +6,7 @@
   "category": "Arp Synth Demo",
   "engine": "synth",
   "backgroundImage": "assets/background.png",
-  "libraryThumbnail": "assets/thumbnail.png",
+  "libraryThumbnail": "assets/library-artwork.png",
   "defaultPreset": "CircleSEQ Evolution",
   "createdWith": "PatchCraft Studio",
   "version": "1.0",
