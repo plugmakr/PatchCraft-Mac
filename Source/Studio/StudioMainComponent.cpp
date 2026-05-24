@@ -158,7 +158,7 @@ namespace patchcraft
                 {
                     if (result == 1)
                         if (auto* component = safeOwner.getComponent())
-                            component->setBottomTab (BottomPanel::Page::SampleMapper);
+                            component->setBottomTab (BottomPanel::Page::Samples);
             });
             return true;
         }
@@ -497,8 +497,8 @@ namespace patchcraft
 
         if (sampleLibraryDrawerOpen)
         {
-            if (bottomTab != BottomPanel::Page::SampleMapper)
-                setBottomTab (BottomPanel::Page::SampleMapper);
+            if (bottomTab != BottomPanel::Page::Samples)
+                setBottomTab (BottomPanel::Page::Samples);
 
             if (assetLibraryPanel != nullptr)
             {
@@ -526,17 +526,17 @@ namespace patchcraft
         };
 
         const Shot shots[] = {
-            { BottomPanel::Page::Workflow,       "studio-workflow.png" },
+            { BottomPanel::Page::Dashboard,       "studio-workflow.png" },
             { BottomPanel::Page::Design,         "studio-design.png" },
-            { BottomPanel::Page::SampleMapper,   "studio-samples.png" },
+            { BottomPanel::Page::Samples,   "studio-samples.png" },
             { BottomPanel::Page::OneShotMaker,   "studio-one-shot.png" },
             { BottomPanel::Page::MidiPlayground, "studio-midi.png" },
             { BottomPanel::Page::ArpStudio,      "studio-arp-studio.png" },
             { BottomPanel::Page::DSP,            "studio-dsp.png" },
-            { BottomPanel::Page::Build,          "studio-build.png" },
+            { BottomPanel::Page::Widgets,          "studio-build.png" },
             { BottomPanel::Page::Branding,       "studio-brand-lab.png" },
             { BottomPanel::Page::Test,           "studio-test.png" },
-            { BottomPanel::Page::Launch,         "studio-launch.png" }
+            { BottomPanel::Page::Export,         "studio-launch.png" }
         };
 
         dspTutorialShownThisSession = true;
@@ -634,7 +634,6 @@ namespace patchcraft
         leftTabs.addTab ("Elements",   PatchCraftLookAndFeel::panel(), -1);
         leftTabs.addTab ("Layers",     PatchCraftLookAndFeel::panel(), -1);
         leftTabs.addTab ("Library",    PatchCraftLookAndFeel::panel(), -1);
-        leftTabs.addTab ("Packs",      PatchCraftLookAndFeel::panel(), -1);
         leftTabs.setCurrentTabIndex (0, juce::dontSendNotification);
         addAndMakeVisible (leftTabs);
         leftCollapseButton.getProperties().set ("smallButton", true);
@@ -655,8 +654,6 @@ namespace patchcraft
         {
             if (showLibraryInsteadOfElements)
                 togglePanelFloat (assetLibraryPanel.get(), "Library");
-            else if (showExpansionsInsteadOfElements)
-                togglePanelFloat (expansionLibraryPanel.get(), "Packs");
             else if (showLayersInsteadOfElements)
                 togglePanelFloat (layersPanel.get(), "Layers");
             else
@@ -681,17 +678,14 @@ namespace patchcraft
         rightPopButton.onClick = [this]
         {
             if (rightTabIndex == 1)
-                togglePanelFloat (layersPanel.get(), "Layers");
-            else if (rightTabIndex == 2)
                 togglePanelFloat (presetsPanel.get(), "Presets");
             else
                 togglePanelFloat (inspectorViewport.get(), "Inspector");
         };
         addAndMakeVisible (rightPopButton);
 
-        // Right panel tabs: Inspector (default), Layers, Presets.
+        // Right panel tabs: Inspector (default), Presets.
         rightTabs.addTab ("Inspector", PatchCraftLookAndFeel::panel(), -1);
-        rightTabs.addTab ("Layers",    PatchCraftLookAndFeel::panel(), -1);
         rightTabs.addTab ("Presets",   PatchCraftLookAndFeel::panel(), -1);
         rightTabs.setCurrentTabIndex (0, juce::dontSendNotification);
         addAndMakeVisible (rightTabs);
@@ -702,12 +696,9 @@ namespace patchcraft
             {
                 rightTabs.setCurrentTabIndex (i);
                 rightTabIndex = i;
-                showLayersInRightPanel = (i == 1);
                 inspectorViewport->setVisible (i == 0 || isPanelFloating (inspectorViewport.get()));
-                layersPanel  ->setVisible (i == 1);
-                presetsPanel ->setVisible (i == 2);
-                if (i == 1) layersPanel->refresh();
-                if (i == 2) presetsPanel->refresh();
+                presetsPanel ->setVisible (i == 1);
+                if (i == 1) presetsPanel->refresh();
                 resized();
             };
         }
@@ -719,18 +710,13 @@ namespace patchcraft
                 leftTabs.setCurrentTabIndex (i);
                 showLayersInsteadOfElements      = (i == 1);
                 showLibraryInsteadOfElements     = (i == 2);
-                showExpansionsInsteadOfElements  = (i == 3);
                 const bool showElements = ! showLibraryInsteadOfElements
-                                       && ! showLayersInsteadOfElements
-                                       && ! showExpansionsInsteadOfElements;
+                                       && ! showLayersInsteadOfElements;
                 elementPalette->setVisible (showElements);
                 layersPanel->setVisible (showLayersInsteadOfElements);
                 assetLibraryPanel->setVisible (showLibraryInsteadOfElements);
-                expansionLibraryPanel->setVisible (showExpansionsInsteadOfElements);
                 if (showLayersInsteadOfElements)
                     layersPanel->refresh();
-                if (showExpansionsInsteadOfElements)
-                    expansionLibraryPanel->refresh();
                 resized();
             };
         }
@@ -896,7 +882,7 @@ namespace patchcraft
             juce::Array<juce::File> files;
             files.add (file);
             importSampleFiles (files);
-            setBottomTab (BottomPanel::Page::SampleMapper);
+            setBottomTab (BottomPanel::Page::Samples);
             return;
         }
 
@@ -1067,7 +1053,7 @@ namespace patchcraft
         const bool layersFloating = isPanelFloating (layersPanel.get());
         const bool presetsFloating = isPanelFloating (presetsPanel.get());
         const bool brandLabTab = (bottomTab == BottomPanel::Page::Branding);
-        const bool sampleMapperTab = (bottomTab == BottomPanel::Page::SampleMapper);
+        const bool sampleMapperTab = (bottomTab == BottomPanel::Page::Samples);
         const bool brandLibraryDocked = brandLabTab && ! libraryFloating;
         const bool sampleLibraryDocked = sampleMapperTab && sampleLibraryDrawerOpen && ! libraryFloating;
         const bool leftLayersDocked = designTab && ! leftPanelCollapsed && showLayersInsteadOfElements;
@@ -1077,15 +1063,14 @@ namespace patchcraft
         rightCollapseButton.setVisible (designTab);
         leftPopButton.setVisible (designTab && ! leftPanelCollapsed);
         rightPopButton.setVisible (designTab && ! rightPanelCollapsed);
+        
         leftTabs.setVisible       (designTab && ! leftPanelCollapsed);
-        // Left column (Elements / Library / Packs). Layers moved out
-        // to the right column.
-        elementPalette->setVisible(elementsFloating || (designTab && ! leftPanelCollapsed
-                                   && ! showLibraryInsteadOfElements
-                                   && ! showLayersInsteadOfElements
-                                   && ! showExpansionsInsteadOfElements));
+        leftCollapseButton.setVisible (designTab);
+        leftPopButton.setVisible  (designTab && ! leftPanelCollapsed);
+
+        elementPalette->setVisible (elementsFloating || (designTab && ! leftPanelCollapsed && ! showLibraryInsteadOfElements && ! showLayersInsteadOfElements));
         assetLibraryPanel->setVisible (libraryFloating || brandLibraryDocked || sampleLibraryDocked || (designTab && ! leftPanelCollapsed && showLibraryInsteadOfElements));
-        expansionLibraryPanel->setVisible (packsFloating || (designTab && ! leftPanelCollapsed && showExpansionsInsteadOfElements));
+        expansionLibraryPanel->setVisible (packsFloating);
 
         // Right column (Inspector / Layers / Presets).
         const bool rightVisible = designTab && ! rightPanelCollapsed;
@@ -1366,7 +1351,7 @@ namespace patchcraft
 #if PATCHCRAFT_ENABLE_AI_STUDIO
             case 1022: generateAiBackground(); break;
 #endif
-            case 1023: setBottomTab (BottomPanel::Page::Launch); break;
+            case 1023: setBottomTab (BottomPanel::Page::Export); break;
             case 1007: exportPack(); break;
             case 1008: sendToExpansionPack(); break;
             case 1020: exportVstPlugin(); break;
@@ -1435,11 +1420,11 @@ namespace patchcraft
                 resized();
                 repaint();
                 break;
-            case 4006: setBottomTab (BottomPanel::Page::Workflow); break;
+            case 4006: setBottomTab (BottomPanel::Page::Dashboard); break;
             case 4007: setBottomTab (BottomPanel::Page::Design); break;
             case 4008: setBottomTab (BottomPanel::Page::ArpStudio); break;
             case 4009: setBottomTab (BottomPanel::Page::DSP); break;
-            case 4010: setBottomTab (BottomPanel::Page::Launch); break;
+            case 4010: setBottomTab (BottomPanel::Page::Export); break;
             case 4100: fitCanvasToWindow(); break;
             case 2001: showDspBuilderTutorial(); break;
             case 2002: toggleHelpTooltips(); break;
@@ -2127,7 +2112,7 @@ namespace patchcraft
             project.notifyChanged();
 
         if (! importedZones.empty() && switchToMapper)
-            setBottomTab (BottomPanel::Page::SampleMapper);
+            setBottomTab (BottomPanel::Page::Samples);
     }
 
     void StudioMainComponent::importBackground()
@@ -3310,6 +3295,11 @@ namespace patchcraft
         resized();
         repaint();
         menuBar.repaint();
+    }
+
+    void StudioMainComponent::togglePacksPanel()
+    {
+        togglePanelFloat (expansionLibraryPanel.get(), "Packs");
     }
 
     void StudioMainComponent::togglePanelFloat (juce::Component* panel, juce::String title)

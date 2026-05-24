@@ -1,4 +1,6 @@
 #include "AiAssistService.h"
+#include "AudiLockSecurity.h"
+#include "AiImageService.h"
 
 #include "SampleMap.h"
 
@@ -68,6 +70,9 @@ namespace patchcraft
                 case AiAssistService::TaskType::ModulationPlan:             return "Plan LFO, macro, automation, and performance modulation.";
                 case AiAssistService::TaskType::BuildAssetGuidance:         return "Guide knob/slider/meter asset building.";
                 case AiAssistService::TaskType::ExportChecklist:            return "Check sellable pack readiness.";
+                case AiAssistService::TaskType::GenerateFaustDsp:           return "Generate Faust DSP audio code from natural language.";
+                case AiAssistService::TaskType::GenerateMidiJson:           return "Generate JSON MIDI patterns from natural language.";
+                case AiAssistService::TaskType::GeneratePresetBank:         return "Generate parameter-mapped preset banks from natural language.";
             }
             return {};
         }
@@ -199,6 +204,82 @@ namespace patchcraft
 
             return true;
         }
+
+        static bool runCloudTextRequest (const AiAssistService::CloudIntegrationConfig& config,
+                                         AiAssistService::TaskType task,
+                                         const AiAssistService::ProjectContextPack& context,
+                                         const juce::String& builtInDraft,
+                                         juce::String& output,
+                                         juce::String& error)
+        {
+            if (config.textEndpoint.trim().isEmpty() || config.textApiKey.trim().isEmpty())
+            {
+                error = "Cloud text endpoint or API key is empty.";
+                return false;
+            }
+
+            auto* root = new juce::DynamicObject();
+            root->setProperty ("model", config.textModel.trim().isNotEmpty() ? config.textModel.trim() : juce::String ("deepseek-coder"));
+            root->setProperty ("temperature", 0.35f);
+            root->setProperty ("max_tokens", 1000);
+            root->setProperty ("stream", false);
+
+            juce::Array<juce::var> messages;
+            {
+                auto* system = new juce::DynamicObject();
+                system->setProperty ("role", "system");
+                system->setProperty ("content",
+                    "You are PatchCraft Copilot: a focused assistant for music software developers, sound designers, and instrument builders. "
+                    "You know synthesizers, sample instruments, effects, EQ, wavetables, modulation, MIDI, preset packs, and plugin UX. "
+                    "Be specific, avoid fluff, and never say you changed the project unless an explicit apply action is provided. "
+                    "If asked for Faust code, ONLY return the Faust code block without markdown tags unless explicitly asked.");
+                messages.add (juce::var (system));
+            }
+            {
+                auto* user = new juce::DynamicObject();
+                user->setProperty ("role", "user");
+                user->setProperty ("content", buildLocalLlmPrompt (task, context, builtInDraft, true));
+                messages.add (juce::var (user));
+            }
+            root->setProperty ("messages", messages);
+
+            const auto body = juce::JSON::toString (juce::var (root), false);
+            int statusCode = 0;
+            juce::StringPairArray responseHeaders;
+            auto stream = juce::URL (config.textEndpoint)
+                .withPOSTData (body)
+                .createInputStream (juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
+                    .withConnectionTimeoutMs (juce::jlimit (1000, 120000, config.cloudTimeoutMs))
+                    .withExtraHeaders ("Content-Type: application/json\r\nAuthorization: Bearer " + config.textApiKey + "\r\n")
+                    .withResponseHeaders (&responseHeaders)
+                    .withStatusCode (&statusCode)
+                    .withHttpRequestCmd ("POST")
+                    .withNumRedirectsToFollow (2));
+
+            if (stream == nullptr)
+            {
+                error = "Could not connect to Cloud AI server at " + config.textEndpoint + ".";
+                return false;
+            }
+
+            const auto response = stream->readEntireStreamAsString();
+            if (statusCode < 200 || statusCode >= 300)
+            {
+                error = "Cloud AI server returned HTTP " + juce::String (statusCode)
+                    + (response.isNotEmpty() ? (": " + response.substring (0, 240)) : juce::String());
+                return false;
+            }
+
+            auto parsed = juce::JSON::parse (response);
+            output = extractChatContent (parsed).trim();
+            if (output.isEmpty())
+            {
+                error = "Cloud AI response did not contain assistant text.";
+                return false;
+            }
+
+            return true;
+        }
     }
 
     juce::String AiAssistService::displayName (TaskType t)
@@ -218,6 +299,9 @@ namespace patchcraft
             case TaskType::ModulationPlan:             return "Sound Copilot: Modulation";
             case TaskType::BuildAssetGuidance:         return "Build Copilot: Assets";
             case TaskType::ExportChecklist:            return "Export Copilot: Checklist";
+            case TaskType::GenerateFaustDsp:           return "Code Copilot: Faust DSP";
+            case TaskType::GenerateMidiJson:           return "Generator: MIDI Sequence";
+            case TaskType::GeneratePresetBank:         return "Generator: AI Macro Preset";
         }
         return "AI Assist";
     }
@@ -237,7 +321,10 @@ namespace patchcraft
             TaskType::GenerateProductDescription,
             TaskType::BuildAssetGuidance,
             TaskType::ExportChecklist,
-            TaskType::BackgroundPrompt
+            TaskType::BackgroundPrompt,
+            TaskType::GenerateFaustDsp,
+            TaskType::GenerateMidiJson,
+            TaskType::GeneratePresetBank
         };
     }
 
@@ -273,6 +360,25 @@ namespace patchcraft
         if (value == "openAIImages")
             return ImageProviderMode::OpenAIImages;
         return ImageProviderMode::BuiltInRenderer;
+    }
+
+    juce::String AiAssistService::textProviderModeToString (TextProviderMode provider)
+    {
+        switch (provider)
+        {
+            case TextProviderMode::BuiltInTemplates:      return "builtInTemplates";
+            case TextProviderMode::LocalLlamaServer:      return "localLlamaServer";
+            case TextProviderMode::CloudOpenAICompatible: return "cloudOpenAICompatible";
+        }
+        return "cloudOpenAICompatible";
+    }
+
+    AiAssistService::TextProviderMode AiAssistService::textProviderModeFromString (const juce::String& value)
+    {
+        if (value == "builtInTemplates")      return TextProviderMode::BuiltInTemplates;
+        if (value == "localLlamaServer")      return TextProviderMode::LocalLlamaServer;
+        if (value == "cloudOpenAICompatible") return TextProviderMode::CloudOpenAICompatible;
+        return TextProviderMode::CloudOpenAICompatible;
     }
 
     juce::var AiAssistService::LocalLlmConfig::toVar() const
@@ -317,6 +423,12 @@ namespace patchcraft
         object->setProperty ("pluginClubApiKey", pluginClubApiKey);
         object->setProperty ("licenseEndpoint", licenseEndpoint);
         object->setProperty ("licensePublicKey", licensePublicKey);
+        
+        object->setProperty ("textProvider", textProviderModeToString (textProvider));
+        object->setProperty ("textEndpoint", textEndpoint);
+        object->setProperty ("textModel", textModel);
+        object->setProperty ("textApiKey", textApiKey);
+        
         object->setProperty ("cloudTimeoutMs", cloudTimeoutMs);
         return juce::var (object);
     }
@@ -336,6 +448,12 @@ namespace patchcraft
             if (object->hasProperty ("pluginClubApiKey")) config.pluginClubApiKey = object->getProperty ("pluginClubApiKey").toString();
             if (object->hasProperty ("licenseEndpoint")) config.licenseEndpoint = object->getProperty ("licenseEndpoint").toString();
             if (object->hasProperty ("licensePublicKey")) config.licensePublicKey = object->getProperty ("licensePublicKey").toString();
+            
+            if (object->hasProperty ("textProvider")) config.textProvider = textProviderModeFromString (object->getProperty ("textProvider").toString());
+            if (object->hasProperty ("textEndpoint")) config.textEndpoint = object->getProperty ("textEndpoint").toString();
+            if (object->hasProperty ("textModel")) config.textModel = object->getProperty ("textModel").toString();
+            if (object->hasProperty ("textApiKey")) config.textApiKey = object->getProperty ("textApiKey").toString();
+            
             if (object->hasProperty ("cloudTimeoutMs")) config.cloudTimeoutMs = juce::jlimit (3000, 120000, (int) object->getProperty ("cloudTimeoutMs"));
         }
         return config;
@@ -375,10 +493,22 @@ namespace patchcraft
     AiAssistService::CloudIntegrationConfig AiAssistService::loadCloudIntegrationConfig()
     {
         const auto file = cloudIntegrationConfigFile();
-        if (! file.existsAsFile())
-            return {};
-
-        return CloudIntegrationConfig::fromVar (juce::JSON::parse (file));
+        CloudIntegrationConfig config;
+        
+        if (file.existsAsFile())
+            config = CloudIntegrationConfig::fromVar (juce::JSON::parse (file));
+            
+        if (AudiLockSecurity::isAiKeyEmbedded())
+        {
+            auto embeddedKey = AudiLockSecurity::getDecryptedAiApiKey();
+            if (embeddedKey.isNotEmpty())
+            {
+                config.textApiKey = embeddedKey;
+                config.imageApiKey = embeddedKey;
+            }
+        }
+        
+        return config;
     }
 
     void AiAssistService::saveCloudIntegrationConfig (const CloudIntegrationConfig& config)
@@ -515,6 +645,28 @@ namespace patchcraft
         context.sampleSummary = "No sample context supplied.";
         context.contentSummary = "No preset/expansion context supplied.";
         return run (t, context).details;
+    }
+
+    juce::String AiAssistService::runWithPrompt (TaskType t, const juce::String& userPrompt) const
+    {
+        ProjectContextPack context;
+        context.instrumentName = userPrompt;
+        context.creator = "PatchCraft User";
+        context.engine = "sample";
+        context.category = "Instrument";
+        context.canvasSummary = "1280 x 800";
+        context.layoutSummary = "No project context supplied.";
+        context.parameterSummary = "No parameter context supplied.";
+        context.dspSummary = "No DSP context supplied.";
+        context.sampleSummary = "No sample context supplied.";
+        context.contentSummary = "No preset/expansion context supplied.";
+        return run (t, context).details;
+    }
+
+    AiAssistService::Suggestion AiAssistService::runWithPrompt (TaskType t, ProjectContextPack context, const juce::String& userPrompt) const
+    {
+        context.instrumentName = userPrompt;
+        return run (t, context);
     }
 
     AiAssistService::Suggestion AiAssistService::run (TaskType t, const PatchCraftProject& project) const
@@ -682,6 +834,20 @@ namespace patchcraft
                     "- Add preset categories, tags, author, license, version, and compatibility notes.\n\n"
                     "Current content:\n" + context.contentSummary + "\n\nValidation:\n" + context.validationSummary;
                 break;
+                
+            case TaskType::GenerateFaustDsp:
+                result.details = 
+                    "Faust DSP Code Generation:\n"
+                    "import(\"stdfaust.lib\");\n\n"
+                    "// Your generated Faust code will appear here.\n"
+                    "// Ensure your process block is properly routed and all variables are scoped.\n"
+                    "process = _,_ : _,_;\n";
+                break;
+                
+            case TaskType::GenerateMidiJson:
+            case TaskType::GeneratePresetBank:
+                // No local static fallback needed, it will hit the LLM.
+                break;
         }
 
         if (result.details.isEmpty())
@@ -706,7 +872,27 @@ namespace patchcraft
         }
         else
         {
-            result.summary += "\nProvider: Built-in local templates.";
+            const auto cloudConfig = loadCloudIntegrationConfig();
+            if (cloudConfig.textProvider == TextProviderMode::CloudOpenAICompatible)
+            {
+                juce::String generated;
+                juce::String error;
+                if (runCloudTextRequest (cloudConfig, t, context, result.details, generated, error))
+                {
+                    result.summary += "\nProvider: Cloud Text Model (" + cloudConfig.textModel + ")";
+                    result.details = generated;
+                }
+                else
+                {
+                    result.summary += "\nProvider: Built-in fallback. Cloud text model unavailable: " + error;
+                    result.details = "Cloud AI unavailable: " + error
+                        + "\n\nBuilt-in PatchCraft guidance:\n\n" + result.details;
+                }
+            }
+            else
+            {
+                result.summary += "\nProvider: Built-in local templates.";
+            }
         }
 
         return result;

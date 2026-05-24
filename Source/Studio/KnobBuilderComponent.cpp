@@ -1436,7 +1436,7 @@ namespace patchcraft
     void KnobBuilderComponent::clearImportedKnob()
     {
         importedStrip = {};
-        importedSourceFile = {};
+        importedSourceFile = juce::File();
         importedFrameCount = 0;
         importedFrameSize = 0;
         importedStripVertical = true;

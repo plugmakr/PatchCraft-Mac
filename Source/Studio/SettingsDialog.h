@@ -79,6 +79,19 @@ namespace patchcraft
         juce::TextEditor imageApiKeyEditor;
         juce::Label imageModelLabel;
         juce::TextEditor imageModelEditor;
+        
+        juce::ComboBox textProviderBox;
+        juce::Label textProviderLabel;
+        juce::Label textEndpointLabel;
+        juce::TextEditor textEndpointEditor;
+        juce::Label textModelLabel;
+        juce::TextEditor textModelEditor;
+        juce::Label textApiKeyLabel;
+        juce::TextEditor textApiKeyEditor;
+        
+        juce::Label audiLockStatusLabel;
+        juce::Label audiLockStatusMessage;
+        
         juce::Label murekaApiKeyLabel;
         juce::TextEditor murekaApiKeyEditor;
         juce::Label pluginEndpointLabel;

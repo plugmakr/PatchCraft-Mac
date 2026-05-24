@@ -4061,15 +4061,39 @@ namespace patchcraft
         synthEngineButton.onClick   = [this] { setEngine ("synth"); };
         fxEngineButton.onClick      = [this] { setEngine ("fx"); };
 
-        for (auto* b : { &easyModeButton, &advancedModeButton })
+        for (auto* b : { &easyModeButton, &advancedModeButton, &aiModeButton })
         {
             styleEngineButton (*b, 8913);
             b->setVisible (! quickEdit);
             addAndMakeVisible (*b);
         }
         advancedModeButton.setToggleState (true, juce::dontSendNotification);
-        easyModeButton.onClick = [this] { setWorkflowMode (true); };
-        advancedModeButton.onClick = [this] { setWorkflowMode (false); };
+        easyModeButton.onClick = [this] { setWorkflowMode (true, false); };
+        advancedModeButton.onClick = [this] { setWorkflowMode (false, false); };
+        aiModeButton.onClick = [this] { setWorkflowMode (false, true); };
+        
+        if (studioOwner != nullptr)
+        {
+            promptToPlugin = std::make_unique<PromptToPluginComponent> (studioOwner->getAiAssistService());
+            promptToPlugin->onDspGenerated = [this] (const juce::String& faustCode)
+            {
+                auto& graph = project.getDspGraph();
+                DspBlock block;
+                block.section = "source";
+                block.type = "faust";
+                block.id = "faust_" + juce::String ((int) graph.blocks.size() + 1);
+                block.name = "AI Faust Module " + juce::String ((int) graph.blocks.size() + 1);
+                block.values["bank"] = 0;
+                block.metadata["code"] = faustCode;
+                graph.blocks.push_back (block);
+                markGraphEdited();
+                project.notifyChanged();
+                rebuildGraphEditorItems();
+                refreshBuilderPanel();
+                syncGraphEditor();
+            };
+            addChildComponent (*promptToPlugin);
+        }
 
         for (auto* b : { &tabEngine, &tabTone, &tabAmp, &tabMod, &tabFx, &tabOut })
         {
@@ -4133,7 +4157,7 @@ namespace patchcraft
             refreshEasyModeSummary();
         };
         easyPackCreatorButton.onClick = [this] { showPackCreator(); };
-        easyAdvancedButton.onClick = [this] { setWorkflowMode (false); };
+        easyAdvancedButton.onClick = [this] { setWorkflowMode (false, false); };
         addChildComponent (easyGenerateButton);
         addChildComponent (easyRandomButton);
         addChildComponent (easyAddToPackToggle);
@@ -4621,14 +4645,16 @@ namespace patchcraft
             onPatchSectionChanged();
     }
 
-    void DspPage::setWorkflowMode (bool easy)
+    void DspPage::setWorkflowMode (bool easy, bool ai)
     {
         if (quickEdit)
             return;
 
         easyMode = easy;
-        easyModeButton.setToggleState (easyMode, juce::dontSendNotification);
-        advancedModeButton.setToggleState (! easyMode, juce::dontSendNotification);
+        aiMode = ai;
+        easyModeButton.setToggleState (easyMode && !aiMode, juce::dontSendNotification);
+        advancedModeButton.setToggleState (!easyMode && !aiMode, juce::dontSendNotification);
+        aiModeButton.setToggleState (aiMode, juce::dontSendNotification);
         refreshEasyModeSummary();
         rebuildVisibility();
     }
@@ -11706,6 +11732,7 @@ namespace patchcraft
         fxEngineButton.setBounds (header.removeFromLeft (50).reduced (2));
         if (! quickEdit)
         {
+            aiModeButton.setBounds (header.removeFromRight (86).reduced (2));
             advancedModeButton.setBounds (header.removeFromRight (96).reduced (2));
             easyModeButton.setBounds (header.removeFromRight (70).reduced (2));
         }
@@ -11754,6 +11781,18 @@ namespace patchcraft
             easyParametersLabel.setBounds (cards.removeFromLeft (cardW).reduced (12, 10));
             cards.removeFromLeft (gap);
             easyWorkflowLabel.setBounds (cards.reduced (12, 10));
+            content = {};
+            builderPanel.setBounds ({});
+            formulaPanel.setBounds ({});
+            sourceMatrix.setBounds ({});
+            surgicalEqPanel.setBounds ({});
+            wavetableEditor.setBounds ({});
+            modMatrix.setBounds ({});
+            if (promptToPlugin) promptToPlugin->setBounds ({});
+        }
+        else if (aiMode && promptToPlugin)
+        {
+            promptToPlugin->setBounds (content);
             content = {};
             builderPanel.setBounds ({});
             formulaPanel.setBounds ({});
@@ -11927,6 +11966,8 @@ namespace patchcraft
         for (auto* section : { &engineSection, &toneSection, &ampSection,
                                &modSection, &fxSection, &outputSection })
             section->setBounds (content);
+        if (promptToPlugin && (!aiMode))
+            promptToPlugin->setBounds ({});
         hoverHelpLabel.toFront (false);
         if (guidedTutorial != nullptr)
         {

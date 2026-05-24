@@ -37,6 +37,7 @@ namespace patchcraft
         juce::TextButton saveBtn  { "Save" };
         juce::TextButton saveAsBtn{ "Save As..." };
         juce::TextButton generateBtn { "Generate" };
+        juce::TextButton aiGenerateBtn { "AI Generate" };
         juce::TextButton popOutBtn   { "Pop" };
 
         int  getNumRows() override;
@@ -46,6 +47,7 @@ namespace patchcraft
         void upsertPatchForPreset (const Preset& preset);
         void promptAndSaveCurrentPreset (bool duplicate);
         void promptAndGeneratePresets();
+        void promptAndGenerateAiPresets();
         void rebuildVisibleRows();
         juce::String categoryFor (const Preset&) const;
         juce::Colour colourForCategory (const juce::String&) const;

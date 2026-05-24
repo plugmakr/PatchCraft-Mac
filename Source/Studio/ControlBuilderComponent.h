@@ -8,6 +8,7 @@ namespace patchcraft
     class KnobBuilderComponent;
     class SliderBuilderComponent;
     class MeterBuilderComponent;
+    class AiImageBuilderComponent;
 
     /**
         Combined Knob / Slider / Meter builder. One large window with a Kind
@@ -37,6 +38,7 @@ namespace patchcraft
         std::unique_ptr<KnobBuilderComponent>   knobBuilder;
         std::unique_ptr<SliderBuilderComponent> sliderBuilder;
         std::unique_ptr<MeterBuilderComponent>  meterBuilder;
+        std::unique_ptr<AiImageBuilderComponent> aiImageBuilder;
 
         void rebuildVisibility();
     };

@@ -33,6 +33,7 @@ namespace patchcraft
         struct CodeBytes
         {
             std::array<juce::uint8, 4> leBytes;     // bytes as stored in the DLL (little-endian uint32)
+            std::array<juce::uint8, 4> beBytes;     // bytes as stored in Mach-O constants/metadata
             juce::String               displayHex; // bytes as shown by moduleinfo.json (MSB first)
         };
 
@@ -47,6 +48,10 @@ namespace patchcraft
             out.leBytes[1] = (juce::uint8) ((v >>  8) & 0xff);
             out.leBytes[2] = (juce::uint8) ((v >> 16) & 0xff);
             out.leBytes[3] = (juce::uint8) ((v >> 24) & 0xff);
+            out.beBytes[0] = out.leBytes[3];
+            out.beBytes[1] = out.leBytes[2];
+            out.beBytes[2] = out.leBytes[1];
+            out.beBytes[3] = out.leBytes[0];
             out.displayHex = juce::String::toHexString ((int) v).paddedLeft ('0', 8).toUpperCase();
             return out;
         }
@@ -157,6 +162,124 @@ namespace patchcraft
            #endif
         }
 
+        bool isVst3MetadataDirectory (const juce::String& name)
+        {
+            return name == "Resources"
+                || name == "_CodeSignature"
+                || name.startsWithChar ('.');
+        }
+
+        juce::String vst3BinaryNameForBundle (const juce::String& fileSafeName)
+        {
+           #if JUCE_MAC
+            return fileSafeName;
+           #else
+            return fileSafeName + ".vst3";
+           #endif
+        }
+
+        juce::String vst3BinaryNameForTemplate (const juce::File& templateBundle)
+        {
+           #if JUCE_MAC
+            return templateBundle.getFileNameWithoutExtension();
+           #else
+            return templateBundle.getFileName();
+           #endif
+        }
+
+        juce::File findVst3PayloadDirectory (const juce::File& bundlePath)
+        {
+            const auto contents = bundlePath.getChildFile ("Contents");
+            if (! contents.isDirectory())
+                return {};
+
+           #if JUCE_MAC
+            const auto macOS = contents.getChildFile ("MacOS");
+            if (macOS.isDirectory())
+                return macOS;
+           #endif
+
+            for (auto& entry : juce::RangedDirectoryIterator (contents, false, "*",
+                                      juce::File::findDirectories))
+            {
+                const auto dir = entry.getFile();
+                if (! isVst3MetadataDirectory (dir.getFileName()))
+                    return dir;
+            }
+
+            return {};
+        }
+
+        juce::String escapeXmlText (juce::String text)
+        {
+            return text.replace ("&", "&amp;")
+                       .replace ("<", "&lt;")
+                       .replace (">", "&gt;")
+                       .replace ("\"", "&quot;")
+                       .replace ("'", "&apos;");
+        }
+
+        bool replacePlistStringValue (juce::String& text,
+                                      const juce::String& key,
+                                      const juce::String& value)
+        {
+            const auto keyToken = "<key>" + key + "</key>";
+            const auto keyIndex = text.indexOf (keyToken);
+            if (keyIndex < 0)
+                return false;
+
+            auto start = text.indexOf (keyIndex + keyToken.length(), "<string>");
+            if (start < 0)
+                return false;
+
+            start += 8;
+            const auto end = text.indexOf (start, "</string>");
+            if (end < start)
+                return false;
+
+            text = text.substring (0, start) + escapeXmlText (value) + text.substring (end);
+            return true;
+        }
+
+        bool rewriteMacBundleInfo (const juce::File& bundlePath,
+                                   const juce::String& executableName,
+                                   const juce::String& displayName,
+                                   const juce::String& version,
+                                   juce::String& error)
+        {
+           #if JUCE_MAC
+            const auto plist = bundlePath.getChildFile ("Contents").getChildFile ("Info.plist");
+            if (! plist.existsAsFile())
+            {
+                error = "Missing Info.plist in VST3 template.";
+                return false;
+            }
+
+            auto text = plist.loadFileAsString();
+            bool ok = replacePlistStringValue (text, "CFBundleExecutable", executableName);
+            ok = replacePlistStringValue (text, "CFBundleName", displayName) && ok;
+            ok = replacePlistStringValue (text, "CFBundleDisplayName", displayName) && ok;
+            ok = replacePlistStringValue (text, "CFBundleShortVersionString", version) && ok;
+            ok = replacePlistStringValue (text, "CFBundleVersion", version) && ok;
+
+            if (! ok)
+            {
+                error = "Could not rewrite macOS bundle metadata.";
+                return false;
+            }
+
+            if (! plist.replaceWithText (text))
+            {
+                error = "Could not save rewritten Info.plist.";
+                return false;
+            }
+           #else
+            juce::ignoreUnused (bundlePath, executableName, displayName, version);
+           #endif
+
+            return true;
+        }
+
         juce::String quotedJsonString (const juce::String& value)
         {
             return juce::JSON::toString (juce::var (value));
@@ -203,26 +326,15 @@ namespace patchcraft
                                     ClassIdPatchSummary& out,
                                     juce::String& error)
         {
-            const auto contents = bundlePath.getChildFile ("Contents");
-            juce::File archDir;
-            if (contents.isDirectory())
-            {
-                for (auto& entry : juce::RangedDirectoryIterator (contents, false, "*",
-                                          juce::File::findDirectories))
-                {
-                    const auto name = entry.getFile().getFileName();
-                    if (name == "Resources") continue;
-                    archDir = entry.getFile();
-                    break;
-                }
-            }
+            const auto archDir = findVst3PayloadDirectory (bundlePath);
             if (archDir == juce::File())
             {
                 error = "Could not locate the architecture subfolder inside the VST3 bundle.";
                 return false;
             }
 
-            const auto dllFile = archDir.getChildFile (bundlePath.getFileNameWithoutExtension() + ".vst3");
+            const auto dllFile = archDir.getChildFile (
+                vst3BinaryNameForBundle (bundlePath.getFileNameWithoutExtension()));
             if (! dllFile.existsAsFile())
             {
                 error = "Stamped .vst3 binary missing at " + dllFile.getFullPathName();
@@ -244,6 +356,10 @@ namespace patchcraft
                 original.first.leBytes,  replacement.first.leBytes);
             out.pluginImmediates       = replaceImmediateBytes (dllBytes,
                 original.second.leBytes, replacement.second.leBytes);
+            out.manufacturerImmediates += replaceImmediateBytes (dllBytes,
+                original.first.beBytes,  replacement.first.beBytes);
+            out.pluginImmediates       += replaceImmediateBytes (dllBytes,
+                original.second.beBytes, replacement.second.beBytes);
 
             if (out.manufacturerImmediates + out.pluginImmediates == 0)
             {
@@ -622,23 +738,32 @@ namespace patchcraft
         // expect the binary at <Bundle>/Contents/<arch>/<Bundle> - if we
         // leave the inner DLL named "PatchCraft Player.vst3" inside a
         // bundle called "MyPlugin.vst3", DAWs silently skip it.
-        const auto contents = bundlePath.getChildFile ("Contents");
-        if (contents.isDirectory())
+        if (const auto payloadDir = findVst3PayloadDirectory (bundlePath);
+            payloadDir != juce::File())
         {
-            for (auto& entry : juce::RangedDirectoryIterator (contents, false, "*",
-                                      juce::File::findDirectories))
+            const auto oldBinary = firstExisting ({
+                payloadDir.getChildFile (vst3BinaryNameForTemplate (templateBundle)),
+                payloadDir.getChildFile (templateBundle.getFileNameWithoutExtension()),
+                payloadDir.getChildFile (templateBundle.getFileName())
+            });
+
+            if (oldBinary.existsAsFile())
             {
-                const auto archDir = entry.getFile();
-                if (archDir.getFileName() == "Resources") continue;
-                const auto templateName = templateBundle.getFileNameWithoutExtension();
-                const auto oldBinary = archDir.getChildFile (templateName + ".vst3");
-                if (oldBinary.existsAsFile())
-                {
-                    const auto newBinary = archDir.getChildFile (options.fileSafeName + ".vst3");
-                    newBinary.deleteFile();
-                    oldBinary.moveFileTo (newBinary);
-                }
+                const auto newBinary = payloadDir.getChildFile (vst3BinaryNameForBundle (options.fileSafeName));
+                newBinary.deleteFile();
+                oldBinary.moveFileTo (newBinary);
             }
+        }
+
+        juce::String plistError;
+        if (! rewriteMacBundleInfo (bundlePath,
+                                    vst3BinaryNameForBundle (options.fileSafeName),
+                                    options.pluginName,
+                                    options.version,
+                                    plistError))
+        {
+            result.message = "Failed to stamp macOS plugin metadata: " + plistError;
+            return result;
         }
 
         // Give each exported plugin its own VST3 class IDs so two exports

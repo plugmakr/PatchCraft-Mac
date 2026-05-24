@@ -5,6 +5,7 @@
 #include "PatchCraftLookAndFeel.h"
 #include "SampleSynthEngine.h"
 #include "StudioMainComponent.h"
+#include "AiAssistService.h"
 
 #include <algorithm>
 #include <array>
@@ -567,7 +568,7 @@ namespace patchcraft
         // The hidden variation action is deterministic. Authored phrase
         // libraries and musical operators are the primary creation path.
         for (auto* button : { &addPlaygroundButton, &chordPhraseButton, &sampleSliceButton,
-                              &drumMachineButton, &operatorsButton, &phraseLibraryButton,
+                              &drumMachineButton, &operatorsButton, &generateAiMidiButton, &phraseLibraryButton,
                               &applyMusicalPresetButton, &storeBankButton, &duplicateBankButton,
                               &applyProgressionButton, &applyMidiTemplateButton, &applyGuiTemplateButton, &exportMidiButton,
                               &playPatternButton, &stopPatternButton,
@@ -584,6 +585,9 @@ namespace patchcraft
         randomButton.onClick = [this] { randomiseSeed(); };
         operatorsButton.onClick = [this] { showOperatorsMenu(); };
         operatorsButton.setTooltip ("Deterministic pattern operators: transpose, invert, retrograde, scale-quantize.");
+
+        generateAiMidiButton.onClick = [this] { generateAiMidi(); };
+        generateAiMidiButton.setTooltip ("Generate MIDI using AI (requires prompt).");
         phraseLibraryButton.onClick = [this] { showPhraseLibraryMenu(); };
         phraseLibraryButton.setTooltip ("Open categorized hand-authored phrases and grooves for the current editor.");
         applyMusicalPresetButton.onClick = [this] { applySelectedMusicalPreset(); };
@@ -599,7 +603,7 @@ namespace patchcraft
         stopPatternButton.onClick = [this] { stopPatternPreview(); };
         playPatternButton.getProperties().set ("primaryAction", true);
         sourceBuilderButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::DSP); };
-        sampleMapperButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::SampleMapper); };
+        sampleMapperButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Samples); };
         testButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Test); };
 
         addAndMakeVisible (midiOutputLane);
@@ -1925,6 +1929,111 @@ namespace patchcraft
             activeSummary.setText ("Dropped Glitch Gate behavior. Edit active steps, probability, ratchet, and slice targets.",
                                    juce::dontSendNotification);
         }
+    }
+
+    void MidiPlaygroundPage::generateAiMidi()
+    {
+        auto* window = new juce::AlertWindow ("AI MIDI Pattern Generator",
+            "Describe the pattern you want (e.g. 'A driving 16th note bassline' or 'A syncopated tech-house drum groove').",
+            juce::MessageBoxIconType::QuestionIcon);
+        
+        window->addTextEditor ("Prompt", "", "Prompt:");
+        window->addButton ("Generate", 1);
+        window->addButton ("Cancel", 0);
+
+        window->enterModalState (true,
+            juce::ModalCallbackFunction::create ([this, window] (int result)
+            {
+                std::unique_ptr<juce::AlertWindow> owned (window);
+                if (result == 1)
+                {
+                    auto* text = window->getTextEditor ("Prompt");
+                    if (text == nullptr) return;
+                    juce::String prompt = text->getText();
+                    if (prompt.trim().isEmpty()) return;
+
+                    auto* block = activeMidiBlock();
+                    if (block == nullptr) return;
+
+                    juce::Thread::launch ([this, prompt]()
+                    {
+                        AiAssistService::ProjectContextPack ctx;
+                        AiAssistService service;
+                        AiAssistService::Suggestion suggestion = service.runWithPrompt (AiAssistService::TaskType::GenerateMidiJson, ctx, prompt);
+                        
+                        juce::MessageManager::callAsync ([this, suggestion]()
+                        {
+                            auto trimmed = suggestion.details.trim();
+                            if (trimmed.startsWith ("{") || trimmed.startsWith ("["))
+                            {
+                                auto parsed = juce::JSON::parse (trimmed);
+                                if (auto* array = parsed.getArray())
+                                {
+                                    auto* block = activeMidiBlock();
+                                    if (block != nullptr)
+                                    {
+                                        bool isDrum = isDrumMachineBlock (*block);
+                                        int numSteps = (int) block->values["arpSteps"];
+                                        if (numSteps <= 0) numSteps = 16;
+                                        
+                                        // Clear current pattern
+                                        for (int i = 0; i < 128; ++i)
+                                        {
+                                            if (isDrum)
+                                            {
+                                                for (int t = 0; t < 8; ++t)
+                                                    setDrumStepFromEditor (t, i, false, 0.0f, true);
+                                            }
+                                            else
+                                            {
+                                                // Just set step to off
+                                                block->values["mpStep" + juce::String(i) + "On"] = 0.0f;
+                                            }
+                                        }
+
+                                        for (auto& item : *array)
+                                        {
+                                            if (auto* obj = item.getDynamicObject())
+                                            {
+                                                int note = obj->hasProperty ("note") ? (int) obj->getProperty ("note") : 60;
+                                                float velocity = obj->hasProperty ("velocity") ? (float) obj->getProperty ("velocity") : 0.8f;
+                                                float gate = obj->hasProperty ("duration") ? (float) obj->getProperty ("duration") : 0.25f;
+                                                float start = obj->hasProperty ("start") ? (float) obj->getProperty ("start") : 0.0f;
+                                                
+                                                int step = juce::roundToInt (start * 4.0f);
+                                                if (step >= 0 && step < numSteps)
+                                                {
+                                                    if (isDrum)
+                                                    {
+                                                        int track = (note - 36) % 8;
+                                                        if (track >= 0 && track < 8)
+                                                            setDrumStepFromEditor (track, step, true, velocity, true);
+                                                    }
+                                                    else
+                                                    {
+                                                        int noteOffset = note - 60;
+                                                        block->values["mpStep" + juce::String(step) + "On"] = 1.0f;
+                                                        setStepValueFromEditor (step, noteOffset, velocity, gate, 1.0f, true, false, true, true, true);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        refresh();
+                                    }
+                                }
+                                else
+                                {
+                                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "AI Error", "Failed to parse MIDI JSON.");
+                                }
+                            }
+                            else
+                            {
+                                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "AI Error", suggestion.details);
+                            }
+                        });
+                    });
+                }
+            }), true);
     }
 
     void MidiPlaygroundPage::switchPhraseBank (int bank)
@@ -4614,7 +4723,7 @@ namespace patchcraft
                 &chordSizeSlider, &chordSpreadSlider, &octaveSlider, &flamSlider,
                 &euclideanPulsesSlider, &euclideanRotateSlider, &octaveFoldToggle,
                 &addPlaygroundButton, &chordPhraseButton, &sampleSliceButton, &drumMachineButton,
-                &operatorsButton, &phraseLibraryButton, &applyMusicalPresetButton,
+                &operatorsButton, &generateAiMidiButton, &phraseLibraryButton, &applyMusicalPresetButton,
                 &storeBankButton, &duplicateBankButton, &applyProgressionButton,
                 &midiOutputLane, &pianoRollEditor, &drumPatternGrid
             };
@@ -5113,14 +5222,14 @@ namespace patchcraft
         addPlaygroundButton.setBounds (row.removeFromLeft (158).reduced (2));
         chordPhraseButton.setBounds (row.reduced (2));
         row = buttonRows.removeFromTop (32);
-        sampleSliceButton.setBounds (row.removeFromLeft (180).reduced (2));
-        drumMachineButton.setBounds (row.reduced (2));
+        sampleSliceButton.setBounds (row.removeFromLeft (80).reduced (2));
+        drumMachineButton.setBounds (row.removeFromLeft (80).reduced (2));
+        operatorsButton.setBounds (row.removeFromLeft (104).reduced (2));
+        generateAiMidiButton.setBounds (row.removeFromLeft (90).reduced (2));
+        phraseLibraryButton.setBounds (row.removeFromLeft (112).reduced (2));
         row = buttonRows.removeFromTop (32);
         applyMidiTemplateButton.setBounds (row.removeFromLeft (170).reduced (2));
         applyGuiTemplateButton.setBounds (row.reduced (2));
-        row = buttonRows.removeFromTop (32);
-        operatorsButton.setBounds (row.removeFromLeft (104).reduced (2));
-        phraseLibraryButton.setBounds (row.removeFromLeft (104).reduced (2));
         row = buttonRows.removeFromTop (32);
         storeBankButton.setBounds (row.removeFromLeft (104).reduced (2));
         duplicateBankButton.setBounds (row.reduced (2));

@@ -82,6 +82,7 @@ namespace patchcraft
         juce::TextButton sampleSliceButton { "Sample Chops" };
         juce::TextButton drumMachineButton { "Drums" };
         juce::TextButton operatorsButton { "Musical Tools" };
+        juce::TextButton generateAiMidiButton { "AI Generator" };
         juce::TextButton phraseLibraryButton { "Phrase Library" };
         juce::TextButton randomButton { "Create Variation" };
         juce::TextButton applyMusicalPresetButton { "Drop MIDI" };
@@ -217,6 +218,7 @@ namespace patchcraft
         void applyDrumTemplate (int templateId);
         void applySelectedMusicalPreset();
         void switchPhraseBank (int bank);
+        void generateAiMidi();
         void storeActivePhraseBank();
         void duplicateActivePhraseBank();
         void applySelectedProgression();

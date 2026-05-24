@@ -44,7 +44,7 @@ namespace patchcraft
 
     OneShotMakerPage::OneShotMakerPage (StudioMainComponent& o) : owner (o)
     {
-        pluginFormatManager.addDefaultFormats();
+        juce::addHeadlessDefaultFormatsToManager (pluginFormatManager);
         audioFormatManager.registerBasicFormats();
 
         outputBaseFolder = defaultOutputFolder();
@@ -1800,7 +1800,7 @@ namespace patchcraft
 
         project.notifyChanged();
         if (switchToSampleMapper)
-            owner.setBottomTab (BottomPanel::Page::SampleMapper);
+            owner.setBottomTab (BottomPanel::Page::Samples);
         appendLog ("Mapped " + juce::String ((int) renderedSamples.size()) + " samples into Sample Mapper.");
         return true;
     }

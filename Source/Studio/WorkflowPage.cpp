@@ -198,10 +198,10 @@ namespace patchcraft
         advDesignButton.setButtonText ("Design Surface\nPlayer UI, bindings, containers");
         advBrandButton.setButtonText ("Brand / Runtime Lab\nPlayer polish, testing, white-label");
         advDspButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::DSP); };
-        advMapperButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::SampleMapper); };
+        advMapperButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Samples); };
         advOneShotButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::OneShotMaker); };
         advMidiButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::MidiPlayground); };
-        advBuildButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Build); };
+        advBuildButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Widgets); };
         advDesignButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Design); };
         advBrandButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Branding); };
 
@@ -239,7 +239,7 @@ namespace patchcraft
         if (sameEngine)
         {
             owner.setBottomTab (engineId == "sample" || engineId == "drum"
-                ? BottomPanel::Page::SampleMapper : BottomPanel::Page::DSP);
+                ? BottomPanel::Page::Samples : BottomPanel::Page::DSP);
             return;
         }
 
@@ -261,7 +261,7 @@ namespace patchcraft
                     page->owner.getProject().setEngineType (engineId);
                     page->owner.refreshAllPanels();
                     page->owner.setBottomTab (engineId == "sample" || engineId == "drum"
-                        ? BottomPanel::Page::SampleMapper : BottomPanel::Page::DSP);
+                        ? BottomPanel::Page::Samples : BottomPanel::Page::DSP);
                 }
             });
     }
@@ -353,7 +353,7 @@ namespace patchcraft
             case TutorialModule::FullDemo:
             case TutorialModule::BuildSound:
                 return owner.getProject().getEngineType() == "sample"
-                    ? BottomPanel::Page::SampleMapper
+                    ? BottomPanel::Page::Samples
                     : BottomPanel::Page::DSP;
             case TutorialModule::MidiPerformance:
                 return BottomPanel::Page::MidiPlayground;
@@ -363,9 +363,9 @@ namespace patchcraft
             case TutorialModule::TestRuntime:
                 return BottomPanel::Page::Branding;
             case TutorialModule::Export:
-                return BottomPanel::Page::Workflow;
+                return BottomPanel::Page::Export;
         }
-        return BottomPanel::Page::Workflow;
+        return BottomPanel::Page::Dashboard;
     }
 
     void WorkflowPage::openTutorialTarget (TutorialModule module)

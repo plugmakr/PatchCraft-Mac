@@ -74,7 +74,9 @@ add_library(PatchCraftCore STATIC
     Source/Shared/LiveValueStore.cpp
     Source/Shared/AssetManager.cpp
     Source/Shared/PcexpManager.cpp
+    Source/Shared/AudiLockSecurity.cpp
     Source/Shared/AiAssistService.cpp
+    Source/Shared/AiExpansionModule.cpp
     Source/Shared/AiImageService.cpp
     Source/Shared/LibraryScanner.cpp
     Source/Shared/SfzImporter.cpp
@@ -102,6 +104,15 @@ target_link_libraries(PatchCraftCore
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+
+# ==============================================================================
+# AI Expansion Packaging Target
+# ==============================================================================
+add_custom_target(PatchCraftAiExpansion
+    COMMAND ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/cmake/CreatePatchCraftAiExpansionPackage.cmake
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Building AI Expansion addon payload..."
+)
 
 target_compile_definitions(PatchCraftCore
     PUBLIC
@@ -164,6 +175,7 @@ if(PATCHCRAFT_BUILD_STUDIO)
         Source/Player/LibraryBrowser.cpp
         Source/Studio/TopToolbar.cpp
         Source/Studio/ElementPalette.cpp
+        Source/Studio/AiImageBuilderComponent.cpp
         Source/Studio/BrandingLabPage.cpp
         Source/Studio/BuiltAssetLibraryComponent.cpp
         Source/Studio/ExpansionLibraryPanel.cpp
@@ -186,6 +198,7 @@ if(PATCHCRAFT_BUILD_STUDIO)
         Source/Studio/OneShotMakerPage.cpp
         Source/Studio/MidiPlaygroundPage.cpp
         Source/Studio/DspPage.cpp
+        Source/Studio/PromptToPluginComponent.cpp
         Source/Studio/CanvasToolbar.cpp
         Source/Studio/ControlBuilderComponent.cpp
         Source/Studio/StudioAudioService.cpp

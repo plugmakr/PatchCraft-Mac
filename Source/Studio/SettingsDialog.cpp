@@ -1,6 +1,7 @@
 #include "SettingsDialog.h"
 #include "StudioAudioService.h"
 #include "AiAssistService.h"
+#include "AudiLockSecurity.h"
 #include "PatchCraftLookAndFeel.h"
 
 namespace patchcraft
@@ -91,6 +92,10 @@ namespace patchcraft
         setupLabel (imageProviderLabel, "Image");
         setupLabel (imageApiKeyLabel, "Image Key");
         setupLabel (imageModelLabel, "Image Model");
+        setupLabel (textProviderLabel, "Text Provider");
+        setupLabel (textEndpointLabel, "Text URL");
+        setupLabel (textModelLabel, "Text Model");
+        setupLabel (textApiKeyLabel, "Text Key");
         setupLabel (murekaApiKeyLabel, "Mureka Key");
         setupLabel (pluginEndpointLabel, "Plugin.club");
         setupLabel (pluginApiKeyLabel, "Plugin Key");
@@ -167,7 +172,13 @@ namespace patchcraft
         imageProviderBox.addItem ("OpenAI Images", 2);
         imageProviderBox.onChange = [this] { refreshCloudEnabledState(); };
 
+        textProviderBox.addItem ("Built-in Templates", 1);
+        textProviderBox.addItem ("Local llama.cpp Server", 2);
+        textProviderBox.addItem ("Cloud OpenAI/DeepSeek", 3);
+        textProviderBox.onChange = [this] { refreshCloudEnabledState(); };
+
         imageApiKeyEditor.setPasswordCharacter (0x2022);
+        textApiKeyEditor.setPasswordCharacter (0x2022);
         murekaApiKeyEditor.setPasswordCharacter (0x2022);
         pluginApiKeyEditor.setPasswordCharacter (0x2022);
         pluginEndpointEditor.setTextToShowWhenEmpty ("https://plugin.club/functions/sellerImport", PatchCraftLookAndFeel::textDim());
@@ -175,12 +186,22 @@ namespace patchcraft
         licensePublicKeyEditor.setTextToShowWhenEmpty ("Public verification key or key id only", PatchCraftLookAndFeel::textDim());
         imageApiKeyEditor.setTooltip ("OpenAI image API key. Stored locally in PatchCraft cloud-integrations.json.");
         imageModelEditor.setTooltip ("Default image model sent to the image endpoint.");
+        textApiKeyEditor.setTooltip ("API Key for OpenAI compatible text generation (e.g. DeepSeek Coder).");
+        textEndpointEditor.setTooltip ("Default OpenAI-compatible text generation endpoint.");
+        textModelEditor.setTooltip ("Model name for text generation (e.g. deepseek-coder).");
         murekaApiKeyEditor.setTooltip ("Reserved for Mureka audio/source/stem generation workflows.");
         pluginEndpointEditor.setTooltip ("Plugin.club-compatible publish base URL. Use https://plugin.club/functions or the full https://plugin.club/functions/sellerImport endpoint.");
         pluginApiKeyEditor.setTooltip ("Plugin.club publish API key.");
         licenseEndpointEditor.setTooltip ("HTTPS activation/validation endpoint embedded into protected packs. Use Plugin.club deviceAuth for launch; point this to AudiLock once AudiLock owns licensing.");
         licensePublicKeyEditor.setTooltip ("Public verification key or public key id embedded into protected pack metadata. Do not paste private signing keys.");
         cloudSaveButton.onClick = [this] { saveCloudSettings(); };
+
+        audiLockStatusLabel.setText ("AudiLock AI:", juce::dontSendNotification);
+        audiLockStatusMessage.setText (AudiLockSecurity::getStatusMessage(), juce::dontSendNotification);
+        if (AudiLockSecurity::isAiKeyEmbedded())
+            audiLockStatusMessage.setColour (juce::Label::textColourId, juce::Colours::lightgreen);
+        else
+            audiLockStatusMessage.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
 
         for (auto* component : { static_cast<juce::Component*> (&cloudHeader),
                                  static_cast<juce::Component*> (&cloudHelp),
@@ -192,6 +213,14 @@ namespace patchcraft
                                  static_cast<juce::Component*> (&imageApiKeyEditor),
                                  static_cast<juce::Component*> (&imageModelLabel),
                                  static_cast<juce::Component*> (&imageModelEditor),
+                                 static_cast<juce::Component*> (&textProviderLabel),
+                                 static_cast<juce::Component*> (&textProviderBox),
+                                 static_cast<juce::Component*> (&textEndpointLabel),
+                                 static_cast<juce::Component*> (&textEndpointEditor),
+                                 static_cast<juce::Component*> (&textModelLabel),
+                                 static_cast<juce::Component*> (&textModelEditor),
+                                 static_cast<juce::Component*> (&audiLockStatusLabel),
+                                 static_cast<juce::Component*> (&audiLockStatusMessage),
                                  static_cast<juce::Component*> (&murekaApiKeyLabel),
                                  static_cast<juce::Component*> (&murekaApiKeyEditor),
 #endif
@@ -332,6 +361,21 @@ namespace patchcraft
         imageModelEditor.setBounds (cloudRow);
 
         cloudRow = cloudBounds.removeFromTop (30);
+        textProviderLabel.setBounds (cloudRow.removeFromLeft (92));
+        textProviderBox.setBounds (cloudRow.removeFromLeft (260));
+        
+        cloudBounds.removeFromTop (8);
+        cloudRow = cloudBounds.removeFromTop (30);
+        textEndpointLabel.setBounds (cloudRow.removeFromLeft (92));
+        textEndpointEditor.setBounds (cloudRow.removeFromLeft (300));
+        textModelLabel.setBounds (cloudRow.removeFromLeft (96));
+        textModelEditor.setBounds (cloudRow);
+
+        cloudRow = cloudBounds.removeFromTop (30);
+        audiLockStatusLabel.setBounds (cloudRow.removeFromLeft (92));
+        audiLockStatusMessage.setBounds (cloudRow.removeFromLeft (300));
+        
+        cloudRow = cloudBounds.removeFromTop (30);
         murekaApiKeyLabel.setBounds (cloudRow.removeFromLeft (92));
         murekaApiKeyEditor.setBounds (cloudRow);
 
@@ -423,6 +467,14 @@ namespace patchcraft
                                         juce::dontSendNotification);
         imageApiKeyEditor.setText (config.imageApiKey, false);
         imageModelEditor.setText (config.imageModel, false);
+        
+        textProviderBox.setSelectedId (
+            config.textProvider == AiAssistService::TextProviderMode::CloudOpenAICompatible ? 3 :
+            (config.textProvider == AiAssistService::TextProviderMode::LocalLlamaServer ? 2 : 1),
+            juce::dontSendNotification);
+        textEndpointEditor.setText (config.textEndpoint, false);
+        textModelEditor.setText (config.textModel, false);
+        
         murekaApiKeyEditor.setText (config.murekaApiKey, false);
         pluginEndpointEditor.setText (config.pluginClubEndpoint, false);
         pluginApiKeyEditor.setText (config.pluginClubApiKey, false);
@@ -440,6 +492,13 @@ namespace patchcraft
             : AiAssistService::ImageProviderMode::BuiltInRenderer;
         config.imageApiKey = imageApiKeyEditor.getText().trim();
         config.imageModel = imageModelEditor.getText().trim();
+        
+        config.textProvider = textProviderBox.getSelectedId() == 3 
+            ? AiAssistService::TextProviderMode::CloudOpenAICompatible 
+            : (textProviderBox.getSelectedId() == 2 ? AiAssistService::TextProviderMode::LocalLlamaServer : AiAssistService::TextProviderMode::BuiltInTemplates);
+        config.textEndpoint = textEndpointEditor.getText().trim();
+        config.textModel = textModelEditor.getText().trim();
+        
         config.murekaApiKey = murekaApiKeyEditor.getText().trim();
 #endif
         config.pluginClubEndpoint = pluginEndpointEditor.getText().trim();
@@ -458,6 +517,12 @@ namespace patchcraft
         imageApiKeyEditor.setEnabled (imageEnabled);
         imageModelLabel.setEnabled (imageEnabled);
         imageModelEditor.setEnabled (imageEnabled);
+        
+        const bool textEnabled = textProviderBox.getSelectedId() != 1;
+        textEndpointLabel.setEnabled (textEnabled);
+        textEndpointEditor.setEnabled (textEnabled);
+        textModelLabel.setEnabled (textEnabled);
+        textModelEditor.setEnabled (textEnabled);
 #endif
     }
 

@@ -198,6 +198,8 @@ namespace patchcraft
             });
         addBtn (btnImportSamples, "Import Samples", "importSamples",  [this] { owner.importSamples(); });
         addBtn (btnImportBg,      "Import BG",      "importBg",       [this] { owner.importBackground(); });
+        addBtn (btnPacks,         "Packs",          "importSamples",  [this] { owner.togglePacksPanel(); });
+        addBtn (btnDashboard,     "Dashboard",      "preview",        [this] { owner.setBottomTab (BottomPanel::Page::Dashboard); });
 #if PATCHCRAFT_ENABLE_AI_STUDIO
         addBtn (btnAiAssist,      "AI Assist",      "aiAssist",       [this] { owner.aiAssist(); });
 #endif
@@ -349,7 +351,7 @@ namespace patchcraft
             x += btnW + 4;
         }
         x += 12; // separator
-        for (auto* b : { btnImportSamples.get(), btnImportBg.get(), btnAiAssist.get() })
+        for (auto* b : { btnImportSamples.get(), btnImportBg.get(), btnPacks.get(), btnDashboard.get(), btnAiAssist.get() })
         {
             if (b == nullptr)
                 continue;

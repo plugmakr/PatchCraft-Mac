@@ -32,7 +32,10 @@ namespace patchcraft
             EqChain,
             ModulationPlan,
             BuildAssetGuidance,
-            ExportChecklist
+            ExportChecklist,
+            GenerateFaustDsp,
+            GenerateMidiJson,
+            GeneratePresetBank
         };
 
         struct ProjectContextPack
@@ -75,6 +78,13 @@ namespace patchcraft
             OpenAIImages
         };
 
+        enum class TextProviderMode
+        {
+            BuiltInTemplates,
+            LocalLlamaServer,
+            CloudOpenAICompatible
+        };
+
         struct LocalLlmConfig
         {
             ProviderMode provider = ProviderMode::BuiltInTemplates;
@@ -101,6 +111,12 @@ namespace patchcraft
             juce::String pluginClubApiKey;
             juce::String licenseEndpoint;
             juce::String licensePublicKey;
+            
+            TextProviderMode textProvider = TextProviderMode::CloudOpenAICompatible;
+            juce::String textEndpoint { "https://api.deepseek.com/v1/chat/completions" };
+            juce::String textModel { "deepseek-coder" };
+            juce::String textApiKey;
+            
             int cloudTimeoutMs = 60000;
 
             juce::var toVar() const;
@@ -108,6 +124,8 @@ namespace patchcraft
         };
 
         juce::String run (TaskType, const juce::String& instrumentName) const;
+        juce::String runWithPrompt (TaskType, const juce::String& userPrompt) const;
+        Suggestion runWithPrompt (TaskType, ProjectContextPack, const juce::String& userPrompt) const;
         Suggestion run (TaskType, const PatchCraftProject&) const;
         Suggestion run (TaskType, const ProjectContextPack&) const;
         static juce::String displayName (TaskType);
@@ -124,6 +142,8 @@ namespace patchcraft
         static ProviderMode providerModeFromString (const juce::String&);
         static juce::String imageProviderModeToString (ImageProviderMode);
         static ImageProviderMode imageProviderModeFromString (const juce::String&);
+        static juce::String textProviderModeToString (TextProviderMode);
+        static TextProviderMode textProviderModeFromString (const juce::String&);
         static juce::String providerStatusText();
     };
 

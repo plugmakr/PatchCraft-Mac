@@ -561,7 +561,7 @@ namespace patchcraft
                      "Sample map blocks export",
                      health.exportMessage(),
                      "Fix Samples",
-                     [this] { owner.setBottomTab (BottomPanel::Page::SampleMapper); });
+                     [this] { owner.setBottomTab (BottomPanel::Page::Samples); });
             }
             else if (health.totalZones == 0)
             {
@@ -569,7 +569,7 @@ namespace patchcraft
                      "No playable sample zones",
                      "Sample and drum instruments need mapped zones/pads before they can be sold or exported.",
                      "Import Samples",
-                     [this] { owner.setBottomTab (BottomPanel::Page::SampleMapper); });
+                     [this] { owner.setBottomTab (BottomPanel::Page::Samples); });
             }
             else
             {
@@ -582,7 +582,7 @@ namespace patchcraft
                         + (health.lastCoveredNote >= 0 ? juce::MidiMessage::getMidiNoteName (health.lastCoveredNote, true, true, 3) : juce::String ("none"))
                         + (health.issues.isEmpty() ? "." : ". Check mapper warnings before final export."),
                      health.issues.isEmpty() ? juce::String() : juce::String ("Review"),
-                     health.issues.isEmpty() ? std::function<void()>() : [this] { owner.setBottomTab (BottomPanel::Page::SampleMapper); });
+                     health.issues.isEmpty() ? std::function<void()>() : [this] { owner.setBottomTab (BottomPanel::Page::Samples); });
             }
         }
 

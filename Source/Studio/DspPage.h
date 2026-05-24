@@ -7,6 +7,7 @@
 
 #include "DspRoutingEngine.h"
 #include "PatchCraftProject.h"
+#include "PromptToPluginComponent.h"
 
 #include <array>
 #include <atomic>
@@ -329,7 +330,9 @@ namespace patchcraft
         juce::TextButton fxEngineButton      { "FX" };
         juce::TextButton easyModeButton      { "Easy" };
         juce::TextButton advancedModeButton  { "Advanced" };
+        juce::TextButton aiModeButton        { "AI Builder" };
         bool easyMode = false;
+        bool aiMode = false;
 
         juce::TextButton tabEngine { "SOURCE" };
         juce::TextButton tabTone   { "FILTER" };
@@ -370,6 +373,9 @@ namespace patchcraft
         juce::TextButton fxTrackUseMapperButton { "Use Mapper" };
         juce::TextButton fxTrackPlayButton { "Play" };
         juce::TextButton fxTrackStopButton { "Stop" };
+        
+        std::unique_ptr<PromptToPluginComponent> promptToPlugin;
+        
         juce::ToggleButton fxTrackLoopToggle { "Loop" };
         juce::ToggleButton fxTrackRetriggerToggle { "Retrigger" };
         juce::ToggleButton fxTrackLiveInputToggle { "Live Input" };
@@ -469,7 +475,7 @@ namespace patchcraft
         std::map<juce::String, float> eqBandClipboard;
 
         void setTab (int index);
-        void setWorkflowMode (bool easy);
+        void setWorkflowMode (bool easy, bool ai = false);
         void applyEasyPreset();
         void applyEasyPresetForTheme (const juce::String& theme, bool forceRandomSeed);
         void applyEasyRandomVariation (Preset& preset, juce::uint32 seed);

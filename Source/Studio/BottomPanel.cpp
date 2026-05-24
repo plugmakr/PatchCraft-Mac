@@ -213,14 +213,14 @@ namespace patchcraft
 
     void BottomPanel::rebuildPageVisibility()
     {
-        const bool workflow = currentPage == Page::Workflow;
+        const bool workflow = currentPage == Page::Dashboard;
         const bool design  = currentPage == Page::Design;
-        const bool mapper  = currentPage == Page::SampleMapper;
+        const bool mapper  = currentPage == Page::Samples;
         const bool oneShot = currentPage == Page::OneShotMaker;
         const bool midi    = currentPage == Page::MidiPlayground || currentPage == Page::ArpStudio;
         const bool dsp     = currentPage == Page::DSP;
-        const bool build   = currentPage == Page::Build;
-        const bool launch  = currentPage == Page::Launch;
+        const bool build   = currentPage == Page::Widgets;
+        const bool launch  = currentPage == Page::Export;
         // "Test" now routes to the Brand Lab — the developer's live test
         // environment is the same surface as their branding workspace.
         const bool brand   = currentPage == Page::Branding;
@@ -282,7 +282,7 @@ namespace patchcraft
 
         switch (currentPage)
         {
-            case Page::Workflow:
+            case Page::Dashboard:
             {
                 if (workflowPage) workflowPage->setBounds (r);
                 break;
@@ -298,7 +298,7 @@ namespace patchcraft
                 break;
             }
 
-            case Page::SampleMapper:
+            case Page::Samples:
             {
                 auto top = r.removeFromTop (28);
                 btnMapperMain    .setBounds (top.removeFromLeft (130));
@@ -340,7 +340,7 @@ namespace patchcraft
                 break;
             }
 
-            case Page::Build:
+            case Page::Widgets:
             {
                 if (builder) builder->setBounds (r);
                 break;
@@ -352,7 +352,7 @@ namespace patchcraft
                 break;
             }
 
-            case Page::Launch:
+            case Page::Export:
             {
                 if (launchCenter) launchCenter->setBounds (r);
                 break;

@@ -3,6 +3,7 @@
 #include "KnobBuilderComponent.h"
 #include "SliderBuilderComponent.h"
 #include "MeterBuilderComponent.h"
+#include "AiImageBuilderComponent.h"
 #include "PatchCraftLookAndFeel.h"
 
 namespace patchcraft
@@ -10,23 +11,24 @@ namespace patchcraft
     ControlBuilderComponent::ControlBuilderComponent (StudioMainComponent& o) : owner (o)
     {
         title.setText ("Asset Build Lab", juce::dontSendNotification);
-        title.setFont (juce::Font (18.0f, juce::Font::bold));
+        title.setFont (juce::FontOptions (18.0f, juce::Font::bold));
         title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
         addAndMakeVisible (title);
 
         subtitle.setText ("Build production-ready knobs, sliders, meters, and filmstrips for instrument GUIs.", juce::dontSendNotification);
-        subtitle.setFont (juce::Font (11.5f));
+        subtitle.setFont (juce::FontOptions (11.5f));
         subtitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
         addAndMakeVisible (subtitle);
 
         kindLabel.setText ("Build", juce::dontSendNotification);
         kindLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
-        kindLabel.setFont (juce::Font (12.0f, juce::Font::bold));
+        kindLabel.setFont (juce::FontOptions (12.0f, juce::Font::bold));
         addAndMakeVisible (kindLabel);
 
         kindBox.addItem ("Knob",   1);
         kindBox.addItem ("Slider", 2);
         kindBox.addItem ("Meter",  3);
+        kindBox.addItem ("AI Image", 4);
         kindBox.setSelectedId (1, juce::dontSendNotification);
         kindBox.onChange = [this] { rebuildVisibility(); };
         addAndMakeVisible (kindBox);
@@ -41,9 +43,11 @@ namespace patchcraft
         knobBuilder   = std::make_unique<KnobBuilderComponent> (owner);
         sliderBuilder = std::make_unique<SliderBuilderComponent> (owner);
         meterBuilder  = std::make_unique<MeterBuilderComponent> (owner);
+        aiImageBuilder = std::make_unique<AiImageBuilderComponent> (owner);
         addAndMakeVisible (*knobBuilder);
         addChildComponent (*sliderBuilder);
         addChildComponent (*meterBuilder);
+        addChildComponent (*aiImageBuilder);
 
         auto addCurrentAssetToLibrary = [this]
         {
@@ -53,6 +57,8 @@ namespace patchcraft
                 sliderBuilder->addSliderToLibrary();
             else if (kindBox.getSelectedId() == 3 && meterBuilder != nullptr)
                 meterBuilder->addMeterToLibrary();
+            else if (kindBox.getSelectedId() == 4 && aiImageBuilder != nullptr)
+                aiImageBuilder->addGeneratedAssetToLibrary();
         };
         exportButton.onClick = addCurrentAssetToLibrary;
         duplicateButton.onClick = addCurrentAssetToLibrary;
@@ -78,6 +84,12 @@ namespace patchcraft
                 meterBuilder = std::make_unique<MeterBuilderComponent> (owner);
                 addChildComponent (*meterBuilder);
             }
+            else if (selected == 4)
+            {
+                removeChildComponent (aiImageBuilder.get());
+                aiImageBuilder = std::make_unique<AiImageBuilderComponent> (owner);
+                addChildComponent (*aiImageBuilder);
+            }
 
             rebuildVisibility();
         };
@@ -90,6 +102,7 @@ namespace patchcraft
         knobBuilder->setVisible   (kindBox.getSelectedId() == 1);
         sliderBuilder->setVisible (kindBox.getSelectedId() == 2);
         meterBuilder->setVisible  (kindBox.getSelectedId() == 3);
+        aiImageBuilder->setVisible (kindBox.getSelectedId() == 4);
         resized();
     }
 
@@ -121,6 +134,7 @@ namespace patchcraft
         knobBuilder->setBounds   (r);
         sliderBuilder->setBounds (r);
         meterBuilder->setBounds  (r);
+        aiImageBuilder->setBounds (r);
     }
 
 } // namespace patchcraft

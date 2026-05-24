@@ -224,8 +224,13 @@ int main (int argc, char** argv)
     check (arch != juce::File(), "Contents/<arch>/ exists");
     if (arch != juce::File())
     {
+       #if JUCE_MAC
+        const auto dll = arch.getChildFile ("Smoke_Test_Plugin");
+        check (dll.existsAsFile(), "Contents/<arch>/Smoke_Test_Plugin binary exists");
+       #else
         const auto dll = arch.getChildFile ("Smoke_Test_Plugin.vst3");
         check (dll.existsAsFile(), "Contents/<arch>/Smoke_Test_Plugin.vst3 binary exists");
+       #endif
         check (dll.getSize() > 100 * 1024, "binary is at least 100 KB (template was copied)");
     }
 
@@ -388,8 +393,13 @@ int main (int argc, char** argv)
             if (firstArch != juce::File() && secondArch != juce::File())
             {
                 juce::MemoryBlock a, b;
+               #if JUCE_MAC
+                firstArch.getChildFile ("Smoke_Test_Plugin").loadFileAsData (a);
+                secondArch.getChildFile ("Smoke_Test_Plugin_Two").loadFileAsData (b);
+               #else
                 firstArch.getChildFile ("Smoke_Test_Plugin.vst3").loadFileAsData (a);
                 secondArch.getChildFile ("Smoke_Test_Plugin_Two.vst3").loadFileAsData (b);
+               #endif
                 check (a.getSize() == b.getSize(),
                        "the two exports have the same binary size (template-copy reused)");
                 check (a != b,
@@ -423,8 +433,15 @@ int main (int argc, char** argv)
         const auto fxArch = pickArchSubfolder (fxContents);
         check (fxArch != juce::File(), "FX export Contents/<arch>/ exists");
         if (fxArch != juce::File())
+        {
+           #if JUCE_MAC
+            check (fxArch.getChildFile ("Smoke_Test_FX").existsAsFile(),
+                   "FX export renamed the inner VST3 binary");
+           #else
             check (fxArch.getChildFile ("Smoke_Test_FX.vst3").existsAsFile(),
                    "FX export renamed the inner VST3 binary");
+           #endif
+        }
 
         const auto fxResources = fxContents.getChildFile ("Resources");
         checkModuleInfoMetadata (fxResources, fxOptions, "PatchCraft Player FX",

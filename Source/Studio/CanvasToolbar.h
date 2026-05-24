@@ -63,16 +63,16 @@ namespace patchcraft
 
         // Section tab strip - sits to the right of the engine dropdown and
         // controls which page the bottom panel shows.
-        juce::TextButton tabWorkflow { "Workflow" };
         juce::TextButton tabDesign { "Design" };
+
         juce::TextButton tabMapper { "Samples" };
-        juce::TextButton tabOneShot { "One Shot" };
+        juce::TextButton tabOneShot { "One-Shots" };
         juce::TextButton tabMidi   { "MIDI" };
-        juce::TextButton tabArp    { "Arp Studio" };
+        juce::TextButton tabArp    { "Arp" };
         juce::TextButton tabDSP    { "DSP" };
-        juce::TextButton tabBuild  { "Build" };
-        juce::TextButton tabBranding { "Brand Lab" };
-        juce::TextButton tabLaunch { "Launch" };
+        juce::TextButton tabBuild  { "Widgets" };
+        juce::TextButton tabBranding { "Branding" };
+        juce::TextButton tabLaunch { "Export" };
         juce::Label      patchSeparator;
         juce::TextButton savePatchBtn   { "Save Patch" };
         juce::TextButton savePatchAsBtn { "Save Patch As" };

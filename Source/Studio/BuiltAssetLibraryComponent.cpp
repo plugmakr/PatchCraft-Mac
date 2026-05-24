@@ -281,7 +281,7 @@ namespace patchcraft
 
         mode = newMode;
         if (mode != LibraryMode::Sounds)
-            activeSoundFolder = {};
+            activeSoundFolder = juce::File();
         refresh();
     }
 
@@ -1093,7 +1093,7 @@ namespace patchcraft
             juce::Array<juce::File> files;
             files.add (entry.file);
             owner.importSampleFiles (files, true, false);
-            owner.setBottomTab (BottomPanel::Page::SampleMapper);
+            owner.setBottomTab (BottomPanel::Page::Samples);
             return;
         }
 
@@ -1495,7 +1495,7 @@ namespace patchcraft
                         juce::Array<juce::File> files;
                         files.add (entry.file);
                         owner.importSampleFiles (files, true, false);
-                        owner.setBottomTab (BottomPanel::Page::SampleMapper);
+                        owner.setBottomTab (BottomPanel::Page::Samples);
                     }
                     else
                     {

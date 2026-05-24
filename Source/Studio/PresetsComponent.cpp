@@ -1,7 +1,9 @@
 #include "PresetsComponent.h"
 #include "StudioMainComponent.h"
+#include "StudioMainComponent.h"
 #include "PatchCraftLookAndFeel.h"
 #include "PresetGenerator.h"
+#include "AiAssistService.h"
 
 namespace patchcraft
 {
@@ -29,6 +31,7 @@ namespace patchcraft
         addAndMakeVisible (saveBtn);
         addAndMakeVisible (saveAsBtn);
         addAndMakeVisible (generateBtn);
+        addAndMakeVisible (aiGenerateBtn);
 
         popOutBtn.setTooltip ("Pop the preset browser into a free-floating window. Click again to dock.");
         popOutBtn.getProperties().set ("smallButton", true);
@@ -46,6 +49,7 @@ namespace patchcraft
         saveBtn.setTooltip ("Overwrite the selected preset with the current live knob/parameter values.");
         saveAsBtn.setTooltip ("Duplicate the current live sound into a newly named preset.");
         generateBtn.setTooltip ("Auto-generate a themed preset bank from the current instrument parameters.");
+        aiGenerateBtn.setTooltip ("Generate AI Macro Presets using natural language.");
         newBtn.onClick = [this] { promptAndSaveCurrentPreset (true); };
         saveBtn.onClick = [this]
         {
@@ -67,6 +71,7 @@ namespace patchcraft
         };
         saveAsBtn.onClick = [this] { promptAndSaveCurrentPreset (true); };
         generateBtn.onClick = [this] { promptAndGeneratePresets(); };
+        aiGenerateBtn.onClick = [this] { promptAndGenerateAiPresets(); };
     }
 
     void PresetsComponent::paint (juce::Graphics& g)
@@ -129,7 +134,10 @@ namespace patchcraft
         newBtn.setBounds    (manual.removeFromLeft (third).reduced (1));
         saveBtn.setBounds   (manual.removeFromLeft (third).reduced (1));
         saveAsBtn.setBounds (manual.reduced (1));
-        generateBtn.setBounds (bottom.reduced (1));
+
+        auto autoRow = bottom.removeFromTop (28);
+        generateBtn.setBounds (autoRow.removeFromLeft (autoRow.getWidth() / 2).reduced (1));
+        aiGenerateBtn.setBounds (autoRow.reduced (1));
 
         list.setBounds (r);
     }
@@ -486,6 +494,102 @@ namespace patchcraft
                 }
                 owner.getProject().notifyChanged();
                 refresh();
+            }), true);
+    }
+
+    void PresetsComponent::promptAndGenerateAiPresets()
+    {
+        auto* window = new juce::AlertWindow ("AI Macro Preset Generator",
+            "Describe the preset you want (e.g. 'A dark cinematic pad' or 'Aggressive dubstep bass').",
+            juce::MessageBoxIconType::QuestionIcon);
+        
+        window->addTextEditor ("Prompt", "", "Prompt:");
+        window->addButton ("Generate", 1);
+        window->addButton ("Cancel", 0);
+
+        window->enterModalState (true,
+            juce::ModalCallbackFunction::create ([this, window] (int result)
+            {
+                std::unique_ptr<juce::AlertWindow> owned (window);
+                if (result == 1)
+                {
+                    auto* text = window->getTextEditor ("Prompt");
+                    if (text == nullptr) return;
+                    juce::String prompt = text->getText();
+                    if (prompt.trim().isEmpty()) return;
+
+                    // Package parameters into context
+                    AiAssistService::ProjectContextPack ctx;
+                    for (const auto& p : owner.getProject().getParameters().getAll())
+                    {
+                        if (p.visible)
+                            ctx.contentSummary << p.id << " (" << p.min << " to " << p.max << ", def: " << p.defaultValue << ")\n";
+                    }
+
+                    juce::Thread::launch ([this, prompt, ctx]()
+                    {
+                        AiAssistService service;
+                        AiAssistService::Suggestion suggestion = service.runWithPrompt (AiAssistService::TaskType::GeneratePresetBank, ctx, prompt);
+
+                        juce::MessageManager::callAsync ([this, suggestion]()
+                        {
+                            auto trimmed = suggestion.details.trim();
+                            if (trimmed.startsWith ("{") || trimmed.startsWith ("["))
+                            {
+                                auto parsed = juce::JSON::parse (trimmed);
+                                if (auto* obj = parsed.getDynamicObject())
+                                {
+                                    Preset p;
+                                    p.name = obj->hasProperty ("name") ? obj->getProperty ("name").toString() : "AI Generated";
+                                    p.description = obj->hasProperty ("description") ? obj->getProperty ("description").toString() : "AI preset for " + p.name;
+                                    p.theme = obj->hasProperty ("theme") ? obj->getProperty ("theme").toString() : "AI";
+                                    p.generated = true;
+                                    
+                                    if (auto* tagsArray = obj->getProperty ("tags").getArray())
+                                    {
+                                        for (auto& tag : *tagsArray)
+                                            p.tags.add (tag.toString());
+                                    }
+                                    else
+                                    {
+                                        p.tags = { "AI", "generated" };
+                                    }
+
+                                    // Fill defaults first
+                                    for (const auto& def : owner.getProject().getParameters().getAll())
+                                        p.values[def.id] = def.defaultValue;
+
+                                    if (auto* values = obj->getProperty ("values").getDynamicObject())
+                                    {
+                                        for (auto& prop : values->getProperties())
+                                            p.values[prop.name.toString()] = (float) prop.value;
+                                    }
+
+                                    // Save it
+                                    auto& presets = owner.getProject().getPresets();
+                                    for (auto& existing : presets)
+                                        existing.isDefault = false;
+                                    p.isDefault = true;
+                                    presets.push_back (p);
+                                    
+                                    upsertPatchForPreset (p);
+                                    selectedPreset = (int) presets.size() - 1;
+                                    owner.getProject().getManifest().defaultPreset = p.name;
+                                    owner.getProject().notifyChanged();
+                                    refresh();
+                                }
+                                else
+                                {
+                                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "AI Error", "Failed to parse AI Preset JSON.");
+                                }
+                            }
+                            else
+                            {
+                                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "AI Error", suggestion.details);
+                            }
+                        });
+                    });
+                }
             }), true);
     }
 

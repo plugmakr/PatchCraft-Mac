@@ -31,16 +31,15 @@ namespace patchcraft
         // doesn't break the wiring.
         struct TabSpec { juce::TextButton* btn; int pageIndex; };
         const TabSpec specs[] = {
-            { &tabWorkflow, (int) BottomPanel::Page::Workflow },
             { &tabDesign,   (int) BottomPanel::Page::Design },
-            { &tabMapper,   (int) BottomPanel::Page::SampleMapper },
+            { &tabMapper,   (int) BottomPanel::Page::Samples },
             { &tabOneShot,  (int) BottomPanel::Page::OneShotMaker },
             { &tabMidi,     (int) BottomPanel::Page::MidiPlayground },
             { &tabArp,      (int) BottomPanel::Page::ArpStudio },
             { &tabDSP,      (int) BottomPanel::Page::DSP },
-            { &tabBuild,    (int) BottomPanel::Page::Build },
+            { &tabBuild,    (int) BottomPanel::Page::Widgets },
             { &tabBranding, (int) BottomPanel::Page::Branding },
-            { &tabLaunch,   (int) BottomPanel::Page::Launch }
+            { &tabLaunch,   (int) BottomPanel::Page::Export }
         };
         for (const auto& s : specs)
         {
@@ -54,7 +53,7 @@ namespace patchcraft
             b->onClick = [this, captured] { onSectionTabClick (captured); };
             addAndMakeVisible (*b);
         }
-        tabWorkflow.setToggleState (true, juce::dontSendNotification);
+        tabDesign.setToggleState (true, juce::dontSendNotification);
 
         patchSeparator.setText ("|", juce::dontSendNotification);
         patchSeparator.setJustificationType (juce::Justification::centred);
@@ -288,17 +287,17 @@ namespace patchcraft
     void CanvasToolbar::syncSectionTabFromOwner()
     {
         const auto p = owner.getBottomTab();
-        tabWorkflow.setToggleState (p == BottomPanel::Page::Workflow,       juce::dontSendNotification);
+
         tabDesign.setToggleState   (p == BottomPanel::Page::Design,         juce::dontSendNotification);
-        tabMapper.setToggleState   (p == BottomPanel::Page::SampleMapper,   juce::dontSendNotification);
+        tabMapper.setToggleState   (p == BottomPanel::Page::Samples,   juce::dontSendNotification);
         tabOneShot.setToggleState  (p == BottomPanel::Page::OneShotMaker,   juce::dontSendNotification);
         tabMidi  .setToggleState   (p == BottomPanel::Page::MidiPlayground, juce::dontSendNotification);
         tabArp   .setToggleState   (p == BottomPanel::Page::ArpStudio,      juce::dontSendNotification);
         tabDSP   .setToggleState   (p == BottomPanel::Page::DSP,            juce::dontSendNotification);
-        tabBuild .setToggleState   (p == BottomPanel::Page::Build,          juce::dontSendNotification);
+        tabBuild .setToggleState   (p == BottomPanel::Page::Widgets,          juce::dontSendNotification);
         tabBranding.setToggleState (p == BottomPanel::Page::Branding
                                   || p == BottomPanel::Page::Test,         juce::dontSendNotification);
-        tabLaunch.setToggleState   (p == BottomPanel::Page::Launch,         juce::dontSendNotification);
+        tabLaunch.setToggleState   (p == BottomPanel::Page::Export,         juce::dontSendNotification);
         refresh();
     }
 
@@ -503,16 +502,15 @@ namespace patchcraft
         r.removeFromLeft (12);
 
         // Section tabs (left of right cluster)
-        tabWorkflow.setBounds (r.removeFromLeft (66));
-        tabDesign.setBounds (r.removeFromLeft (52));
+        tabDesign.setBounds (r.removeFromLeft (66));
         tabMapper.setBounds (r.removeFromLeft (62));
-        tabOneShot.setBounds (r.removeFromLeft (64));
-        tabMidi  .setBounds (r.removeFromLeft (44));
-        tabArp   .setBounds (r.removeFromLeft (80));
+        tabOneShot.setBounds (r.removeFromLeft (70));
         tabDSP   .setBounds (r.removeFromLeft (42));
-        tabBuild .setBounds (r.removeFromLeft (44));
-        tabBranding.setBounds (r.removeFromLeft (58));
-        tabLaunch.setBounds (r.removeFromLeft (58));
+        tabMidi  .setBounds (r.removeFromLeft (44));
+        tabArp   .setBounds (r.removeFromLeft (44));
+        tabBuild .setBounds (r.removeFromLeft (58));
+        tabBranding.setBounds (r.removeFromLeft (62));
+        tabLaunch.setBounds (r.removeFromLeft (52));
         if (owner.getBottomTab() == BottomPanel::Page::DSP)
         {
             patchSeparator.setBounds (r.removeFromLeft (14));

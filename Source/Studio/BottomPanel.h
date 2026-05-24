@@ -28,17 +28,17 @@ namespace patchcraft
         Bottom workspace - tabbed via the section tabs in the canvas toolbar.
         One Page is visible at a time:
             Workflow     - Guided instrument-building path and health checks.
-            Design       - Parameters list + Presets browser side-by-side.
-            SampleMapper - Mapper / Keyzones / Velocity sub-tabs.
-            MidiPlayground - Musical MIDI generation and sample-control tools.
-            ArpStudio    - Dedicated circular arpeggiator builder surface.
-            Test         - Embedded MIDI keyboard + preview engine.
-            Build        - Unified Knob / Slider / Meter builder.
+        Parameters   - Parameters list + Presets browser side-by-side.
+        Samples      - Mapper / Keyzones / Velocity sub-tabs.
+        MidiPlayground - Musical MIDI generation and sample-control tools.
+        ArpStudio    - Dedicated circular arpeggiator builder surface.
+        Test         - Embedded MIDI keyboard + preview engine.
+        Widgets      - Unified Knob / Slider / Meter builder.
     */
     class BottomPanel : public juce::Component
     {
     public:
-        enum class Page { Workflow = 0, Design = 1, SampleMapper = 2, OneShotMaker = 3, MidiPlayground = 4, ArpStudio = 5, Test = 6, DSP = 7, Build = 8, Branding = 9, Launch = 10 };
+        enum class Page { Dashboard = 0, Design = 1, Samples = 2, OneShotMaker = 3, MidiPlayground = 4, ArpStudio = 5, Test = 6, DSP = 7, Widgets = 8, Branding = 9, Export = 10 };
 
         explicit BottomPanel (StudioMainComponent& owner);
         ~BottomPanel() override;
@@ -65,7 +65,7 @@ namespace patchcraft
 
     private:
         StudioMainComponent& owner;
-        Page currentPage = Page::Workflow;
+        Page currentPage = Page::Dashboard;
 
         // ---- Workflow page -------------------------------------------------
         std::unique_ptr<WorkflowPage> workflowPage;

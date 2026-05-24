@@ -133,11 +133,13 @@ namespace patchcraft
         // tree; when the floating window closes, the panel returns to the
         // first parent it had at the time of floating.
         void togglePanelFloat (juce::Component* panel, juce::String title);
+        void togglePacksPanel();
         bool isPanelFloating (juce::Component* panel) const;
 
         PatchCraftProject& getProject()                     { return project; }
         AssetManager&      getAssets()                      { return assets; }
         StudioAudioService& getAudio()                      { return audioService; }
+        AiAssistService&   getAiAssistService()             { return ai; }
         CanvasEditor* getCanvasEditor()                     { return canvasEditor.get(); }
         const CanvasEditor* getCanvasEditor() const         { return canvasEditor.get(); }
         bool isPreviewActive() const;
@@ -202,11 +204,10 @@ namespace patchcraft
         juce::TextButton rightCollapseButton { ">" };
         juce::TextButton leftPopButton  { "Pop" };
         juce::TextButton rightPopButton { "Pop" };
-        // Right-panel tab indices: 0=Inspector, 1=Layers, 2=Presets.
+        // Right-panel tab indices: 0=Inspector, 1=Presets.
         int  rightTabIndex = 0;
-        bool showLayersInRightPanel = false;
 
-        BottomPanel::Page bottomTab { BottomPanel::Page::Workflow };
+        BottomPanel::Page bottomTab { BottomPanel::Page::Dashboard };
 
         // Settings window (audio/MIDI device picker).
         class SettingsWindowHolder;
@@ -222,7 +223,7 @@ namespace patchcraft
         bool hasCopiedDesignStyle = false;
         bool showLayersInsteadOfElements = false;
         bool showLibraryInsteadOfElements = false;
-        bool showExpansionsInsteadOfElements = false;
+
         bool sampleLibraryDrawerOpen = false;
         bool dspTutorialShownThisSession = false;
         int leftPanelWidth = 240;
