@@ -24,10 +24,12 @@ This is a product-direction note for PatchCraft's circular Arp Lane element. It 
 - Inspector adds controls for the lane target and circular performance behavior.
 - Build Ring writes Patterning-style lane data into the MIDI Playground bank.
 - CircleSEQ demo lanes now demonstrate notes, pitched samples, drums, one-shots, and loop slices with different direction/pulse settings.
+- Sample/drum/loop lanes draw as concentric multi-ring Orbit lanes so slot assignment is visible at a glance.
+- Fill pulses and fill probability add a second performance layer for Patterning-style variations.
 
 ## Next Build Targets
 
-- Multi-ring editor view: edit all lanes at once, not one Arp Lane at a time.
+- Multi-ring editor view: edit all Orbit lanes at once, not one selected Arp Lane at a time.
 - Per-step automation rings for pitch, filter, pan, FX send, slice, and probability.
 - Fill layer per lane with momentary/latched playback.
 - Timeline and pattern-launch grid for complete song sections.

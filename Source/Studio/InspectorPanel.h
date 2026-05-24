@@ -153,7 +153,8 @@ namespace patchcraft
         juce::Label lblArpLane, lblArpLaneIndex, lblArpLaneSteps, lblArpLaneMode,
                     lblArpLaneTarget, lblArpLaneRootNote, lblArpLaneSampleSlots,
                     lblArpLaneDirection, lblArpLaneRotate, lblArpLaneEuclideanPulses,
-                    lblArpLaneProbability, lblArpLaneRatchet;
+                    lblArpLaneProbability, lblArpLaneRatchet, lblArpLaneFillPulses,
+                    lblArpLaneFillProbability;
         juce::Slider arpLaneIndexSlider;
         juce::Slider arpLaneStepsSlider;
         juce::Slider arpLaneRootNoteSlider;
@@ -162,6 +163,8 @@ namespace patchcraft
         juce::Slider arpLaneEuclideanPulsesSlider;
         juce::Slider arpLaneProbabilitySlider;
         juce::Slider arpLaneRatchetSlider;
+        juce::Slider arpLaneFillPulsesSlider;
+        juce::Slider arpLaneFillProbabilitySlider;
         juce::ComboBox arpLaneModeBox;
         juce::ComboBox arpLaneTargetBox;
         juce::ComboBox arpLaneDirectionBox;

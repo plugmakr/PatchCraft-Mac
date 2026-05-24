@@ -1823,11 +1823,23 @@ namespace patchcraft
         const float innerRadius = radius * 0.70f;
         const float noteRadius = radius * 1.09f;
         const int maxDrawSteps = juce::jmin (steps, 64);
+        const int slotCount = juce::jlimit (1, 12, e.arpLaneSampleSlots);
+        const bool multiRing = slotCount > 1 && e.arpLaneTarget != "notes";
 
         g.setColour (borderC.withAlpha (0.75f));
         g.drawEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f, 1.0f);
         g.setColour (borderC.withAlpha (0.20f));
         g.drawEllipse (centre.x - innerRadius, centre.y - innerRadius, innerRadius * 2.0f, innerRadius * 2.0f, 1.0f);
+        if (multiRing)
+        {
+            for (int slot = 0; slot < slotCount; ++slot)
+            {
+                const float rr = juce::jmap ((float) slot, 0.0f, (float) juce::jmax (1, slotCount - 1),
+                                             radius * 0.32f, radius * 0.93f);
+                g.setColour (borderC.withAlpha (slot == 0 ? 0.28f : 0.16f));
+                g.drawEllipse (centre.x - rr, centre.y - rr, rr * 2.0f, rr * 2.0f, 0.7f);
+            }
+        }
 
         static const char* noteLabels[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
         g.setFont (juce::FontOptions (8.0f));
@@ -1858,14 +1870,23 @@ namespace patchcraft
             const int divisions = block != nullptr
                 ? juce::jlimit (1, 8, juce::roundToInt (arpLaneValue (*block, lane, "mpStepDiv" + juce::String (step), 1.0f)))
                 : 1;
+            const int slot = multiRing
+                ? juce::jlimit (0, slotCount - 1,
+                    block != nullptr && e.arpLaneTarget == "loops"
+                        ? juce::roundToInt (arpLaneValue (*block, lane, "mpSampleSlice" + juce::String (step), (float) (step % slotCount)))
+                        : (step + e.arpLaneRotate) % slotCount)
+                : 0;
             const float angle = -juce::MathConstants<float>::halfPi
                 + juce::MathConstants<float>::twoPi * (float) step / (float) maxDrawSteps;
+            const float activeRadius = multiRing
+                ? juce::jmap ((float) slot, 0.0f, (float) juce::jmax (1, slotCount - 1), radius * 0.32f, radius * 0.93f)
+                : juce::jmap (velocity, 0.0f, 1.0f, radius * 0.25f, radius * 0.93f);
             const auto outer = centre + juce::Point<float> (std::cos (angle) * radius,
                                                             std::sin (angle) * radius);
             const auto gridStart = centre + juce::Point<float> (std::cos (angle) * radius * 0.18f,
                                                                 std::sin (angle) * radius * 0.18f);
-            const auto velocityEnd = centre + juce::Point<float> (std::cos (angle) * juce::jmap (velocity, 0.0f, 1.0f, radius * 0.25f, radius * 0.93f),
-                                                                  std::sin (angle) * juce::jmap (velocity, 0.0f, 1.0f, radius * 0.25f, radius * 0.93f));
+            const auto velocityEnd = centre + juce::Point<float> (std::cos (angle) * activeRadius,
+                                                                  std::sin (angle) * activeRadius);
             g.setColour (borderC.withAlpha (0.20f));
             g.drawLine (gridStart.x, gridStart.y, outer.x, outer.y, 0.7f);
             if (active >= 0.5f)
@@ -1911,9 +1932,9 @@ namespace patchcraft
         const juce::String footerLabels[] =
         {
             e.arpLaneDirection.toUpperCase().substring (0, 4),
-            "ROT " + juce::String (e.arpLaneRotate),
             "PUL " + juce::String (e.arpLaneEuclideanPulses),
-            "RAT " + juce::String (e.arpLaneRatchet)
+            "RAT " + juce::String (e.arpLaneRatchet),
+            "FIL " + juce::String (e.arpLaneFillPulses)
         };
         for (int i = 0; i < 4; ++i)
         {

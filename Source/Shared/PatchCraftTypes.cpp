@@ -619,6 +619,8 @@ namespace patchcraft
             obj->setProperty ("arpLaneEuclideanPulses", arpLaneEuclideanPulses);
             obj->setProperty ("arpLaneProbability", (double) arpLaneProbability);
             obj->setProperty ("arpLaneRatchet", arpLaneRatchet);
+            obj->setProperty ("arpLaneFillPulses", arpLaneFillPulses);
+            obj->setProperty ("arpLaneFillProbability", (double) arpLaneFillProbability);
         }
         if (type == ElementType::Mixer)
         {
@@ -720,6 +722,10 @@ namespace patchcraft
                 e.arpLaneProbability = juce::jlimit (0.0f, 1.0f, (float) (double) o->getProperty ("arpLaneProbability"));
             if (o->hasProperty ("arpLaneRatchet"))
                 e.arpLaneRatchet = juce::jlimit (1, 8, (int) o->getProperty ("arpLaneRatchet"));
+            if (o->hasProperty ("arpLaneFillPulses"))
+                e.arpLaneFillPulses = juce::jlimit (0, 128, (int) o->getProperty ("arpLaneFillPulses"));
+            if (o->hasProperty ("arpLaneFillProbability"))
+                e.arpLaneFillProbability = juce::jlimit (0.0f, 1.0f, (float) (double) o->getProperty ("arpLaneFillProbability"));
             if (o->hasProperty ("mixerChannels"))
                 e.mixerChannels = juce::jlimit (1, 16, (int) o->getProperty ("mixerChannels"));
             if (o->hasProperty ("mixerMode"))
@@ -744,6 +750,8 @@ namespace patchcraft
             e.arpLaneEuclideanPulses = juce::jlimit (0, e.arpLaneSteps, e.arpLaneEuclideanPulses);
             e.arpLaneProbability = juce::jlimit (0.0f, 1.0f, e.arpLaneProbability);
             e.arpLaneRatchet = juce::jlimit (1, 8, e.arpLaneRatchet);
+            e.arpLaneFillPulses = juce::jlimit (0, e.arpLaneSteps, e.arpLaneFillPulses);
+            e.arpLaneFillProbability = juce::jlimit (0.0f, 1.0f, e.arpLaneFillProbability);
             if (e.mixerMode.isEmpty()) e.mixerMode = "auto";
         }
         return e;

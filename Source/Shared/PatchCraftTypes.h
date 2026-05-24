@@ -251,6 +251,8 @@ namespace patchcraft
         int arpLaneEuclideanPulses = 0;
         float arpLaneProbability = 1.0f;
         int arpLaneRatchet = 1;
+        int arpLaneFillPulses = 0;
+        float arpLaneFillProbability = 0.0f;
 
         // Runtime mixer UI (Mixer only).
         // auto: multi-instrument layers when present, otherwise main output.
