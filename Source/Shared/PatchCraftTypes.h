@@ -246,6 +246,11 @@ namespace patchcraft
         juce::String arpLaneTarget { "notes" };
         int arpLaneRootNote = 60;
         int arpLaneSampleSlots = 1;
+        juce::String arpLaneDirection { "forward" };
+        int arpLaneRotate = 0;
+        int arpLaneEuclideanPulses = 0;
+        float arpLaneProbability = 1.0f;
+        int arpLaneRatchet = 1;
 
         // Runtime mixer UI (Mixer only).
         // auto: multi-instrument layers when present, otherwise main output.

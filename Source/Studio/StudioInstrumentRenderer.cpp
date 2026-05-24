@@ -344,13 +344,18 @@ namespace patchcraft
                 g.drawEllipse (playheadDot.x - 5.0f, playheadDot.y - 5.0f, 10.0f, 10.0f, 1.2f);
             }
 
+            const auto targetLabel = element.arpLaneTarget == "drums" ? "DRUMS"
+                                  : element.arpLaneTarget == "oneShots" ? "ONE SHOTS"
+                                  : element.arpLaneTarget == "loops" ? "LOOP SLICES"
+                                  : element.arpLaneTarget == "samples" ? "SAMPLES" : "NOTES";
+
             g.setColour (PatchCraftLookAndFeel::text());
             g.setFont (juce::Font (24.0f));
             g.drawText (juce::String (steps), juce::Rectangle<int> ((int) centre.x - 44, (int) centre.y - 22, 88, 30),
                         juce::Justification::centred, true);
             g.setColour (PatchCraftLookAndFeel::textDim());
             g.setFont (juce::Font (9.0f, juce::Font::bold));
-            g.drawText ("STEPS", juce::Rectangle<int> ((int) centre.x - 44, (int) centre.y + 7, 88, 18),
+            g.drawText (targetLabel, juce::Rectangle<int> ((int) centre.x - 44, (int) centre.y + 7, 88, 18),
                         juce::Justification::centred, true);
         }
 

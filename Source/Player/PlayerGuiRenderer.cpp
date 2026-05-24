@@ -1893,17 +1893,28 @@ namespace patchcraft
             }
         }
 
+        const auto targetLabel = e.arpLaneTarget == "drums" ? "DRUMS"
+                              : e.arpLaneTarget == "oneShots" ? "ONE SHOTS"
+                              : e.arpLaneTarget == "loops" ? "LOOP SLICES"
+                              : e.arpLaneTarget == "samples" ? "SAMPLES" : "NOTES";
+
         g.setColour (playerText());
         g.setFont (juce::FontOptions (24.0f));
         g.drawText (juce::String (steps), juce::Rectangle<int> ((int) centre.x - 44, (int) centre.y - 22, 88, 30),
                     juce::Justification::centred, true);
         g.setColour (playerTextDim());
         g.setFont (juce::FontOptions (9.0f).withStyle ("bold"));
-        g.drawText ("STEPS", juce::Rectangle<int> ((int) centre.x - 44, (int) centre.y + 7, 88, 18),
+        g.drawText (targetLabel, juce::Rectangle<int> ((int) centre.x - 44, (int) centre.y + 7, 88, 18),
                     juce::Justification::centred, true);
 
         auto footer = r.reduced (10).removeFromBottom (30);
-        static const char* footerLabels[] = { "OCT", "GATE", "SPEED", "VEL" };
+        const juce::String footerLabels[] =
+        {
+            e.arpLaneDirection.toUpperCase().substring (0, 4),
+            "ROT " + juce::String (e.arpLaneRotate),
+            "PUL " + juce::String (e.arpLaneEuclideanPulses),
+            "RAT " + juce::String (e.arpLaneRatchet)
+        };
         for (int i = 0; i < 4; ++i)
         {
             const int cellW = footer.getWidth() / (4 - i);

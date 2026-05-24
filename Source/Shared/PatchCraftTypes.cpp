@@ -614,6 +614,11 @@ namespace patchcraft
             obj->setProperty ("arpLaneTarget", arpLaneTarget);
             obj->setProperty ("arpLaneRootNote", arpLaneRootNote);
             obj->setProperty ("arpLaneSampleSlots", arpLaneSampleSlots);
+            obj->setProperty ("arpLaneDirection", arpLaneDirection);
+            obj->setProperty ("arpLaneRotate", arpLaneRotate);
+            obj->setProperty ("arpLaneEuclideanPulses", arpLaneEuclideanPulses);
+            obj->setProperty ("arpLaneProbability", (double) arpLaneProbability);
+            obj->setProperty ("arpLaneRatchet", arpLaneRatchet);
         }
         if (type == ElementType::Mixer)
         {
@@ -705,6 +710,16 @@ namespace patchcraft
                 e.arpLaneRootNote = juce::jlimit (0, 127, (int) o->getProperty ("arpLaneRootNote"));
             if (o->hasProperty ("arpLaneSampleSlots"))
                 e.arpLaneSampleSlots = juce::jlimit (1, 64, (int) o->getProperty ("arpLaneSampleSlots"));
+            if (o->hasProperty ("arpLaneDirection"))
+                e.arpLaneDirection = o->getProperty ("arpLaneDirection").toString();
+            if (o->hasProperty ("arpLaneRotate"))
+                e.arpLaneRotate = juce::jlimit (0, 127, (int) o->getProperty ("arpLaneRotate"));
+            if (o->hasProperty ("arpLaneEuclideanPulses"))
+                e.arpLaneEuclideanPulses = juce::jlimit (0, 128, (int) o->getProperty ("arpLaneEuclideanPulses"));
+            if (o->hasProperty ("arpLaneProbability"))
+                e.arpLaneProbability = juce::jlimit (0.0f, 1.0f, (float) (double) o->getProperty ("arpLaneProbability"));
+            if (o->hasProperty ("arpLaneRatchet"))
+                e.arpLaneRatchet = juce::jlimit (1, 8, (int) o->getProperty ("arpLaneRatchet"));
             if (o->hasProperty ("mixerChannels"))
                 e.mixerChannels = juce::jlimit (1, 16, (int) o->getProperty ("mixerChannels"));
             if (o->hasProperty ("mixerMode"))
@@ -724,7 +739,11 @@ namespace patchcraft
             if (e.animationMode.isEmpty()) e.animationMode = "none";
             if (e.arpLaneMode.isEmpty()) e.arpLaneMode = "bank";
             if (e.arpLaneTarget.isEmpty()) e.arpLaneTarget = "notes";
+            if (e.arpLaneDirection.isEmpty()) e.arpLaneDirection = "forward";
             e.arpLaneSampleSlots = juce::jlimit (1, 64, e.arpLaneSampleSlots);
+            e.arpLaneEuclideanPulses = juce::jlimit (0, e.arpLaneSteps, e.arpLaneEuclideanPulses);
+            e.arpLaneProbability = juce::jlimit (0.0f, 1.0f, e.arpLaneProbability);
+            e.arpLaneRatchet = juce::jlimit (1, 8, e.arpLaneRatchet);
             if (e.mixerMode.isEmpty()) e.mixerMode = "auto";
         }
         return e;

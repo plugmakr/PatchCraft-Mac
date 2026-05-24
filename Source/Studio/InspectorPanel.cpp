@@ -91,6 +91,48 @@ namespace patchcraft
         return juce::String (names[note % 12]) + juce::String ((note / 12) - 1);
     }
 
+    static int positiveMod (int value, int modulus)
+    {
+        if (modulus <= 0)
+            return 0;
+
+        const int result = value % modulus;
+        return result < 0 ? result + modulus : result;
+    }
+
+    static juce::String normaliseArpLaneDirection (juce::String direction)
+    {
+        direction = direction.trim().toLowerCase();
+        if (direction == "reverse" || direction == "pendulum" || direction == "random")
+            return direction;
+        return "forward";
+    }
+
+    static int arpPatternForLaneDirection (const juce::String& direction, int euclideanPulses)
+    {
+        if (euclideanPulses > 0)
+            return 6;
+
+        const auto normalised = normaliseArpLaneDirection (direction);
+        if (normalised == "reverse")  return 1;
+        if (normalised == "pendulum") return 2;
+        if (normalised == "random")   return 7;
+        return 0;
+    }
+
+    static bool euclideanPulseActive (int step, int steps, int pulses, int rotate)
+    {
+        steps = juce::jmax (1, steps);
+        pulses = juce::jlimit (0, steps, pulses);
+        if (pulses <= 0)
+            return true;
+        if (pulses >= steps)
+            return true;
+
+        const int rotated = positiveMod (step - rotate, steps);
+        return ((rotated + 1) * pulses) / steps != (rotated * pulses) / steps;
+    }
+
     static bool isElementChildOfContainer (const LayoutElement& child, const LayoutElement& container)
     {
         if (child.id == container.id)
@@ -270,6 +312,11 @@ namespace patchcraft
         styleLabel (lblArpLaneTarget,  "Target");
         styleLabel (lblArpLaneRootNote, "Base Note");
         styleLabel (lblArpLaneSampleSlots, "Slots");
+        styleLabel (lblArpLaneDirection, "Direction");
+        styleLabel (lblArpLaneRotate, "Rotate");
+        styleLabel (lblArpLaneEuclideanPulses, "Pulses");
+        styleLabel (lblArpLaneProbability, "Chance");
+        styleLabel (lblArpLaneRatchet, "Ratchets");
         styleLabel (lblMixer,           "MIXER", juce::Justification::centredLeft, 11.0f, true);
         styleLabel (lblMixerMode,       "Mode");
         styleLabel (lblMixerChannels,   "Channels");
@@ -312,6 +359,8 @@ namespace patchcraft
                           &lblDrumCellFxTarget, &lblDrumCellFxAmount,
                           &lblArpLane, &lblArpLaneIndex, &lblArpLaneSteps, &lblArpLaneMode,
                           &lblArpLaneTarget, &lblArpLaneRootNote, &lblArpLaneSampleSlots,
+                          &lblArpLaneDirection, &lblArpLaneRotate, &lblArpLaneEuclideanPulses,
+                          &lblArpLaneProbability, &lblArpLaneRatchet,
                           &lblMixer, &lblMixerMode, &lblMixerChannels, &lblMixerLabels,
                           &lblMixerVolumes, &lblMixerPans, &lblMixerMutes, &lblMixerSolos,
                           &lblMacroEditor, &lblMacroTargets, &lblModMatrixEditor, &lblModRoutes,
@@ -912,10 +961,41 @@ namespace patchcraft
         arpLaneSampleSlotsSlider.setTooltip ("Number of drum pads, one-shot notes, loop slices, or sample zones this lane should cycle through.");
         addAndMakeVisible (arpLaneSampleSlotsSlider);
 
+        arpLaneDirectionBox.addItem ("Forward", 1);
+        arpLaneDirectionBox.addItem ("Reverse", 2);
+        arpLaneDirectionBox.addItem ("Pendulum", 3);
+        arpLaneDirectionBox.addItem ("Random", 4);
+        arpLaneDirectionBox.setTooltip ("Patterning-style lane playback direction. Euclidean pulses use the direction plus the rotated hit map.");
+        addAndMakeVisible (arpLaneDirectionBox);
+
+        arpLaneRotateSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+        arpLaneRotateSlider.setTextBoxStyle (juce::Slider::TextBoxRight, true, 48, 22);
+        arpLaneRotateSlider.setRange (0.0, 127.0, 1.0);
+        arpLaneRotateSlider.setTooltip ("Rotates the lane pattern around the circle before writing the MIDI Playground bank.");
+        addAndMakeVisible (arpLaneRotateSlider);
+
+        arpLaneEuclideanPulsesSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+        arpLaneEuclideanPulsesSlider.setTextBoxStyle (juce::Slider::TextBoxRight, true, 48, 22);
+        arpLaneEuclideanPulsesSlider.setRange (0.0, 128.0, 1.0);
+        arpLaneEuclideanPulsesSlider.setTooltip ("0 uses every step. Values above 0 generate a distributed pulse ring for polymetric drum and sample patterns.");
+        addAndMakeVisible (arpLaneEuclideanPulsesSlider);
+
+        arpLaneProbabilitySlider.setSliderStyle (juce::Slider::LinearHorizontal);
+        arpLaneProbabilitySlider.setTextBoxStyle (juce::Slider::TextBoxRight, true, 48, 22);
+        arpLaneProbabilitySlider.setRange (0.0, 1.0, 0.01);
+        arpLaneProbabilitySlider.setTooltip ("Per-step probability written into the lane bank.");
+        addAndMakeVisible (arpLaneProbabilitySlider);
+
+        arpLaneRatchetSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+        arpLaneRatchetSlider.setTextBoxStyle (juce::Slider::TextBoxRight, true, 48, 22);
+        arpLaneRatchetSlider.setRange (1.0, 8.0, 1.0);
+        arpLaneRatchetSlider.setTooltip ("Sub-step retriggers written to each active lane step.");
+        addAndMakeVisible (arpLaneRatchetSlider);
+
         arpLaneOpenPerformanceBtn.setTooltip ("Open MIDI Playground to edit this lane's notes, divisions, gate, swing, probability, and bank behavior.");
         arpLaneOpenPerformanceBtn.onClick = [this] { owner.setBottomTab (BottomPanel::Page::MidiPlayground); };
         addAndMakeVisible (arpLaneOpenPerformanceBtn);
-        arpLaneApplySampleTargetBtn.setTooltip ("Write this lane's target note/slice assignment into its MIDI Playground bank.");
+        arpLaneApplySampleTargetBtn.setTooltip ("Build a Patterning-style lane bank from target, direction, rotate, pulses, chance, and ratchets.");
         arpLaneApplySampleTargetBtn.onClick = [this] { writeArpLaneSampleTargetFromUi (true); };
         addAndMakeVisible (arpLaneApplySampleTargetBtn);
         arpLaneIndexSlider.onValueChange = rewrite;
@@ -924,6 +1004,11 @@ namespace patchcraft
         arpLaneTargetBox.onChange = [this] { writeArpLaneSampleTargetFromUi (false); };
         arpLaneRootNoteSlider.onValueChange = [this] { writeArpLaneSampleTargetFromUi (false); };
         arpLaneSampleSlotsSlider.onValueChange = [this] { writeArpLaneSampleTargetFromUi (false); };
+        arpLaneDirectionBox.onChange = [this] { writeArpLaneSampleTargetFromUi (false); };
+        arpLaneRotateSlider.onValueChange = [this] { writeArpLaneSampleTargetFromUi (false); };
+        arpLaneEuclideanPulsesSlider.onValueChange = [this] { writeArpLaneSampleTargetFromUi (false); };
+        arpLaneProbabilitySlider.onValueChange = [this] { writeArpLaneSampleTargetFromUi (false); };
+        arpLaneRatchetSlider.onValueChange = [this] { writeArpLaneSampleTargetFromUi (false); };
 
         mixerModeBox.addItem ("Auto - layers when available", 1);
         mixerModeBox.addItem ("Layers only", 2);
@@ -1540,11 +1625,18 @@ namespace patchcraft
                                  static_cast<juce::Component*> (&arpLaneTargetBox),
                                  static_cast<juce::Component*> (&arpLaneRootNoteSlider),
                                  static_cast<juce::Component*> (&arpLaneSampleSlotsSlider),
+                                 static_cast<juce::Component*> (&arpLaneDirectionBox),
+                                 static_cast<juce::Component*> (&arpLaneRotateSlider),
+                                 static_cast<juce::Component*> (&arpLaneEuclideanPulsesSlider),
+                                 static_cast<juce::Component*> (&arpLaneProbabilitySlider),
+                                 static_cast<juce::Component*> (&arpLaneRatchetSlider),
                                  static_cast<juce::Component*> (&arpLaneOpenPerformanceBtn),
                                  static_cast<juce::Component*> (&arpLaneApplySampleTargetBtn) })
             component->setVisible (isArpLane && showAdvancedControls && isSectionOpen (InspectorSection::ArpLane));
         for (auto* label : { &lblArpLane, &lblArpLaneIndex, &lblArpLaneSteps, &lblArpLaneMode,
-                             &lblArpLaneTarget, &lblArpLaneRootNote, &lblArpLaneSampleSlots })
+                             &lblArpLaneTarget, &lblArpLaneRootNote, &lblArpLaneSampleSlots,
+                             &lblArpLaneDirection, &lblArpLaneRotate, &lblArpLaneEuclideanPulses,
+                             &lblArpLaneProbability, &lblArpLaneRatchet })
             label->setVisible (isArpLane && showAdvancedControls
                                && (label == &lblArpLane || isSectionOpen (InspectorSection::ArpLane)));
 
@@ -1560,6 +1652,11 @@ namespace patchcraft
                 layoutRow (r, lblArpLaneTarget, &arpLaneTargetBox);
                 layoutRow (r, lblArpLaneRootNote, &arpLaneRootNoteSlider);
                 layoutRow (r, lblArpLaneSampleSlots, &arpLaneSampleSlotsSlider);
+                layoutRow (r, lblArpLaneDirection, &arpLaneDirectionBox);
+                layoutRow (r, lblArpLaneRotate, &arpLaneRotateSlider);
+                layoutRow (r, lblArpLaneEuclideanPulses, &arpLaneEuclideanPulsesSlider);
+                layoutRow (r, lblArpLaneProbability, &arpLaneProbabilitySlider);
+                layoutRow (r, lblArpLaneRatchet, &arpLaneRatchetSlider);
                 auto row = r.removeFromTop (34);
                 row.removeFromLeft (110);
                 const int buttonW = juce::jmax (64, row.getWidth() / 2);
@@ -1882,6 +1979,11 @@ namespace patchcraft
             static_cast<juce::Component*> (&arpLaneTargetBox),
             static_cast<juce::Component*> (&arpLaneRootNoteSlider),
             static_cast<juce::Component*> (&arpLaneSampleSlotsSlider),
+            static_cast<juce::Component*> (&arpLaneDirectionBox),
+            static_cast<juce::Component*> (&arpLaneRotateSlider),
+            static_cast<juce::Component*> (&arpLaneEuclideanPulsesSlider),
+            static_cast<juce::Component*> (&arpLaneProbabilitySlider),
+            static_cast<juce::Component*> (&arpLaneRatchetSlider),
             static_cast<juce::Component*> (&arpLaneOpenPerformanceBtn),
             static_cast<juce::Component*> (&arpLaneApplySampleTargetBtn),
             static_cast<juce::Component*> (&mixerModeBox),
@@ -2035,6 +2137,14 @@ namespace patchcraft
                                    juce::dontSendNotification);
         arpLaneRootNoteSlider.setValue (juce::jlimit (0, 127, el->arpLaneRootNote), juce::dontSendNotification);
         arpLaneSampleSlotsSlider.setValue (juce::jlimit (1, 64, el->arpLaneSampleSlots), juce::dontSendNotification);
+        arpLaneDirectionBox.setSelectedId (normaliseArpLaneDirection (el->arpLaneDirection) == "reverse" ? 2
+                                      : normaliseArpLaneDirection (el->arpLaneDirection) == "pendulum" ? 3
+                                      : normaliseArpLaneDirection (el->arpLaneDirection) == "random" ? 4 : 1,
+                                      juce::dontSendNotification);
+        arpLaneRotateSlider.setValue (juce::jlimit (0, 127, el->arpLaneRotate), juce::dontSendNotification);
+        arpLaneEuclideanPulsesSlider.setValue (juce::jlimit (0, el->arpLaneSteps, el->arpLaneEuclideanPulses), juce::dontSendNotification);
+        arpLaneProbabilitySlider.setValue (juce::jlimit (0.0f, 1.0f, el->arpLaneProbability), juce::dontSendNotification);
+        arpLaneRatchetSlider.setValue (juce::jlimit (1, 8, el->arpLaneRatchet), juce::dontSendNotification);
         lblArpLaneRootNote.setText ("Base " + noteNameFor (el->arpLaneRootNote), juce::dontSendNotification);
         mixerModeBox.setSelectedId (el->mixerMode == "layers" ? 2
                                   : el->mixerMode == "parameters" ? 3 : 1,
@@ -2253,6 +2363,13 @@ namespace patchcraft
                               : arpLaneTargetBox.getSelectedId() == 5 ? "samples" : "notes";
             el->arpLaneRootNote = juce::jlimit (0, 127, juce::roundToInt (arpLaneRootNoteSlider.getValue()));
             el->arpLaneSampleSlots = juce::jlimit (1, 64, juce::roundToInt (arpLaneSampleSlotsSlider.getValue()));
+            el->arpLaneDirection = arpLaneDirectionBox.getSelectedId() == 2 ? "reverse"
+                                 : arpLaneDirectionBox.getSelectedId() == 3 ? "pendulum"
+                                 : arpLaneDirectionBox.getSelectedId() == 4 ? "random" : "forward";
+            el->arpLaneRotate = juce::jlimit (0, 127, juce::roundToInt (arpLaneRotateSlider.getValue()));
+            el->arpLaneEuclideanPulses = juce::jlimit (0, el->arpLaneSteps, juce::roundToInt (arpLaneEuclideanPulsesSlider.getValue()));
+            el->arpLaneProbability = juce::jlimit (0.0f, 1.0f, (float) arpLaneProbabilitySlider.getValue());
+            el->arpLaneRatchet = juce::jlimit (1, 8, juce::roundToInt (arpLaneRatchetSlider.getValue()));
         }
 
         if (el->type == ElementType::Mixer)
@@ -2668,6 +2785,13 @@ namespace patchcraft
                           : arpLaneTargetBox.getSelectedId() == 5 ? "samples" : "notes";
         el->arpLaneRootNote = juce::jlimit (0, 127, juce::roundToInt (arpLaneRootNoteSlider.getValue()));
         el->arpLaneSampleSlots = juce::jlimit (1, 64, juce::roundToInt (arpLaneSampleSlotsSlider.getValue()));
+        el->arpLaneDirection = arpLaneDirectionBox.getSelectedId() == 2 ? "reverse"
+                             : arpLaneDirectionBox.getSelectedId() == 3 ? "pendulum"
+                             : arpLaneDirectionBox.getSelectedId() == 4 ? "random" : "forward";
+        el->arpLaneRotate = juce::jlimit (0, 127, juce::roundToInt (arpLaneRotateSlider.getValue()));
+        el->arpLaneEuclideanPulses = juce::jlimit (0, el->arpLaneSteps, juce::roundToInt (arpLaneEuclideanPulsesSlider.getValue()));
+        el->arpLaneProbability = juce::jlimit (0.0f, 1.0f, (float) arpLaneProbabilitySlider.getValue());
+        el->arpLaneRatchet = juce::jlimit (1, 8, juce::roundToInt (arpLaneRatchetSlider.getValue()));
         lblArpLaneRootNote.setText ("Base " + noteNameFor (el->arpLaneRootNote), juce::dontSendNotification);
 
         if (applyToBank)
@@ -2677,6 +2801,11 @@ namespace patchcraft
             const int steps = juce::jlimit (1, 128, el->arpLaneSteps);
             const int slots = juce::jlimit (1, 64, el->arpLaneSampleSlots);
             const int rootNote = juce::jlimit (0, 127, el->arpLaneRootNote);
+            const int rotate = positiveMod (el->arpLaneRotate, steps);
+            const int pulses = juce::jlimit (0, steps, el->arpLaneEuclideanPulses);
+            const float probability = juce::jlimit (0.0f, 1.0f, el->arpLaneProbability);
+            const int ratchet = juce::jlimit (1, 8, el->arpLaneRatchet);
+            const auto direction = normaliseArpLaneDirection (el->arpLaneDirection);
             const bool loopSlices = el->arpLaneTarget == "loops";
             const bool fixedSampleNotes = el->arpLaneTarget == "drums" || el->arpLaneTarget == "oneShots";
             const bool pitchedSamples = el->arpLaneTarget == "samples";
@@ -2685,17 +2814,25 @@ namespace patchcraft
             block.section = "mod";
             block.enabled = true;
             block.values["arpSteps"] = (float) steps;
-            block.values["arpPattern"] = 0.0f;
+            block.values["arpPattern"] = (float) arpPatternForLaneDirection (direction, pulses);
             block.values["arpOctaves"] = 1.0f;
+            block.values["arpGate"] = loopSlices ? 0.96f : 0.58f;
             block.values["mpScaleType"] = 0.0f;
             block.values["mpChordMode"] = 0.0f;
             block.values["mpChordSize"] = 1.0f;
+            block.values["mpProbability"] = probability;
+            block.values["mpRatchet"] = (float) ratchet;
+            block.values["mpEuclideanPulses"] = (float) pulses;
+            block.values["mpEuclideanRotate"] = (float) rotate;
+            block.values["mpPolymeterSteps"] = (float) steps;
             block.values["mpSampleControl"] = loopSlices ? 1.0f : 0.0f;
             block.values["mpSampleSliceCount"] = (float) slots;
 
             for (int step = 0; step < steps; ++step)
             {
-                const int slot = step % slots;
+                const int rotatedStep = positiveMod (step - rotate, steps);
+                const int slot = rotatedStep % slots;
+                const bool active = euclideanPulseActive (step, steps, pulses, rotate);
                 float noteOffset = 0.0f;
                 if (fixedSampleNotes)
                     noteOffset = (float) (rootNote + slot - 60);
@@ -2704,12 +2841,12 @@ namespace patchcraft
 
                 const auto suffix = juce::String (step);
                 block.values["arpNote" + suffix] = noteOffset;
-                block.values["mpStep" + suffix + "On"] = 1.0f;
-                block.values["mpVelocity" + suffix] = 0.82f;
+                block.values["mpStep" + suffix + "On"] = active ? 1.0f : 0.0f;
+                block.values["mpVelocity" + suffix] = active ? 0.82f : 0.0f;
                 block.values["mpGate" + suffix] = loopSlices ? 0.96f : 0.58f;
-                block.values["mpStepProb" + suffix] = 1.0f;
+                block.values["mpStepProb" + suffix] = active ? probability : 0.0f;
                 block.values["mpSampleSlice" + suffix] = loopSlices ? (float) slot : -1.0f;
-                block.values["mpStepDiv" + suffix] = 1.0f;
+                block.values["mpStepDiv" + suffix] = active ? (float) ratchet : 1.0f;
                 block.values["mpStepTranspose" + suffix] = 0.0f;
                 block.values["mpStepChordMode" + suffix] = -1.0f;
                 block.values["mpStepChordSize" + suffix] = -1.0f;
@@ -2720,6 +2857,11 @@ namespace patchcraft
             block.metadata["arpLane" + juce::String (bank + 1) + "Target"] = el->arpLaneTarget;
             block.metadata["arpLane" + juce::String (bank + 1) + "RootNote"] = juce::String (rootNote);
             block.metadata["arpLane" + juce::String (bank + 1) + "Slots"] = juce::String (slots);
+            block.metadata["arpLane" + juce::String (bank + 1) + "Direction"] = direction;
+            block.metadata["arpLane" + juce::String (bank + 1) + "Rotate"] = juce::String (rotate);
+            block.metadata["arpLane" + juce::String (bank + 1) + "Pulses"] = juce::String (pulses);
+            block.metadata["arpLane" + juce::String (bank + 1) + "Probability"] = juce::String (probability, 2);
+            block.metadata["arpLane" + juce::String (bank + 1) + "Ratchet"] = juce::String (ratchet);
             owner.getProject().getDspGraph().userConfigured = true;
         }
 

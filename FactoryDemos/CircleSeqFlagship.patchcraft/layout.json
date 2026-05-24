@@ -259,7 +259,12 @@
       "arpLaneMode": "bank",
       "arpLaneTarget": "notes",
       "arpLaneRootNote": 60,
-      "arpLaneSampleSlots": 1
+      "arpLaneSampleSlots": 1,
+      "arpLaneDirection": "forward",
+      "arpLaneRotate": 0,
+      "arpLaneEuclideanPulses": 0,
+      "arpLaneProbability": 1.0,
+      "arpLaneRatchet": 1
     },
     {
       "id": "lane_ascent",
@@ -279,7 +284,12 @@
       "arpLaneMode": "bank",
       "arpLaneTarget": "samples",
       "arpLaneRootNote": 60,
-      "arpLaneSampleSlots": 5
+      "arpLaneSampleSlots": 5,
+      "arpLaneDirection": "pendulum",
+      "arpLaneRotate": 2,
+      "arpLaneEuclideanPulses": 5,
+      "arpLaneProbability": 0.94,
+      "arpLaneRatchet": 1
     },
     {
       "id": "lane_bounce",
@@ -299,7 +309,12 @@
       "arpLaneMode": "bank",
       "arpLaneTarget": "drums",
       "arpLaneRootNote": 36,
-      "arpLaneSampleSlots": 8
+      "arpLaneSampleSlots": 8,
+      "arpLaneDirection": "forward",
+      "arpLaneRotate": 1,
+      "arpLaneEuclideanPulses": 7,
+      "arpLaneProbability": 1.0,
+      "arpLaneRatchet": 1
     },
     {
       "id": "lane_random",
@@ -319,7 +334,12 @@
       "arpLaneMode": "bank",
       "arpLaneTarget": "oneShots",
       "arpLaneRootNote": 48,
-      "arpLaneSampleSlots": 8
+      "arpLaneSampleSlots": 8,
+      "arpLaneDirection": "random",
+      "arpLaneRotate": 3,
+      "arpLaneEuclideanPulses": 6,
+      "arpLaneProbability": 0.82,
+      "arpLaneRatchet": 2
     },
     {
       "id": "lane_rondo",
@@ -339,7 +359,12 @@
       "arpLaneMode": "bank",
       "arpLaneTarget": "loops",
       "arpLaneRootNote": 60,
-      "arpLaneSampleSlots": 8
+      "arpLaneSampleSlots": 8,
+      "arpLaneDirection": "reverse",
+      "arpLaneRotate": 4,
+      "arpLaneEuclideanPulses": 8,
+      "arpLaneProbability": 1.0,
+      "arpLaneRatchet": 1
     },
     {
       "id": "global_cutoff",

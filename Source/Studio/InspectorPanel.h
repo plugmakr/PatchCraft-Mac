@@ -151,15 +151,22 @@ namespace patchcraft
 
         // Arp lane authoring (Arp Lane only).
         juce::Label lblArpLane, lblArpLaneIndex, lblArpLaneSteps, lblArpLaneMode,
-                    lblArpLaneTarget, lblArpLaneRootNote, lblArpLaneSampleSlots;
+                    lblArpLaneTarget, lblArpLaneRootNote, lblArpLaneSampleSlots,
+                    lblArpLaneDirection, lblArpLaneRotate, lblArpLaneEuclideanPulses,
+                    lblArpLaneProbability, lblArpLaneRatchet;
         juce::Slider arpLaneIndexSlider;
         juce::Slider arpLaneStepsSlider;
         juce::Slider arpLaneRootNoteSlider;
         juce::Slider arpLaneSampleSlotsSlider;
+        juce::Slider arpLaneRotateSlider;
+        juce::Slider arpLaneEuclideanPulsesSlider;
+        juce::Slider arpLaneProbabilitySlider;
+        juce::Slider arpLaneRatchetSlider;
         juce::ComboBox arpLaneModeBox;
         juce::ComboBox arpLaneTargetBox;
+        juce::ComboBox arpLaneDirectionBox;
         juce::TextButton arpLaneOpenPerformanceBtn { "Edit Bank" };
-        juce::TextButton arpLaneApplySampleTargetBtn { "Apply Target" };
+        juce::TextButton arpLaneApplySampleTargetBtn { "Build Ring" };
 
         // Mixer authoring (Mixer only).
         juce::Label lblMixer, lblMixerMode, lblMixerChannels, lblMixerLabels,
