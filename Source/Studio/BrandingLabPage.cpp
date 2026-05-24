@@ -2,6 +2,7 @@
 #include "StudioMainComponent.h"
 #include "PatchCraftLookAndFeel.h"
 #include "TestPage.h"
+#include "LibraryScanner.h"
 
 #include <utility>
 
@@ -415,8 +416,7 @@ namespace patchcraft
         playerLibraryBtn.setTooltip ("Preview the Player library entry point and pack browser state.");
         playerLibraryBtn.onClick = [this]
         {
-            showPlayerPreviewPanel ("Player Library",
-                                    "This is where the DAW Player exposes installed patches, user packs, and licensed expansion content. Brand Lab keeps it visible so the exact buyer-facing chrome can be reviewed before export.");
+            showPlayerLibraryPanel();
         };
         playerViewBtn.setTooltip ("Toggle the Brand Lab form so the Player can be checked at full DAW size.");
         playerViewBtn.onClick = [this]
@@ -865,6 +865,179 @@ namespace patchcraft
         auto* panel = new PanelPreview (titleText, bodyText);
         juce::DialogWindow::LaunchOptions options;
         options.dialogTitle = titleText;
+        options.dialogBackgroundColour = PatchCraftLookAndFeel::bg();
+        options.escapeKeyTriggersCloseButton = true;
+        options.useNativeTitleBar = true;
+        options.resizable = true;
+        options.componentToCentreAround = this;
+        options.content.setOwned (panel);
+        options.launchAsync();
+    }
+
+    void BrandingLabPage::showPlayerLibraryPanel()
+    {
+        LibraryScanner scanner;
+
+        auto addPackRootsNear = [&scanner] (juce::File anchor)
+        {
+            if (anchor == juce::File())
+                return;
+
+            auto dir = anchor.isDirectory() ? anchor : anchor.getParentDirectory();
+            for (int depth = 0; depth < 8 && dir != juce::File(); ++depth)
+            {
+                scanner.addSearchPath (dir.getChildFile ("FactoryDemos"));
+                scanner.addSearchPath (dir.getChildFile ("Library"));
+                scanner.addSearchPath (dir.getChildFile ("Library").getChildFile ("Instruments"));
+                scanner.addSearchPath (dir.getChildFile ("Library").getChildFile ("Templates"));
+                scanner.addSearchPath (dir.getChildFile ("Examples").getChildFile ("FactoryDemos"));
+
+                const auto parent = dir.getParentDirectory();
+                if (parent == dir)
+                    break;
+                dir = parent;
+            }
+        };
+
+        addPackRootsNear (owner.getProject().getProjectFolder());
+        addPackRootsNear (juce::File::getSpecialLocation (juce::File::currentApplicationFile));
+        addPackRootsNear (juce::File::getSpecialLocation (juce::File::currentExecutableFile));
+        addPackRootsNear (juce::File::getSpecialLocation (juce::File::invokedExecutableFile));
+        addPackRootsNear (juce::File::getCurrentWorkingDirectory());
+        scanner.scanLibrary();
+
+        struct LibraryPreview final : public juce::Component
+        {
+            explicit LibraryPreview (juce::Array<LibraryEntry> entriesIn)
+                : entries (std::move (entriesIn))
+            {
+                setSize (760, 440);
+            }
+
+            void paint (juce::Graphics& g) override
+            {
+                g.fillAll (juce::Colour (0xff090b10));
+
+                auto r = getLocalBounds().reduced (18);
+                g.setColour (PatchCraftLookAndFeel::panel());
+                g.fillRoundedRectangle (r.toFloat(), 10.0f);
+                g.setColour (PatchCraftLookAndFeel::accent());
+                g.drawRoundedRectangle (r.toFloat().reduced (0.5f), 10.0f, 1.4f);
+
+                auto header = r.reduced (18, 14).removeFromTop (40);
+                g.setColour (PatchCraftLookAndFeel::accent());
+                g.setFont (juce::FontOptions (18.0f).withStyle ("bold"));
+                g.drawText ("Player Library", header.removeFromLeft (180), juce::Justification::centredLeft, true);
+
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (juce::FontOptions (12.0f));
+                g.drawText (juce::String (entries.size()) + " demo libraries available",
+                            header.removeFromLeft (210), juce::Justification::centredLeft, true);
+
+                auto search = header.removeFromRight (150).reduced (0, 7);
+                g.setColour (juce::Colour (0xff141922));
+                g.fillRoundedRectangle (search.toFloat(), 6.0f);
+                g.setColour (PatchCraftLookAndFeel::textDim().withAlpha (0.70f));
+                g.drawText ("Search libraries", search.reduced (10, 0), juce::Justification::centredLeft, true);
+
+                auto content = r.reduced (18).withTrimmedTop (56);
+                if (entries.isEmpty())
+                {
+                    g.setColour (PatchCraftLookAndFeel::textBright());
+                    g.setFont (juce::FontOptions (15.0f).withStyle ("bold"));
+                    g.drawText ("No demo libraries found", content.removeFromTop (28), juce::Justification::centred);
+                    g.setColour (PatchCraftLookAndFeel::textDim());
+                    g.setFont (juce::FontOptions (12.0f));
+                    g.drawFittedText ("FactoryDemos and Library folders will appear here with artwork, category, creator, and load actions.",
+                                      content.removeFromTop (50), juce::Justification::centred, 2);
+                    return;
+                }
+
+                const int gap = 12;
+                const int cardW = juce::jlimit (134, 170, (content.getWidth() - gap * 3) / 4);
+                const int cardH = 156;
+                const int cols = juce::jmax (1, juce::jmin (4, (content.getWidth() + gap) / (cardW + gap)));
+                const int rows = juce::jmax (1, (content.getHeight() + gap) / (cardH + gap));
+                const int maxCards = juce::jmin (entries.size(), cols * rows);
+
+                for (int i = 0; i < maxCards; ++i)
+                {
+                    const auto& entry = entries.getReference (i);
+                    const int col = i % cols;
+                    const int row = i / cols;
+                    auto card = juce::Rectangle<int> (content.getX() + col * (cardW + gap),
+                                                      content.getY() + row * (cardH + gap),
+                                                      cardW,
+                                                      cardH);
+                    drawCard (g, entry, card);
+                }
+
+                if (entries.size() > maxCards)
+                {
+                    g.setColour (PatchCraftLookAndFeel::textDim());
+                    g.setFont (juce::FontOptions (11.0f));
+                    g.drawText ("+" + juce::String (entries.size() - maxCards) + " more libraries available",
+                                r.reduced (18).removeFromBottom (18), juce::Justification::centredRight, true);
+                }
+            }
+
+            static void drawCard (juce::Graphics& g, const LibraryEntry& entry, juce::Rectangle<int> card)
+            {
+                g.setColour (juce::Colour (0xff10141c));
+                g.fillRoundedRectangle (card.toFloat(), 8.0f);
+                g.setColour (PatchCraftLookAndFeel::borderSoft().withAlpha (0.88f));
+                g.drawRoundedRectangle (card.toFloat().reduced (0.5f), 8.0f, 1.0f);
+
+                auto inner = card.reduced (8);
+                auto art = inner.removeFromTop (72);
+                if (entry.thumbnailImage.isValid())
+                {
+                    juce::Graphics::ScopedSaveState state (g);
+                    juce::Path clip;
+                    clip.addRoundedRectangle (art.toFloat(), 6.0f);
+                    g.reduceClipRegion (clip);
+                    g.drawImage (entry.thumbnailImage, art.toFloat(), juce::RectanglePlacement::fillDestination);
+                    g.setColour (juce::Colour (0x77000000));
+                    g.fillRect (art);
+                }
+                else
+                {
+                    g.setColour (juce::Colour (0xff1e2530));
+                    g.fillRoundedRectangle (art.toFloat(), 6.0f);
+                }
+
+                inner.removeFromTop (7);
+                g.setColour (PatchCraftLookAndFeel::textBright());
+                g.setFont (juce::FontOptions (12.0f).withStyle ("bold"));
+                g.drawFittedText (entry.instrumentName, inner.removeFromTop (30),
+                                  juce::Justification::centredLeft, 2, 0.88f);
+
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (juce::FontOptions (9.8f));
+                g.drawText ("by " + entry.creator, inner.removeFromTop (16), juce::Justification::centredLeft, true);
+
+                auto footer = card.reduced (8).removeFromBottom (22);
+                auto load = footer.removeFromRight (44);
+                g.setColour (PatchCraftLookAndFeel::accent());
+                g.fillRoundedRectangle (load.toFloat(), 5.0f);
+                g.setColour (juce::Colour (0xff07090c));
+                g.setFont (juce::FontOptions (9.5f).withStyle ("bold"));
+                g.drawText ("LOAD", load, juce::Justification::centred, true);
+
+                footer.removeFromRight (6);
+                auto chip = footer.withWidth (juce::jmin (footer.getWidth(), 76));
+                g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.18f));
+                g.fillRoundedRectangle (chip.toFloat(), 5.0f);
+                g.setColour (PatchCraftLookAndFeel::accent());
+                g.drawText (entry.category, chip, juce::Justification::centred, true);
+            }
+
+            juce::Array<LibraryEntry> entries;
+        };
+
+        auto* panel = new LibraryPreview (scanner.getEntries());
+        juce::DialogWindow::LaunchOptions options;
+        options.dialogTitle = "Player Library";
         options.dialogBackgroundColour = PatchCraftLookAndFeel::bg();
         options.escapeKeyTriggersCloseButton = true;
         options.useNativeTitleBar = true;

@@ -188,6 +188,7 @@ namespace patchcraft
         void chooseLogo();
         void chooseImagePath (juce::TextEditor& targetEditor, const juce::String& title);
         void showPlayerPreviewPanel (const juce::String& title, const juce::String& body);
+        void showPlayerLibraryPanel();
         void showPlayerFileMenu();
         void showPlayerToolsMenu();
         void showPlayerPresetMenu();
