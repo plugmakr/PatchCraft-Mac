@@ -886,11 +886,22 @@ namespace patchcraft
             auto dir = anchor.isDirectory() ? anchor : anchor.getParentDirectory();
             for (int depth = 0; depth < 8 && dir != juce::File(); ++depth)
             {
+                const auto factoryDemos = dir.getChildFile ("FactoryDemos");
+                const auto library = dir.getChildFile ("Library");
+                const bool looksLikePatchCraftPayload = factoryDemos.isDirectory()
+                    || dir.getChildFile ("PlayerPlugins").isDirectory()
+                    || dir.getFileName().containsIgnoreCase ("PatchCraft");
+
+                // Never add a generic ancestor Library folder such as
+                // ~/Library. The preview only needs PatchCraft pack roots.
                 scanner.addSearchPath (dir.getChildFile ("FactoryDemos"));
-                scanner.addSearchPath (dir.getChildFile ("Library"));
-                scanner.addSearchPath (dir.getChildFile ("Library").getChildFile ("Instruments"));
-                scanner.addSearchPath (dir.getChildFile ("Library").getChildFile ("Templates"));
                 scanner.addSearchPath (dir.getChildFile ("Examples").getChildFile ("FactoryDemos"));
+                if (looksLikePatchCraftPayload)
+                {
+                    scanner.addSearchPath (library);
+                    scanner.addSearchPath (library.getChildFile ("Instruments"));
+                    scanner.addSearchPath (library.getChildFile ("Templates"));
+                }
 
                 const auto parent = dir.getParentDirectory();
                 if (parent == dir)
