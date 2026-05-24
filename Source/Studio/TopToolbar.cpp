@@ -246,7 +246,7 @@ namespace patchcraft
         bpmSlider.setValue (owner.getProject().getLiveValues().getValue ("projectBpm", 120.0f),
                             juce::dontSendNotification);
         bpmSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-        bpmSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 48, 18);
+        bpmSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 42, 18);
         bpmSlider.setTooltip ("Global project BPM for Studio preview, Brand Lab playback, MIDI patterns, synced FX, and exported standalone fallback tempo. DAWs still provide host tempo when available.");
         bpmSlider.onValueChange = [this]
         {
@@ -292,13 +292,15 @@ namespace patchcraft
         g.fillAll();
 
         g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.07f));
-        g.fillRoundedRectangle (juce::Rectangle<float> (292.0f, 7.0f,
-                                                        juce::jmax (120.0f, r.getWidth() - 620.0f),
+        const float logoW = getWidth() < 1500 ? 248.0f : 280.0f;
+        const float menuX = logoW + 12.0f;
+        g.fillRoundedRectangle (juce::Rectangle<float> (menuX, 7.0f,
+                                                        juce::jmax (120.0f, r.getWidth() - menuX - 328.0f),
                                                         r.getHeight() - 14.0f),
                                 10.0f);
         g.setColour (PatchCraftLookAndFeel::border().withAlpha (0.55f));
-        g.drawRoundedRectangle (juce::Rectangle<float> (292.5f, 7.5f,
-                                                        juce::jmax (120.0f, r.getWidth() - 621.0f),
+        g.drawRoundedRectangle (juce::Rectangle<float> (menuX + 0.5f, 7.5f,
+                                                        juce::jmax (120.0f, r.getWidth() - menuX - 329.0f),
                                                         r.getHeight() - 15.0f),
                                 10.0f, 1.0f);
 
@@ -307,8 +309,7 @@ namespace patchcraft
         g.fillRect (0, getHeight() - 1, getWidth(), 1);
 
         // PATCHCRAFT logo block on the far left
-        const int logoW = 280;
-        auto logoArea = juce::Rectangle<int> (0, 0, logoW, getHeight()).toFloat();
+        auto logoArea = juce::Rectangle<int> (0, 0, (int) logoW, getHeight()).toFloat();
         juce::ColourGradient logoGrad (juce::Colour (0xff171c22), logoArea.getX(), logoArea.getY(),
                                        juce::Colour (0xff0d1015), logoArea.getX(), logoArea.getBottom(), false);
         g.setGradientFill (logoGrad);
@@ -323,11 +324,11 @@ namespace patchcraft
         // Wordmark
         g.setColour (PatchCraftLookAndFeel::accent());
         g.setFont (juce::Font (22.0f, juce::Font::bold));
-        g.drawText ("PATCHCRAFT", 72, 12, 200, 26, juce::Justification::centredLeft);
+        g.drawText ("PATCHCRAFT", 72, 12, (int) logoW - 84, 26, juce::Justification::centredLeft);
 
         g.setColour (PatchCraftLookAndFeel::textDim());
         g.setFont (juce::Font (10.5f, juce::Font::plain));
-        g.drawText ("INSTRUMENT BUILDER", 72, 38, 200, 16, juce::Justification::centredLeft);
+        g.drawText ("INSTRUMENT BUILDER", 72, 38, (int) logoW - 84, 16, juce::Justification::centredLeft);
 
         // Subtle separators between button groups
         g.setColour (PatchCraftLookAndFeel::border().withAlpha (0.5f));
@@ -340,40 +341,57 @@ namespace patchcraft
 
     void TopToolbar::resized()
     {
-        const int btnW = 84;
+        const bool compact = getWidth() < 1500;
+        const int logoW = compact ? 248 : 280;
+        const int btnW = compact ? 70 : 84;
         const int top  = 6;
         const int height = getHeight() - 12;
 
-        int x = 296; // after logo block
+        // right cluster
+        const int settingsW = compact ? 64 : 70;
+        const int projectW = compact ? 150 : 220;
+        const int bpmW = compact ? 90 : 104;
+        const int bpmLabelW = 28;
+        const int exportW = compact ? 92 : btnW + 20;
+        const int previewW = compact ? 76 : btnW;
+
+        int rightX = getWidth() - 8;
+        settingsBtn.setBounds (rightX - settingsW, (getHeight() - 26) / 2, settingsW, 26);
+        rightX = settingsBtn.getX() - 10;
+
+        projectNameLabel.setBounds (rightX - projectW, 8, projectW, 22);
+        projectStatusLabel.setBounds (rightX - projectW, 30, projectW, 18);
+
+        rightX = projectNameLabel.getX() - 10;
+        bpmSlider.setBounds (rightX - bpmW, (getHeight() - 24) / 2, bpmW, 24);
+        bpmLabel.setBounds (bpmSlider.getX() - bpmLabelW - 4, bpmSlider.getY(), bpmLabelW, bpmSlider.getHeight());
+
+        rightX = bpmLabel.getX() - 12;
+        btnExport->setBounds  (rightX - exportW, top, exportW, height);
+        btnPreview->setBounds (btnExport->getX() - previewW - 6, top, previewW, height);
+
+        int x = logoW + 16;
         for (auto* b : { btnNew.get(), btnOpen.get(), btnSave.get() })
         {
             b->setBounds (x, top, btnW, height);
             x += btnW + 4;
         }
         x += 12; // separator
-        for (auto* b : { btnImportSamples.get(), btnImportBg.get(), btnPacks.get(), btnDashboard.get(), btnAiAssist.get() })
+
+        auto setMenuButton = [&] (IconLabelButton* b, int width)
         {
-            if (b == nullptr)
-                continue;
-            b->setBounds (x, top, btnW + 16, height);
-            x += btnW + 20;
-        }
+            if (b == nullptr) return;
+            b->setBounds (x, top, width, height);
+            x += width + 4;
+        };
 
-        // right cluster
-        int rightX = getWidth() - 8;
-        settingsBtn.setBounds (rightX - 70, (getHeight() - 26) / 2, 70, 26);
-        rightX = settingsBtn.getX() - 12;
-
-        projectNameLabel.setBounds (rightX - 240, 8, 240, 22);
-        projectStatusLabel.setBounds (rightX - 240, 30, 240, 18);
-
-        rightX = projectNameLabel.getX() - 12;
-        bpmSlider.setBounds (rightX - 124, (getHeight() - 24) / 2, 124, 24);
-        bpmLabel.setBounds (bpmSlider.getX() - 34, bpmSlider.getY(), 30, bpmSlider.getHeight());
-
-        rightX = bpmLabel.getX() - 14;
-        btnExport->setBounds  (rightX - btnW - 20, top, btnW + 20, height);
-        btnPreview->setBounds (btnExport->getX() - btnW - 8, top, btnW, height);
+        setMenuButton (btnImportSamples.get(), compact ? 88 : btnW + 16);
+        setMenuButton (btnImportBg.get(),      compact ? 82 : btnW + 16);
+        setMenuButton (btnPacks.get(),         compact ? 72 : btnW + 16);
+        setMenuButton (btnDashboard.get(),     compact ? 90 : btnW + 16);
+#if PATCHCRAFT_ENABLE_AI_STUDIO
+        setMenuButton (btnAiAssist.get(),      compact ? 82 : btnW + 16);
+#endif
     }
 
 } // namespace patchcraft

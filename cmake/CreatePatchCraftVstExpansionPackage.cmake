@@ -85,6 +85,20 @@ Install behavior:
 - It installs the extension manifest under %APPDATA%\\PatchCraft\\Extensions.
 ")
 
+file(WRITE "${OUTPUT_DIR}/BETA_TESTERS.txt" "PatchCraft VST Expansion Beta Tester Notes
+===========================================
+
+What to test:
+- Install the base PatchCraft Studio/Player package first.
+- Install or stage this VST Expansion package beside the Studio runtime.
+- Export a PatchCraft project as a dedicated VST3 plugin.
+- Test both instrument and FX plugin templates in a DAW.
+- Confirm exported plugin branding, embedded pack loading, presets, MIDI routing, and audio output.
+
+Known beta note:
+- macOS plugin bundles are ad-hoc signed for tester distribution and may require the usual Gatekeeper approval flow.
+")
+
 file(WRITE "${OUTPUT_DIR}/installer/PatchCraftVstExpansion-Windows.iss" "; PatchCraft VST Expansion generated Windows installer script
 ; Compile with Inno Setup 6 after adding signing and license checks.
 

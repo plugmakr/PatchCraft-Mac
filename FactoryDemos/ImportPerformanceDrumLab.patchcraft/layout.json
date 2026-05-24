@@ -15,6 +15,98 @@
       "locked": true
     },
     {
+      "id": "player_artwork",
+      "type": "image",
+      "asset": "assets/thumbnail.png",
+      "semanticRole": "playerArtwork",
+      "x": 76,
+      "y": 124,
+      "width": 390,
+      "height": 260,
+      "cornerRadius": 16,
+      "locked": true
+    },
+    {
+      "id": "player_artwork_frame",
+      "type": "shape",
+      "shapeKind": "roundedRect",
+      "semanticRole": "playerArtworkFrame",
+      "x": 76,
+      "y": 124,
+      "width": 390,
+      "height": 260,
+      "backgroundColour": "00000000",
+      "borderColour": "#ffa62a",
+      "strokeWidth": 1.4,
+      "cornerRadius": 16,
+      "locked": true
+    },
+    {
+      "id": "player_artwork_badge",
+      "type": "label",
+      "semanticRole": "playerArtworkInfo",
+      "x": 510,
+      "y": 128,
+      "width": 270,
+      "height": 22,
+      "label": "LIBRARY ARTWORK 300 x 200",
+      "textColour": "#ffa62a",
+      "labelSize": 11,
+      "locked": true
+    },
+    {
+      "id": "player_product_name",
+      "type": "label",
+      "semanticRole": "playerHeaderTitle",
+      "x": 510,
+      "y": 158,
+      "width": 620,
+      "height": 42,
+      "label": "Import Performance Drum Lab",
+      "textColour": "fff7f7ff",
+      "labelSize": 24,
+      "locked": true
+    },
+    {
+      "id": "player_product_kind",
+      "type": "label",
+      "semanticRole": "playerHeaderMetadata",
+      "x": 512,
+      "y": 206,
+      "width": 560,
+      "height": 22,
+      "label": "DRUM MACHINE  |  PATCHCRAFT",
+      "textColour": "ffb8c8d6",
+      "labelSize": 12,
+      "locked": true
+    },
+    {
+      "id": "player_product_description",
+      "type": "label",
+      "semanticRole": "playerHeaderDescription",
+      "x": 512,
+      "y": 238,
+      "width": 600,
+      "height": 58,
+      "label": "A factory demo that shows the complete runtime import flow: drag samples or MIDI into the Player, map them as pads/grooves, then perform and mix the result.",
+      "textColour": "ffdce3ea",
+      "labelSize": 13,
+      "locked": true
+    },
+    {
+      "id": "player_artwork_dimensions",
+      "type": "label",
+      "semanticRole": "playerArtworkSpec",
+      "x": 512,
+      "y": 318,
+      "width": 500,
+      "height": 24,
+      "label": "Artwork slot: x76 y124  w390 h260  (3:2 Player top section)",
+      "textColour": "ff8fa0ad",
+      "labelSize": 11,
+      "locked": true
+    },
+    {
       "id": "tabs",
       "type": "tabPanel",
       "x": 120,
@@ -161,14 +253,14 @@
       "style": "Factory Glass",
       "knobStyle": "Vintage 01",
       "labelPosition": "bottom",
-      "labelSize": 11,
+      "labelSize": 10.5,
       "accentColour": "#ffa62a",
       "backgroundColour": "#0b0f17",
       "borderColour": "#273449",
       "cornerRadius": 10,
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "play_length",
@@ -183,14 +275,14 @@
       "style": "Factory Glass",
       "knobStyle": "Vintage 01",
       "labelPosition": "bottom",
-      "labelSize": 11,
+      "labelSize": 10.5,
       "accentColour": "#ffa62a",
       "backgroundColour": "#0b0f17",
       "borderColour": "#273449",
       "cornerRadius": 10,
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "play_pitch",
@@ -205,14 +297,14 @@
       "style": "Factory Glass",
       "knobStyle": "Vintage 01",
       "labelPosition": "bottom",
-      "labelSize": 11,
+      "labelSize": 10.5,
       "accentColour": "#ffa62a",
       "backgroundColour": "#0b0f17",
       "borderColour": "#273449",
       "cornerRadius": 10,
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "play_glitch",
@@ -227,14 +319,14 @@
       "style": "Factory Glass",
       "knobStyle": "Vintage 01",
       "labelPosition": "bottom",
-      "labelSize": 11,
+      "labelSize": 10.5,
       "accentColour": "#ffa62a",
       "backgroundColour": "#0b0f17",
       "borderColour": "#273449",
       "cornerRadius": 10,
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "import_drop_a",
@@ -524,14 +616,14 @@
       "style": "Factory Glass",
       "knobStyle": "Vintage 01",
       "labelPosition": "bottom",
-      "labelSize": 11,
+      "labelSize": 10.5,
       "accentColour": "#8d6cff",
       "backgroundColour": "#0b0f17",
       "borderColour": "#273449",
       "cornerRadius": 10,
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "import_tone",
@@ -546,14 +638,14 @@
       "style": "Factory Glass",
       "knobStyle": "Vintage 01",
       "labelPosition": "bottom",
-      "labelSize": 11,
+      "labelSize": 10.5,
       "accentColour": "#00d7ff",
       "backgroundColour": "#0b0f17",
       "borderColour": "#273449",
       "cornerRadius": 10,
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "midi_panel",
@@ -628,14 +720,14 @@
       "style": "Factory Glass",
       "knobStyle": "Vintage 01",
       "labelPosition": "bottom",
-      "labelSize": 11,
+      "labelSize": 10.5,
       "accentColour": "#00d7ff",
       "backgroundColour": "#0b0f17",
       "borderColour": "#273449",
       "cornerRadius": 10,
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "midi_grid",
@@ -650,14 +742,14 @@
       "style": "Factory Glass",
       "knobStyle": "Vintage 01",
       "labelPosition": "bottom",
-      "labelSize": 11,
+      "labelSize": 10.5,
       "accentColour": "#00d7ff",
       "backgroundColour": "#0b0f17",
       "borderColour": "#273449",
       "cornerRadius": 10,
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "midi_slices",
@@ -672,14 +764,14 @@
       "style": "Factory Glass",
       "knobStyle": "Vintage 01",
       "labelPosition": "bottom",
-      "labelSize": 11,
+      "labelSize": 10.5,
       "accentColour": "#00d7ff",
       "backgroundColour": "#0b0f17",
       "borderColour": "#273449",
       "cornerRadius": 10,
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "midi_space",
@@ -694,14 +786,14 @@
       "style": "Factory Glass",
       "knobStyle": "Vintage 01",
       "labelPosition": "bottom",
-      "labelSize": 11,
+      "labelSize": 10.5,
       "accentColour": "#00d7ff",
       "backgroundColour": "#0b0f17",
       "borderColour": "#273449",
       "cornerRadius": 10,
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "mix_panel",
@@ -833,14 +925,14 @@
       "style": "Factory Glass",
       "knobStyle": "Vintage 01",
       "labelPosition": "bottom",
-      "labelSize": 11,
+      "labelSize": 10.5,
       "accentColour": "#ffa62a",
       "backgroundColour": "#0b0f17",
       "borderColour": "#273449",
       "cornerRadius": 10,
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "mix_res",
@@ -855,14 +947,14 @@
       "style": "Factory Glass",
       "knobStyle": "Vintage 01",
       "labelPosition": "bottom",
-      "labelSize": 11,
+      "labelSize": 10.5,
       "accentColour": "#ffa62a",
       "backgroundColour": "#0b0f17",
       "borderColour": "#273449",
       "cornerRadius": 10,
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "perform_panel",
@@ -922,14 +1014,14 @@
       "style": "Factory Glass",
       "knobStyle": "Vintage 01",
       "labelPosition": "bottom",
-      "labelSize": 11,
+      "labelSize": 10.5,
       "accentColour": "#8d6cff",
       "backgroundColour": "#0b0f17",
       "borderColour": "#273449",
       "cornerRadius": 10,
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "perform_tone",
@@ -944,14 +1036,14 @@
       "style": "Factory Glass",
       "knobStyle": "Vintage 01",
       "labelPosition": "bottom",
-      "labelSize": 11,
+      "labelSize": 10.5,
       "accentColour": "#8d6cff",
       "backgroundColour": "#0b0f17",
       "borderColour": "#273449",
       "cornerRadius": 10,
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "perform_space",
@@ -966,14 +1058,14 @@
       "style": "Factory Glass",
       "knobStyle": "Vintage 01",
       "labelPosition": "bottom",
-      "labelSize": 11,
+      "labelSize": 10.5,
       "accentColour": "#8d6cff",
       "backgroundColour": "#0b0f17",
       "borderColour": "#273449",
       "cornerRadius": 10,
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "perform_delay",
@@ -988,14 +1080,14 @@
       "style": "Factory Glass",
       "knobStyle": "Vintage 01",
       "labelPosition": "bottom",
-      "labelSize": 11,
+      "labelSize": 10.5,
       "accentColour": "#8d6cff",
       "backgroundColour": "#0b0f17",
       "borderColour": "#273449",
       "cornerRadius": 10,
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "perform_feedback",
@@ -1010,14 +1102,14 @@
       "style": "Factory Glass",
       "knobStyle": "Vintage 01",
       "labelPosition": "bottom",
-      "labelSize": 11,
+      "labelSize": 10.5,
       "accentColour": "#8d6cff",
       "backgroundColour": "#0b0f17",
       "borderColour": "#273449",
       "cornerRadius": 10,
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "perform_reverb",
@@ -1032,14 +1124,14 @@
       "style": "Factory Glass",
       "knobStyle": "Vintage 01",
       "labelPosition": "bottom",
-      "labelSize": 11,
+      "labelSize": 10.5,
       "accentColour": "#8d6cff",
       "backgroundColour": "#0b0f17",
       "borderColour": "#273449",
       "cornerRadius": 10,
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "perform_hint",

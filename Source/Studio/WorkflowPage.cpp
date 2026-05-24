@@ -147,11 +147,16 @@ namespace patchcraft
 
         factoryDemoBox.setTextWhenNothingSelected ("Choose a shipped demo...");
         factoryDemoBox.setTooltip ("Load a complete PatchCraft factory demo with artwork, layout, presets, DSP graph, and samples where needed.");
+        factoryDemoBox.onChange = [this]
+        {
+            if (factoryDemoBox.getSelectedId() > 0)
+                loadSelectedFactoryDemo();
+        };
         addAndMakeVisible (factoryDemoBox);
 
         stylePrimary (loadFactoryDemoButton);
-        loadFactoryDemoButton.setTooltip ("Loads the selected factory demo as the current editable PatchCraft instrument.");
-        loadFactoryDemoButton.onClick = [this] { loadSelectedFactoryDemo(); };
+        loadFactoryDemoButton.setTooltip ("Opens a direct demo picker. Use this if the combo popup is blocked by the host window.");
+        loadFactoryDemoButton.onClick = [this] { showFactoryDemoMenu(); };
         addAndMakeVisible (loadFactoryDemoButton);
 
         for (auto* button : { &soundButton, &midiButton, &designButton, &presetsButton, &testButton, &exportButton })
@@ -269,6 +274,7 @@ namespace patchcraft
     void WorkflowPage::populateFactoryDemos()
     {
         factoryDemoFolders.clear();
+        factoryDemoNames.clear();
         factoryDemoBox.clear (juce::dontSendNotification);
         juce::StringArray seenFolders;
 
@@ -294,6 +300,7 @@ namespace patchcraft
                 }
 
                 factoryDemoFolders.add (folder);
+                factoryDemoNames.add (name);
                 seenFolders.add (folderKey);
                 factoryDemoBox.addItem (name, factoryDemoFolders.size());
             }
@@ -301,6 +308,42 @@ namespace patchcraft
 
         factoryDemoBox.setEnabled (! factoryDemoFolders.isEmpty());
         loadFactoryDemoButton.setEnabled (! factoryDemoFolders.isEmpty());
+    }
+
+    void WorkflowPage::showFactoryDemoMenu()
+    {
+        if (factoryDemoFolders.isEmpty())
+        {
+            juce::AlertWindow::showAsync (
+                juce::MessageBoxOptions()
+                    .withTitle ("Factory demos")
+                    .withMessage ("No factory demos were found in the app or project FactoryDemos folders.")
+                    .withButton ("OK")
+                    .withIconType (juce::MessageBoxIconType::WarningIcon),
+                nullptr);
+            return;
+        }
+
+        juce::PopupMenu menu;
+        for (int i = 0; i < factoryDemoFolders.size(); ++i)
+        {
+            const auto name = i < factoryDemoNames.size()
+                ? factoryDemoNames[i]
+                : factoryDemoFolders.getReference (i).getFileNameWithoutExtension();
+            menu.addItem (i + 1, name);
+        }
+
+        menu.showMenuAsync (juce::PopupMenu::Options()
+                                .withTargetComponent (&loadFactoryDemoButton)
+                                .withMinimumWidth (juce::jmax (factoryDemoBox.getWidth(), loadFactoryDemoButton.getWidth())),
+            [this] (int result)
+            {
+                if (result <= 0 || ! juce::isPositiveAndBelow (result - 1, factoryDemoFolders.size()))
+                    return;
+
+                factoryDemoBox.setSelectedId (result, juce::dontSendNotification);
+                owner.loadFactoryDemo (factoryDemoFolders.getReference (result - 1));
+            });
     }
 
     void WorkflowPage::loadSelectedFactoryDemo()

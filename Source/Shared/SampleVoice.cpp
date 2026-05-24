@@ -5,6 +5,29 @@
 
 namespace patchcraft
 {
+    namespace
+    {
+        static float cubicSample (const float* data, int length, double position) noexcept
+        {
+            const int i1 = juce::jlimit (0, length - 1, (int) position);
+            const int i0 = juce::jmax (0, i1 - 1);
+            const int i2 = juce::jmin (length - 1, i1 + 1);
+            const int i3 = juce::jmin (length - 1, i1 + 2);
+            const float frac = (float) (position - (double) i1);
+
+            const float y0 = data[i0];
+            const float y1 = data[i1];
+            const float y2 = data[i2];
+            const float y3 = data[i3];
+
+            const float a0 = y3 - y2 - y0 + y1;
+            const float a1 = y0 - y1 - a0;
+            const float a2 = y2 - y0;
+            const float a3 = y1;
+            return ((a0 * frac + a1) * frac + a2) * frac + a3;
+        }
+    }
+
     void SampleVoice::prepare (double sampleRate)
     {
         currentSampleRate = sampleRate;
@@ -150,12 +173,9 @@ namespace patchcraft
                 }
             }
 
-            const int    idx0  = (int) position;
-            const int    idx1  = juce::jmin (idx0 + 1, length - 1);
-            const float  frac  = (float) (position - idx0);
-
-            const float sL = l[idx0] + frac * (l[idx1] - l[idx0]);
-            const float sR = r[idx0] + frac * (r[idx1] - r[idx0]);
+            const int idx0 = juce::jlimit (0, length - 1, (int) position);
+            const float sL = cubicSample (l, length, position);
+            const float sR = cubicSample (r, length, position);
 
             const float ev = env.getNextSample();
             if (! env.isActive())
@@ -214,7 +234,6 @@ namespace patchcraft
         samplesUntilNextGrain = 0.0;
         scanPosition = 0.0;
         alternatingDirection = 1;
-        heldTempoRatio = juce::jlimit (0.25f, 4.0f, params.tempoRatio);
         for (auto& grain : grains)
             grain.active = false;
 
@@ -327,31 +346,6 @@ namespace patchcraft
         const float regionLength01 = juce::jlimit (0.01f, 1.0f, params.sampleLength);
         const int regionLength = juce::jlimit (8, availableLength, juce::roundToInt ((float) availableLength * regionLength01));
 
-        if (! params.freeze)
-        {
-            scanPosition += (double) params.scanRate / juce::jmax (1.0, currentSampleRate);
-            if (params.directionMode == 2)
-            {
-                if (scanPosition >= 1.0)
-                {
-                    scanPosition = 1.0;
-                    alternatingDirection = -1;
-                }
-                else if (scanPosition <= 0.0)
-                {
-                    scanPosition = 0.0;
-                    alternatingDirection = 1;
-                }
-            }
-            else
-            {
-                while (scanPosition > 1.0)
-                    scanPosition -= 1.0;
-                while (scanPosition < 0.0)
-                    scanPosition += 1.0;
-            }
-        }
-
         const float basePosition = params.freeze
             ? juce::jlimit (0.0f, 1.0f, params.sampleStart)
             : juce::jlimit (0.0f, 1.0f, (float) (params.sampleStart + scanPosition));
@@ -383,7 +377,6 @@ namespace patchcraft
                                                 + sample->zone.pitchOffset
                                                 + params.pitchOffset
                                                 + pitchRandom) / 12.0)
-                                * (double) heldTempoRatio
                                 * (sample->sourceSampleRate / currentSampleRate);
 
         const float zoneGain = juce::Decibels::decibelsToGain (sample->zone.gainDb)
@@ -436,6 +429,31 @@ namespace patchcraft
 
             if (envelopeActive)
             {
+                if (! params.freeze)
+                {
+                    scanPosition += (double) params.scanRate / juce::jmax (1.0, currentSampleRate);
+                    if (params.directionMode == 2)
+                    {
+                        if (scanPosition >= 1.0)
+                        {
+                            scanPosition = 1.0;
+                            alternatingDirection = -1;
+                        }
+                        else if (scanPosition <= 0.0)
+                        {
+                            scanPosition = 0.0;
+                            alternatingDirection = 1;
+                        }
+                    }
+                    else
+                    {
+                        while (scanPosition > 1.0)
+                            scanPosition -= 1.0;
+                        while (scanPosition < 0.0)
+                            scanPosition += 1.0;
+                    }
+                }
+
                 samplesUntilNextGrain -= 1.0;
                 while (samplesUntilNextGrain <= 0.0)
                 {
@@ -459,10 +477,8 @@ namespace patchcraft
                     continue;
                 }
 
-                const int idx1 = idx0 + 1;
-                const float frac = (float) (grain.position - (double) idx0);
-                const float sL = srcL[idx0] + frac * (srcL[idx1] - srcL[idx0]);
-                const float sR = srcR[idx0] + frac * (srcR[idx1] - srcR[idx0]);
+                const float sL = cubicSample (srcL, sourceLength, grain.position);
+                const float sR = cubicSample (srcR, sourceLength, grain.position);
                 const float window = grainWindow (grain, params.windowShape);
                 const float gain = window * grain.gain * envValue;
                 accumL += sL * gain * grain.leftGain;

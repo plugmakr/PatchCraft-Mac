@@ -15,6 +15,98 @@
       "locked": true
     },
     {
+      "id": "player_artwork",
+      "type": "image",
+      "asset": "assets/thumbnail.png",
+      "semanticRole": "playerArtwork",
+      "x": 76,
+      "y": 124,
+      "width": 390,
+      "height": 260,
+      "cornerRadius": 16,
+      "locked": true
+    },
+    {
+      "id": "player_artwork_frame",
+      "type": "shape",
+      "shapeKind": "roundedRect",
+      "semanticRole": "playerArtworkFrame",
+      "x": 76,
+      "y": 124,
+      "width": 390,
+      "height": 260,
+      "backgroundColour": "00000000",
+      "borderColour": "fff5a623",
+      "strokeWidth": 1.4,
+      "cornerRadius": 16,
+      "locked": true
+    },
+    {
+      "id": "player_artwork_badge",
+      "type": "label",
+      "semanticRole": "playerArtworkInfo",
+      "x": 510,
+      "y": 128,
+      "width": 270,
+      "height": 22,
+      "label": "LIBRARY ARTWORK 300 x 200",
+      "textColour": "fff5a623",
+      "labelSize": 11,
+      "locked": true
+    },
+    {
+      "id": "player_product_name",
+      "type": "label",
+      "semanticRole": "playerHeaderTitle",
+      "x": 510,
+      "y": 158,
+      "width": 620,
+      "height": 42,
+      "label": "Obsidian Mixer Console",
+      "textColour": "fff7f7ff",
+      "labelSize": 24,
+      "locked": true
+    },
+    {
+      "id": "player_product_kind",
+      "type": "label",
+      "semanticRole": "playerHeaderMetadata",
+      "x": 512,
+      "y": 206,
+      "width": 560,
+      "height": 22,
+      "label": "SYNTH INSTRUMENT  |  PATCHCRAFT",
+      "textColour": "ffb8c8d6",
+      "labelSize": 12,
+      "locked": true
+    },
+    {
+      "id": "player_product_description",
+      "type": "label",
+      "semanticRole": "playerHeaderDescription",
+      "x": 512,
+      "y": 238,
+      "width": 600,
+      "height": 58,
+      "label": "A premium mixer-first synth template showcasing the Player top menu/chrome, tabbed instrument UI, runtime Mixer element, performance controls, and professional branding.",
+      "textColour": "ffdce3ea",
+      "labelSize": 13,
+      "locked": true
+    },
+    {
+      "id": "player_artwork_dimensions",
+      "type": "label",
+      "semanticRole": "playerArtworkSpec",
+      "x": 512,
+      "y": 318,
+      "width": 500,
+      "height": 24,
+      "label": "Artwork slot: x76 y124  w390 h260  (3:2 Player top section)",
+      "textColour": "ff8fa0ad",
+      "labelSize": 11,
+      "locked": true
+    },
+    {
       "id": "tabs",
       "type": "tabPanel",
       "x": 402,
@@ -137,7 +229,7 @@
       "groupId": "mixer",
       "labelPosition": "bottom",
       "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSpacing": 5,
       "accentColour": "fff5a623",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-black-gold.png",
@@ -145,7 +237,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "master_pan",
@@ -159,7 +251,7 @@
       "groupId": "mixer",
       "labelPosition": "bottom",
       "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSpacing": 5,
       "accentColour": "ff45e2f0",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-cyan-glass.png",
@@ -167,7 +259,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "mixer_left_caption",
@@ -276,8 +368,8 @@
       "parameterId": "macro_motion",
       "groupId": "main",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "ff45e2f0",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-cyan-glass.png",
@@ -285,7 +377,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "macro_tone",
@@ -298,8 +390,8 @@
       "parameterId": "macro_tone",
       "groupId": "main",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "fff5a623",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-black-gold.png",
@@ -307,7 +399,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "macro_character",
@@ -320,8 +412,8 @@
       "parameterId": "macro_character",
       "groupId": "main",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "ff8b5cff",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-cyan-glass.png",
@@ -329,7 +421,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "macro_space",
@@ -342,8 +434,8 @@
       "parameterId": "macro_space",
       "groupId": "main",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "fff5a623",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-black-gold.png",
@@ -351,7 +443,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "cutoff",
@@ -364,8 +456,8 @@
       "parameterId": "filterCutoff",
       "groupId": "main",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "ff45e2f0",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-cyan-glass.png",
@@ -373,7 +465,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "resonance",
@@ -386,8 +478,8 @@
       "parameterId": "filterResonance",
       "groupId": "main",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "fff5a623",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-black-gold.png",
@@ -395,7 +487,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "motion_heading",
@@ -435,8 +527,8 @@
       "parameterId": "lfoRate",
       "groupId": "motion",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "ff45e2f0",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-cyan-glass.png",
@@ -444,7 +536,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "lfo_amount",
@@ -457,8 +549,8 @@
       "parameterId": "lfoAmount",
       "groupId": "motion",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "ff45e2f0",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-cyan-glass.png",
@@ -466,7 +558,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "vibrato_rate",
@@ -479,8 +571,8 @@
       "parameterId": "vibratoRate",
       "groupId": "motion",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "ff45e2f0",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-cyan-glass.png",
@@ -488,7 +580,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "vibrato_depth",
@@ -501,8 +593,8 @@
       "parameterId": "vibratoDepth",
       "groupId": "motion",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "ff45e2f0",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-cyan-glass.png",
@@ -510,7 +602,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "modwheel",
@@ -523,8 +615,8 @@
       "parameterId": "modWheel",
       "groupId": "motion",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "ff45e2f0",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-cyan-glass.png",
@@ -532,7 +624,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "expression",
@@ -545,8 +637,8 @@
       "parameterId": "expression",
       "groupId": "motion",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "ff45e2f0",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-cyan-glass.png",
@@ -554,7 +646,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "fx_heading",
@@ -579,8 +671,8 @@
       "parameterId": "delayTime",
       "groupId": "fx",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "ff45e2f0",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-cyan-glass.png",
@@ -588,7 +680,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "delay_fb",
@@ -601,8 +693,8 @@
       "parameterId": "delayFeedback",
       "groupId": "fx",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "ff45e2f0",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-black-gold.png",
@@ -610,7 +702,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "delay_mix",
@@ -623,8 +715,8 @@
       "parameterId": "delayMix",
       "groupId": "fx",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "fff5a623",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-cyan-glass.png",
@@ -632,7 +724,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "reverb_mix",
@@ -645,8 +737,8 @@
       "parameterId": "reverbMix",
       "groupId": "fx",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "fff5a623",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-black-gold.png",
@@ -654,7 +746,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "stereo_width",
@@ -667,8 +759,8 @@
       "parameterId": "stereoWidth",
       "groupId": "fx",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "ff8b5cff",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-cyan-glass.png",
@@ -676,7 +768,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "drive",
@@ -689,8 +781,8 @@
       "parameterId": "drive",
       "groupId": "fx",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "fff5a623",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-black-gold.png",
@@ -698,7 +790,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "output_gain",
@@ -711,8 +803,8 @@
       "parameterId": "outputGainDb",
       "groupId": "fx",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "ff45e2f0",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-cyan-glass.png",
@@ -720,7 +812,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "macro_fx",
@@ -733,8 +825,8 @@
       "parameterId": "macro_space",
       "groupId": "fx",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "ff8b5cff",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-black-gold.png",
@@ -742,7 +834,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "fx_meter",
@@ -831,8 +923,8 @@
       "parameterId": "macro_motion",
       "groupId": "perform",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "ff45e2f0",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-cyan-glass.png",
@@ -840,7 +932,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "perform_space",
@@ -853,8 +945,8 @@
       "parameterId": "macro_space",
       "groupId": "perform",
       "labelPosition": "bottom",
-      "labelSize": 10.0,
-      "labelSpacing": 2,
+      "labelSize": 10.5,
+      "labelSpacing": 6,
       "accentColour": "fff5a623",
       "borderColour": "ff303844",
       "filmstripAsset": "assets/knob-black-gold.png",
@@ -862,7 +954,7 @@
       "filmstripVertical": true,
       "style": "Vintage Gold",
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "perform_meter",

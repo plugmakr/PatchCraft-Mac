@@ -544,6 +544,8 @@ namespace patchcraft
         obj->setProperty ("asset",       asset);
         if (action.isNotEmpty())
             obj->setProperty ("action",  action);
+        if (semanticRole.isNotEmpty())
+            obj->setProperty ("semanticRole", semanticRole);
         obj->setProperty ("shapeKind",   shapeKind);
         obj->setProperty ("labelPosition", labelPosition);
         obj->setProperty ("containerId", containerId);
@@ -634,6 +636,7 @@ namespace patchcraft
             e.valueFormat = o->getProperty ("valueFormat").toString();
             e.asset       = o->getProperty ("asset").toString();
             e.action      = o->getProperty ("action").toString();
+            e.semanticRole = o->getProperty ("semanticRole").toString();
             e.shapeKind   = o->getProperty ("shapeKind").toString();
             e.labelPosition = o->getProperty ("labelPosition").toString();
             e.containerId = o->getProperty ("containerId").toString();

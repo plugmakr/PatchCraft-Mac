@@ -173,6 +173,7 @@ namespace patchcraft
         juce::String valueFormat { "Auto" };
         juce::String asset;
         juce::String action;
+        juce::String semanticRole;
         juce::String shapeKind { "roundedRect" };
         juce::String labelPosition { "bottom" };
         juce::String containerId;

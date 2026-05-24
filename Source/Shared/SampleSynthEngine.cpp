@@ -4,6 +4,7 @@
 #include "DebugLog.h"
 
 #include <cstring>
+#include <cmath>
 #include <limits>
 #include <vector>
 
@@ -357,6 +358,35 @@ namespace patchcraft
             hash ^= hash >> 16;
             return hash;
         }
+
+        static double selectedRegionSeconds (const LoadedSample& sample,
+                                             float sampleStart01,
+                                             float sampleLength01,
+                                             int sampleSlice,
+                                             int sampleSliceCount)
+        {
+            const int length = sample.buffer.getNumSamples();
+            if (length <= 0 || sample.sourceSampleRate <= 0.0)
+                return 0.0;
+
+            const int zoneStart = juce::jlimit (0, length - 1, sample.zone.sampleStart);
+            const int zoneEnd = sample.zone.sampleEnd > zoneStart
+                ? juce::jlimit (zoneStart + 1, length, sample.zone.sampleEnd)
+                : length;
+            const int sliceCount = juce::jlimit (1, 128, sampleSliceCount);
+            const int sliceIndex = juce::jlimit (0, sliceCount - 1, sampleSlice);
+            const int zoneLength = juce::jmax (1, zoneEnd - zoneStart);
+            const int sliceStart = zoneStart + (zoneLength * sliceIndex) / sliceCount;
+            const int sliceEnd = zoneStart + (zoneLength * (sliceIndex + 1)) / sliceCount;
+            const int sliceLength = juce::jmax (1, sliceEnd - sliceStart);
+            const int startOffset = juce::roundToInt (juce::jlimit (0.0f, 1.0f, sampleStart01)
+                                                    * (float) juce::jmax (0, sliceLength - 1));
+            const int playStart = juce::jlimit (sliceStart, sliceEnd - 1, sliceStart + startOffset);
+            const int playEnd = juce::jlimit (playStart + 1, sliceEnd,
+                                              playStart + juce::roundToInt ((float) sliceLength
+                                                                          * juce::jlimit (0.01f, 1.0f, sampleLength01)));
+            return (double) juce::jmax (1, playEnd - playStart) / sample.sourceSampleRate;
+        }
     }
 
     void SampleSynthEngine::loadFromPack (const juce::File& packFolder, const SampleMap& map)
@@ -667,7 +697,13 @@ namespace patchcraft
                 }
             }
 
-            if (atomics.granularOn.load() >= 0.5f)
+            const double tempoRegionSeconds = selectedRegionSeconds (*s, start01, length01, slice, sliceCount);
+            const bool tempoStretchCandidate = atomics.bpmSync.load() >= 0.5f
+                                            && s->zone.bpm > 0.0f
+                                            && ! s->zone.oneShot
+                                            && tempoRegionSeconds >= 0.85
+                                            && std::abs (tempoRatio - 1.0f) > 0.015f;
+            if (atomics.granularOn.load() >= 0.5f || tempoStretchCandidate)
             {
                 if (auto* v = findFreeGranularVoice())
                 {
@@ -680,6 +716,22 @@ namespace patchcraft
                     params.pitchOffset = pitchOffset;
                     params.padGain = padGain;
                     params.padPanOffset = padPanOffset;
+                    if (tempoStretchCandidate)
+                    {
+                        params.density = juce::jmax (params.density, 42.0f);
+                        params.sizeMs = juce::jlimit (36.0f, 140.0f, (float) (tempoRegionSeconds * 1000.0 / 18.0));
+                        params.sizeRandom = juce::jmin (params.sizeRandom, 0.08f);
+                        params.positionSpread = juce::jmin (params.positionSpread, 0.035f);
+                        params.pitchSpread = 0.0f;
+                        params.panSpread = juce::jmin (params.panSpread, 0.12f);
+                        params.texture = juce::jmin (params.texture, 0.18f);
+                        params.maxGrains = juce::jmax (params.maxGrains, 20);
+                        params.windowShape = 3;
+                        params.directionMode = 0;
+                        params.scanRate = tempoRegionSeconds > 0.0
+                            ? (float) juce::jlimit (0.01, 12.0, (double) tempoRatio / tempoRegionSeconds)
+                            : tempoRatio;
+                    }
                     v->start (s, note, velocity, currentAdsr(), params, triggerHash);
                 }
                 return;

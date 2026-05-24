@@ -11,7 +11,7 @@ namespace patchcraft
                                        const juce::String& parameterId,
                                        int x, int y,
                                        const juce::String& groupId,
-                                       int w = 82, int h = 90)
+                                       int w = 78, int h = 94)
         {
             LayoutElement k;
             k.type = ElementType::Knob;
@@ -21,10 +21,10 @@ namespace patchcraft
             k.style = "Vintage Gold";
             k.groupId = groupId;
             k.labelPosition = "bottom";
-            k.labelSize = 11.0f;
-            k.labelSpacing = 2.0f;
+            k.labelSize = 10.5f;
+            k.labelSpacing = 6.0f;
             k.labelOffsetX = 0.0f;
-            k.labelOffsetY = 0.0f;
+            k.labelOffsetY = 1.0f;
             return k;
         }
 
@@ -54,13 +54,24 @@ namespace patchcraft
             heading.textColour = juce::Colour (0xfff7f7ff);
             layout.add (heading);
 
+            const int count = juce::jmin (8, (int) knobs.size());
+            const int knobW = 78;
+            const int knobH = 94;
+            const int innerLeft = panel.x + 34;
+            const int innerRight = panel.x + panel.width - 34;
+            const int usable = innerRight - innerLeft - knobW;
+            const int gap = count > 1 ? usable / (count - 1) : 0;
+            const int y = panel.y + 54;
+
             int i = 0;
             for (auto& kv : knobs)
             {
                 if (i >= 8) break;
-                const int x = 168 + i * 112;
+                const int x = count <= 1
+                    ? panel.x + (panel.width - knobW) / 2
+                    : innerLeft + i * gap;
                 layout.add (makeKnob ("knob_" + groupId + "_" + kv.second,
-                                      kv.first, kv.second, x, 574, groupId));
+                                      kv.first, kv.second, x, y, groupId, knobW, knobH));
                 ++i;
             }
         }
@@ -84,6 +95,82 @@ namespace patchcraft
               e.backgroundColour = juce::Colour (0x22141822);
               e.borderColour = juce::Colour (0x8858f0c8);
               e.strokeWidth = 1.0f;
+              layout.add (e); }
+
+            // Player top-section artwork mock: a real 3:2 library-art slot
+            // with companion product-info labels so templates show how the
+            // buyer-facing Player header will read before final art is dropped in.
+            { LayoutElement e; e.type = ElementType::Image; e.id = "player_artwork";
+              e.asset = "assets/thumbnail.png";
+              e.semanticRole = "playerArtwork";
+              e.x = 76; e.y = 124; e.width = 390; e.height = 260;
+              e.cornerRadius = 16.0f;
+              e.locked = true;
+              layout.add (e); }
+
+            { LayoutElement e; e.type = ElementType::Shape; e.id = "player_artwork_frame";
+              e.semanticRole = "playerArtworkFrame";
+              e.x = 76; e.y = 124; e.width = 390; e.height = 260;
+              e.shapeKind = "roundedRect";
+              e.cornerRadius = 16.0f;
+              e.backgroundColour = juce::Colour (0x00000000);
+              e.borderColour = juce::Colour (0xa858f0c8);
+              e.strokeWidth = 1.4f;
+              e.locked = true;
+              layout.add (e); }
+
+            const auto productName = engine == "fx" ? "Modular Motion FX"
+                : engine == "drum" ? "Neon Pulse Drum Machine"
+                : engine == "synth" ? "Cinematic Evolve Pad"
+                : "Organic Tape Sampler";
+            const juce::String productKind = engine == "fx" ? "FX PLUGIN"
+                : engine == "drum" ? "DRUM MACHINE"
+                : engine == "synth" ? "SYNTH INSTRUMENT"
+                : "SAMPLE INSTRUMENT";
+
+            { LayoutElement e; e.type = ElementType::Label; e.id = "player_artwork_badge";
+              e.semanticRole = "playerArtworkInfo";
+              e.x = 510; e.y = 128; e.width = 250; e.height = 22;
+              e.label = "LIBRARY ARTWORK 300 x 200";
+              e.textColour = juce::Colour (0xff58f0c8);
+              e.labelSize = 11.0f;
+              e.locked = true;
+              layout.add (e); }
+
+            { LayoutElement e; e.type = ElementType::Label; e.id = "player_product_name";
+              e.semanticRole = "playerHeaderTitle";
+              e.x = 510; e.y = 158; e.width = 600; e.height = 40;
+              e.label = productName;
+              e.textColour = juce::Colour (0xfff7f7ff);
+              e.labelSize = 24.0f;
+              e.locked = true;
+              layout.add (e); }
+
+            { LayoutElement e; e.type = ElementType::Label; e.id = "player_product_kind";
+              e.semanticRole = "playerHeaderMetadata";
+              e.x = 512; e.y = 206; e.width = 420; e.height = 22;
+              e.label = productKind + "  |  PLAYER TOP SECTION";
+              e.textColour = juce::Colour (0xffb8c8d6);
+              e.labelSize = 12.0f;
+              e.locked = true;
+              layout.add (e); }
+
+            { LayoutElement e; e.type = ElementType::Label; e.id = "player_product_description";
+              e.semanticRole = "playerHeaderDescription";
+              e.x = 512; e.y = 238; e.width = 590; e.height = 44;
+              e.label = "Mock product info preview: final pack art, title, category, and creator metadata are reviewed here before export.";
+              e.textColour = juce::Colour (0xffdce3ea);
+              e.labelSize = 13.0f;
+              e.locked = true;
+              layout.add (e); }
+
+            { LayoutElement e; e.type = ElementType::Label; e.id = "player_artwork_dimensions";
+              e.semanticRole = "playerArtworkSpec";
+              e.x = 512; e.y = 318; e.width = 420; e.height = 24;
+              e.label = "Artwork slot: x76 y124  w390 h260  (3:2)";
+              e.textColour = juce::Colour (0xff8fa0ad);
+              e.labelSize = 11.0f;
+              e.locked = true;
               layout.add (e); }
 
             // Tab strip

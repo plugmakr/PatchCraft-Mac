@@ -820,6 +820,8 @@ namespace patchcraft
             }
 
             juce::StringArray nextIds, nextNames, nextFiles;
+            juce::Array<float> nextVolumes, nextPans, nextAutoPlayVelocities;
+            juce::Array<int> nextMidiChannels, nextOutputRoutes, nextTransposes, nextEnabled, nextAutoPlay, nextAutoPlayNotes;
             for (int i = 0; i < layerCount; ++i)
             {
                 auto layerId = i < manifestForPack.instrumentIds.size()
@@ -889,6 +891,33 @@ namespace patchcraft
                 nextIds.add (layerId);
                 nextNames.add (layerName);
                 nextFiles.add (layerFile.getRelativePathFrom (packFolder).replaceCharacter ('\\', '/'));
+                nextVolumes.add (i < manifestForPack.instrumentVolumes.size()
+                    ? juce::jlimit (0.0f, 2.0f, manifestForPack.instrumentVolumes.getReference (i))
+                    : 1.0f);
+                nextPans.add (i < manifestForPack.instrumentPans.size()
+                    ? juce::jlimit (-1.0f, 1.0f, manifestForPack.instrumentPans.getReference (i))
+                    : 0.0f);
+                nextMidiChannels.add (i < manifestForPack.instrumentMidiChannels.size()
+                    ? juce::jlimit (0, 16, manifestForPack.instrumentMidiChannels.getReference (i))
+                    : 0);
+                nextOutputRoutes.add (i < manifestForPack.instrumentOutputRoutes.size()
+                    ? juce::jlimit (0, 8, manifestForPack.instrumentOutputRoutes.getReference (i))
+                    : 0);
+                nextTransposes.add (i < manifestForPack.instrumentTransposeSemitones.size()
+                    ? juce::jlimit (-48, 48, manifestForPack.instrumentTransposeSemitones.getReference (i))
+                    : 0);
+                nextEnabled.add (i < manifestForPack.instrumentEnabled.size()
+                    ? (manifestForPack.instrumentEnabled.getReference (i) != 0 ? 1 : 0)
+                    : 1);
+                nextAutoPlay.add (i < manifestForPack.instrumentAutoPlay.size()
+                    ? (manifestForPack.instrumentAutoPlay.getReference (i) != 0 ? 1 : 0)
+                    : 0);
+                nextAutoPlayNotes.add (i < manifestForPack.instrumentAutoPlayNotes.size()
+                    ? juce::jlimit (0, 127, manifestForPack.instrumentAutoPlayNotes.getReference (i))
+                    : 60);
+                nextAutoPlayVelocities.add (i < manifestForPack.instrumentAutoPlayVelocities.size()
+                    ? juce::jlimit (0.0f, 1.0f, manifestForPack.instrumentAutoPlayVelocities.getReference (i))
+                    : 1.0f);
             }
 
             manifestForPack.engine = "multi";
@@ -896,6 +925,15 @@ namespace patchcraft
             manifestForPack.instrumentIds = nextIds;
             manifestForPack.instrumentNames = nextNames;
             manifestForPack.instrumentFiles = nextFiles;
+            manifestForPack.instrumentVolumes = nextVolumes;
+            manifestForPack.instrumentPans = nextPans;
+            manifestForPack.instrumentMidiChannels = nextMidiChannels;
+            manifestForPack.instrumentOutputRoutes = nextOutputRoutes;
+            manifestForPack.instrumentTransposeSemitones = nextTransposes;
+            manifestForPack.instrumentEnabled = nextEnabled;
+            manifestForPack.instrumentAutoPlay = nextAutoPlay;
+            manifestForPack.instrumentAutoPlayNotes = nextAutoPlayNotes;
+            manifestForPack.instrumentAutoPlayVelocities = nextAutoPlayVelocities;
             return true;
         };
 

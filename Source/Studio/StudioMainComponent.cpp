@@ -1322,7 +1322,7 @@ namespace patchcraft
             menu.addItem (4004, "Toggle Left Panel", bottomTab == BottomPanel::Page::Design);
             menu.addItem (4005, "Toggle Right Panel", bottomTab == BottomPanel::Page::Design);
             menu.addSeparator();
-            menu.addItem (4006, "Go To Workflow");
+            menu.addItem (4006, "Go To Dashboard");
             menu.addItem (4007, "Go To Design");
             menu.addItem (4008, "Go To Arp Studio");
             menu.addItem (4009, "Go To DSP Builder");

@@ -40,7 +40,7 @@ namespace patchcraft
         juce::TextButton fxButton { "FX Plugin" };
         juce::Label factoryDemoLabel;
         juce::ComboBox factoryDemoBox;
-        juce::TextButton loadFactoryDemoButton { "Load Factory Demo" };
+        juce::TextButton loadFactoryDemoButton { "Choose / Load Demo" };
 
         juce::TextButton soundButton { "1  Build Sound" };
         juce::TextButton midiButton { "2  MIDI / Performance" };
@@ -60,6 +60,7 @@ namespace patchcraft
         juce::String healthSummary;
         juce::String detailedHealth;
         juce::Array<juce::File> factoryDemoFolders;
+        juce::StringArray factoryDemoNames;
 
         enum class TutorialModule
         {
@@ -74,6 +75,7 @@ namespace patchcraft
 
         void switchTemplate (const juce::String& engineId, const juce::String& label);
         void populateFactoryDemos();
+        void showFactoryDemoMenu();
         void loadSelectedFactoryDemo();
         void updateModeVisibility();
         void showExportMenu();

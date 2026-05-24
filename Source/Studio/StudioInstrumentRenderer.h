@@ -103,7 +103,9 @@ namespace patchcraft
         void drawDropdown(juce::Graphics&, juce::Rectangle<int>, const juce::String& display) const;
         void drawKeyboard(juce::Graphics&, juce::Rectangle<int>) const;
         void drawTabPanel(juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
-        void drawLabel  (juce::Graphics&, juce::Rectangle<int>, const juce::String& text) const;
+        void drawLabel  (juce::Graphics&, juce::Rectangle<int>, const juce::String& text,
+                         float fontSize = 14.0f,
+                         juce::Colour colour = juce::Colour()) const;
         void drawRuntimeControl (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
 
         int hitTabIndex (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>) const;

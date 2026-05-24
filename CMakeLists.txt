@@ -163,7 +163,13 @@ if(PATCHCRAFT_BUILD_STUDIO)
         VERSION "0.1.0")
 
     juce_generate_juce_header(PatchCraftStudio)
-    set_target_properties(PatchCraftStudio PROPERTIES OUTPUT_NAME "PatchCraftStudio")
+    if(APPLE)
+        # Match CFBundleExecutable in the generated Info.plist so Finder can
+        # launch the .app bundle instead of reporting it as incomplete.
+        set_target_properties(PatchCraftStudio PROPERTIES OUTPUT_NAME "PatchCraft Studio")
+    else()
+        set_target_properties(PatchCraftStudio PROPERTIES OUTPUT_NAME "PatchCraftStudio")
+    endif()
 
     target_sources(PatchCraftStudio PRIVATE
         Source/Studio/Main.cpp

@@ -154,7 +154,6 @@ namespace patchcraft
         double samplesUntilNextGrain = 0.0;
         double scanPosition = 0.0;
         int alternatingDirection = 1;
-        float heldTempoRatio = 1.0f;
         juce::uint32 rngState = 0x12345678u;
         juce::ADSR env;
         juce::ADSR::Parameters envParams;

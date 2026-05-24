@@ -32,12 +32,25 @@ require_exists("${STUDIO_DIR}/Library" "Library")
 require_exists("${STUDIO_DIR}/PlayerPlugins/PatchCraft Player.vst3" "PatchCraft Player VST3")
 require_exists("${STUDIO_DIR}/PlayerPlugins/PatchCraft Player FX.vst3" "PatchCraft Player FX VST3")
 
+set(STUDIO_PAYLOAD "${STUDIO_EXE}")
+set(STUDIO_PAYLOAD_LABEL "PatchCraftStudio.exe")
+set(STUDIO_LAUNCH_INSTRUCTIONS "Run PatchCraftStudio.exe.")
+
+get_filename_component(STUDIO_MACOS_DIR "${STUDIO_EXE}" DIRECTORY)
+get_filename_component(STUDIO_CONTENTS_DIR "${STUDIO_MACOS_DIR}" DIRECTORY)
+get_filename_component(STUDIO_APP_BUNDLE "${STUDIO_CONTENTS_DIR}" DIRECTORY)
+if(EXISTS "${STUDIO_APP_BUNDLE}/Contents/Info.plist")
+    set(STUDIO_PAYLOAD "${STUDIO_APP_BUNDLE}")
+    set(STUDIO_PAYLOAD_LABEL "PatchCraft Studio.app")
+    set(STUDIO_LAUNCH_INSTRUCTIONS "Open PatchCraft Studio.app.")
+endif()
+
 file(REMOVE_RECURSE "${OUTPUT_DIR}")
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 file(MAKE_DIRECTORY "${OUTPUT_DIR}/docs")
 file(MAKE_DIRECTORY "${OUTPUT_DIR}/installer")
 
-file(COPY "${STUDIO_EXE}" DESTINATION "${OUTPUT_DIR}")
+file(COPY "${STUDIO_PAYLOAD}" DESTINATION "${OUTPUT_DIR}")
 file(COPY "${STUDIO_DIR}/FactoryDemos" DESTINATION "${OUTPUT_DIR}")
 file(COPY "${STUDIO_DIR}/Library" DESTINATION "${OUTPUT_DIR}")
 file(COPY "${STUDIO_DIR}/PlayerPlugins" DESTINATION "${OUTPUT_DIR}")
@@ -61,7 +74,7 @@ file(WRITE "${OUTPUT_DIR}/INSTALL.txt" "PatchCraft Studio Release Candidate
 ======================================
 
 Contents:
-- PatchCraftStudio.exe
+- ${STUDIO_PAYLOAD_LABEL}
 - FactoryDemos/
 - Library/
 - PlayerPlugins/PatchCraft Player.vst3
@@ -72,7 +85,7 @@ Contents:
 
 Manual install:
 1. Copy this folder to a writable application folder, such as C:\\Program Files\\PatchCraft or C:\\Users\\<you>\\Apps\\PatchCraft.
-2. Run PatchCraftStudio.exe.
+2. ${STUDIO_LAUNCH_INSTRUCTIONS}
 3. Keep FactoryDemos, Library, and PlayerPlugins beside the executable.
 4. Copy PlayerPlugins/PatchCraft Player.vst3 and PatchCraft Player FX.vst3 to your per-user VST3 folder, or build installer/PatchCraftStudio-Windows.iss.
 5. In Studio, open Launch and run Launch Doctor before exporting customer products.
@@ -87,6 +100,23 @@ Final release proof:
 - Load Player and Player FX in FL Studio or another DAW.
 - Verify tabs, labels, hardware MIDI, MIDI Learn, presets, pad/drum grids, and volume.
 - Publish a Plugin.club draft through https://plugin.club/functions/sellerImport.
+")
+
+file(WRITE "${OUTPUT_DIR}/BETA_TESTERS.txt" "PatchCraft Studio Beta Tester Notes
+====================================
+
+Build host: ${CMAKE_HOST_SYSTEM_NAME}
+
+What to test:
+- Launch PatchCraft Studio.app and open several FactoryDemos.
+- Check demo control alignment: knobs should sit inside the background wells and bottom labels should be evenly spaced.
+- Confirm Dashboard is available from the top toolbar and View > Go To Dashboard.
+- Move the project BPM slider, then test BPM Sync with tempo-tagged samples.
+- Export/load PatchCraft Player and PatchCraft Player FX VST3 in a DAW.
+- For multi-instrument packs, verify layer volume, pan, MIDI channel, output route, transpose, enable, and autoplay metadata survives export.
+
+Known beta note:
+- macOS builds are ad-hoc signed for tester distribution. If Gatekeeper blocks first launch, use right-click > Open.
 ")
 
 file(WRITE "${OUTPUT_DIR}/installer/PatchCraftStudio-Windows.iss" "; PatchCraft Studio generated Windows installer script
@@ -134,7 +164,7 @@ file(WRITE "${OUTPUT_DIR}/installer/PatchCraftStudio-macOS-notes.md" "# PatchCra
 
 Build the macOS release from the same payload:
 
-1. Stage `PatchCraftStudio.app`, `FactoryDemos`, `Library`, and `docs` under `/Applications/PatchCraft Studio/`.
+1. Stage `PatchCraft Studio.app`, `FactoryDemos`, `Library`, and `docs` under `/Applications/PatchCraft Studio/`.
 2. Stage `PatchCraft Player.vst3` and `PatchCraft Player FX.vst3` under `~/Library/Audio/Plug-Ins/VST3/` for per-user install, or `/Library/Audio/Plug-Ins/VST3/` for admin/system install.
 3. Keep the paid VST Expansion addon separate. Its package installs `PluginTemplate/` beside the Studio app payload.
 4. Sign and notarize the app, VST3 bundles, and final pkg before public distribution.

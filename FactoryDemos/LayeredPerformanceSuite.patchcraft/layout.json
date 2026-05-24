@@ -20,6 +20,98 @@
       "strokeWidth": 1.4
     },
     {
+      "id": "player_artwork",
+      "type": "image",
+      "asset": "assets/thumbnail.png",
+      "semanticRole": "playerArtwork",
+      "x": 76,
+      "y": 124,
+      "width": 390,
+      "height": 260,
+      "cornerRadius": 16,
+      "locked": true
+    },
+    {
+      "id": "player_artwork_frame",
+      "type": "shape",
+      "shapeKind": "roundedRect",
+      "semanticRole": "playerArtworkFrame",
+      "x": 76,
+      "y": 124,
+      "width": 390,
+      "height": 260,
+      "backgroundColour": "00000000",
+      "borderColour": "ff39f5c8",
+      "strokeWidth": 1.4,
+      "cornerRadius": 16,
+      "locked": true
+    },
+    {
+      "id": "player_artwork_badge",
+      "type": "label",
+      "semanticRole": "playerArtworkInfo",
+      "x": 510,
+      "y": 128,
+      "width": 270,
+      "height": 22,
+      "label": "LIBRARY ARTWORK 300 x 200",
+      "textColour": "ff39f5c8",
+      "labelSize": 11,
+      "locked": true
+    },
+    {
+      "id": "player_product_name",
+      "type": "label",
+      "semanticRole": "playerHeaderTitle",
+      "x": 510,
+      "y": 158,
+      "width": 620,
+      "height": 42,
+      "label": "Layered Performance Suite",
+      "textColour": "fff7f7ff",
+      "labelSize": 24,
+      "locked": true
+    },
+    {
+      "id": "player_product_kind",
+      "type": "label",
+      "semanticRole": "playerHeaderMetadata",
+      "x": 512,
+      "y": 206,
+      "width": 560,
+      "height": 22,
+      "label": "MULTI-INSTRUMENT  |  PATCHCRAFT",
+      "textColour": "ffb8c8d6",
+      "labelSize": 12,
+      "locked": true
+    },
+    {
+      "id": "player_product_description",
+      "type": "label",
+      "semanticRole": "playerHeaderDescription",
+      "x": 512,
+      "y": 238,
+      "width": 600,
+      "height": 58,
+      "label": "A musical Layer Patch demo: synced drum loop, sub bassline, piano chords, guitar pulse, and atmospheric texture with real per-layer mixer and controls.",
+      "textColour": "ffdce3ea",
+      "labelSize": 13,
+      "locked": true
+    },
+    {
+      "id": "player_artwork_dimensions",
+      "type": "label",
+      "semanticRole": "playerArtworkSpec",
+      "x": 512,
+      "y": 318,
+      "width": 500,
+      "height": 24,
+      "label": "Artwork slot: x76 y124  w390 h260  (3:2 Player top section)",
+      "textColour": "ff8fa0ad",
+      "labelSize": 11,
+      "locked": true
+    },
+    {
       "id": "focus_focus_drums_btn",
       "type": "button",
       "x": 620,
@@ -121,9 +213,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "top_motion",
@@ -142,9 +234,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "top_energy",
@@ -163,9 +255,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "top_sync",
@@ -251,9 +343,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "pan_focus_drums",
@@ -273,9 +365,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "tone_focus_drums",
@@ -295,9 +387,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "space_focus_drums",
@@ -317,9 +409,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "mute_focus_drums",
@@ -423,9 +515,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "pan_focus_bass",
@@ -445,9 +537,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "tone_focus_bass",
@@ -467,9 +559,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "space_focus_bass",
@@ -489,9 +581,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "mute_focus_bass",
@@ -595,9 +687,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "pan_focus_piano",
@@ -617,9 +709,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "tone_focus_piano",
@@ -639,9 +731,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "space_focus_piano",
@@ -661,9 +753,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "mute_focus_piano",
@@ -767,9 +859,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "pan_focus_guitar",
@@ -789,9 +881,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "tone_focus_guitar",
@@ -811,9 +903,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "space_focus_guitar",
@@ -833,9 +925,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "mute_focus_guitar",
@@ -939,9 +1031,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "pan_focus_texture",
@@ -961,9 +1053,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "tone_focus_texture",
@@ -983,9 +1075,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "space_focus_texture",
@@ -1005,9 +1097,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "mute_focus_texture",
@@ -1186,9 +1278,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "perform_mute_0",
@@ -1295,9 +1387,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "perform_mute_1",
@@ -1404,9 +1496,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "perform_mute_2",
@@ -1513,9 +1605,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "perform_mute_3",
@@ -1622,9 +1714,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "perform_mute_4",
@@ -1673,14 +1765,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10.0,
+      "labelSize": 10.5,
       "groupId": "perform",
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "perform_global_space",
@@ -1695,14 +1787,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10.0,
+      "labelSize": 10.5,
       "groupId": "perform",
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "keyboard",
@@ -1897,9 +1989,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_pitch_0",
@@ -1919,9 +2011,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_space_0",
@@ -1941,9 +2033,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_delay_0",
@@ -1963,9 +2055,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_card_1",
@@ -2019,9 +2111,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_pitch_1",
@@ -2041,9 +2133,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_space_1",
@@ -2063,9 +2155,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_delay_1",
@@ -2085,9 +2177,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_card_2",
@@ -2141,9 +2233,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_pitch_2",
@@ -2163,9 +2255,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_space_2",
@@ -2185,9 +2277,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_delay_2",
@@ -2207,9 +2299,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_card_3",
@@ -2263,9 +2355,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_pitch_3",
@@ -2285,9 +2377,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_space_3",
@@ -2307,9 +2399,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_delay_3",
@@ -2329,9 +2421,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_card_4",
@@ -2385,9 +2477,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_pitch_4",
@@ -2407,9 +2499,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_space_4",
@@ -2429,9 +2521,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "loop_delay_4",
@@ -2451,9 +2543,9 @@
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 4,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "fx_panel",
@@ -2502,14 +2594,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10.0,
+      "labelSize": 10.5,
       "groupId": "fx",
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "fx_filterResonance",
@@ -2524,14 +2616,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10.0,
+      "labelSize": 10.5,
       "groupId": "fx",
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "fx_delayMix",
@@ -2546,14 +2638,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10.0,
+      "labelSize": 10.5,
       "groupId": "fx",
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "fx_delayFeedback",
@@ -2568,14 +2660,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10.0,
+      "labelSize": 10.5,
       "groupId": "fx",
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "fx_reverbMix",
@@ -2590,14 +2682,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10.0,
+      "labelSize": 10.5,
       "groupId": "fx",
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "fx_sampleGlitch",
@@ -2612,14 +2704,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10.0,
+      "labelSize": 10.5,
       "groupId": "fx",
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "fx_sampleSliceCount",
@@ -2634,14 +2726,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10.0,
+      "labelSize": 10.5,
       "groupId": "fx",
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "fx_granularDensity",
@@ -2656,14 +2748,14 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10.0,
+      "labelSize": 10.5,
       "groupId": "fx",
       "cornerRadius": 14,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "fx_spectrum",
@@ -2921,12 +3013,12 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10.0,
+      "labelSize": 10.5,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "routing_scene_morph",
@@ -2942,12 +3034,12 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10.0,
+      "labelSize": 10.5,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     },
     {
       "id": "mixer_master_volume_knob",
@@ -2963,12 +3055,12 @@
       "backgroundColour": "aa071019",
       "borderColour": "ff1b4455",
       "textColour": "fff2f7ff",
-      "labelSize": 10.0,
+      "labelSize": 10.5,
       "style": "Vintage Gold",
       "labelPosition": "bottom",
-      "labelSpacing": 2,
+      "labelSpacing": 6,
       "labelOffsetX": 0,
-      "labelOffsetY": 0
+      "labelOffsetY": 1
     }
   ]
 }

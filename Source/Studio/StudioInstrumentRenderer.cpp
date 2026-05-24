@@ -876,7 +876,8 @@ namespace patchcraft
                 }
 
                 case ElementType::Label:
-                    drawLabel (g, r, e.label);
+                    drawLabel (g, r, e.label, e.labelSize > 0.0f ? e.labelSize : 14.0f,
+                               e.textColour.isTransparent() ? PatchCraftLookAndFeel::text() : e.textColour);
                     break;
 
                 case ElementType::Panel:
@@ -2323,11 +2324,13 @@ namespace patchcraft
         }
     }
 
-    void StudioInstrumentRenderer::drawLabel (juce::Graphics& g, juce::Rectangle<int> r, const juce::String& text) const
+    void StudioInstrumentRenderer::drawLabel (juce::Graphics& g, juce::Rectangle<int> r, const juce::String& text,
+                                              float fontSize, juce::Colour colour) const
     {
-        g.setColour (PatchCraftLookAndFeel::text());
-        g.setFont (14.0f);
-        g.drawText (text, r, juce::Justification::centredLeft, true);
+        g.setColour (colour.isTransparent() ? PatchCraftLookAndFeel::text() : colour);
+        g.setFont (juce::Font (juce::jlimit (8.0f, 36.0f, fontSize),
+                               fontSize >= 16.0f ? juce::Font::bold : juce::Font::plain));
+        g.drawFittedText (text, r, juce::Justification::centredLeft, 2, 0.92f);
     }
 
     void StudioInstrumentRenderer::drawRuntimeControl (juce::Graphics& g, juce::Rectangle<int> r, const LayoutElement& e) const
