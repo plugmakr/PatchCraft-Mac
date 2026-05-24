@@ -256,7 +256,10 @@
       "borderColour": "aa16d6e9",
       "labelPosition": "hidden",
       "groupId": "main",
-      "arpLaneMode": "bank"
+      "arpLaneMode": "bank",
+      "arpLaneTarget": "notes",
+      "arpLaneRootNote": 60,
+      "arpLaneSampleSlots": 1
     },
     {
       "id": "lane_ascent",
@@ -273,7 +276,10 @@
       "borderColour": "aa9b6dff",
       "labelPosition": "hidden",
       "groupId": "main",
-      "arpLaneMode": "bank"
+      "arpLaneMode": "bank",
+      "arpLaneTarget": "samples",
+      "arpLaneRootNote": 60,
+      "arpLaneSampleSlots": 5
     },
     {
       "id": "lane_bounce",
@@ -290,7 +296,10 @@
       "borderColour": "aaff5bb9",
       "labelPosition": "hidden",
       "groupId": "main",
-      "arpLaneMode": "bank"
+      "arpLaneMode": "bank",
+      "arpLaneTarget": "drums",
+      "arpLaneRootNote": 36,
+      "arpLaneSampleSlots": 8
     },
     {
       "id": "lane_random",
@@ -307,7 +316,10 @@
       "borderColour": "aaffa32b",
       "labelPosition": "hidden",
       "groupId": "main",
-      "arpLaneMode": "bank"
+      "arpLaneMode": "bank",
+      "arpLaneTarget": "oneShots",
+      "arpLaneRootNote": 48,
+      "arpLaneSampleSlots": 8
     },
     {
       "id": "lane_rondo",
@@ -324,7 +336,10 @@
       "borderColour": "aa8df04b",
       "labelPosition": "hidden",
       "groupId": "main",
-      "arpLaneMode": "bank"
+      "arpLaneMode": "bank",
+      "arpLaneTarget": "loops",
+      "arpLaneRootNote": 60,
+      "arpLaneSampleSlots": 8
     },
     {
       "id": "global_cutoff",

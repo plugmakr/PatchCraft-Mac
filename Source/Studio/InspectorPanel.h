@@ -150,11 +150,16 @@ namespace patchcraft
         juce::TextButton drumOpenPerformanceBtn { "Full Editor" };
 
         // Arp lane authoring (Arp Lane only).
-        juce::Label lblArpLane, lblArpLaneIndex, lblArpLaneSteps, lblArpLaneMode;
+        juce::Label lblArpLane, lblArpLaneIndex, lblArpLaneSteps, lblArpLaneMode,
+                    lblArpLaneTarget, lblArpLaneRootNote, lblArpLaneSampleSlots;
         juce::Slider arpLaneIndexSlider;
         juce::Slider arpLaneStepsSlider;
+        juce::Slider arpLaneRootNoteSlider;
+        juce::Slider arpLaneSampleSlotsSlider;
         juce::ComboBox arpLaneModeBox;
+        juce::ComboBox arpLaneTargetBox;
         juce::TextButton arpLaneOpenPerformanceBtn { "Edit Bank" };
+        juce::TextButton arpLaneApplySampleTargetBtn { "Apply Target" };
 
         // Mixer authoring (Mixer only).
         juce::Label lblMixer, lblMixerMode, lblMixerChannels, lblMixerLabels,
@@ -254,6 +259,9 @@ namespace patchcraft
         void pasteCurrentDrumPattern();
         void duplicateCurrentDrumPatternToNext();
         void applyTrapRollToCurrentPattern();
+        DspBlock* findMidiPlaygroundBlock();
+        DspBlock& ensureMidiPlaygroundBlock();
+        void writeArpLaneSampleTargetFromUi (bool applyToBank);
         void refreshMacroControls();
         void writeMacroTargetsFromUi();
         void refreshModMatrixControls();

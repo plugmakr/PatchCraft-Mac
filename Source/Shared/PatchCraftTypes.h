@@ -243,6 +243,9 @@ namespace patchcraft
         int arpLaneIndex = 0;
         int arpLaneSteps = 16;
         juce::String arpLaneMode { "bank" };
+        juce::String arpLaneTarget { "notes" };
+        int arpLaneRootNote = 60;
+        int arpLaneSampleSlots = 1;
 
         // Runtime mixer UI (Mixer only).
         // auto: multi-instrument layers when present, otherwise main output.

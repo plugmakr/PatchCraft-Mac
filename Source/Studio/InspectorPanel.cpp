@@ -2,6 +2,7 @@
 #include "StudioMainComponent.h"
 #include "PatchCraftLookAndFeel.h"
 #include "CanvasEditor.h"
+#include "MidiPlaygroundPattern.h"
 
 #include <algorithm>
 #include <memory>
@@ -72,6 +73,22 @@ namespace patchcraft
         while (! lines.isEmpty() && lines[lines.size() - 1].isEmpty())
             lines.remove (lines.size() - 1);
         return lines;
+    }
+
+    static bool isMidiPlaygroundBlock (const DspBlock& block)
+    {
+        return block.type.containsIgnoreCase ("midiPlayground")
+            || block.type.containsIgnoreCase ("phrase generator")
+            || block.type.containsIgnoreCase ("midi generator")
+            || block.values.find ("arpSteps") != block.values.end()
+            || block.values.find ("mpStep0On") != block.values.end();
+    }
+
+    static juce::String noteNameFor (int note)
+    {
+        static const char* names[] { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+        note = juce::jlimit (0, 127, note);
+        return juce::String (names[note % 12]) + juce::String ((note / 12) - 1);
     }
 
     static bool isElementChildOfContainer (const LayoutElement& child, const LayoutElement& container)
@@ -250,6 +267,9 @@ namespace patchcraft
         styleLabel (lblArpLaneIndex,   "Lane Bank");
         styleLabel (lblArpLaneSteps,   "Steps");
         styleLabel (lblArpLaneMode,    "Mode");
+        styleLabel (lblArpLaneTarget,  "Target");
+        styleLabel (lblArpLaneRootNote, "Base Note");
+        styleLabel (lblArpLaneSampleSlots, "Slots");
         styleLabel (lblMixer,           "MIXER", juce::Justification::centredLeft, 11.0f, true);
         styleLabel (lblMixerMode,       "Mode");
         styleLabel (lblMixerChannels,   "Channels");
@@ -291,6 +311,7 @@ namespace patchcraft
                           &lblDrumDivision, &lblDrumPadFxTarget, &lblDrumPadFxAmount,
                           &lblDrumCellFxTarget, &lblDrumCellFxAmount,
                           &lblArpLane, &lblArpLaneIndex, &lblArpLaneSteps, &lblArpLaneMode,
+                          &lblArpLaneTarget, &lblArpLaneRootNote, &lblArpLaneSampleSlots,
                           &lblMixer, &lblMixerMode, &lblMixerChannels, &lblMixerLabels,
                           &lblMixerVolumes, &lblMixerPans, &lblMixerMutes, &lblMixerSolos,
                           &lblMacroEditor, &lblMacroTargets, &lblModMatrixEditor, &lblModRoutes,
@@ -871,12 +892,38 @@ namespace patchcraft
         arpLaneModeBox.setTooltip ("Phrase bank selects/edit MIDI Playground banks. Velocity and Trigger are authoring modes for lane-style performance surfaces.");
         addAndMakeVisible (arpLaneModeBox);
 
+        arpLaneTargetBox.addItem ("Notes / synth", 1);
+        arpLaneTargetBox.addItem ("Drum pads", 2);
+        arpLaneTargetBox.addItem ("One-shots", 3);
+        arpLaneTargetBox.addItem ("Loop slices", 4);
+        arpLaneTargetBox.addItem ("Pitched samples", 5);
+        arpLaneTargetBox.setTooltip ("Assigns this Arp Lane bank to a sampler style. Apply Target writes matching notes/slices into the MIDI Playground bank.");
+        addAndMakeVisible (arpLaneTargetBox);
+
+        arpLaneRootNoteSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+        arpLaneRootNoteSlider.setTextBoxStyle (juce::Slider::TextBoxRight, true, 48, 22);
+        arpLaneRootNoteSlider.setRange (0.0, 127.0, 1.0);
+        arpLaneRootNoteSlider.setTooltip ("Base MIDI note for sample targeting. For drum pads and one-shots this usually starts at C1 / note 36.");
+        addAndMakeVisible (arpLaneRootNoteSlider);
+
+        arpLaneSampleSlotsSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+        arpLaneSampleSlotsSlider.setTextBoxStyle (juce::Slider::TextBoxRight, true, 48, 22);
+        arpLaneSampleSlotsSlider.setRange (1.0, 64.0, 1.0);
+        arpLaneSampleSlotsSlider.setTooltip ("Number of drum pads, one-shot notes, loop slices, or sample zones this lane should cycle through.");
+        addAndMakeVisible (arpLaneSampleSlotsSlider);
+
         arpLaneOpenPerformanceBtn.setTooltip ("Open MIDI Playground to edit this lane's notes, divisions, gate, swing, probability, and bank behavior.");
         arpLaneOpenPerformanceBtn.onClick = [this] { owner.setBottomTab (BottomPanel::Page::MidiPlayground); };
         addAndMakeVisible (arpLaneOpenPerformanceBtn);
+        arpLaneApplySampleTargetBtn.setTooltip ("Write this lane's target note/slice assignment into its MIDI Playground bank.");
+        arpLaneApplySampleTargetBtn.onClick = [this] { writeArpLaneSampleTargetFromUi (true); };
+        addAndMakeVisible (arpLaneApplySampleTargetBtn);
         arpLaneIndexSlider.onValueChange = rewrite;
         arpLaneStepsSlider.onValueChange = rewrite;
         arpLaneModeBox.onChange = rewrite;
+        arpLaneTargetBox.onChange = [this] { writeArpLaneSampleTargetFromUi (false); };
+        arpLaneRootNoteSlider.onValueChange = [this] { writeArpLaneSampleTargetFromUi (false); };
+        arpLaneSampleSlotsSlider.onValueChange = [this] { writeArpLaneSampleTargetFromUi (false); };
 
         mixerModeBox.addItem ("Auto - layers when available", 1);
         mixerModeBox.addItem ("Layers only", 2);
@@ -1490,9 +1537,14 @@ namespace patchcraft
         for (auto* component : { static_cast<juce::Component*> (&arpLaneIndexSlider),
                                  static_cast<juce::Component*> (&arpLaneStepsSlider),
                                  static_cast<juce::Component*> (&arpLaneModeBox),
-                                 static_cast<juce::Component*> (&arpLaneOpenPerformanceBtn) })
+                                 static_cast<juce::Component*> (&arpLaneTargetBox),
+                                 static_cast<juce::Component*> (&arpLaneRootNoteSlider),
+                                 static_cast<juce::Component*> (&arpLaneSampleSlotsSlider),
+                                 static_cast<juce::Component*> (&arpLaneOpenPerformanceBtn),
+                                 static_cast<juce::Component*> (&arpLaneApplySampleTargetBtn) })
             component->setVisible (isArpLane && showAdvancedControls && isSectionOpen (InspectorSection::ArpLane));
-        for (auto* label : { &lblArpLane, &lblArpLaneIndex, &lblArpLaneSteps, &lblArpLaneMode })
+        for (auto* label : { &lblArpLane, &lblArpLaneIndex, &lblArpLaneSteps, &lblArpLaneMode,
+                             &lblArpLaneTarget, &lblArpLaneRootNote, &lblArpLaneSampleSlots })
             label->setVisible (isArpLane && showAdvancedControls
                                && (label == &lblArpLane || isSectionOpen (InspectorSection::ArpLane)));
 
@@ -1505,8 +1557,13 @@ namespace patchcraft
                 layoutRow (r, lblArpLaneIndex, &arpLaneIndexSlider);
                 layoutRow (r, lblArpLaneSteps, &arpLaneStepsSlider);
                 layoutRow (r, lblArpLaneMode, &arpLaneModeBox);
+                layoutRow (r, lblArpLaneTarget, &arpLaneTargetBox);
+                layoutRow (r, lblArpLaneRootNote, &arpLaneRootNoteSlider);
+                layoutRow (r, lblArpLaneSampleSlots, &arpLaneSampleSlotsSlider);
                 auto row = r.removeFromTop (34);
                 row.removeFromLeft (110);
+                const int buttonW = juce::jmax (64, row.getWidth() / 2);
+                arpLaneApplySampleTargetBtn.setBounds (row.removeFromLeft (buttonW).reduced (4, 4));
                 arpLaneOpenPerformanceBtn.setBounds (row.reduced (4, 4));
             }
         }
@@ -1822,7 +1879,11 @@ namespace patchcraft
             static_cast<juce::Component*> (&arpLaneIndexSlider),
             static_cast<juce::Component*> (&arpLaneStepsSlider),
             static_cast<juce::Component*> (&arpLaneModeBox),
+            static_cast<juce::Component*> (&arpLaneTargetBox),
+            static_cast<juce::Component*> (&arpLaneRootNoteSlider),
+            static_cast<juce::Component*> (&arpLaneSampleSlotsSlider),
             static_cast<juce::Component*> (&arpLaneOpenPerformanceBtn),
+            static_cast<juce::Component*> (&arpLaneApplySampleTargetBtn),
             static_cast<juce::Component*> (&mixerModeBox),
             static_cast<juce::Component*> (&mixerChannelsSlider),
             static_cast<juce::Component*> (&mixerLabelsEdit),
@@ -1967,6 +2028,14 @@ namespace patchcraft
         arpLaneModeBox.setSelectedId (el->arpLaneMode == "velocity" ? 2
                                    : el->arpLaneMode == "trigger" ? 3 : 1,
                                    juce::dontSendNotification);
+        arpLaneTargetBox.setSelectedId (el->arpLaneTarget == "drums" ? 2
+                                   : el->arpLaneTarget == "oneShots" ? 3
+                                   : el->arpLaneTarget == "loops" ? 4
+                                   : el->arpLaneTarget == "samples" ? 5 : 1,
+                                   juce::dontSendNotification);
+        arpLaneRootNoteSlider.setValue (juce::jlimit (0, 127, el->arpLaneRootNote), juce::dontSendNotification);
+        arpLaneSampleSlotsSlider.setValue (juce::jlimit (1, 64, el->arpLaneSampleSlots), juce::dontSendNotification);
+        lblArpLaneRootNote.setText ("Base " + noteNameFor (el->arpLaneRootNote), juce::dontSendNotification);
         mixerModeBox.setSelectedId (el->mixerMode == "layers" ? 2
                                   : el->mixerMode == "parameters" ? 3 : 1,
                                   juce::dontSendNotification);
@@ -2178,6 +2247,12 @@ namespace patchcraft
             el->arpLaneSteps = juce::jlimit (1, 128, juce::roundToInt (arpLaneStepsSlider.getValue()));
             el->arpLaneMode = arpLaneModeBox.getSelectedId() == 2 ? "velocity"
                             : arpLaneModeBox.getSelectedId() == 3 ? "trigger" : "bank";
+            el->arpLaneTarget = arpLaneTargetBox.getSelectedId() == 2 ? "drums"
+                              : arpLaneTargetBox.getSelectedId() == 3 ? "oneShots"
+                              : arpLaneTargetBox.getSelectedId() == 4 ? "loops"
+                              : arpLaneTargetBox.getSelectedId() == 5 ? "samples" : "notes";
+            el->arpLaneRootNote = juce::jlimit (0, 127, juce::roundToInt (arpLaneRootNoteSlider.getValue()));
+            el->arpLaneSampleSlots = juce::jlimit (1, 64, juce::roundToInt (arpLaneSampleSlotsSlider.getValue()));
         }
 
         if (el->type == ElementType::Mixer)
@@ -2522,6 +2597,134 @@ namespace patchcraft
         blocks.push_back (std::move (block));
         owner.getProject().getDspGraph().userConfigured = true;
         return blocks.back();
+    }
+
+    DspBlock* InspectorPanel::findMidiPlaygroundBlock()
+    {
+        for (auto& block : owner.getProject().getDspGraph().blocks)
+            if (isMidiPlaygroundBlock (block))
+                return &block;
+        return nullptr;
+    }
+
+    DspBlock& InspectorPanel::ensureMidiPlaygroundBlock()
+    {
+        if (auto* existing = findMidiPlaygroundBlock())
+            return *existing;
+
+        DspBlock block;
+        block.section = "mod";
+        block.type = "midiPlayground";
+        block.name = "MIDI Playground";
+        block.targetId = "midiOut";
+        block.enabled = true;
+
+        auto idAvailable = [this] (const juce::String& id)
+        {
+            for (const auto& existing : owner.getProject().getDspGraph().blocks)
+                if (existing.id == id)
+                    return false;
+            return true;
+        };
+
+        block.id = "midi_playground";
+        int suffix = 2;
+        while (! idAvailable (block.id))
+            block.id = "midi_playground_" + juce::String (suffix++);
+
+        block.values["rate"] = 1.0f;
+        block.values["sync"] = 1.0f;
+        block.values["arpSteps"] = 16.0f;
+        block.values["arpGate"] = 0.58f;
+        block.values["arpOctaves"] = 1.0f;
+        block.values["arpSwing"] = 0.0f;
+        block.values["mpScaleType"] = 0.0f;
+        block.values["mpChordMode"] = 0.0f;
+        block.values["mpChordSize"] = 1.0f;
+        block.values["mpProbability"] = 1.0f;
+        block.values["enabled"] = 1.0f;
+
+        auto& blocks = owner.getProject().getDspGraph().blocks;
+        blocks.push_back (std::move (block));
+        owner.getProject().getDspGraph().userConfigured = true;
+        return blocks.back();
+    }
+
+    void InspectorPanel::writeArpLaneSampleTargetFromUi (bool applyToBank)
+    {
+        if (inhibitCallbacks) return;
+
+        auto* el = owner.getProject().getLayout().find (owner.getSelectedElementId());
+        if (el == nullptr || el->type != ElementType::ArpLane)
+            return;
+
+        el->arpLaneIndex = juce::jlimit (0, 15, juce::roundToInt (arpLaneIndexSlider.getValue()) - 1);
+        el->arpLaneSteps = juce::jlimit (1, 128, juce::roundToInt (arpLaneStepsSlider.getValue()));
+        el->arpLaneMode = arpLaneModeBox.getSelectedId() == 2 ? "velocity"
+                        : arpLaneModeBox.getSelectedId() == 3 ? "trigger" : "bank";
+        el->arpLaneTarget = arpLaneTargetBox.getSelectedId() == 2 ? "drums"
+                          : arpLaneTargetBox.getSelectedId() == 3 ? "oneShots"
+                          : arpLaneTargetBox.getSelectedId() == 4 ? "loops"
+                          : arpLaneTargetBox.getSelectedId() == 5 ? "samples" : "notes";
+        el->arpLaneRootNote = juce::jlimit (0, 127, juce::roundToInt (arpLaneRootNoteSlider.getValue()));
+        el->arpLaneSampleSlots = juce::jlimit (1, 64, juce::roundToInt (arpLaneSampleSlotsSlider.getValue()));
+        lblArpLaneRootNote.setText ("Base " + noteNameFor (el->arpLaneRootNote), juce::dontSendNotification);
+
+        if (applyToBank)
+        {
+            auto& block = ensureMidiPlaygroundBlock();
+            const int bank = juce::jlimit (0, MidiPlaygroundPattern::kPhraseBankCount - 1, el->arpLaneIndex);
+            const int steps = juce::jlimit (1, 128, el->arpLaneSteps);
+            const int slots = juce::jlimit (1, 64, el->arpLaneSampleSlots);
+            const int rootNote = juce::jlimit (0, 127, el->arpLaneRootNote);
+            const bool loopSlices = el->arpLaneTarget == "loops";
+            const bool fixedSampleNotes = el->arpLaneTarget == "drums" || el->arpLaneTarget == "oneShots";
+            const bool pitchedSamples = el->arpLaneTarget == "samples";
+
+            block.type = "midiPlayground";
+            block.section = "mod";
+            block.enabled = true;
+            block.values["arpSteps"] = (float) steps;
+            block.values["arpPattern"] = 0.0f;
+            block.values["arpOctaves"] = 1.0f;
+            block.values["mpScaleType"] = 0.0f;
+            block.values["mpChordMode"] = 0.0f;
+            block.values["mpChordSize"] = 1.0f;
+            block.values["mpSampleControl"] = loopSlices ? 1.0f : 0.0f;
+            block.values["mpSampleSliceCount"] = (float) slots;
+
+            for (int step = 0; step < steps; ++step)
+            {
+                const int slot = step % slots;
+                float noteOffset = 0.0f;
+                if (fixedSampleNotes)
+                    noteOffset = (float) (rootNote + slot - 60);
+                else if (pitchedSamples)
+                    noteOffset = (float) slot;
+
+                const auto suffix = juce::String (step);
+                block.values["arpNote" + suffix] = noteOffset;
+                block.values["mpStep" + suffix + "On"] = 1.0f;
+                block.values["mpVelocity" + suffix] = 0.82f;
+                block.values["mpGate" + suffix] = loopSlices ? 0.96f : 0.58f;
+                block.values["mpStepProb" + suffix] = 1.0f;
+                block.values["mpSampleSlice" + suffix] = loopSlices ? (float) slot : -1.0f;
+                block.values["mpStepDiv" + suffix] = 1.0f;
+                block.values["mpStepTranspose" + suffix] = 0.0f;
+                block.values["mpStepChordMode" + suffix] = -1.0f;
+                block.values["mpStepChordSize" + suffix] = -1.0f;
+                block.values["mpStepTie" + suffix] = loopSlices ? 1.0f : 0.0f;
+            }
+
+            MidiPlaygroundPattern::storeActiveBank (block, bank);
+            block.metadata["arpLane" + juce::String (bank + 1) + "Target"] = el->arpLaneTarget;
+            block.metadata["arpLane" + juce::String (bank + 1) + "RootNote"] = juce::String (rootNote);
+            block.metadata["arpLane" + juce::String (bank + 1) + "Slots"] = juce::String (slots);
+            owner.getProject().getDspGraph().userConfigured = true;
+        }
+
+        owner.propagateLinkedElementChange (el->id);
+        owner.getProject().notifyChanged();
     }
 
     juce::String InspectorPanel::drumPrefix (int pattern, int track, int step) const

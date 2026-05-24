@@ -611,6 +611,9 @@ namespace patchcraft
             obj->setProperty ("arpLaneIndex", arpLaneIndex);
             obj->setProperty ("arpLaneSteps", arpLaneSteps);
             obj->setProperty ("arpLaneMode",  arpLaneMode);
+            obj->setProperty ("arpLaneTarget", arpLaneTarget);
+            obj->setProperty ("arpLaneRootNote", arpLaneRootNote);
+            obj->setProperty ("arpLaneSampleSlots", arpLaneSampleSlots);
         }
         if (type == ElementType::Mixer)
         {
@@ -696,6 +699,12 @@ namespace patchcraft
                 e.arpLaneSteps = juce::jlimit (1, 128, (int) o->getProperty ("arpLaneSteps"));
             if (o->hasProperty ("arpLaneMode"))
                 e.arpLaneMode = o->getProperty ("arpLaneMode").toString();
+            if (o->hasProperty ("arpLaneTarget"))
+                e.arpLaneTarget = o->getProperty ("arpLaneTarget").toString();
+            if (o->hasProperty ("arpLaneRootNote"))
+                e.arpLaneRootNote = juce::jlimit (0, 127, (int) o->getProperty ("arpLaneRootNote"));
+            if (o->hasProperty ("arpLaneSampleSlots"))
+                e.arpLaneSampleSlots = juce::jlimit (1, 64, (int) o->getProperty ("arpLaneSampleSlots"));
             if (o->hasProperty ("mixerChannels"))
                 e.mixerChannels = juce::jlimit (1, 16, (int) o->getProperty ("mixerChannels"));
             if (o->hasProperty ("mixerMode"))
@@ -714,6 +723,8 @@ namespace patchcraft
             if (e.audioReactiveMode.isEmpty()) e.audioReactiveMode = "level";
             if (e.animationMode.isEmpty()) e.animationMode = "none";
             if (e.arpLaneMode.isEmpty()) e.arpLaneMode = "bank";
+            if (e.arpLaneTarget.isEmpty()) e.arpLaneTarget = "notes";
+            e.arpLaneSampleSlots = juce::jlimit (1, 64, e.arpLaneSampleSlots);
             if (e.mixerMode.isEmpty()) e.mixerMode = "auto";
         }
         return e;
