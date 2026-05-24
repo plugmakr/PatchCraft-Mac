@@ -992,6 +992,22 @@ namespace patchcraft
                 }
             }
 
+            void mouseUp (const juce::MouseEvent& event) override
+            {
+                const int index = cardIndexAt (event.getPosition());
+                if (index >= 0 && index < entries.size() && onEntryClicked)
+                    onEntryClicked (entries.getReference (index).folder);
+            }
+
+            void mouseMove (const juce::MouseEvent& event) override
+            {
+                const bool overCard = cardIndexAt (event.getPosition()) >= 0;
+                setMouseCursor (overCard ? juce::MouseCursor::PointingHandCursor
+                                         : juce::MouseCursor::NormalCursor);
+            }
+
+            std::function<void(const juce::File&)> onEntryClicked;
+
             static void drawCard (juce::Graphics& g, const LibraryEntry& entry, juce::Rectangle<int> card)
             {
                 g.setColour (juce::Colour (0xff10141c));
@@ -1043,10 +1059,43 @@ namespace patchcraft
                 g.drawText (entry.category, chip, juce::Justification::centred, true);
             }
 
+            int cardIndexAt (juce::Point<int> point) const
+            {
+                auto content = getLocalBounds().reduced (18).reduced (18).withTrimmedTop (56);
+                if (entries.isEmpty() || ! content.contains (point))
+                    return -1;
+
+                const int gap = 12;
+                const int cardW = juce::jlimit (134, 170, (content.getWidth() - gap * 3) / 4);
+                const int cardH = 156;
+                const int cols = juce::jmax (1, juce::jmin (4, (content.getWidth() + gap) / (cardW + gap)));
+                const int rows = juce::jmax (1, (content.getHeight() + gap) / (cardH + gap));
+                const int maxCards = juce::jmin (entries.size(), cols * rows);
+
+                for (int i = 0; i < maxCards; ++i)
+                {
+                    const int col = i % cols;
+                    const int row = i / cols;
+                    const auto card = juce::Rectangle<int> (content.getX() + col * (cardW + gap),
+                                                            content.getY() + row * (cardH + gap),
+                                                            cardW,
+                                                            cardH);
+                    if (card.contains (point))
+                        return i;
+                }
+                return -1;
+            }
+
             juce::Array<LibraryEntry> entries;
         };
 
         auto* panel = new LibraryPreview (scanner.getEntries());
+        panel->onEntryClicked = [this, panel] (const juce::File& packFolder)
+        {
+            if (auto* dialog = panel->findParentComponentOfClass<juce::DialogWindow>())
+                dialog->exitModalState (0);
+            owner.loadFactoryDemo (packFolder);
+        };
         juce::DialogWindow::LaunchOptions options;
         options.dialogTitle = "Player Library";
         options.dialogBackgroundColour = PatchCraftLookAndFeel::bg();

@@ -246,6 +246,10 @@ namespace patchcraft
         styleLabel (lblDrumPadFxAmount, "Pad FX Amt");
         styleLabel (lblDrumCellFxTarget, "Cell FX");
         styleLabel (lblDrumCellFxAmount, "Cell FX Amt");
+        styleLabel (lblArpLane,        "ARP LANE", juce::Justification::centredLeft, 11.0f, true);
+        styleLabel (lblArpLaneIndex,   "Lane Bank");
+        styleLabel (lblArpLaneSteps,   "Steps");
+        styleLabel (lblArpLaneMode,    "Mode");
         styleLabel (lblMixer,           "MIXER", juce::Justification::centredLeft, 11.0f, true);
         styleLabel (lblMixerMode,       "Mode");
         styleLabel (lblMixerChannels,   "Channels");
@@ -286,6 +290,7 @@ namespace patchcraft
                          &lblDrumCell, &lblDrumVelocity, &lblDrumGate, &lblDrumProbability,
                           &lblDrumDivision, &lblDrumPadFxTarget, &lblDrumPadFxAmount,
                           &lblDrumCellFxTarget, &lblDrumCellFxAmount,
+                          &lblArpLane, &lblArpLaneIndex, &lblArpLaneSteps, &lblArpLaneMode,
                           &lblMixer, &lblMixerMode, &lblMixerChannels, &lblMixerLabels,
                           &lblMixerVolumes, &lblMixerPans, &lblMixerMutes, &lblMixerSolos,
                           &lblMacroEditor, &lblMacroTargets, &lblModMatrixEditor, &lblModRoutes,
@@ -295,7 +300,7 @@ namespace patchcraft
                           &lblGranularTexture })
         {
             addAndMakeVisible (*l);
-            if (l == &lblDrumGrid || l == &lblMixer || l == &lblMacroEditor
+            if (l == &lblDrumGrid || l == &lblArpLane || l == &lblMixer || l == &lblMacroEditor
                 || l == &lblModMatrixEditor || l == &lblGranularEditor || l == &lblContainerManager)
                 l->setInterceptsMouseClicks (false, false);
         }
@@ -848,6 +853,31 @@ namespace patchcraft
         drumDuplicatePatternBtn.onClick = [this] { duplicateCurrentDrumPatternToNext(); };
         drumOpenPerformanceBtn.onClick = [this] { owner.setBottomTab (BottomPanel::Page::MidiPlayground); };
 
+        arpLaneIndexSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+        arpLaneIndexSlider.setTextBoxStyle (juce::Slider::TextBoxRight, true, 48, 22);
+        arpLaneIndexSlider.setRange (1.0, 16.0, 1.0);
+        arpLaneIndexSlider.setTooltip ("MIDI Playground phrase bank controlled by this Arp Lane. CircleSEQ lanes use banks 1-5.");
+        addAndMakeVisible (arpLaneIndexSlider);
+
+        arpLaneStepsSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+        arpLaneStepsSlider.setTextBoxStyle (juce::Slider::TextBoxRight, true, 48, 22);
+        arpLaneStepsSlider.setRange (1.0, 128.0, 1.0);
+        arpLaneStepsSlider.setTooltip ("Default number of visible steps for this lane when the DSP bank has not overridden it.");
+        addAndMakeVisible (arpLaneStepsSlider);
+
+        arpLaneModeBox.addItem ("Phrase bank", 1);
+        arpLaneModeBox.addItem ("Velocity lane", 2);
+        arpLaneModeBox.addItem ("Trigger lane", 3);
+        arpLaneModeBox.setTooltip ("Phrase bank selects/edit MIDI Playground banks. Velocity and Trigger are authoring modes for lane-style performance surfaces.");
+        addAndMakeVisible (arpLaneModeBox);
+
+        arpLaneOpenPerformanceBtn.setTooltip ("Open MIDI Playground to edit this lane's notes, divisions, gate, swing, probability, and bank behavior.");
+        arpLaneOpenPerformanceBtn.onClick = [this] { owner.setBottomTab (BottomPanel::Page::MidiPlayground); };
+        addAndMakeVisible (arpLaneOpenPerformanceBtn);
+        arpLaneIndexSlider.onValueChange = rewrite;
+        arpLaneStepsSlider.onValueChange = rewrite;
+        arpLaneModeBox.onChange = rewrite;
+
         mixerModeBox.addItem ("Auto - layers when available", 1);
         mixerModeBox.addItem ("Layers only", 2);
         mixerModeBox.addItem ("Parameter channels", 3);
@@ -1088,6 +1118,7 @@ namespace patchcraft
         const bool isLabel  = (type == ElementType::Label);
         const bool isShape  = (type == ElementType::Shape || type == ElementType::Panel);
         const bool isDrumGrid = (type == ElementType::DrumGrid);
+        const bool isArpLane = (type == ElementType::ArpLane);
         const bool isMixer = (type == ElementType::Mixer);
         const bool isMacroControl = (type == ElementType::MacroControl);
         const bool isModMatrix = (type == ElementType::ModMatrix);
@@ -1110,6 +1141,7 @@ namespace patchcraft
                                  || type == ElementType::Shape || type == ElementType::Button
                                  || type == ElementType::Toggle || type == ElementType::Dropdown
                                   || type == ElementType::DrumGrid || type == ElementType::DrumPad
+                                  || type == ElementType::ArpLane
                                   || type == ElementType::PadGrid || type == ElementType::Mixer
                                   || type == ElementType::MacroControl || type == ElementType::ModMatrix
                                   || type == ElementType::GranularField);
@@ -1370,7 +1402,7 @@ namespace patchcraft
             layoutColourRow (r, lblAccentColour, accentColourEdit, accentColourButton);
         }
 
-        const bool showSpecialSection = isDrumGrid || isMixer || isMacroControl || isModMatrix
+        const bool showSpecialSection = isDrumGrid || isArpLane || isMixer || isMacroControl || isModMatrix
                                      || isGranularField || isTabPanel || showContainerManager;
         const bool showAdvancedControls = showSpecialSection && isSectionOpen (InspectorSection::Advanced);
         lblSpecialSection.setVisible (showSpecialSection);
@@ -1452,6 +1484,30 @@ namespace patchcraft
                     drumPastePatternBtn.setBounds (row.removeFromLeft (buttonW).reduced (2));
                     drumDuplicatePatternBtn.setBounds (row.reduced (2));
                 }
+            }
+        }
+
+        for (auto* component : { static_cast<juce::Component*> (&arpLaneIndexSlider),
+                                 static_cast<juce::Component*> (&arpLaneStepsSlider),
+                                 static_cast<juce::Component*> (&arpLaneModeBox),
+                                 static_cast<juce::Component*> (&arpLaneOpenPerformanceBtn) })
+            component->setVisible (isArpLane && showAdvancedControls && isSectionOpen (InspectorSection::ArpLane));
+        for (auto* label : { &lblArpLane, &lblArpLaneIndex, &lblArpLaneSteps, &lblArpLaneMode })
+            label->setVisible (isArpLane && showAdvancedControls
+                               && (label == &lblArpLane || isSectionOpen (InspectorSection::ArpLane)));
+
+        if (isArpLane && showAdvancedControls)
+        {
+            r.removeFromTop (6);
+            sectionHeader (lblArpLane, InspectorSection::ArpLane, "ARP LANE / CIRCLESEQ BANK");
+            if (isSectionOpen (InspectorSection::ArpLane))
+            {
+                layoutRow (r, lblArpLaneIndex, &arpLaneIndexSlider);
+                layoutRow (r, lblArpLaneSteps, &arpLaneStepsSlider);
+                layoutRow (r, lblArpLaneMode, &arpLaneModeBox);
+                auto row = r.removeFromTop (34);
+                row.removeFromLeft (110);
+                arpLaneOpenPerformanceBtn.setBounds (row.reduced (4, 4));
             }
         }
 
@@ -1763,6 +1819,10 @@ namespace patchcraft
             static_cast<juce::Component*> (&drumPastePatternBtn),
             static_cast<juce::Component*> (&drumDuplicatePatternBtn),
             static_cast<juce::Component*> (&drumOpenPerformanceBtn),
+            static_cast<juce::Component*> (&arpLaneIndexSlider),
+            static_cast<juce::Component*> (&arpLaneStepsSlider),
+            static_cast<juce::Component*> (&arpLaneModeBox),
+            static_cast<juce::Component*> (&arpLaneOpenPerformanceBtn),
             static_cast<juce::Component*> (&mixerModeBox),
             static_cast<juce::Component*> (&mixerChannelsSlider),
             static_cast<juce::Component*> (&mixerLabelsEdit),
@@ -1902,6 +1962,11 @@ namespace patchcraft
         lblAccentColour.setTooltip (accentTip);
         accentColourEdit.setTooltip (accentTip);
         accentColourButton.setTooltip (accentTip);
+        arpLaneIndexSlider.setValue (juce::jlimit (1, 16, el->arpLaneIndex + 1), juce::dontSendNotification);
+        arpLaneStepsSlider.setValue (juce::jlimit (1, 128, el->arpLaneSteps), juce::dontSendNotification);
+        arpLaneModeBox.setSelectedId (el->arpLaneMode == "velocity" ? 2
+                                   : el->arpLaneMode == "trigger" ? 3 : 1,
+                                   juce::dontSendNotification);
         mixerModeBox.setSelectedId (el->mixerMode == "layers" ? 2
                                   : el->mixerMode == "parameters" ? 3 : 1,
                                   juce::dontSendNotification);
@@ -2105,6 +2170,14 @@ namespace patchcraft
             block.values["dmTracks"] = (float) el->drumTracks;
             block.values["dmSteps"] = (float) el->drumSteps;
             block.values["dmTransport"] = 1.0f;
+        }
+
+        if (el->type == ElementType::ArpLane)
+        {
+            el->arpLaneIndex = juce::jlimit (0, 15, juce::roundToInt (arpLaneIndexSlider.getValue()) - 1);
+            el->arpLaneSteps = juce::jlimit (1, 128, juce::roundToInt (arpLaneStepsSlider.getValue()));
+            el->arpLaneMode = arpLaneModeBox.getSelectedId() == 2 ? "velocity"
+                            : arpLaneModeBox.getSelectedId() == 3 ? "trigger" : "bank";
         }
 
         if (el->type == ElementType::Mixer)

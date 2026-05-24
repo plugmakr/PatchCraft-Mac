@@ -149,6 +149,13 @@ namespace patchcraft
         juce::TextButton drumDuplicatePatternBtn { "Dup Next" };
         juce::TextButton drumOpenPerformanceBtn { "Full Editor" };
 
+        // Arp lane authoring (Arp Lane only).
+        juce::Label lblArpLane, lblArpLaneIndex, lblArpLaneSteps, lblArpLaneMode;
+        juce::Slider arpLaneIndexSlider;
+        juce::Slider arpLaneStepsSlider;
+        juce::ComboBox arpLaneModeBox;
+        juce::TextButton arpLaneOpenPerformanceBtn { "Edit Bank" };
+
         // Mixer authoring (Mixer only).
         juce::Label lblMixer, lblMixerMode, lblMixerChannels, lblMixerLabels,
                     lblMixerVolumes, lblMixerPans, lblMixerMutes, lblMixerSolos;
@@ -202,6 +209,7 @@ namespace patchcraft
             Advanced,
             Actions,
             DrumGrid,
+            ArpLane,
             Mixer,
             Macro,
             ModMatrix,
@@ -211,7 +219,7 @@ namespace patchcraft
         };
 
         std::array<bool, (size_t) InspectorSection::Count> sectionOpen {{
-            true, true, true, true, true, true, true, true, true, true, true
+            true, true, true, true, true, true, true, true, true, true, true, true
         }};
         std::array<juce::Rectangle<int>, (size_t) InspectorSection::Count> sectionHeaderBounds {};
 
