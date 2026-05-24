@@ -15,6 +15,46 @@
       "locked": true
     },
     {
+      "id": "player_titlebar_mock",
+      "type": "shape",
+      "shapeKind": "roundedRect",
+      "semanticRole": "playerTitleBar",
+      "x": 40,
+      "y": 42,
+      "width": 1200,
+      "height": 38,
+      "backgroundColour": "cc07090c",
+      "borderColour": "6658f0c8",
+      "strokeWidth": 1.0,
+      "cornerRadius": 10,
+      "locked": true
+    },
+    {
+      "id": "player_titlebar_artwork",
+      "type": "image",
+      "asset": "assets/thumbnail.png",
+      "semanticRole": "playerTitleBarArtwork",
+      "x": 56,
+      "y": 46,
+      "width": 30,
+      "height": 30,
+      "cornerRadius": 5,
+      "locked": true
+    },
+    {
+      "id": "player_titlebar_spec",
+      "type": "label",
+      "semanticRole": "playerTitleBarArtworkSpec",
+      "x": 98,
+      "y": 47,
+      "width": 740,
+      "height": 28,
+      "label": "Player title bar artwork: 30 x 30 display inside 46px title bar  |  source: libraryThumbnail 300 x 200",
+      "textColour": "ffdce3ea",
+      "labelSize": 11,
+      "locked": true
+    },
+    {
       "id": "tabs",
       "type": "tabPanel",
       "x": 370,
@@ -51,7 +91,7 @@
       "id": "player_artwork",
       "type": "image",
       "asset": "assets/thumbnail.png",
-      "semanticRole": "playerArtwork",
+      "semanticRole": "playerLibraryArtwork",
       "x": 76,
       "y": 124,
       "width": 390,
@@ -82,7 +122,7 @@
       "y": 128,
       "width": 270,
       "height": 22,
-      "label": "LIBRARY ARTWORK 300 x 200",
+      "label": "LIBRARY CARD ARTWORK 300 x 200",
       "textColour": "ffd6a45a",
       "labelSize": 11,
       "locked": true
@@ -108,7 +148,7 @@
       "y": 206,
       "width": 560,
       "height": 22,
-      "label": "SAMPLE INSTRUMENT  |  PATCHCRAFT",
+      "label": "SAMPLE INSTRUMENT  |  PATCHCRAFT LIBRARY PREVIEW",
       "textColour": "ffb8c8d6",
       "labelSize": 12,
       "locked": true
@@ -134,7 +174,7 @@
       "y": 318,
       "width": 500,
       "height": 24,
-      "label": "Artwork slot: x76 y124  w390 h260  (3:2 Player top section)",
+      "label": "Library preview: x76 y124  w390 h260  (3:2 mock)",
       "textColour": "ff8fa0ad",
       "labelSize": 11,
       "locked": true

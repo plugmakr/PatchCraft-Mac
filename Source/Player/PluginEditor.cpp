@@ -11,6 +11,9 @@ namespace patchcraft
     namespace
     {
         static constexpr int kPlayerMenuBarHeight = 46;
+        static constexpr int kPlayerTitleBarArtworkSize = 30;
+        static constexpr int kPlayerTitleBarArtworkSourceWidth = 300;
+        static constexpr int kPlayerTitleBarArtworkSourceHeight = 200;
 
         static juce::String playerInstrumentName (const PatchCraftPack* pack)
         {
@@ -2652,36 +2655,52 @@ namespace patchcraft
         g.setColour (PatchCraftLookAndFeel::borderSoft());
         g.drawHorizontalLine (bar.getBottom() - 1, (float) bar.getX(), (float) bar.getRight());
 
-        auto brand = bar.reduced (12, 6).removeFromLeft (bar.getWidth() < 980 ? 150 : 220);
-        auto logoBounds = brand.removeFromLeft (30);
+        const auto artworkBounds = juce::Rectangle<int> (bar.getX() + 12,
+                                                         bar.getY() + (bar.getHeight() - kPlayerTitleBarArtworkSize) / 2,
+                                                         kPlayerTitleBarArtworkSize,
+                                                         kPlayerTitleBarArtworkSize);
+        auto brand = bar.reduced (12, 6)
+                        .withTrimmedLeft (kPlayerTitleBarArtworkSize + 8)
+                        .removeFromLeft (bar.getWidth() < 980 ? 112 : 178);
         bool drewLogo = false;
         if (const auto* pack = proc.getPack())
         {
-            if (pack->manifest.playerLogoImage.isNotEmpty())
+            auto artworkPath = pack->manifest.playerLogoImage;
+            if (artworkPath.isEmpty())
+                artworkPath = pack->manifest.libraryThumbnail;
+
+            if (artworkPath.isNotEmpty())
             {
-                const auto logoFile = juce::File::isAbsolutePath (pack->manifest.playerLogoImage)
-                    ? juce::File (pack->manifest.playerLogoImage)
-                    : pack->rootFolder.getChildFile (pack->manifest.playerLogoImage);
+                const auto logoFile = juce::File::isAbsolutePath (artworkPath)
+                    ? juce::File (artworkPath)
+                    : pack->rootFolder.getChildFile (artworkPath);
                 if (auto logo = assets.loadImage (logoFile); logo.isValid())
                 {
-                    g.drawImageWithin (logo, logoBounds.getX(), logoBounds.getY(),
-                                       logoBounds.getWidth(), logoBounds.getHeight(),
-                                       juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize);
+                    g.saveState();
+                    juce::Path clip;
+                    clip.addRoundedRectangle (artworkBounds.toFloat(), 5.0f);
+                    g.reduceClipRegion (clip);
+                    g.drawImage (logo, artworkBounds.toFloat(), juce::RectanglePlacement::fillDestination);
+                    g.restoreState();
+                    g.setColour (PatchCraftLookAndFeel::borderSoft().withAlpha (0.75f));
+                    g.drawRoundedRectangle (artworkBounds.toFloat(), 5.0f, 1.0f);
                     drewLogo = true;
                 }
             }
         }
         if (! drewLogo)
-            PatchCraftLookAndFeel::drawHexLogo (g, logoBounds.toFloat().reduced (1.0f));
+            PatchCraftLookAndFeel::drawHexLogo (g, artworkBounds.toFloat().reduced (1.0f));
 
-        brand.removeFromLeft (8);
         const auto* pack = proc.getPack();
         const auto brandName = pack != nullptr
             ? playerInstrumentName (pack)
             : juce::String ("PATCHCRAFT");
         const auto tagline = pack != nullptr && pack->manifest.playerTagline.isNotEmpty()
             ? pack->manifest.playerTagline
-            : juce::String ("Player");
+            : juce::String ("Player title art ")
+                + juce::String (kPlayerTitleBarArtworkSize) + "x" + juce::String (kPlayerTitleBarArtworkSize)
+                + " from " + juce::String (kPlayerTitleBarArtworkSourceWidth) + "x"
+                + juce::String (kPlayerTitleBarArtworkSourceHeight);
         g.setColour (PatchCraftLookAndFeel::textBright());
         g.setFont (juce::FontOptions (15.0f).withStyle ("bold"));
         g.drawText (brandName, brand.removeFromTop (19), juce::Justification::centredLeft, true);

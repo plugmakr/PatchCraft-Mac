@@ -85,6 +85,37 @@ namespace patchcraft
               e.x = 0; e.y = 0; e.width = canvas.width; e.height = canvas.height;
               e.locked = true; layout.add (e); }
 
+            // Runtime Player title-bar artwork designation. The title bar is
+            // hard-coded Player chrome above the canvas; this mock strip shows
+            // the exact displayed slot and the source thumbnail it pulls from.
+            { LayoutElement e; e.type = ElementType::Shape; e.id = "player_titlebar_mock";
+              e.semanticRole = "playerTitleBar";
+              e.x = 40; e.y = 42; e.width = 1200; e.height = 38;
+              e.shapeKind = "roundedRect";
+              e.cornerRadius = 10.0f;
+              e.backgroundColour = juce::Colour (0xcc07090c);
+              e.borderColour = juce::Colour (0x6658f0c8);
+              e.strokeWidth = 1.0f;
+              e.locked = true;
+              layout.add (e); }
+
+            { LayoutElement e; e.type = ElementType::Image; e.id = "player_titlebar_artwork";
+              e.asset = "assets/thumbnail.png";
+              e.semanticRole = "playerTitleBarArtwork";
+              e.x = 56; e.y = 46; e.width = 30; e.height = 30;
+              e.cornerRadius = 5.0f;
+              e.locked = true;
+              layout.add (e); }
+
+            { LayoutElement e; e.type = ElementType::Label; e.id = "player_titlebar_spec";
+              e.semanticRole = "playerTitleBarArtworkSpec";
+              e.x = 98; e.y = 47; e.width = 650; e.height = 28;
+              e.label = "Player title bar artwork: 30 x 30 display inside 46px title bar  |  source: libraryThumbnail 300 x 200";
+              e.textColour = juce::Colour (0xffdce3ea);
+              e.labelSize = 11.0f;
+              e.locked = true;
+              layout.add (e); }
+
             // Hero artwork window. This is a styled well instead of a second
             // image layer so generated templates do not cover the designed
             // background wells or add placeholder "Artwork" text.
@@ -97,12 +128,12 @@ namespace patchcraft
               e.strokeWidth = 1.0f;
               layout.add (e); }
 
-            // Player top-section artwork mock: a real 3:2 library-art slot
+            // Player library artwork mock: a real 3:2 library-art slot
             // with companion product-info labels so templates show how the
-            // buyer-facing Player header will read before final art is dropped in.
+            // buyer-facing Library card will read before final art is dropped in.
             { LayoutElement e; e.type = ElementType::Image; e.id = "player_artwork";
               e.asset = "assets/thumbnail.png";
-              e.semanticRole = "playerArtwork";
+              e.semanticRole = "playerLibraryArtwork";
               e.x = 76; e.y = 124; e.width = 390; e.height = 260;
               e.cornerRadius = 16.0f;
               e.locked = true;
@@ -131,7 +162,7 @@ namespace patchcraft
             { LayoutElement e; e.type = ElementType::Label; e.id = "player_artwork_badge";
               e.semanticRole = "playerArtworkInfo";
               e.x = 510; e.y = 128; e.width = 250; e.height = 22;
-              e.label = "LIBRARY ARTWORK 300 x 200";
+              e.label = "LIBRARY CARD ARTWORK 300 x 200";
               e.textColour = juce::Colour (0xff58f0c8);
               e.labelSize = 11.0f;
               e.locked = true;
@@ -149,7 +180,7 @@ namespace patchcraft
             { LayoutElement e; e.type = ElementType::Label; e.id = "player_product_kind";
               e.semanticRole = "playerHeaderMetadata";
               e.x = 512; e.y = 206; e.width = 420; e.height = 22;
-              e.label = productKind + "  |  PLAYER TOP SECTION";
+              e.label = productKind + "  |  PLAYER LIBRARY PREVIEW";
               e.textColour = juce::Colour (0xffb8c8d6);
               e.labelSize = 12.0f;
               e.locked = true;
@@ -158,7 +189,7 @@ namespace patchcraft
             { LayoutElement e; e.type = ElementType::Label; e.id = "player_product_description";
               e.semanticRole = "playerHeaderDescription";
               e.x = 512; e.y = 238; e.width = 590; e.height = 44;
-              e.label = "Mock product info preview: final pack art, title, category, and creator metadata are reviewed here before export.";
+              e.label = "Mock product info preview: final library art, title, category, and creator metadata are reviewed here before export.";
               e.textColour = juce::Colour (0xffdce3ea);
               e.labelSize = 13.0f;
               e.locked = true;
@@ -167,7 +198,7 @@ namespace patchcraft
             { LayoutElement e; e.type = ElementType::Label; e.id = "player_artwork_dimensions";
               e.semanticRole = "playerArtworkSpec";
               e.x = 512; e.y = 318; e.width = 420; e.height = 24;
-              e.label = "Artwork slot: x76 y124  w390 h260  (3:2)";
+              e.label = "Library preview: x76 y124  w390 h260  (3:2 mock)";
               e.textColour = juce::Colour (0xff8fa0ad);
               e.labelSize = 11.0f;
               e.locked = true;

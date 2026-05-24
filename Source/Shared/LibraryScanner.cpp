@@ -17,6 +17,49 @@ namespace patchcraft
             }
         };
 
+        auto addPackRootsNear = [&] (juce::File anchor)
+        {
+            if (anchor == juce::File())
+                return;
+
+            auto dir = anchor.isDirectory() ? anchor : anchor.getParentDirectory();
+            for (int depth = 0; depth < 8 && dir != juce::File(); ++depth)
+            {
+                const auto demos = dir.getChildFile ("FactoryDemos");
+                const auto library = dir.getChildFile ("Library");
+                const bool looksLikePatchCraftPayload = demos.isDirectory()
+                    || dir.getChildFile ("PlayerPlugins").isDirectory()
+                    || dir.getFileName().containsIgnoreCase ("PatchCraft");
+
+                addIfDirectory (demos);
+                if (looksLikePatchCraftPayload)
+                {
+                    addIfDirectory (library);
+                    addIfDirectory (library.getChildFile ("Templates"));
+                    addIfDirectory (library.getChildFile ("Instruments"));
+                }
+
+                if (dir.hasFileExtension (".app"))
+                {
+                    const auto macOS = dir.getChildFile ("Contents").getChildFile ("MacOS");
+                    const auto appDemos = macOS.getChildFile ("FactoryDemos");
+                    const auto appLibrary = macOS.getChildFile ("Library");
+                    addIfDirectory (appDemos);
+                    if (appDemos.isDirectory() || appLibrary.getChildFile ("Templates").isDirectory())
+                    {
+                        addIfDirectory (appLibrary);
+                        addIfDirectory (appLibrary.getChildFile ("Templates"));
+                        addIfDirectory (appLibrary.getChildFile ("Instruments"));
+                    }
+                }
+
+                const auto parent = dir.getParentDirectory();
+                if (parent == dir)
+                    break;
+                dir = parent;
+            }
+        };
+
         const auto documentsPatchCraft = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
             .getChildFile ("PatchCraft");
         addIfDirectory (documentsPatchCraft.getChildFile ("Library"));
@@ -33,16 +76,13 @@ namespace patchcraft
         addIfDirectory (appDataPatchCraft.getChildFile ("Instruments"));
         addIfDirectory (appDataPatchCraft.getChildFile ("Packs"));
 
-        const auto app = juce::File::getSpecialLocation (juce::File::currentApplicationFile);
-        const auto appDir = app.isDirectory() ? app : app.getParentDirectory();
-        addIfDirectory (appDir.getChildFile ("FactoryDemos"));
-        addIfDirectory (appDir.getChildFile ("Library").getChildFile ("Templates"));
-        addIfDirectory (appDir.getChildFile ("Library").getChildFile ("Instruments"));
+        addPackRootsNear (juce::File::getSpecialLocation (juce::File::currentApplicationFile));
+        addPackRootsNear (juce::File::getSpecialLocation (juce::File::currentExecutableFile));
+        addPackRootsNear (juce::File::getSpecialLocation (juce::File::invokedExecutableFile));
 
         const auto cwd = juce::File::getCurrentWorkingDirectory();
-        addIfDirectory (cwd.getChildFile ("FactoryDemos"));
-        addIfDirectory (cwd.getChildFile ("Library").getChildFile ("Templates"));
-        addIfDirectory (cwd.getChildFile ("Library").getChildFile ("Instruments"));
+        addPackRootsNear (cwd);
+        addIfDirectory (cwd.getChildFile ("Examples").getChildFile ("FactoryDemos"));
     }
 
     LibraryScanner::~LibraryScanner() = default;

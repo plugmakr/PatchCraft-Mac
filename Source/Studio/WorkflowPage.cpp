@@ -49,12 +49,31 @@ namespace patchcraft
                 }
             };
 
-            const auto app = juce::File::getSpecialLocation (juce::File::currentApplicationFile);
-            const auto appDir = app.isDirectory() ? app : app.getParentDirectory();
-            add (appDir.getChildFile ("FactoryDemos"));
+            auto addNear = [&] (juce::File anchor)
+            {
+                if (anchor == juce::File())
+                    return;
+
+                auto dir = anchor.isDirectory() ? anchor : anchor.getParentDirectory();
+                for (int depth = 0; depth < 8 && dir != juce::File(); ++depth)
+                {
+                    add (dir.getChildFile ("FactoryDemos"));
+                    if (dir.hasFileExtension (".app"))
+                        add (dir.getChildFile ("Contents").getChildFile ("MacOS").getChildFile ("FactoryDemos"));
+
+                    const auto parent = dir.getParentDirectory();
+                    if (parent == dir)
+                        break;
+                    dir = parent;
+                }
+            };
+
+            addNear (juce::File::getSpecialLocation (juce::File::currentApplicationFile));
+            addNear (juce::File::getSpecialLocation (juce::File::currentExecutableFile));
+            addNear (juce::File::getSpecialLocation (juce::File::invokedExecutableFile));
 
             const auto cwd = juce::File::getCurrentWorkingDirectory();
-            add (cwd.getChildFile ("FactoryDemos"));
+            addNear (cwd);
             add (cwd.getChildFile ("Examples").getChildFile ("FactoryDemos"));
             return roots;
         }
