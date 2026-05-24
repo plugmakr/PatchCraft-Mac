@@ -1,7 +1,7 @@
-﻿# PatchCraft Studio - Current Ship Handoff
+# PatchCraft Studio - Current Ship Handoff
 
-**Date:** May 21, 2026
-**Status:** Release-candidate bundle and installers created with full release checklist plus smoke tests passing.
+**Date:** May 24, 2026
+**Status:** Release-candidate bundle verified, Windows and macOS repositories synced and pushed.
 
 ## Current Release Candidate
 
