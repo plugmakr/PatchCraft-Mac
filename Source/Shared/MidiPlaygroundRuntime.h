@@ -79,6 +79,7 @@ namespace patchcraft
             std::array<float, kMaxSteps> probabilities {};
             std::array<float, kMaxSteps> sampleSlices {};
             std::array<float, kMaxSteps> stepDivisions {};
+            std::array<float, kMaxSteps> stepDelays {};
             std::array<float, kMaxSteps> stepTransposes {};
             std::array<float, kMaxSteps> stepChordModes {};
             std::array<float, kMaxSteps> stepChordSizes {};
@@ -91,6 +92,7 @@ namespace patchcraft
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankProbabilities {};
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankSampleSlices {};
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankStepDivisions {};
+            std::array<float, kMaxPhraseBanks * kMaxSteps> bankStepDelays {};
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankStepTransposes {};
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankStepChordModes {};
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankStepChordSizes {};

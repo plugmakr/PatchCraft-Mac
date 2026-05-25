@@ -3924,6 +3924,24 @@ namespace patchcraft
             menu.addItem (3, "Bounce");
             menu.addItem (4, "Random");
         }
+        else if (def->id == "arpLaneControlBank")
+        {
+            values = { 0.0f, 1.0f, 2.0f, 3.0f, 4.0f };
+            for (int bank = 0; bank < 5; ++bank)
+                menu.addItem (bank + 1, "Lane " + juce::String (bank + 1));
+        }
+        else if (def->id == "arpLaneSliderRole")
+        {
+            values = { 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f };
+            menu.addItem (1, "Velocity");
+            menu.addItem (2, "Gate");
+            menu.addItem (3, "Probability");
+            menu.addItem (4, "Ratchet");
+            menu.addItem (5, "Mute / Active");
+            menu.addItem (6, "Delay");
+            menu.addItem (7, "Sample Slice");
+            menu.addItem (8, "Transpose");
+        }
         else if (def->id == "granularDirection")
         {
             values = { 0.0f, 1.0f, 2.0f, 3.0f };

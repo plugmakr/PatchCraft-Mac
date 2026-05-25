@@ -22,7 +22,7 @@
         "arpLaneDirection": 3,
         "arpLaneRotate": 3,
         "arpLaneEuclideanPulses": 11,
-        "arpLaneRate": 1.0,
+        "arpLaneRate": 1,
         "arpLaneSwing": 0.14,
         "arpLaneGate": 0.58,
         "arpLaneProbability": 0.88,
@@ -51,7 +51,25 @@
         "chorusMix": 0.16,
         "delayMix": 0.24,
         "reverbMix": 0.28,
-        "outputGainDb": -1.5
+        "outputGainDb": -1.5,
+        "arpLaneControlBank": 0,
+        "arpLaneSliderRole": 0,
+        "arpLaneStep1": 0.98,
+        "arpLaneStep2": 0.62,
+        "arpLaneStep3": 0.82,
+        "arpLaneStep4": 0.48,
+        "arpLaneStep5": 0.9,
+        "arpLaneStep6": 0.62,
+        "arpLaneStep7": 0.74,
+        "arpLaneStep8": 0.86,
+        "arpLaneStep9": 0.98,
+        "arpLaneStep10": 0.52,
+        "arpLaneStep11": 0.7,
+        "arpLaneStep12": 0.62,
+        "arpLaneStep13": 0.92,
+        "arpLaneStep14": 0.78,
+        "arpLaneStep15": 0.62,
+        "arpLaneStep16": 0.86
       }
     },
     {
@@ -59,7 +77,11 @@
       "description": "Reduced density with clearer slot motion and longer gates.",
       "theme": "arp lane",
       "isDefault": false,
-      "tags": [ "arp lane", "sparse", "factory-demo" ],
+      "tags": [
+        "arp lane",
+        "sparse",
+        "factory-demo"
+      ],
       "values": {
         "projectBpm": 116,
         "bpmSync": 1,
@@ -101,7 +123,25 @@
         "chorusMix": 0.2,
         "delayMix": 0.3,
         "reverbMix": 0.34,
-        "outputGainDb": -2
+        "outputGainDb": -2,
+        "arpLaneControlBank": 0,
+        "arpLaneSliderRole": 0,
+        "arpLaneStep1": 0.98,
+        "arpLaneStep2": 0.62,
+        "arpLaneStep3": 0.82,
+        "arpLaneStep4": 0.48,
+        "arpLaneStep5": 0.9,
+        "arpLaneStep6": 0.62,
+        "arpLaneStep7": 0.74,
+        "arpLaneStep8": 0.86,
+        "arpLaneStep9": 0.98,
+        "arpLaneStep10": 0.52,
+        "arpLaneStep11": 0.7,
+        "arpLaneStep12": 0.62,
+        "arpLaneStep13": 0.92,
+        "arpLaneStep14": 0.78,
+        "arpLaneStep15": 0.62,
+        "arpLaneStep16": 0.86
       }
     },
     {
@@ -109,7 +149,11 @@
       "description": "High retrigger pattern for checking lane ratchet editing and display.",
       "theme": "arp lane",
       "isDefault": false,
-      "tags": [ "arp lane", "ratchet", "factory-demo" ],
+      "tags": [
+        "arp lane",
+        "ratchet",
+        "factory-demo"
+      ],
       "values": {
         "projectBpm": 132,
         "bpmSync": 1,
@@ -122,7 +166,7 @@
         "arpLaneDirection": 3,
         "arpLaneRotate": 3,
         "arpLaneEuclideanPulses": 11,
-        "arpLaneRate": 1.0,
+        "arpLaneRate": 1,
         "arpLaneSwing": 0.18,
         "arpLaneGate": 0.46,
         "arpLaneProbability": 0.94,
@@ -151,7 +195,25 @@
         "chorusMix": 0.12,
         "delayMix": 0.18,
         "reverbMix": 0.22,
-        "outputGainDb": -2.4
+        "outputGainDb": -2.4,
+        "arpLaneControlBank": 0,
+        "arpLaneSliderRole": 0,
+        "arpLaneStep1": 0.98,
+        "arpLaneStep2": 0.62,
+        "arpLaneStep3": 0.82,
+        "arpLaneStep4": 0.48,
+        "arpLaneStep5": 0.9,
+        "arpLaneStep6": 0.62,
+        "arpLaneStep7": 0.74,
+        "arpLaneStep8": 0.86,
+        "arpLaneStep9": 0.98,
+        "arpLaneStep10": 0.52,
+        "arpLaneStep11": 0.7,
+        "arpLaneStep12": 0.62,
+        "arpLaneStep13": 0.92,
+        "arpLaneStep14": 0.78,
+        "arpLaneStep15": 0.62,
+        "arpLaneStep16": 0.86
       }
     },
     {
@@ -159,7 +221,11 @@
       "description": "Dense fill layer for checking fill pulse probability and quieter secondary hits.",
       "theme": "arp lane",
       "isDefault": false,
-      "tags": [ "arp lane", "fill", "factory-demo" ],
+      "tags": [
+        "arp lane",
+        "fill",
+        "factory-demo"
+      ],
       "values": {
         "projectBpm": 124,
         "bpmSync": 1,
@@ -172,7 +238,7 @@
         "arpLaneDirection": 3,
         "arpLaneRotate": 3,
         "arpLaneEuclideanPulses": 11,
-        "arpLaneRate": 2.0,
+        "arpLaneRate": 2,
         "arpLaneSwing": 0.04,
         "arpLaneGate": 0.52,
         "arpLaneProbability": 0.8,
@@ -201,7 +267,25 @@
         "chorusMix": 0.22,
         "delayMix": 0.28,
         "reverbMix": 0.3,
-        "outputGainDb": -2
+        "outputGainDb": -2,
+        "arpLaneControlBank": 0,
+        "arpLaneSliderRole": 0,
+        "arpLaneStep1": 0.98,
+        "arpLaneStep2": 0.62,
+        "arpLaneStep3": 0.82,
+        "arpLaneStep4": 0.48,
+        "arpLaneStep5": 0.9,
+        "arpLaneStep6": 0.62,
+        "arpLaneStep7": 0.74,
+        "arpLaneStep8": 0.86,
+        "arpLaneStep9": 0.98,
+        "arpLaneStep10": 0.52,
+        "arpLaneStep11": 0.7,
+        "arpLaneStep12": 0.62,
+        "arpLaneStep13": 0.92,
+        "arpLaneStep14": 0.78,
+        "arpLaneStep15": 0.62,
+        "arpLaneStep16": 0.86
       }
     },
     {
@@ -209,7 +293,11 @@
       "description": "Same single lane with wider modulation, delay, chorus, and reverb sends.",
       "theme": "arp lane",
       "isDefault": false,
-      "tags": [ "arp lane", "fx", "factory-demo" ],
+      "tags": [
+        "arp lane",
+        "fx",
+        "factory-demo"
+      ],
       "values": {
         "projectBpm": 104,
         "bpmSync": 1,
@@ -251,7 +339,25 @@
         "chorusMix": 0.36,
         "delayMix": 0.42,
         "reverbMix": 0.46,
-        "outputGainDb": -3
+        "outputGainDb": -3,
+        "arpLaneControlBank": 0,
+        "arpLaneSliderRole": 0,
+        "arpLaneStep1": 0.98,
+        "arpLaneStep2": 0.62,
+        "arpLaneStep3": 0.82,
+        "arpLaneStep4": 0.48,
+        "arpLaneStep5": 0.9,
+        "arpLaneStep6": 0.62,
+        "arpLaneStep7": 0.74,
+        "arpLaneStep8": 0.86,
+        "arpLaneStep9": 0.98,
+        "arpLaneStep10": 0.52,
+        "arpLaneStep11": 0.7,
+        "arpLaneStep12": 0.62,
+        "arpLaneStep13": 0.92,
+        "arpLaneStep14": 0.78,
+        "arpLaneStep15": 0.62,
+        "arpLaneStep16": 0.86
       }
     }
   ]

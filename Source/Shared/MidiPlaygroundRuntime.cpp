@@ -142,6 +142,7 @@ namespace patchcraft
         settings.probabilities.fill (1.0f);
         settings.sampleSlices.fill (-1.0f);
         settings.stepDivisions.fill (1.0f);
+        settings.stepDelays.fill (0.0f);
         settings.stepTransposes.fill (0.0f);
         settings.stepChordModes.fill (-1.0f);
         settings.stepChordSizes.fill (-1.0f);
@@ -154,6 +155,7 @@ namespace patchcraft
         settings.bankProbabilities.fill (1.0f);
         settings.bankSampleSlices.fill (-1.0f);
         settings.bankStepDivisions.fill (1.0f);
+        settings.bankStepDelays.fill (0.0f);
         settings.bankStepTransposes.fill (0.0f);
         settings.bankStepChordModes.fill (-1.0f);
         settings.bankStepChordSizes.fill (-1.0f);
@@ -287,6 +289,7 @@ namespace patchcraft
                 settings.probabilities[(size_t) step] = juce::jlimit (0.0f, 1.0f, valueForKey (block, "mpStepProb" + juce::String (step), 1.0f));
                 settings.sampleSlices[(size_t) step] = valueForKey (block, "mpSampleSlice" + juce::String (step), -1.0f);
                 settings.stepDivisions[(size_t) step] = (float) juce::jlimit (1, 8, juce::roundToInt (valueForKey (block, "mpStepDiv" + juce::String (step), (float) settings.ratchet)));
+                settings.stepDelays[(size_t) step] = juce::jlimit (0.0f, 0.85f, valueForKey (block, "mpStepDelay" + juce::String (step), 0.0f));
                 settings.stepTransposes[(size_t) step] = juce::jlimit (-48.0f, 48.0f, valueForKey (block, "mpStepTranspose" + juce::String (step), 0.0f));
                 settings.stepChordModes[(size_t) step] = valueForKey (block, "mpStepChordMode" + juce::String (step), -1.0f);
                 settings.stepChordSizes[(size_t) step] = valueForKey (block, "mpStepChordSize" + juce::String (step), -1.0f);
@@ -324,6 +327,8 @@ namespace patchcraft
                         settings.sampleSlices[(size_t) step]);
                     settings.bankStepDivisions[index] = (float) juce::jlimit (1, 8, juce::roundToInt (
                         valueForKey (block, prefix + "mpStepDiv" + suffix, settings.stepDivisions[(size_t) step])));
+                    settings.bankStepDelays[index] = juce::jlimit (0.0f, 0.85f,
+                        valueForKey (block, prefix + "mpStepDelay" + suffix, settings.stepDelays[(size_t) step]));
                     settings.bankStepTransposes[index] = juce::jlimit (-48.0f, 48.0f,
                         valueForKey (block, prefix + "mpStepTranspose" + suffix, settings.stepTransposes[(size_t) step]));
                     settings.bankStepChordModes[index] = valueForKey (block, prefix + "mpStepChordMode" + suffix,
@@ -359,6 +364,7 @@ namespace patchcraft
             settings.probabilities[(size_t) step] = settings.bankProbabilities[index];
             settings.sampleSlices[(size_t) step] = settings.bankSampleSlices[index];
             settings.stepDivisions[(size_t) step] = settings.bankStepDivisions[index];
+            settings.stepDelays[(size_t) step] = settings.bankStepDelays[index];
             settings.stepTransposes[(size_t) step] = settings.bankStepTransposes[index];
             settings.stepChordModes[(size_t) step] = settings.bankStepChordModes[index];
             settings.stepChordSizes[(size_t) step] = settings.bankStepChordSizes[index];
@@ -1261,7 +1267,8 @@ namespace patchcraft
         const double scaled = phase01 * (double) steps;
         const int step = juce::jlimit (0, steps - 1, (int) std::floor (scaled));
         const double stepPhase = scaled - std::floor (scaled);
-        const double swingDelay = (step % 2 == 1) ? (double) settings.swing * 0.5 : 0.0;
+        const double swingDelay = juce::jmin (0.90, ((step % 2 == 1) ? (double) settings.swing * 0.5 : 0.0)
+                                                    + (double) settings.stepDelays[(size_t) step]);
         const bool tieStep = settings.stepTies[(size_t) step] >= 0.5f;
         const double stepGate = (tieStep ? 1.0 : (double) settings.gates[(size_t) step]) * (1.0 - swingDelay);
         const bool shouldGateOpen = stepPhase >= swingDelay && stepPhase <= juce::jmin (1.0, swingDelay + stepGate);

@@ -91,6 +91,23 @@ namespace patchcraft
         return nullptr;
     }
 
+    static juce::String arpBankPrefix (int lane)
+    {
+        return "mpBank" + juce::String (juce::jlimit (0, 15, lane) + 1) + "_";
+    }
+
+    static void setArpLaneValue (DspBlock& block, int lane, const juce::String& key, float newValue)
+    {
+        block.values[arpBankPrefix (lane) + key] = newValue;
+        if (lane == juce::jlimit (0, 15, juce::roundToInt (block.values.count ("mpActiveBank") != 0 ? block.values["mpActiveBank"] : 0.0f)))
+            block.values[key] = newValue;
+    }
+
+    static void setArpLaneMetadata (DspBlock& block, int lane, const juce::String& key, const juce::String& newValue)
+    {
+        block.metadata["arpLane" + juce::String (lane + 1) + key] = newValue;
+    }
+
     juce::AudioProcessorValueTreeState::ParameterLayout PlayerProcessor::createLayout()
     {
         std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
@@ -1609,32 +1626,61 @@ namespace patchcraft
                 };
 
                 const int lane = juce::jlimit (0, 15, juce::roundToInt (value ("arpLaneIndex", 0.0f)));
-                const auto prefix = lane == 0 ? juce::String() : "mpBank" + juce::String (lane + 1) + "_";
                 const int steps = juce::jlimit (1, 128, juce::roundToInt (value ("arpLaneSteps", 16.0f)));
                 const int target = juce::jlimit (0, 4, juce::roundToInt (value ("arpLaneTarget", 0.0f)));
 
                 block->values["mpActiveBank"] = (float) lane;
-                block->values[prefix + "arpSteps"] = (float) steps;
-                block->values[prefix + "arpGate"] = juce::jlimit (0.05f, 1.0f, value ("arpLaneGate", 0.58f));
-                block->values[prefix + "arpSwing"] = juce::jlimit (0.0f, 0.5f, value ("arpLaneSwing", 0.0f));
-                block->values[prefix + "rate"] = juce::jlimit (0.0625f, 16.0f, value ("arpLaneRate", 1.0f));
-                block->values[prefix + "mpProbability"] = juce::jlimit (0.0f, 1.0f, value ("arpLaneProbability", 1.0f));
-                block->values[prefix + "mpRatchet"] = juce::jlimit (1.0f, 8.0f, value ("arpLaneRatchet", 1.0f));
-                block->values[prefix + "mpEuclideanPulses"] = (float) juce::jlimit (0, steps, juce::roundToInt (value ("arpLaneEuclideanPulses", 0.0f)));
-                block->values[prefix + "mpEuclideanRotate"] = (float) juce::jlimit (0, 127, juce::roundToInt (value ("arpLaneRotate", 0.0f)));
-                block->values[prefix + "mpSampleControl"] = target == 0 ? 0.0f : 1.0f;
-                block->values[prefix + "mpSampleSliceCount"] = (float) juce::jlimit (1, 64, juce::roundToInt (value ("arpLaneSampleSlots", 1.0f)));
+                setArpLaneValue (*block, lane, "arpSteps", (float) steps);
+                setArpLaneValue (*block, lane, "arpGate", juce::jlimit (0.05f, 1.0f, value ("arpLaneGate", 0.58f)));
+                setArpLaneValue (*block, lane, "arpSwing", juce::jlimit (0.0f, 0.5f, value ("arpLaneSwing", 0.0f)));
+                setArpLaneValue (*block, lane, "rate", juce::jlimit (0.0625f, 16.0f, value ("arpLaneRate", 1.0f)));
+                setArpLaneValue (*block, lane, "mpProbability", juce::jlimit (0.0f, 1.0f, value ("arpLaneProbability", 1.0f)));
+                setArpLaneValue (*block, lane, "mpRatchet", juce::jlimit (1.0f, 8.0f, value ("arpLaneRatchet", 1.0f)));
+                setArpLaneValue (*block, lane, "mpEuclideanPulses", (float) juce::jlimit (0, steps, juce::roundToInt (value ("arpLaneEuclideanPulses", 0.0f))));
+                setArpLaneValue (*block, lane, "mpEuclideanRotate", (float) juce::jlimit (0, 127, juce::roundToInt (value ("arpLaneRotate", 0.0f))));
+                setArpLaneValue (*block, lane, "mpSampleControl", target == 0 ? 0.0f : 1.0f);
+                setArpLaneValue (*block, lane, "mpSampleSliceCount", (float) juce::jlimit (1, 64, juce::roundToInt (value ("arpLaneSampleSlots", 1.0f))));
 
-                block->metadata["arpLane" + juce::String (lane + 1) + "Target"] =
-                    target == 1 ? "drums" : target == 2 ? "oneShots" : target == 3 ? "loops" : target == 4 ? "samples" : "notes";
-                block->metadata["arpLane" + juce::String (lane + 1) + "Direction"] =
+                const int controlLane = juce::jlimit (0, 15, juce::roundToInt (value ("arpLaneControlBank", (float) lane)));
+                const int sliderRole = juce::jlimit (0, 7, juce::roundToInt (value ("arpLaneSliderRole", 0.0f)));
+                const int slots = juce::jlimit (1, 64, juce::roundToInt (value ("arpLaneSampleSlots", 1.0f)));
+                for (int step = 0; step < 16; ++step)
+                {
+                    const float v = juce::jlimit (0.0f, 1.0f, value ("arpLaneStep" + juce::String (step + 1),
+                                                                     step % 4 == 0 ? 0.92f : 0.68f));
+                    const auto suffix = juce::String (step);
+                    if (sliderRole == 0)
+                        setArpLaneValue (*block, controlLane, "mpVelocity" + suffix, v);
+                    else if (sliderRole == 1)
+                        setArpLaneValue (*block, controlLane, "mpGate" + suffix, juce::jlimit (0.05f, 1.0f, 0.05f + v * 0.95f));
+                    else if (sliderRole == 2)
+                        setArpLaneValue (*block, controlLane, "mpStepProb" + suffix, v);
+                    else if (sliderRole == 3)
+                        setArpLaneValue (*block, controlLane, "mpStepDiv" + suffix, (float) juce::jlimit (1, 8, 1 + juce::roundToInt (v * 7.0f)));
+                    else if (sliderRole == 4)
+                        setArpLaneValue (*block, controlLane, "mpStep" + suffix + "On", v >= 0.5f ? 1.0f : 0.0f);
+                    else if (sliderRole == 5)
+                        setArpLaneValue (*block, controlLane, "mpStepDelay" + suffix, juce::jlimit (0.0f, 0.85f, v * 0.85f));
+                    else if (sliderRole == 6)
+                        setArpLaneValue (*block, controlLane, "mpSampleSlice" + suffix, (float) juce::jlimit (0, slots - 1, juce::roundToInt (v * (float) juce::jmax (1, slots - 1))));
+                    else if (sliderRole == 7)
+                        setArpLaneValue (*block, controlLane, "mpStepTranspose" + suffix, (float) juce::jlimit (-24, 24, juce::roundToInt (v * 48.0f - 24.0f)));
+                }
+
+                setArpLaneMetadata (*block, lane, "Target",
+                    target == 1 ? "drums" : target == 2 ? "oneShots" : target == 3 ? "loops" : target == 4 ? "samples" : "notes");
+                setArpLaneMetadata (*block, lane, "Direction",
                     juce::roundToInt (value ("arpLaneDirection", 0.0f)) == 1 ? "reverse"
                     : juce::roundToInt (value ("arpLaneDirection", 0.0f)) == 2 ? "bounce"
-                    : juce::roundToInt (value ("arpLaneDirection", 0.0f)) == 3 ? "random" : "forward";
-                block->metadata["arpLane" + juce::String (lane + 1) + "FillPulses"] =
-                    juce::String (juce::jlimit (0, steps, juce::roundToInt (value ("arpLaneFillPulses", 0.0f))));
-                block->metadata["arpLane" + juce::String (lane + 1) + "FillProbability"] =
-                    juce::String (juce::jlimit (0.0f, 1.0f, value ("arpLaneFillProbability", 0.0f)), 2);
+                    : juce::roundToInt (value ("arpLaneDirection", 0.0f)) == 3 ? "random" : "forward");
+                setArpLaneMetadata (*block, lane, "FillPulses",
+                    juce::String (juce::jlimit (0, steps, juce::roundToInt (value ("arpLaneFillPulses", 0.0f)))));
+                setArpLaneMetadata (*block, lane, "FillProbability",
+                    juce::String (juce::jlimit (0.0f, 1.0f, value ("arpLaneFillProbability", 0.0f)), 2));
+                setArpLaneMetadata (*block, controlLane, "SliderRole",
+                    sliderRole == 0 ? "velocity" : sliderRole == 1 ? "gate" : sliderRole == 2 ? "probability"
+                    : sliderRole == 3 ? "ratchet" : sliderRole == 4 ? "mute" : sliderRole == 5 ? "delay"
+                    : sliderRole == 6 ? "slice" : "transpose");
 
                 if (engine != nullptr)
                     arpeggiator.bind (pack.dspGraph);
