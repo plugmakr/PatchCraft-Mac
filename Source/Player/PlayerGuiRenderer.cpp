@@ -322,6 +322,13 @@ namespace patchcraft
         return header.removeFromRight (72).reduced (2, 3);
     }
 
+    juce::Rectangle<int> PlayerGuiRenderer::arpLanePlayButtonBounds (juce::Rectangle<int> elementBounds) const
+    {
+        auto header = elementBounds.reduced (10).removeFromTop (26);
+        header.removeFromRight (72);
+        return header.removeFromRight (48).reduced (2, 3);
+    }
+
     juce::String PlayerGuiRenderer::getTooltip()
     {
         const auto* pack = proc.getPack();
@@ -1799,7 +1806,8 @@ namespace patchcraft
         auto area = r.reduced (10);
         auto header = area.removeFromTop (26);
         const auto dragHandle = arpLaneMidiDragHandleBounds (r);
-        header.removeFromRight (72);
+        const auto playButton = arpLanePlayButtonBounds (r);
+        header.removeFromRight (120);
         g.setFont (juce::FontOptions (12.0f).withStyle ("bold"));
         g.setColour (accent);
         g.drawText (juce::String (lane + 1), header.removeFromLeft (24), juce::Justification::centredLeft, true);
@@ -1815,6 +1823,13 @@ namespace patchcraft
         g.setColour (playerText());
         g.setFont (juce::FontOptions (7.8f).withStyle ("bold"));
         g.drawText ("DRAG MIDI", dragHandle, juce::Justification::centred, true);
+        g.setColour (proc.isAnyTransportPlaying() ? accent.withAlpha (0.95f) : playerPanel().brighter (0.10f).withAlpha (0.94f));
+        g.fillRoundedRectangle (playButton.toFloat(), 6.0f);
+        g.setColour (accent.withAlpha (0.82f));
+        g.drawRoundedRectangle (playButton.toFloat().reduced (0.5f), 6.0f, 1.0f);
+        g.setColour (proc.isAnyTransportPlaying() ? playerBg() : playerText());
+        g.setFont (juce::FontOptions (7.8f).withStyle ("bold"));
+        g.drawText (proc.isAnyTransportPlaying() ? "STOP" : "PLAY", playButton, juce::Justification::centred, true);
 
         const float size = (float) juce::jmin (area.getWidth(), area.getHeight() - 34);
         const juce::Point<float> centre ((float) area.getCentreX(),
@@ -2787,6 +2802,13 @@ namespace patchcraft
             const auto r = animatedElementRect (e, elementRect (e, m));
             if (! r.contains (pos))
                 continue;
+
+            if (arpLanePlayButtonBounds (r).contains (pos))
+            {
+                proc.toggleInternalTransport();
+                repaint (r);
+                return true;
+            }
 
             if (arpLaneMidiDragHandleBounds (r).contains (pos))
             {
@@ -3879,7 +3901,30 @@ namespace patchcraft
 
         juce::PopupMenu menu;
         std::vector<float> values;
-        if (def->id == "granularDirection")
+        if (def->id == "arpLaneMode")
+        {
+            values = { 0.0f, 1.0f };
+            menu.addItem (1, "Bank");
+            menu.addItem (2, "Performance");
+        }
+        else if (def->id == "arpLaneTarget")
+        {
+            values = { 0.0f, 1.0f, 2.0f, 3.0f, 4.0f };
+            menu.addItem (1, "Notes");
+            menu.addItem (2, "Drums");
+            menu.addItem (3, "One Shots");
+            menu.addItem (4, "Loops");
+            menu.addItem (5, "Samples");
+        }
+        else if (def->id == "arpLaneDirection")
+        {
+            values = { 0.0f, 1.0f, 2.0f, 3.0f };
+            menu.addItem (1, "Forward");
+            menu.addItem (2, "Reverse");
+            menu.addItem (3, "Bounce");
+            menu.addItem (4, "Random");
+        }
+        else if (def->id == "granularDirection")
         {
             values = { 0.0f, 1.0f, 2.0f, 3.0f };
             menu.addItem (1, "Forward");

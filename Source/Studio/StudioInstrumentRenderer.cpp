@@ -242,9 +242,11 @@ namespace patchcraft
                 ? juce::jlimit (1, 128, juce::roundToInt (arpLaneValue (*block, lane, "arpSteps", (float) element.arpLaneSteps)))
                 : juce::jlimit (1, 128, element.arpLaneSteps);
             const int maxDrawSteps = juce::jmin (steps, 64);
-            const int playbackStep = laneSelected && playback01 >= 0.0
-                ? juce::jlimit (0, maxDrawSteps - 1, (int) std::floor (playback01 * (double) maxDrawSteps))
-                : -1;
+            const double displayPlayback01 = playback01 >= 0.0
+                ? playback01
+                : std::fmod (juce::Time::getMillisecondCounterHiRes() * 0.00010 + (double) lane * 0.071, 1.0);
+            const int playbackStep = juce::jlimit (0, maxDrawSteps - 1,
+                (int) std::floor (displayPlayback01 * (double) maxDrawSteps));
 
             const auto bg = element.backgroundColour.isTransparent() ? PatchCraftLookAndFeel::panelAlt() : element.backgroundColour;
             const auto border = element.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : element.borderColour;
@@ -347,19 +349,18 @@ namespace patchcraft
                 }
             }
 
-            if (playback01 >= 0.0 && laneSelected)
             {
                 const float playheadAngle = -juce::MathConstants<float>::halfPi
-                    + juce::MathConstants<float>::twoPi * (float) std::fmod (playback01, 1.0);
+                    + juce::MathConstants<float>::twoPi * (float) std::fmod (displayPlayback01, 1.0);
                 const auto playheadInner = centre + juce::Point<float> (std::cos (playheadAngle) * radius * 0.18f,
                                                                         std::sin (playheadAngle) * radius * 0.18f);
                 const auto playheadOuter = centre + juce::Point<float> (std::cos (playheadAngle) * radius * 1.04f,
                                                                         std::sin (playheadAngle) * radius * 1.04f);
                 const auto playheadDot = centre + juce::Point<float> (std::cos (playheadAngle) * radius * 1.10f,
                                                                       std::sin (playheadAngle) * radius * 1.10f);
-                g.setColour (juce::Colours::white.withAlpha (0.72f));
-                g.drawLine (playheadInner.x, playheadInner.y, playheadOuter.x, playheadOuter.y, 2.0f);
-                g.setColour (accent.withAlpha (0.90f));
+                g.setColour (juce::Colours::white.withAlpha (playback01 >= 0.0 ? 0.72f : 0.42f));
+                g.drawLine (playheadInner.x, playheadInner.y, playheadOuter.x, playheadOuter.y, playback01 >= 0.0 ? 2.0f : 1.2f);
+                g.setColour (accent.withAlpha (playback01 >= 0.0 ? 0.90f : 0.58f));
                 g.fillEllipse (playheadDot.x - 5.0f, playheadDot.y - 5.0f, 10.0f, 10.0f);
                 g.setColour (juce::Colours::white.withAlpha (0.85f));
                 g.drawEllipse (playheadDot.x - 5.0f, playheadDot.y - 5.0f, 10.0f, 10.0f, 1.2f);
@@ -1833,7 +1834,30 @@ namespace patchcraft
                 {
                     juce::PopupMenu menu;
                     std::vector<float> values;
-                    if (def->step >= 1.0f && def->max - def->min <= 32.0f)
+                    if (def->id == "arpLaneMode")
+                    {
+                        values = { 0.0f, 1.0f };
+                        menu.addItem (1, "Bank");
+                        menu.addItem (2, "Performance");
+                    }
+                    else if (def->id == "arpLaneTarget")
+                    {
+                        values = { 0.0f, 1.0f, 2.0f, 3.0f, 4.0f };
+                        menu.addItem (1, "Notes");
+                        menu.addItem (2, "Drums");
+                        menu.addItem (3, "One Shots");
+                        menu.addItem (4, "Loops");
+                        menu.addItem (5, "Samples");
+                    }
+                    else if (def->id == "arpLaneDirection")
+                    {
+                        values = { 0.0f, 1.0f, 2.0f, 3.0f };
+                        menu.addItem (1, "Forward");
+                        menu.addItem (2, "Reverse");
+                        menu.addItem (3, "Bounce");
+                        menu.addItem (4, "Random");
+                    }
+                    else if (def->step >= 1.0f && def->max - def->min <= 32.0f)
                     {
                         for (int value = (int) def->min; value <= (int) def->max; value += (int) juce::jmax (1.0f, def->step))
                         {

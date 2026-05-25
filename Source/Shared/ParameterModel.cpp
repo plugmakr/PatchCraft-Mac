@@ -516,6 +516,23 @@ namespace patchcraft
             add (makeDef ("volume", "Volume", 0.0f, 1.5f, fx ? 1.0f : synth ? 0.8f : 1.0f, "", "out", "Output"));
             add (makeDef ("pan", "Pan", -1.0f, 1.0f, 0.0f, "", "out", "Output"));
 
+            add (makeDef ("arpLaneIndex", "Lane Index", 0.0f, 15.0f, 0.0f, "", "mod", "Arp Lane", "stepped", 1.0f));
+            add (makeDef ("arpLaneSteps", "Steps", 1.0f, 128.0f, 16.0f, "", "mod", "Arp Lane", "stepped", 1.0f));
+            add (makeDef ("arpLaneMode", "Mode", 0.0f, 1.0f, 0.0f, "", "mod", "Arp Lane", "stepped", 1.0f));
+            add (makeDef ("arpLaneTarget", "Target", 0.0f, 4.0f, 0.0f, "", "mod", "Arp Lane", "stepped", 1.0f));
+            add (makeDef ("arpLaneRootNote", "Root Note", 0.0f, 127.0f, 60.0f, "MIDI", "mod", "Arp Lane", "stepped", 1.0f));
+            add (makeDef ("arpLaneSampleSlots", "Sample Slots", 1.0f, 64.0f, 1.0f, "", "mod", "Arp Lane", "stepped", 1.0f));
+            add (makeDef ("arpLaneDirection", "Direction", 0.0f, 3.0f, 0.0f, "", "mod", "Arp Lane", "stepped", 1.0f));
+            add (makeDef ("arpLaneRotate", "Rotate", 0.0f, 127.0f, 0.0f, "step", "mod", "Arp Lane", "stepped", 1.0f));
+            add (makeDef ("arpLaneEuclideanPulses", "Pulses", 0.0f, 128.0f, 0.0f, "", "mod", "Arp Lane", "stepped", 1.0f));
+            add (makeDef ("arpLaneProbability", "Chance", 0.0f, 1.0f, 1.0f, "", "mod", "Arp Lane"));
+            add (makeDef ("arpLaneRatchet", "Ratchets", 1.0f, 8.0f, 1.0f, "x", "mod", "Arp Lane", "stepped", 1.0f));
+            add (makeDef ("arpLaneFillPulses", "Fill Pulses", 0.0f, 128.0f, 0.0f, "", "mod", "Arp Lane", "stepped", 1.0f));
+            add (makeDef ("arpLaneFillProbability", "Fill Chance", 0.0f, 1.0f, 0.0f, "", "mod", "Arp Lane"));
+            add (makeDef ("arpLaneRate", "Rate", 0.0625f, 16.0f, 1.0f, "beat", "mod", "Arp Lane"));
+            add (makeDef ("arpLaneGate", "Gate", 0.05f, 1.0f, 0.58f, "", "mod", "Arp Lane"));
+            add (makeDef ("arpLaneSwing", "Swing", 0.0f, 0.5f, 0.0f, "", "mod", "Arp Lane"));
+
             auto modWheel = makeDef ("modWheel", "Mod Wheel", 0.0f, 1.0f, 0.0f, "", "mod", "MIDI", "continuous");
             modWheel.hostAutomatable = false;
             modWheel.modulatable = false;

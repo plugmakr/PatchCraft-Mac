@@ -41,6 +41,16 @@ namespace patchcraft
             return nullptr;
         }
 
+        static DspBlock* findArpBlock (DspGraph& graph)
+        {
+            for (auto& block : graph.blocks)
+                if (block.type.containsIgnoreCase ("arp")
+                    || block.type.containsIgnoreCase ("midi")
+                    || block.values.find ("arpSteps") != block.values.end())
+                    return &block;
+            return nullptr;
+        }
+
         static float arpLaneValue (const DspBlock& block, int bank, const juce::String& key, float fallback)
         {
             const auto bankPrefix = "mpBank" + juce::String (juce::jlimit (0, 15, bank) + 1) + "_";
@@ -57,6 +67,102 @@ namespace patchcraft
 
             const auto bankOneIt = block.values.find (bankPrefix + key);
             return bankOneIt != block.values.end() ? bankOneIt->second : fallback;
+        }
+
+        static DspBlock& ensureArpBlock (DspGraph& graph)
+        {
+            if (auto* existing = findArpBlock (graph))
+                return *existing;
+
+            DspBlock block;
+            block.section = "mod";
+            block.type = "midiPlayground";
+            block.name = "ArpLane Performance";
+            block.targetId = "filterCutoff";
+            block.enabled = true;
+            block.id = "midi_playground";
+
+            int suffix = 2;
+            auto idExists = [&] (const juce::String& id)
+            {
+                for (const auto& existing : graph.blocks)
+                    if (existing.id == id)
+                        return true;
+                return false;
+            };
+            while (idExists (block.id))
+                block.id = "midi_playground_" + juce::String (suffix++);
+
+            block.values["amount"] = 0.35f;
+            block.values["rate"] = 1.0f;
+            block.values["sync"] = 1.0f;
+            block.values["arpGate"] = 0.58f;
+            block.values["arpSteps"] = 16.0f;
+            block.values["arpPattern"] = 0.0f;
+            block.values["arpOctaves"] = 1.0f;
+            block.values["arpSwing"] = 0.0f;
+            block.values["mpActiveBank"] = 0.0f;
+            block.values["mpProbability"] = 1.0f;
+            block.values["mpRatchet"] = 1.0f;
+            block.values["mpSampleControl"] = 0.0f;
+            block.values["mpSampleSliceCount"] = 1.0f;
+            block.values["mpEuclideanPulses"] = 0.0f;
+            block.values["mpEuclideanRotate"] = 0.0f;
+            graph.blocks.push_back (std::move (block));
+            graph.userConfigured = true;
+            return graph.blocks.back();
+        }
+
+        static void applyArpLaneParameterToGraph (PatchCraftProject& project,
+                                                  const juce::String& parameterId)
+        {
+            if (! parameterId.startsWith ("arpLane"))
+                return;
+
+            auto value = [&] (const juce::String& id, float fallback)
+            {
+                if (auto* def = project.getParameters().find (id))
+                    return project.getLiveValues().getValue (id, def->defaultValue);
+                return project.getLiveValues().getValue (id, fallback);
+            };
+
+            auto& graph = project.getDspGraph();
+            auto& block = ensureArpBlock (graph);
+            const int lane = juce::jlimit (0, 15, juce::roundToInt (value ("arpLaneIndex", 0.0f)));
+            const int steps = juce::jlimit (1, 128, juce::roundToInt (value ("arpLaneSteps", 16.0f)));
+            const int target = juce::jlimit (0, 4, juce::roundToInt (value ("arpLaneTarget", 0.0f)));
+            const int direction = juce::jlimit (0, 3, juce::roundToInt (value ("arpLaneDirection", 0.0f)));
+            const auto prefix = lane == 0 ? juce::String() : "mpBank" + juce::String (lane + 1) + "_";
+
+            block.values["mpActiveBank"] = (float) lane;
+            block.values[prefix + "arpSteps"] = (float) steps;
+            block.values[prefix + "arpGate"] = juce::jlimit (0.05f, 1.0f, value ("arpLaneGate", 0.58f));
+            block.values[prefix + "arpSwing"] = juce::jlimit (0.0f, 0.5f, value ("arpLaneSwing", 0.0f));
+            block.values[prefix + "rate"] = juce::jlimit (0.0625f, 16.0f, value ("arpLaneRate", 1.0f));
+            block.values[prefix + "mpProbability"] = juce::jlimit (0.0f, 1.0f, value ("arpLaneProbability", 1.0f));
+            block.values[prefix + "mpRatchet"] = juce::jlimit (1.0f, 8.0f, value ("arpLaneRatchet", 1.0f));
+            block.values[prefix + "mpEuclideanPulses"] =
+                (float) juce::jlimit (0, steps, juce::roundToInt (value ("arpLaneEuclideanPulses", 0.0f)));
+            block.values[prefix + "mpEuclideanRotate"] =
+                (float) juce::jlimit (0, 127, juce::roundToInt (value ("arpLaneRotate", 0.0f)));
+            block.values[prefix + "mpSampleControl"] = target == 0 ? 0.0f : 1.0f;
+            block.values[prefix + "mpSampleSliceCount"] =
+                (float) juce::jlimit (1, 64, juce::roundToInt (value ("arpLaneSampleSlots", 1.0f)));
+
+            block.metadata["arpLane" + juce::String (lane + 1) + "Mode"] =
+                juce::roundToInt (value ("arpLaneMode", 0.0f)) == 1 ? "performance" : "bank";
+            block.metadata["arpLane" + juce::String (lane + 1) + "Target"] =
+                target == 1 ? "drums" : target == 2 ? "oneShots" : target == 3 ? "loops" : target == 4 ? "samples" : "notes";
+            block.metadata["arpLane" + juce::String (lane + 1) + "Direction"] =
+                direction == 1 ? "reverse" : direction == 2 ? "bounce" : direction == 3 ? "random" : "forward";
+            block.metadata["arpLane" + juce::String (lane + 1) + "RootNote"] =
+                juce::String (juce::jlimit (0, 127, juce::roundToInt (value ("arpLaneRootNote", 60.0f))));
+            block.metadata["arpLane" + juce::String (lane + 1) + "FillPulses"] =
+                juce::String (juce::jlimit (0, steps, juce::roundToInt (value ("arpLaneFillPulses", 0.0f))));
+            block.metadata["arpLane" + juce::String (lane + 1) + "FillProbability"] =
+                juce::String (juce::jlimit (0.0f, 1.0f, value ("arpLaneFillProbability", 0.0f)), 2);
+
+            graph.userConfigured = true;
         }
 
         static juce::String defaultDrumTrackLabel (int track)
@@ -2688,6 +2794,9 @@ namespace patchcraft
 
                     const auto current = owner.getProject().getLiveValues().getValue (it->parameterId, def->defaultValue);
                     owner.getProject().getLiveValues().setValue (it->parameterId, current >= 0.5f ? def->min : def->max);
+                    applyArpLaneParameterToGraph (owner.getProject(), it->parameterId);
+                    if (it->parameterId.startsWith ("arpLane"))
+                        owner.getProject().notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
                     repaint();
                     return;
                 }
@@ -2705,7 +2814,30 @@ namespace patchcraft
 
                     juce::PopupMenu menu;
                     std::vector<float> values;
-                    if (def->step >= 1.0f && def->max - def->min <= 32.0f)
+                    if (def->id == "arpLaneMode")
+                    {
+                        values = { 0.0f, 1.0f };
+                        menu.addItem (1, "Bank");
+                        menu.addItem (2, "Performance");
+                    }
+                    else if (def->id == "arpLaneTarget")
+                    {
+                        values = { 0.0f, 1.0f, 2.0f, 3.0f, 4.0f };
+                        menu.addItem (1, "Notes");
+                        menu.addItem (2, "Drums");
+                        menu.addItem (3, "One Shots");
+                        menu.addItem (4, "Loops");
+                        menu.addItem (5, "Samples");
+                    }
+                    else if (def->id == "arpLaneDirection")
+                    {
+                        values = { 0.0f, 1.0f, 2.0f, 3.0f };
+                        menu.addItem (1, "Forward");
+                        menu.addItem (2, "Reverse");
+                        menu.addItem (3, "Bounce");
+                        menu.addItem (4, "Random");
+                    }
+                    else if (def->step >= 1.0f && def->max - def->min <= 32.0f)
                     {
                         for (int value = (int) def->min; value <= (int) def->max; value += (int) juce::jmax (1.0f, def->step))
                         {
@@ -2726,6 +2858,9 @@ namespace patchcraft
                         {
                             if (result <= 0 || result > (int) values.size()) return;
                             owner.getProject().getLiveValues().setValue (parameterId, values[(size_t) result - 1]);
+                            applyArpLaneParameterToGraph (owner.getProject(), parameterId);
+                            if (parameterId.startsWith ("arpLane"))
+                                owner.getProject().notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
                             repaint();
                         });
                     return;
@@ -3349,6 +3484,30 @@ namespace patchcraft
     void CanvasEditor::showContextMenu (juce::Point<int> screenPos)
     {
         const auto canvasPos = screenToCanvas (screenPos);
+        juce::String clickedElementId;
+        bool clickedAssignableControl = false;
+        for (auto it = owner.getProject().getLayout().getAll().rbegin();
+             it != owner.getProject().getLayout().getAll().rend(); ++it)
+        {
+            if (! it->visible || it->type == ElementType::Group || ! isElementOnCurrentTab (*it))
+                continue;
+            if (! elementScreenRect (*it).contains (screenPos))
+                continue;
+
+            clickedElementId = it->id;
+            clickedAssignableControl = it->type == ElementType::Knob
+                                    || it->type == ElementType::Slider
+                                    || it->type == ElementType::Button
+                                    || it->type == ElementType::Toggle
+                                    || it->type == ElementType::Dropdown
+                                    || it->type == ElementType::ValueDisplay
+                                    || it->type == ElementType::MacroControl;
+            break;
+        }
+
+        if (clickedElementId.isNotEmpty() && ! owner.isElementSelected (clickedElementId))
+            owner.setSelectedElementId (clickedElementId);
+
         juce::PopupMenu menu;
         menu.addItem (99, "Search Canvas Actions...");
         menu.addSeparator();
@@ -3364,7 +3523,8 @@ namespace patchcraft
         menu.addItem (8, "Diamond");
         menu.addItem (9, "Line");
         menu.addSeparator();
-        menu.addSectionHeader ("Add DSP Control");
+        const bool directAssignMode = clickedAssignableControl && ! owner.getSelectedElementIds().isEmpty();
+        menu.addSectionHeader (directAssignMode ? "Assign Selected Element" : "Add DSP Control");
         menu.addItem (11, "Find Parameter...");
         menu.addItem (12, "Add Arpeggiator (MIDI Playground)...");
         menu.addItem (14, "Add Mixer");
@@ -3392,6 +3552,7 @@ namespace patchcraft
         }
         int itemId = 100;
         std::map<int, juce::String> paramByItem;
+        std::map<int, juce::String> assignParamByItem;
         for (const auto& cat : categoryOrder)
         {
             const auto& defs = byCategory[cat];
@@ -3399,12 +3560,14 @@ namespace patchcraft
             for (const auto* def : defs)
             {
                 sub.addItem (itemId, def->name + "  (" + def->id + ")");
-                paramByItem[itemId++] = def->id;
+                if (directAssignMode)
+                    assignParamByItem[itemId++] = def->id;
+                else
+                    paramByItem[itemId++] = def->id;
             }
             menu.addSubMenu (cat, sub);
         }
 
-        std::map<int, juce::String> assignParamByItem;
         if (! owner.getSelectedElementIds().isEmpty())
         {
             juce::PopupMenu assignMenu;
@@ -3492,7 +3655,7 @@ namespace patchcraft
         menu.addSubMenu ("Arrange Order", orderMenu);
 
         menu.showMenuAsync (juce::PopupMenu::Options(),
-            [this, canvasPos, screenPos, paramByItem, assignParamByItem, prerequisiteId, prerequisiteValue] (int result)
+            [this, canvasPos, screenPos, paramByItem, assignParamByItem, prerequisiteId, prerequisiteValue, directAssignMode] (int result)
             {
                 if (result == 1) addElementAt (ElementType::Panel, canvasPos);
                 else if (result == 2) addElementAt (ElementType::Group, canvasPos);
@@ -3553,16 +3716,49 @@ namespace patchcraft
                 }
                 else if (result == 11)
                 {
-                    // Search-driven "Add DSP Control": one popup with a text
+                    // Search-driven parameter picker: on a selected control it
+                    // assigns; on empty canvas it creates a connected knob.
                     // filter instead of cascading category submenus.
                     auto entries = collectParameterEntries (owner.getProject());
                     const juce::Rectangle<int> anchor (screenPos.x, screenPos.y, 1, 1);
                     juce::Component::SafePointer<CanvasEditor> safe (this);
                     launchParameterPicker (this, anchor, std::move (entries),
-                        [safe, canvasPos] (const juce::String& paramId)
+                        [safe, canvasPos, directAssignMode] (const juce::String& paramId)
                         {
-                            if (auto* c = safe.getComponent())
+                            auto* c = safe.getComponent();
+                            if (c == nullptr)
+                                return;
+
+                            if (! directAssignMode)
+                            {
                                 c->addElementAt (ElementType::Knob, canvasPos, paramId);
+                                return;
+                            }
+
+                            const auto ids = c->owner.getSelectedElementIds();
+                            const auto* def = c->owner.getProject().getParameters().find (paramId);
+                            const auto label = def != nullptr ? def->name : juce::String();
+                            c->owner.getProject().performLayoutEdit ("Assign parameter",
+                                [ids, paramId, label] (LayoutModel& m)
+                                {
+                                    for (const auto& id : ids)
+                                        if (auto* el = m.find (id))
+                                        {
+                                            const bool assignable = el->type == ElementType::Knob
+                                                || el->type == ElementType::Slider
+                                                || el->type == ElementType::Button
+                                                || el->type == ElementType::Toggle
+                                                || el->type == ElementType::Dropdown
+                                                || el->type == ElementType::ValueDisplay
+                                                || el->type == ElementType::MacroControl;
+                                            if (! assignable)
+                                                continue;
+                                            el->parameterId = paramId;
+                                            if (el->label.isEmpty() && label.isNotEmpty())
+                                                el->label = label;
+                                        }
+                                });
+                            c->repaint();
                         });
                 }
                 else if (result == 12)
@@ -3686,6 +3882,7 @@ namespace patchcraft
                 else if (result == 10 && prerequisiteId.isNotEmpty())
                 {
                     owner.getProject().getLiveValues().setValue (prerequisiteId, prerequisiteValue);
+                    applyArpLaneParameterToGraph (owner.getProject(), prerequisiteId);
                     owner.getProject().notifyChanged();
                     repaint();
                 }
@@ -3785,6 +3982,9 @@ namespace patchcraft
             float v = dragValueStart + deltaNorm * range;
             v = juce::jlimit (def->min, def->max, v);
             owner.getProject().getLiveValues().setValue (dragParameterId, v);
+            applyArpLaneParameterToGraph (owner.getProject(), dragParameterId);
+            if (dragParameterId.startsWith ("arpLane"))
+                owner.getProject().notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
             if (auto* dragged = owner.getProject().getLayout().find (dragValueElementId))
                 repaint (elementScreenRect (*dragged).expanded (8));
             else

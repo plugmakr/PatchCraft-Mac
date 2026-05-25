@@ -145,6 +145,7 @@ namespace patchcraft
         bool handleDrumGridGesture (const juce::MouseEvent&, bool drag);
         bool handleArpLaneGesture (const juce::MouseEvent&);
         juce::Rectangle<int> arpLaneMidiDragHandleBounds (juce::Rectangle<int>) const;
+        juce::Rectangle<int> arpLanePlayButtonBounds (juce::Rectangle<int>) const;
         bool startArpLaneMidiDrag (const LayoutElement&);
         bool handleMixerGesture (const juce::MouseEvent&, bool drag);
         int  padNoteAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>) const;

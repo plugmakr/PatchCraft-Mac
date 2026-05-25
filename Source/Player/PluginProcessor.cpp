@@ -81,6 +81,16 @@ namespace patchcraft
         return values;
     }
 
+    static DspBlock* findMidiPlaygroundBlock (DspGraph& graph)
+    {
+        for (auto& block : graph.blocks)
+            if (block.type.containsIgnoreCase ("arp")
+                || block.type.containsIgnoreCase ("midi")
+                || block.values.find ("arpSteps") != block.values.end())
+                return &block;
+        return nullptr;
+    }
+
     juce::AudioProcessorValueTreeState::ParameterLayout PlayerProcessor::createLayout()
     {
         std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
@@ -1587,6 +1597,51 @@ namespace patchcraft
         if (userSampleOverlayEnabled)
             userSampleOverlay.setParameter (parameterId, limited);
         routingEngine.setParameterValue (parameterId, limited);
+
+        if (parameterId.startsWith ("arpLane"))
+        {
+            if (auto* block = findMidiPlaygroundBlock (pack.dspGraph))
+            {
+                auto value = [this] (const juce::String& id, float fallback)
+                {
+                    const auto found = runtimeParameterValues.find (id);
+                    return found != runtimeParameterValues.end() ? found->second : fallback;
+                };
+
+                const int lane = juce::jlimit (0, 15, juce::roundToInt (value ("arpLaneIndex", 0.0f)));
+                const auto prefix = lane == 0 ? juce::String() : "mpBank" + juce::String (lane + 1) + "_";
+                const int steps = juce::jlimit (1, 128, juce::roundToInt (value ("arpLaneSteps", 16.0f)));
+                const int target = juce::jlimit (0, 4, juce::roundToInt (value ("arpLaneTarget", 0.0f)));
+
+                block->values["mpActiveBank"] = (float) lane;
+                block->values[prefix + "arpSteps"] = (float) steps;
+                block->values[prefix + "arpGate"] = juce::jlimit (0.05f, 1.0f, value ("arpLaneGate", 0.58f));
+                block->values[prefix + "arpSwing"] = juce::jlimit (0.0f, 0.5f, value ("arpLaneSwing", 0.0f));
+                block->values[prefix + "rate"] = juce::jlimit (0.0625f, 16.0f, value ("arpLaneRate", 1.0f));
+                block->values[prefix + "mpProbability"] = juce::jlimit (0.0f, 1.0f, value ("arpLaneProbability", 1.0f));
+                block->values[prefix + "mpRatchet"] = juce::jlimit (1.0f, 8.0f, value ("arpLaneRatchet", 1.0f));
+                block->values[prefix + "mpEuclideanPulses"] = (float) juce::jlimit (0, steps, juce::roundToInt (value ("arpLaneEuclideanPulses", 0.0f)));
+                block->values[prefix + "mpEuclideanRotate"] = (float) juce::jlimit (0, 127, juce::roundToInt (value ("arpLaneRotate", 0.0f)));
+                block->values[prefix + "mpSampleControl"] = target == 0 ? 0.0f : 1.0f;
+                block->values[prefix + "mpSampleSliceCount"] = (float) juce::jlimit (1, 64, juce::roundToInt (value ("arpLaneSampleSlots", 1.0f)));
+
+                block->metadata["arpLane" + juce::String (lane + 1) + "Target"] =
+                    target == 1 ? "drums" : target == 2 ? "oneShots" : target == 3 ? "loops" : target == 4 ? "samples" : "notes";
+                block->metadata["arpLane" + juce::String (lane + 1) + "Direction"] =
+                    juce::roundToInt (value ("arpLaneDirection", 0.0f)) == 1 ? "reverse"
+                    : juce::roundToInt (value ("arpLaneDirection", 0.0f)) == 2 ? "bounce"
+                    : juce::roundToInt (value ("arpLaneDirection", 0.0f)) == 3 ? "random" : "forward";
+                block->metadata["arpLane" + juce::String (lane + 1) + "FillPulses"] =
+                    juce::String (juce::jlimit (0, steps, juce::roundToInt (value ("arpLaneFillPulses", 0.0f))));
+                block->metadata["arpLane" + juce::String (lane + 1) + "FillProbability"] =
+                    juce::String (juce::jlimit (0.0f, 1.0f, value ("arpLaneFillProbability", 0.0f)), 2);
+
+                if (engine != nullptr)
+                    arpeggiator.bind (pack.dspGraph);
+                routingEngine.bind (pack.dspGraph, pack.parameters);
+                routingEngine.prepare (makeRenderContext (currentBlockSize));
+            }
+        }
         return true;
     }
 
