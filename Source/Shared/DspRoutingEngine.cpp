@@ -294,7 +294,7 @@ namespace patchcraft
             float output = 0.0f;
             if (enabled && probability > 0.0f && stepPhase <= (double) gate)
             {
-                const int lane = juce::jlimit (0, 4, juce::roundToInt (valueForKey (block.block, "mpModLane", 0.0f)));
+                const int lane = juce::jlimit (0, 7, juce::roundToInt (valueForKey (block.block, "mpModLane", 0.0f)));
                 if (lane == 1)
                     output = juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "mpVelocity" + juce::String (step), 1.0f));
                 else if (lane == 2)
@@ -304,6 +304,12 @@ namespace patchcraft
                 else if (lane == 4)
                     output = juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "mpSampleSlice" + juce::String (step), (float) step)
                         / juce::jmax (1.0f, valueForKey (block.block, "mpSampleSliceCount", 16.0f) - 1.0f));
+                else if (lane == 5)
+                    output = juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "mpAutoFilter" + juce::String (step), 0.5f));
+                else if (lane == 6)
+                    output = juce::jlimit (0.0f, 1.0f, (valueForKey (block.block, "mpAutoPan" + juce::String (step), 0.0f) + 1.0f) * 0.5f);
+                else if (lane == 7)
+                    output = juce::jlimit (0.0f, 1.0f, valueForKey (block.block, "mpAutoFxSend" + juce::String (step), 0.0f));
                 else
                     output = juce::jlimit (0.0f, 1.0f,
                         (valueForKey (block.block, "arpNote" + juce::String (step), 0.0f) + 24.0f) / 48.0f);

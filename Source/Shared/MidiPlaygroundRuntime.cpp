@@ -341,6 +341,9 @@ namespace patchcraft
             }
 
             loadRuntimeBank (settings.activeBank);
+            const auto activePrefix = "mpBank" + juce::String (settings.activeBank + 1) + "_";
+            settings.laneMuted = valueForKey (block, activePrefix + "mpLaneMute",
+                                               valueForKey (block, "mpLaneMute", 0.0f)) >= 0.5f;
 
             enabled = true;
             break;
@@ -630,7 +633,8 @@ namespace patchcraft
 
     bool MidiPlaygroundRuntime::stepIsEnabled (int step) const
     {
-        return settings.active[(size_t) juce::jlimit (0, kMaxSteps - 1, step)] >= 0.5f
+        return ! settings.laneMuted
+            && settings.active[(size_t) juce::jlimit (0, kMaxSteps - 1, step)] >= 0.5f
             && stepPassesEuclideanMask (step);
     }
 

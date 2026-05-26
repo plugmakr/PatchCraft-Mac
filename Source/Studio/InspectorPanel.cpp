@@ -941,7 +941,8 @@ namespace patchcraft
         arpLaneModeBox.addItem ("Phrase bank", 1);
         arpLaneModeBox.addItem ("Velocity lane", 2);
         arpLaneModeBox.addItem ("Trigger lane", 3);
-        arpLaneModeBox.setTooltip ("Phrase bank selects/edit MIDI Playground banks. Velocity and Trigger are authoring modes for lane-style performance surfaces.");
+        arpLaneModeBox.addItem ("Orbit multi-ring", 4);
+        arpLaneModeBox.setTooltip ("Phrase bank selects/edit MIDI Playground banks. Orbit multi-ring edits the first five lanes as concentric rings.");
         addAndMakeVisible (arpLaneModeBox);
 
         arpLaneTargetBox.addItem ("Notes / synth", 1);
@@ -2152,7 +2153,8 @@ namespace patchcraft
         arpLaneIndexSlider.setValue (juce::jlimit (1, 16, el->arpLaneIndex + 1), juce::dontSendNotification);
         arpLaneStepsSlider.setValue (juce::jlimit (1, 128, el->arpLaneSteps), juce::dontSendNotification);
         arpLaneModeBox.setSelectedId (el->arpLaneMode == "velocity" ? 2
-                                   : el->arpLaneMode == "trigger" ? 3 : 1,
+                                   : el->arpLaneMode == "trigger" ? 3
+                                   : el->arpLaneMode == "multiRing" || el->arpLaneMode == "orbit" || el->arpLaneMode == "orbitMulti" ? 4 : 1,
                                    juce::dontSendNotification);
         arpLaneTargetBox.setSelectedId (el->arpLaneTarget == "drums" ? 2
                                    : el->arpLaneTarget == "oneShots" ? 3
@@ -2382,7 +2384,8 @@ namespace patchcraft
             el->arpLaneIndex = juce::jlimit (0, 15, juce::roundToInt (arpLaneIndexSlider.getValue()) - 1);
             el->arpLaneSteps = juce::jlimit (1, 128, juce::roundToInt (arpLaneStepsSlider.getValue()));
             el->arpLaneMode = arpLaneModeBox.getSelectedId() == 2 ? "velocity"
-                            : arpLaneModeBox.getSelectedId() == 3 ? "trigger" : "bank";
+                            : arpLaneModeBox.getSelectedId() == 3 ? "trigger"
+                            : arpLaneModeBox.getSelectedId() == 4 ? "multiRing" : "bank";
             el->arpLaneTarget = arpLaneTargetBox.getSelectedId() == 2 ? "drums"
                               : arpLaneTargetBox.getSelectedId() == 3 ? "oneShots"
                               : arpLaneTargetBox.getSelectedId() == 4 ? "loops"
@@ -2806,7 +2809,8 @@ namespace patchcraft
         el->arpLaneIndex = juce::jlimit (0, 15, juce::roundToInt (arpLaneIndexSlider.getValue()) - 1);
         el->arpLaneSteps = juce::jlimit (1, 128, juce::roundToInt (arpLaneStepsSlider.getValue()));
         el->arpLaneMode = arpLaneModeBox.getSelectedId() == 2 ? "velocity"
-                        : arpLaneModeBox.getSelectedId() == 3 ? "trigger" : "bank";
+                        : arpLaneModeBox.getSelectedId() == 3 ? "trigger"
+                        : arpLaneModeBox.getSelectedId() == 4 ? "multiRing" : "bank";
         el->arpLaneTarget = arpLaneTargetBox.getSelectedId() == 2 ? "drums"
                           : arpLaneTargetBox.getSelectedId() == 3 ? "oneShots"
                           : arpLaneTargetBox.getSelectedId() == 4 ? "loops"

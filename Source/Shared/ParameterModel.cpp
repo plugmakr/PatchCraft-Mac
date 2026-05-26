@@ -533,7 +533,12 @@ namespace patchcraft
             add (makeDef ("arpLaneGate", "Gate", 0.05f, 1.0f, 0.58f, "", "mod", "Arp Lane"));
             add (makeDef ("arpLaneSwing", "Swing", 0.0f, 0.5f, 0.0f, "", "mod", "Arp Lane"));
             add (makeDef ("arpLaneControlBank", "Control Bank", 0.0f, 4.0f, 0.0f, "", "mod", "Arp Lane", "stepped", 1.0f));
-            add (makeDef ("arpLaneSliderRole", "Slider Role", 0.0f, 7.0f, 0.0f, "", "mod", "Arp Lane", "stepped", 1.0f));
+            add (makeDef ("arpLaneSliderRole", "Slider Role", 0.0f, 10.0f, 0.0f, "", "mod", "Arp Lane", "stepped", 1.0f));
+            add (makeDef ("arpLaneFillMomentary", "Fill Hold", 0.0f, 1.0f, 0.0f, "", "mod", "Arp Lane"));
+            add (makeDef ("arpLaneFillLatch", "Fill Latch", 0.0f, 1.0f, 0.0f, "", "mod", "Arp Lane"));
+            add (makeDef ("arpLaneMute", "Lane Mute", 0.0f, 1.0f, 0.0f, "", "mod", "Arp Lane"));
+            add (makeDef ("arpLaneSolo", "Lane Solo", 0.0f, 1.0f, 0.0f, "", "mod", "Arp Lane"));
+            add (makeDef ("arpLanePatternLaunch", "Pattern Launch", 0.0f, 7.0f, 0.0f, "", "mod", "Arp Lane", "stepped", 1.0f));
             for (int step = 0; step < 16; ++step)
                 add (makeDef ("arpLaneStep" + juce::String (step + 1),
                               "Step " + juce::String (step + 1),

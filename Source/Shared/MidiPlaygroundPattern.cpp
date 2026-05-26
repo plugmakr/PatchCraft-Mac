@@ -42,9 +42,10 @@ namespace patchcraft
             "mpPatternMorph", "mpKeySwitchEnabled", "mpKeySwitchBase"
         }};
 
-        static constexpr std::array<const char*, 11> kStepValuePrefixes {{
+        static constexpr std::array<const char*, 14> kStepValuePrefixes {{
             "arpNote", "mpVelocity", "mpGate", "mpStepProb", "mpSampleSlice",
-            "mpStepDiv", "mpStepDelay", "mpStepTranspose", "mpStepChordMode", "mpStepChordSize", "mpStepTie"
+            "mpStepDiv", "mpStepDelay", "mpStepTranspose", "mpStepChordMode", "mpStepChordSize", "mpStepTie",
+            "mpAutoFilter", "mpAutoPan", "mpAutoFxSend"
         }};
 
         static int positiveMod (int value, int modulus)

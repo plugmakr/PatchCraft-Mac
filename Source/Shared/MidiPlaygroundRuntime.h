@@ -45,6 +45,7 @@ namespace patchcraft
             int octaves = 2;
             float swing = 0.0f;
             float probability = 1.0f;
+            bool laneMuted = false;
             float humanize = 0.0f;
             float mutation = 0.0f;
             float velocityCurve = 0.0f;

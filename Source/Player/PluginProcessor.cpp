@@ -1645,15 +1645,24 @@ namespace patchcraft
                 setArpLaneValue (*block, lane, "arpGate", juce::jlimit (0.05f, 1.0f, value ("arpLaneGate", 0.58f)));
                 setArpLaneValue (*block, lane, "arpSwing", juce::jlimit (0.0f, 0.5f, value ("arpLaneSwing", 0.0f)));
                 setArpLaneValue (*block, lane, "rate", juce::jlimit (0.0625f, 16.0f, value ("arpLaneRate", 1.0f)));
-                setArpLaneValue (*block, lane, "mpProbability", juce::jlimit (0.0f, 1.0f, value ("arpLaneProbability", 1.0f)));
+                const bool fillActive = value ("arpLaneFillMomentary", 0.0f) >= 0.5f
+                                     || value ("arpLaneFillLatch", 0.0f) >= 0.5f;
+                const int basePulses = juce::jlimit (0, steps, juce::roundToInt (value ("arpLaneEuclideanPulses", 0.0f)));
+                const int fillPulses = juce::jlimit (0, steps, juce::roundToInt (value ("arpLaneFillPulses", 0.0f)));
+                const float baseProbability = juce::jlimit (0.0f, 1.0f, value ("arpLaneProbability", 1.0f));
+                const float fillProbability = juce::jlimit (0.0f, 1.0f, value ("arpLaneFillProbability", 0.0f));
+                setArpLaneValue (*block, lane, "mpProbability", fillActive && fillProbability > 0.0f ? fillProbability : baseProbability);
                 setArpLaneValue (*block, lane, "mpRatchet", juce::jlimit (1.0f, 8.0f, value ("arpLaneRatchet", 1.0f)));
-                setArpLaneValue (*block, lane, "mpEuclideanPulses", (float) juce::jlimit (0, steps, juce::roundToInt (value ("arpLaneEuclideanPulses", 0.0f))));
+                setArpLaneValue (*block, lane, "mpEuclideanPulses", (float) (fillActive && fillPulses > 0 ? fillPulses : basePulses));
                 setArpLaneValue (*block, lane, "mpEuclideanRotate", (float) juce::jlimit (0, 127, juce::roundToInt (value ("arpLaneRotate", 0.0f))));
                 setArpLaneValue (*block, lane, "mpSampleControl", target == 0 ? 0.0f : 1.0f);
                 setArpLaneValue (*block, lane, "mpSampleSliceCount", (float) juce::jlimit (1, 64, juce::roundToInt (value ("arpLaneSampleSlots", 1.0f))));
+                setArpLaneValue (*block, lane, "mpLaneMute", value ("arpLaneMute", 0.0f) >= 0.5f ? 1.0f : 0.0f);
+                setArpLaneValue (*block, lane, "mpLaneSolo", value ("arpLaneSolo", 0.0f) >= 0.5f ? 1.0f : 0.0f);
+                block->values["mpPatternLaunch"] = (float) juce::jlimit (0, 7, juce::roundToInt (value ("arpLanePatternLaunch", 0.0f)));
 
                 const int controlLane = juce::jlimit (0, 15, juce::roundToInt (value ("arpLaneControlBank", (float) lane)));
-                const int sliderRole = juce::jlimit (0, 7, juce::roundToInt (value ("arpLaneSliderRole", 0.0f)));
+                const int sliderRole = juce::jlimit (0, 10, juce::roundToInt (value ("arpLaneSliderRole", 0.0f)));
                 const int slots = juce::jlimit (1, 64, juce::roundToInt (value ("arpLaneSampleSlots", 1.0f)));
                 for (int step = 0; step < 16; ++step)
                 {
@@ -1676,6 +1685,12 @@ namespace patchcraft
                         setArpLaneValue (*block, controlLane, "mpSampleSlice" + suffix, (float) juce::jlimit (0, slots - 1, juce::roundToInt (v * (float) juce::jmax (1, slots - 1))));
                     else if (sliderRole == 7)
                         setArpLaneValue (*block, controlLane, "mpStepTranspose" + suffix, (float) juce::jlimit (-24, 24, juce::roundToInt (v * 48.0f - 24.0f)));
+                    else if (sliderRole == 8)
+                        setArpLaneValue (*block, controlLane, "mpAutoFilter" + suffix, v);
+                    else if (sliderRole == 9)
+                        setArpLaneValue (*block, controlLane, "mpAutoPan" + suffix, juce::jlimit (-1.0f, 1.0f, v * 2.0f - 1.0f));
+                    else if (sliderRole == 10)
+                        setArpLaneValue (*block, controlLane, "mpAutoFxSend" + suffix, v);
                 }
 
                 setArpLaneMetadata (*block, lane, "Target",
@@ -1689,7 +1704,8 @@ namespace patchcraft
                 setArpLaneMetadata (*block, controlLane, "SliderRole",
                     sliderRole == 0 ? "velocity" : sliderRole == 1 ? "gate" : sliderRole == 2 ? "probability"
                     : sliderRole == 3 ? "ratchet" : sliderRole == 4 ? "mute" : sliderRole == 5 ? "delay"
-                    : sliderRole == 6 ? "slice" : "transpose");
+                    : sliderRole == 6 ? "slice" : sliderRole == 7 ? "transpose"
+                    : sliderRole == 8 ? "filter" : sliderRole == 9 ? "pan" : "fxSend");
 
                 if (engine != nullptr)
                     arpeggiator.bind (pack.dspGraph);

@@ -1790,6 +1790,9 @@ namespace patchcraft
             ? juce::jlimit (0, 15, juce::roundToInt (blockValue (*block, "mpActiveBank", 0.0f)))
             : 0;
         const bool laneSelected = lane == activeLane;
+        const bool orbitMultiRing = e.arpLaneMode.equalsIgnoreCase ("multiRing")
+                                 || e.arpLaneMode.equalsIgnoreCase ("orbit")
+                                 || e.arpLaneMode.equalsIgnoreCase ("orbitMulti");
         const int steps = block != nullptr
             ? juce::jlimit (1, 128, juce::roundToInt (arpLaneValue (*block, lane, "arpSteps", (float) e.arpLaneSteps)))
             : juce::jlimit (1, 128, e.arpLaneSteps);
@@ -1830,6 +1833,102 @@ namespace patchcraft
         g.setColour (proc.isAnyTransportPlaying() ? playerBg() : playerText());
         g.setFont (juce::FontOptions (7.8f).withStyle ("bold"));
         g.drawText (proc.isAnyTransportPlaying() ? "STOP" : "PLAY", playButton, juce::Justification::centred, true);
+
+        if (orbitMultiRing)
+        {
+            const int laneCount = 5;
+            const float size = (float) juce::jmin (area.getWidth(), area.getHeight() - 34);
+            if (size <= 24.0f)
+                return;
+
+            const juce::Point<float> centre ((float) area.getCentreX(),
+                                             (float) area.getY() + size * 0.52f);
+            const float radius = size * 0.42f;
+            const float innerRadius = radius * 0.25f;
+            const float outerRadius = radius * 0.94f;
+            const float band = (outerRadius - innerRadius) / (float) laneCount;
+            const float laneAlpha = proc.isAnyTransportPlaying() ? 0.88f : 0.66f;
+
+            g.setColour (borderC.withAlpha (0.22f));
+            for (int spoke = 0; spoke < 16; ++spoke)
+            {
+                const float angle = -juce::MathConstants<float>::halfPi
+                    + juce::MathConstants<float>::twoPi * (float) spoke / 16.0f;
+                const auto start = centre + juce::Point<float> (std::cos (angle) * innerRadius,
+                                                                std::sin (angle) * innerRadius);
+                const auto end = centre + juce::Point<float> (std::cos (angle) * outerRadius,
+                                                              std::sin (angle) * outerRadius);
+                g.drawLine (start.x, start.y, end.x, end.y, spoke % 4 == 0 ? 1.0f : 0.55f);
+            }
+
+            for (int ringLane = 0; ringLane < laneCount; ++ringLane)
+            {
+                const int laneToDraw = ringLane;
+                const int laneSteps = block != nullptr
+                    ? juce::jlimit (1, 128, juce::roundToInt (arpLaneValue (*block, laneToDraw, "arpSteps", (float) e.arpLaneSteps)))
+                    : juce::jlimit (1, 128, e.arpLaneSteps);
+                const int drawSteps = juce::jmin (laneSteps, 64);
+                const float ringRadius = innerRadius + band * ((float) ringLane + 0.5f);
+                const bool activeRing = laneToDraw == activeLane;
+                const auto ringColour = activeRing ? accent : accent.interpolatedWith (borderC, 0.45f + 0.08f * (float) ringLane);
+                const double playback01 = activeRing ? proc.getSequencerPlaybackPosition01 (laneSteps) : -1.0;
+                const int playbackStep = playback01 >= 0.0
+                    ? juce::jlimit (0, drawSteps - 1, (int) std::floor (playback01 * (double) drawSteps))
+                    : -1;
+
+                g.setColour ((activeRing ? ringColour : borderC).withAlpha (activeRing ? 0.82f : 0.28f));
+                g.drawEllipse (centre.x - ringRadius, centre.y - ringRadius,
+                               ringRadius * 2.0f, ringRadius * 2.0f, activeRing ? 2.0f : 0.9f);
+
+                for (int stepIndex = 0; stepIndex < drawSteps; ++stepIndex)
+                {
+                    const float active = block != nullptr
+                        ? arpLaneValue (*block, laneToDraw, "mpStep" + juce::String (stepIndex) + "On", stepIndex % 2 == 0 ? 1.0f : 0.0f)
+                        : (stepIndex % 3 == 0 ? 1.0f : 0.0f);
+                    const float velocity = block != nullptr
+                        ? juce::jlimit (0.05f, 1.0f, arpLaneValue (*block, laneToDraw, "mpVelocity" + juce::String (stepIndex), 0.74f))
+                        : 0.72f;
+                    const float angle = -juce::MathConstants<float>::halfPi
+                        + juce::MathConstants<float>::twoPi * (float) stepIndex / (float) drawSteps;
+                    const float rOffset = juce::jmap (velocity, 0.0f, 1.0f, -band * 0.34f, band * 0.34f);
+                    const auto p = centre + juce::Point<float> (std::cos (angle) * (ringRadius + rOffset),
+                                                                std::sin (angle) * (ringRadius + rOffset));
+                    const float dot = (stepIndex == playbackStep ? 4.4f : 2.5f) + velocity * (activeRing ? 2.4f : 1.2f);
+                    if (active >= 0.5f)
+                    {
+                        g.setColour (ringColour.withAlpha ((activeRing ? laneAlpha : 0.48f) * (0.5f + velocity * 0.5f)));
+                        g.fillEllipse (p.x - dot, p.y - dot, dot * 2.0f, dot * 2.0f);
+                    }
+                    else if (activeRing)
+                    {
+                        g.setColour (borderC.withAlpha (0.18f));
+                        g.drawEllipse (p.x - 2.0f, p.y - 2.0f, 4.0f, 4.0f, 0.7f);
+                    }
+                }
+            }
+
+            g.setColour (playerText());
+            g.setFont (juce::FontOptions (21.0f).withStyle ("bold"));
+            g.drawText ("ORBIT", juce::Rectangle<int> ((int) centre.x - 45, (int) centre.y - 22, 90, 24),
+                        juce::Justification::centred, true);
+            g.setColour (playerTextDim());
+            g.setFont (juce::FontOptions (8.5f).withStyle ("bold"));
+            g.drawText ("LANE " + juce::String (activeLane + 1) + " ACTIVE",
+                        juce::Rectangle<int> ((int) centre.x - 48, (int) centre.y + 3, 96, 18),
+                        juce::Justification::centred, true);
+
+            auto footer = r.reduced (10).removeFromBottom (30);
+            const juce::String footerLabels[] = { "PITCH", "FILTER", "PAN", "FX", "SLICE" };
+            for (int i = 0; i < 5; ++i)
+            {
+                const int cellW = footer.getWidth() / (5 - i);
+                auto cell = footer.removeFromLeft (cellW).reduced (2, 1);
+                g.setColour (i == activeLane ? accent : playerTextDim());
+                g.setFont (juce::FontOptions (7.3f).withStyle ("bold"));
+                g.drawText (footerLabels[i], cell, juce::Justification::centred, true);
+            }
+            return;
+        }
 
         const float size = (float) juce::jmin (area.getWidth(), area.getHeight() - 34);
         const juce::Point<float> centre ((float) area.getCentreX(),
@@ -2795,10 +2894,12 @@ namespace patchcraft
         const auto* pack = proc.getPack();
         const auto* block = pack != nullptr ? findArpBlock (pack->dspGraph) : nullptr;
         lane = juce::jlimit (0, 15, element.arpLaneIndex);
-        const int steps = block != nullptr
+        const bool orbitMultiRing = element.arpLaneMode.equalsIgnoreCase ("multiRing")
+                                 || element.arpLaneMode.equalsIgnoreCase ("orbit")
+                                 || element.arpLaneMode.equalsIgnoreCase ("orbitMulti");
+        int steps = block != nullptr
             ? juce::jlimit (1, 128, juce::roundToInt (arpLaneValue (*block, lane, "arpSteps", (float) element.arpLaneSteps)))
             : juce::jlimit (1, 128, element.arpLaneSteps);
-        const int maxDrawSteps = juce::jmin (steps, 64);
 
         auto area = r.reduced (10);
         area.removeFromTop (26);
@@ -2813,14 +2914,36 @@ namespace patchcraft
         if (distance < radius * 0.16f || distance > radius * 1.22f)
             return false;
 
+        if (orbitMultiRing)
+        {
+            const int laneCount = 5;
+            const float multiRadius = size * 0.42f;
+            const float innerRadius = multiRadius * 0.25f;
+            const float outerRadius = multiRadius * 0.94f;
+            if (distance < innerRadius - 4.0f || distance > outerRadius + 8.0f)
+                return false;
+
+            const float lanePos = juce::jmap (distance, innerRadius, outerRadius, 0.0f, (float) laneCount);
+            lane = juce::jlimit (0, laneCount - 1, (int) std::floor (lanePos));
+            steps = block != nullptr
+                ? juce::jlimit (1, 128, juce::roundToInt (arpLaneValue (*block, lane, "arpSteps", (float) element.arpLaneSteps)))
+                : juce::jlimit (1, 128, element.arpLaneSteps);
+            const float laneCentre = innerRadius + ((outerRadius - innerRadius) / (float) laneCount) * ((float) lane + 0.5f);
+            velocity = juce::jlimit (0.05f, 1.0f,
+                juce::jmap (distance - laneCentre, -(outerRadius - innerRadius) / (float) laneCount * 0.45f,
+                            (outerRadius - innerRadius) / (float) laneCount * 0.45f, 0.05f, 1.0f));
+        }
+
         float angle01 = (std::atan2 (delta.y, delta.x) + juce::MathConstants<float>::halfPi)
             / juce::MathConstants<float>::twoPi;
         while (angle01 < 0.0f) angle01 += 1.0f;
         while (angle01 >= 1.0f) angle01 -= 1.0f;
 
+        const int maxDrawSteps = juce::jmin (steps, 64);
         step = juce::jlimit (0, maxDrawSteps - 1, juce::roundToInt (angle01 * (float) maxDrawSteps) % maxDrawSteps);
-        velocity = juce::jlimit (0.05f, 1.0f,
-            juce::jmap (distance, radius * 0.25f, radius * 0.93f, 0.05f, 1.0f));
+        if (! orbitMultiRing)
+            velocity = juce::jlimit (0.05f, 1.0f,
+                juce::jmap (distance, radius * 0.25f, radius * 0.93f, 0.05f, 1.0f));
         return true;
     }
 
@@ -3991,7 +4114,7 @@ namespace patchcraft
         }
         else if (def->id == "arpLaneSliderRole")
         {
-            values = { 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f };
+            values = { 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f, 10.0f };
             menu.addItem (1, "Velocity");
             menu.addItem (2, "Gate");
             menu.addItem (3, "Probability");
@@ -4000,6 +4123,9 @@ namespace patchcraft
             menu.addItem (6, "Delay");
             menu.addItem (7, "Sample Slice");
             menu.addItem (8, "Transpose");
+            menu.addItem (9, "Filter");
+            menu.addItem (10, "Pan");
+            menu.addItem (11, "FX Send");
         }
         else if (def->id == "granularDirection")
         {
