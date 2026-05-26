@@ -1009,6 +1009,7 @@ namespace patchcraft
                 make ("modMatrix", "Add Mod Matrix", "Add a modulation matrix UI element.", "modulation routing"),
                 make ("granular", "Add Granular Field", "Add a runtime granular control surface.", "sample grain cloud"),
                 make ("arpLane", "Add Arp Studio Lane", "Add a circular arp lane that selects and visualizes a MIDI Playground bank.", "arp sequencer circle lane bank steps"),
+                make ("orbitInstrument", "Add Orbit Groove Instrument Surface", "Add the multi-ring Orbit editor with lane, automation, fill, mute, and step controls.", "patterning circular drum sequencer orbit arplane fills automation lanes"),
                 make ("drumMachine", "Add Drum Machine Surface", "Add pads, pattern grid, bank controls, and mixer.", "drums sequencer pads"),
                 make ("bpm", "Add Project BPM Control", "Add a knob connected to the global preview/standalone BPM.", "tempo global sync"),
                 make ("bpmSync", "Add BPM Sync Toggle", "Add an on/off switch for tempo-synced blocks.", "tempo sync toggle"),
@@ -3550,6 +3551,147 @@ namespace patchcraft
         repaint();
     }
 
+    void CanvasEditor::addOrbitInstrumentControlLayout (juce::Point<int> canvasPos)
+    {
+        auto& graph = owner.getProject().getDspGraph();
+        ensureArpBlock (graph);
+
+        const auto tabGroup = currentTabGroup == "main" ? juce::String() : currentTabGroup;
+        juce::StringArray addedIds;
+
+        owner.getProject().performLayoutEdit ("Add Orbit groove instrument surface",
+            [&] (LayoutModel& layout)
+            {
+                LayoutElement panel;
+                panel.type = ElementType::Panel;
+                panel.label = "Orbit Groove Instrument";
+                panel.x = canvasPos.x;
+                panel.y = canvasPos.y;
+                panel.width = 1120;
+                panel.height = 560;
+                panel.groupId = tabGroup;
+                panel.cornerRadius = 18.0f;
+                panel.strokeWidth = 2.0f;
+                panel.backgroundColour = juce::Colour (0xcc070a0f);
+                panel.borderColour = PatchCraftLookAndFeel::accent();
+                panel.accentColour = PatchCraftLookAndFeel::accent();
+                auto& addedPanel = layout.add (panel);
+                const auto panelId = addedPanel.id;
+                addedIds.add (panelId);
+
+                auto addChild = [&] (LayoutElement child, const juce::String& prefix)
+                {
+                    child.containerId = panelId;
+                    child.groupId = tabGroup;
+                    if (child.id.isEmpty())
+                        child.id = layout.generateUniqueId (prefix);
+                    auto& added = layout.add (child);
+                    addedIds.add (added.id);
+                };
+
+                LayoutElement title;
+                title.type = ElementType::Label;
+                title.label = "ORBIT GROOVE BUILDER";
+                title.x = canvasPos.x + 22;
+                title.y = canvasPos.y + 16;
+                title.width = 340;
+                title.height = 24;
+                title.labelSize = 16.0f;
+                title.textColour = PatchCraftLookAndFeel::textBright();
+                title.accentColour = PatchCraftLookAndFeel::accent();
+                addChild (title, "label_");
+
+                LayoutElement help;
+                help.type = ElementType::Label;
+                help.label = "Edit five circular lanes, choose the lane bank and automation role, then prove it in Brand Lab before export.";
+                help.x = canvasPos.x + 370;
+                help.y = canvasPos.y + 18;
+                help.width = 700;
+                help.height = 22;
+                help.labelSize = 11.0f;
+                help.textColour = PatchCraftLookAndFeel::textDim();
+                addChild (help, "label_");
+
+                LayoutElement orbit;
+                orbit.type = ElementType::ArpLane;
+                orbit.label = "Orbit Lane";
+                orbit.x = canvasPos.x + 22;
+                orbit.y = canvasPos.y + 58;
+                orbit.width = 650;
+                orbit.height = 430;
+                orbit.arpLaneIndex = 0;
+                orbit.arpLaneSteps = 16;
+                orbit.arpLaneMode = "multiRing";
+                orbit.arpLaneTarget = "notes";
+                orbit.arpLaneSampleSlots = 8;
+                orbit.arpLaneEuclideanPulses = 11;
+                orbit.arpLaneFillPulses = 3;
+                orbit.arpLaneFillProbability = 0.32f;
+                orbit.cornerRadius = 14.0f;
+                orbit.backgroundColour = juce::Colour (0xee090d12);
+                orbit.borderColour = PatchCraftLookAndFeel::border();
+                orbit.accentColour = PatchCraftLookAndFeel::accent();
+                addChild (orbit, "orbit_");
+
+                auto addControl = [&] (ElementType type, juce::String label, juce::String parameter,
+                                       int x, int y, int w, int h, const juce::String& prefix)
+                {
+                    LayoutElement control;
+                    control.type = type;
+                    control.label = std::move (label);
+                    control.parameterId = std::move (parameter);
+                    control.x = canvasPos.x + x;
+                    control.y = canvasPos.y + y;
+                    control.width = w;
+                    control.height = h;
+                    control.labelPosition = type == ElementType::Knob || type == ElementType::Slider ? "bottom" : "hidden";
+                    control.labelSize = type == ElementType::Slider ? 8.0f : 9.5f;
+                    control.labelSpacing = 3.0f;
+                    control.cornerRadius = 7.0f;
+                    control.backgroundColour = juce::Colour (0x33141822);
+                    control.borderColour = PatchCraftLookAndFeel::border();
+                    control.accentColour = PatchCraftLookAndFeel::accent();
+                    addChild (control, prefix);
+                };
+
+                addControl (ElementType::Dropdown, "Lane", "arpLaneControlBank", 700, 64, 126, 34, "dropdown_");
+                addControl (ElementType::Dropdown, "Role", "arpLaneSliderRole", 838, 64, 170, 34, "dropdown_");
+                addControl (ElementType::Dropdown, "Target", "arpLaneTarget", 700, 110, 126, 34, "dropdown_");
+                addControl (ElementType::Dropdown, "Direction", "arpLaneDirection", 838, 110, 170, 34, "dropdown_");
+                addControl (ElementType::Button, "FILL HOLD", "arpLaneFillMomentary", 700, 160, 126, 34, "button_");
+                addControl (ElementType::Toggle, "FILL LATCH", "arpLaneFillLatch", 838, 160, 126, 34, "toggle_");
+                addControl (ElementType::Toggle, "MUTE", "arpLaneMute", 976, 160, 72, 34, "toggle_");
+                addControl (ElementType::Knob, "Rate", "arpLaneRate", 700, 218, 70, 76, "knob_");
+                addControl (ElementType::Knob, "Gate", "arpLaneGate", 790, 218, 70, 76, "knob_");
+                addControl (ElementType::Knob, "Swing", "arpLaneSwing", 880, 218, 70, 76, "knob_");
+                addControl (ElementType::Knob, "Chance", "arpLaneProbability", 970, 218, 70, 76, "knob_");
+                addControl (ElementType::Knob, "Fill", "arpLaneFillPulses", 700, 314, 70, 76, "knob_");
+                addControl (ElementType::Knob, "Fill %", "arpLaneFillProbability", 790, 314, 70, 76, "knob_");
+                addControl (ElementType::Knob, "Slots", "arpLaneSampleSlots", 880, 314, 70, 76, "knob_");
+                addControl (ElementType::Knob, "Rotate", "arpLaneRotate", 970, 314, 70, 76, "knob_");
+
+                for (int step = 0; step < 16; ++step)
+                {
+                    const int col = step % 8;
+                    const int row = step / 8;
+                    addControl (ElementType::Slider,
+                                juce::String (step + 1),
+                                "arpLaneStep" + juce::String (step + 1),
+                                700 + col * 48,
+                                414 + row * 64,
+                                36,
+                                56,
+                                "slider_");
+                }
+            });
+
+        if (! addedIds.isEmpty())
+            owner.setSelectedElementIds (addedIds);
+
+        applyArpLaneParameterToGraph (owner.getProject(), "arpLaneIndex");
+        repaint();
+    }
+
     void CanvasEditor::addCircleSeqBackgroundKit (juce::Point<int> canvasPos)
     {
         const auto canvas = owner.getProject().getCanvasSize();
@@ -3708,6 +3850,7 @@ namespace patchcraft
         menu.addItem (22, "Add Granular Field");
         menu.addItem (23, "Add Drum Machine Surface");
         menu.addItem (26, "Add Arp Studio Lane");
+        menu.addItem (27, "Add Orbit Groove Instrument Surface");
         menu.addSeparator();
 
         // Group parameters by ParameterDef::category so the menu doesn't dump
@@ -3876,6 +4019,7 @@ namespace patchcraft
                             else if (actionId == "modMatrix") c->addElementAt (ElementType::ModMatrix, canvasPos);
                             else if (actionId == "granular") c->addElementAt (ElementType::GranularField, canvasPos);
                             else if (actionId == "arpLane") c->addElementAt (ElementType::ArpLane, canvasPos);
+                            else if (actionId == "orbitInstrument") c->addOrbitInstrumentControlLayout (canvasPos);
                             else if (actionId == "drumMachine") c->addDrumMachineControlLayout (canvasPos);
                             else if (actionId == "bpm") c->addElementAt (ElementType::Knob, canvasPos, "projectBpm");
                             else if (actionId == "bpmSync") c->addElementAt (ElementType::Toggle, canvasPos, "bpmSync");
@@ -3971,6 +4115,10 @@ namespace patchcraft
                 else if (result == 26)
                 {
                     addElementAt (ElementType::ArpLane, canvasPos);
+                }
+                else if (result == 27)
+                {
+                    addOrbitInstrumentControlLayout (canvasPos);
                 }
                 else if (result == 15)
                 {

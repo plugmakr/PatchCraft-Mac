@@ -37,6 +37,7 @@ namespace patchcraft
         juce::TextButton synthButton { "Synth Instrument" };
         juce::TextButton sampleButton { "Sample Instrument" };
         juce::TextButton drumButton { "Drum Machine" };
+        juce::TextButton orbitButton { "Orbit Groove Instrument" };
         juce::TextButton fxButton { "FX Plugin" };
         juce::Label factoryDemoLabel;
         juce::ComboBox factoryDemoBox;
@@ -74,6 +75,7 @@ namespace patchcraft
         };
 
         void switchTemplate (const juce::String& engineId, const juce::String& label);
+        void createOrbitStarter();
         void populateFactoryDemos();
         void showFactoryDemoMenu();
         void loadSelectedFactoryDemo();

@@ -691,6 +691,61 @@ namespace patchcraft
                  paramWarnings > 0 ? std::function<void()> ([this] { owner.setBottomTab (BottomPanel::Page::Design); }) : std::function<void()>());
         }
 
+        const int orbitElements = countElementType (project, ElementType::ArpLane);
+        if (orbitElements > 0)
+        {
+            int multiRingOrbitElements = 0;
+            for (const auto& element : project.getLayout().getAll())
+                if (element.type == ElementType::ArpLane
+                    && (element.arpLaneMode.equalsIgnoreCase ("multiRing")
+                        || element.arpLaneMode.equalsIgnoreCase ("orbit")
+                        || element.arpLaneMode.equalsIgnoreCase ("orbitMulti")))
+                    ++multiRingOrbitElements;
+
+            const bool hasMidiPlayground = std::any_of (project.getDspGraph().blocks.begin(),
+                                                        project.getDspGraph().blocks.end(),
+                                                        [] (const DspBlock& block)
+                                                        {
+                                                            return block.type.containsIgnoreCase ("midiPlayground")
+                                                                || block.type.containsIgnoreCase ("phrase generator")
+                                                                || block.type.containsIgnoreCase ("midi generator");
+                                                        });
+            const auto hasLayoutParameter = [&project] (const juce::String& parameterId)
+            {
+                for (const auto& element : project.getLayout().getAll())
+                    if (element.parameterId == parameterId)
+                        return true;
+                return false;
+            };
+            const bool hasFillControls = hasLayoutParameter ("arpLaneFillMomentary")
+                                      || hasLayoutParameter ("arpLaneFillLatch");
+            const bool hasRoleControl = hasLayoutParameter ("arpLaneSliderRole");
+
+            if (! hasMidiPlayground)
+            {
+                add (Severity::Error,
+                     "Orbit surface is not connected to a performance engine",
+                     "The Design canvas has Orbit/Arp Lane elements, but no MIDI Playground engine is present. Add the Orbit starter or open Performance Builder.",
+                     "Fix Orbit",
+                     [this] { owner.setBottomTab (BottomPanel::Page::Design); });
+            }
+            else if (multiRingOrbitElements == 0 || ! hasFillControls || ! hasRoleControl)
+            {
+                add (Severity::Warning,
+                     "Orbit workflow is missing performance controls",
+                     "For a Patterning-style instrument, use a multi-ring Orbit element plus Role and Fill controls so players can edit lanes, automation, and fills without returning to Studio.",
+                     "Add Orbit Surface",
+                     [this] { owner.setBottomTab (BottomPanel::Page::Design); });
+            }
+            else
+            {
+                add (Severity::Pass,
+                     "Orbit performance surface is instrument-ready",
+                     plural (orbitElements, "Orbit/Arp Lane element", "Orbit/Arp Lane elements")
+                        + " with multi-ring editing, fill controls, and automation role selection.");
+            }
+        }
+
         const int macroControls = countElementType (project, ElementType::MacroControl);
         const int modMatrices = countElementType (project, ElementType::ModMatrix);
         const int granularFields = countElementType (project, ElementType::GranularField);

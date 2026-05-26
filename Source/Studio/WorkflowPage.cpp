@@ -1,6 +1,7 @@
 #include "WorkflowPage.h"
 #include "StudioMainComponent.h"
 #include "BottomPanel.h"
+#include "CanvasEditor.h"
 #include "PatchCraftLookAndFeel.h"
 
 namespace patchcraft
@@ -97,7 +98,7 @@ namespace patchcraft
         addAndMakeVisible (productTitle);
 
         styleCardLabel (productBody, 12.0f, false, PatchCraftLookAndFeel::textDim());
-        productBody.setText ("Pick the kind of product first. PatchCraft then keeps DSP, samples, MIDI, design, presets, and export pointed at one playable Patch.",
+        productBody.setText ("Pick the kind of product first. PatchCraft keeps sound, performance, design, presets, Brand Lab, and export pointed at one playable Patch.",
                              juce::dontSendNotification);
         addAndMakeVisible (productBody);
 
@@ -143,7 +144,7 @@ namespace patchcraft
         healthCheckButton.onClick = [this] { showHealthDialog(); };
         addAndMakeVisible (healthCheckButton);
 
-        for (auto* button : { &synthButton, &sampleButton, &drumButton, &fxButton })
+        for (auto* button : { &synthButton, &sampleButton, &drumButton, &orbitButton, &fxButton })
         {
             styleSecondary (*button);
             button->getProperties().set ("workflowProduct", true);
@@ -154,10 +155,12 @@ namespace patchcraft
         synthButton.setButtonText ("Synth Instrument\nOscillators, wavetables, modulation");
         sampleButton.setButtonText ("Sample Instrument\nKeyzones, velocity layers, playback");
         drumButton.setButtonText ("Drum Machine\nPads, patterns, sample performance");
+        orbitButton.setButtonText ("Orbit Groove Instrument\nCircular lanes, fills, automation");
         fxButton.setButtonText ("FX Plugin\nLive input, throws, EQ, movement");
         synthButton.onClick = [this] { switchTemplate ("synth", "Synth Instrument"); };
         sampleButton.onClick = [this] { switchTemplate ("sample", "Sample Instrument"); };
         drumButton.onClick = [this] { switchTemplate ("drum", "Drum Machine"); };
+        orbitButton.onClick = [this] { createOrbitStarter(); };
         fxButton.onClick = [this] { switchTemplate ("fx", "FX Plugin"); };
 
         styleCardLabel (factoryDemoLabel, 12.0f, true, PatchCraftLookAndFeel::accent());
@@ -194,7 +197,7 @@ namespace patchcraft
         exportButton.setButtonText ("6  Launch\nExport pack, VST3, or Plugin.club draft");
 
         soundButton.setTooltip ("Start with the actual sound source: DSP graph for synth/FX, Sample Mapper for samples/drums.");
-        midiButton.setTooltip ("Create arps, chords, patterns, sample control, and performance MIDI.");
+        midiButton.setTooltip ("Create Orbit lanes, arps, chords, patterns, sample control, and performance MIDI.");
         designButton.setTooltip ("Build the Player UI and bind knobs/sliders/buttons to real parameters.");
         presetsButton.setTooltip ("Save playable patches and organize them into sellable expansion packs.");
         testButton.setTooltip ("Open the runtime Player surface and verify sound, UI interactions, MIDI, and presets.");
@@ -286,6 +289,48 @@ namespace patchcraft
                     page->owner.refreshAllPanels();
                     page->owner.setBottomTab (engineId == "sample" || engineId == "drum"
                         ? BottomPanel::Page::Samples : BottomPanel::Page::DSP);
+                }
+            });
+    }
+
+    void WorkflowPage::createOrbitStarter()
+    {
+        const bool hasLayout = ! owner.getProject().getLayout().getAll().empty();
+        auto addStarter = [this]
+        {
+            owner.getProject().setEngineType ("sample");
+            owner.refreshAllPanels();
+            owner.setBottomTab (BottomPanel::Page::Design);
+            if (auto* canvas = owner.getCanvasEditor())
+                canvas->addOrbitInstrumentControlLayout ({ 80, 82 });
+        };
+
+        if (! hasLayout)
+        {
+            addStarter();
+            return;
+        }
+
+        juce::Component::SafePointer<WorkflowPage> self (this);
+        juce::AlertWindow::showAsync (
+            juce::MessageBoxOptions()
+                .withTitle ("Add Orbit Groove Starter")
+                .withMessage ("This adds a complete multi-ring Orbit instrument surface to the current Design canvas and prepares the project as a sample/performance instrument. Existing elements stay in place.")
+                .withButton ("Add Starter")
+                .withButton ("Cancel")
+                .withIconType (juce::MessageBoxIconType::QuestionIcon),
+            [self] (int result)
+            {
+                if (result != 1)
+                    return;
+
+                if (auto* page = self.getComponent())
+                {
+                    page->owner.getProject().setEngineType ("sample");
+                    page->owner.refreshAllPanels();
+                    page->owner.setBottomTab (BottomPanel::Page::Design);
+                    if (auto* canvas = page->owner.getCanvasEditor())
+                        canvas->addOrbitInstrumentControlLayout ({ 80, 82 });
                 }
             });
     }
@@ -456,8 +501,8 @@ namespace patchcraft
                        "1. Choose Synth Instrument unless you are building from samples.\n"
                        "2. Open Build Sound. On Source, add or select an oscillator/wavetable block. Change volume/blend while Preview is on.\n"
                        "3. Move through Filter, Amp, Mod, FX, and Out. Every block should have a clear target and audible purpose.\n"
-                       "4. Open MIDI / Performance. Add an arp, chord phrase, or performance controller only if the sound needs it.\n"
-                       "5. Open Design Player. Add knobs/sliders/buttons, then bind each control to a real parameter in the Inspector.\n"
+                       "4. Open MIDI / Performance. Add Orbit lanes, an arp, chord phrase, or performance controller only if the sound needs it.\n"
+                       "5. Open Design Player. Add knobs/sliders/buttons, or use Add Orbit Groove Instrument Surface, then bind each control to a real parameter in the Inspector.\n"
                        "6. Open Presets + Packs. Save the current sound as a full Patch, then add it to an Expansion Pack.\n"
                        "7. Open Test Runtime. Play hardware MIDI, move every UI control, switch tabs/presets, and confirm it matches Design.\n"
                        "8. Run Health Check. Fix unbound controls, missing samples, graph errors, and preset issues.\n"
@@ -488,23 +533,24 @@ namespace patchcraft
             case TutorialModule::MidiPerformance:
                 return "MIDI / Performance Tutorial\n\n"
                        "1. Open Performance Builder.\n"
-                       "2. Choose a curated progression, arp, drum, chop, or modulation behavior.\n"
-                       "3. Edit notes in the piano roll or pattern grid.\n"
-                       "4. Use chord presets when you need musical harmony quickly.\n"
-                       "5. For samples, route MIDI steps to slices/pads so notes can trigger sections of the sample.\n"
-                       "6. Test velocity, gate, probability, swing, strum, flam, and humanize while Preview is active.\n"
-                       "7. Save MIDI behavior into the Patch so Easy mode, Test mode, and export all hear the same result.";
+                       "2. For Patterning-style instruments, start with Orbit: five circular lanes, one active bank, fill hold/latch, lane mute, and per-step role sliders.\n"
+                       "3. Use the Role dropdown to make the 16 sliders edit velocity, gate, probability, ratchet, active/mute, delay, slice, pitch, filter, pan, or FX send.\n"
+                       "4. Choose a curated progression, arp, drum, chop, or modulation behavior when Orbit is not the main surface.\n"
+                       "5. For samples, route MIDI steps to slices/pads so notes can trigger kit pieces, loops, or one-shots.\n"
+                       "6. Test velocity, gate, probability, swing, strum, flam, fill, mute, and automation while Preview is active.\n"
+                       "7. Save MIDI behavior into the Patch so Design, Brand Lab, and export all hear the same result.";
 
             case TutorialModule::DesignPlayer:
                 return "Design Player Tutorial\n\n"
                        "1. Open Design.\n"
-                       "2. Add a knob/slider/button from Elements or the Library.\n"
-                       "3. Select it on the canvas. The Inspector is the source for position, style, text, and DSP assignment.\n"
+                       "2. Add a knob/slider/button from Elements or the Library, or right-click and add the Orbit Groove Instrument Surface for a complete circular sequencer UI.\n"
+                       "3. Select it on the canvas. The Inspector is the source for position, style, text, DSP assignment, and Orbit lane mode.\n"
                        "4. Assign the control to a real parameter such as filterCutoff, volume, delayMix, macro_motion, or modWheel.\n"
                        "5. Use labels deliberately. If you add a knob, edit its label position, size, and spacing.\n"
                        "6. Add containers/tabs only when they organize controls; every tab should switch correctly in Test.\n"
                        "7. Use alignment/order tools to build a clean customer-facing Player UI.\n"
-                       "8. Preview and move controls while audio is playing. If it does not change sound, fix the binding.";
+                       "8. Move from Design to Brand Lab for runtime proof. Brand Lab must show the same layout, same Orbit rings, and same control behavior.\n"
+                       "9. Preview and move controls while audio is playing. If it does not change sound, fix the binding.";
 
             case TutorialModule::PresetsPacks:
                 return "Presets + Expansion Pack Tutorial\n\n"
@@ -520,8 +566,8 @@ namespace patchcraft
                        "1. Open Test / Brand Lab and turn Preview on.\n"
                        "2. Play the software keyboard and a hardware MIDI keyboard.\n"
                        "3. Confirm hardware note highlights also trigger sound.\n"
-                       "4. Move every knob, slider, XY pad, mod wheel, expression, and macro while a note is held.\n"
-                       "5. Switch tabs and presets. The Test UI must match the Design UI exactly.\n"
+                       "4. Move every knob, slider, Orbit ring, fill button, mute/solo toggle, XY pad, mod wheel, expression, and macro while a note is held.\n"
+                       "5. Switch tabs, Orbit lanes, and presets. The Test UI must match the Design UI exactly.\n"
                        "6. Check volume, clipping, stuck notes, MIDI learn, retrigger, and BPM sync.\n"
                        "7. If a control does nothing, return to Design/DSP and fix the assignment before export.";
 
@@ -738,10 +784,10 @@ namespace patchcraft
         productBody.setBounds (modeCard.removeFromTop (68));
         modeCard.removeFromTop (8);
 
-        for (auto* button : { &synthButton, &sampleButton, &drumButton, &fxButton })
+        for (auto* button : { &synthButton, &sampleButton, &drumButton, &orbitButton, &fxButton })
         {
             button->setBounds (modeCard.removeFromTop (58));
-            modeCard.removeFromTop (9);
+            modeCard.removeFromTop (6);
         }
         modeCard.removeFromTop (4);
         factoryDemoLabel.setBounds (modeCard.removeFromTop (22));
