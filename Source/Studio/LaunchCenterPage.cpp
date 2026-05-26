@@ -746,6 +746,63 @@ namespace patchcraft
             }
         }
 
+        const int reactiveImages = countElementType (project, ElementType::ReactiveImage);
+        const int spriteAnimators = countElementType (project, ElementType::SpriteAnimator);
+        const int visualFxLayers = countElementType (project, ElementType::VisualFxLayer);
+        const int aiVisualPrompts = countElementType (project, ElementType::AiVisualPrompt);
+        const int visualMotionElements = reactiveImages + spriteAnimators + visualFxLayers + aiVisualPrompts;
+        if (visualMotionElements > 0)
+        {
+            bool hasReactiveBinding = false;
+            bool hasMissingRequiredAsset = false;
+            bool hasProAiOnlyBrief = false;
+            for (const auto& element : project.getLayout().getAll())
+            {
+                if (element.type != ElementType::ReactiveImage
+                    && element.type != ElementType::SpriteAnimator
+                    && element.type != ElementType::VisualFxLayer
+                    && element.type != ElementType::AiVisualPrompt)
+                    continue;
+
+                hasReactiveBinding = hasReactiveBinding
+                    || element.audioReactive
+                    || (element.animationMode.isNotEmpty() && element.animationMode != "none")
+                    || element.visualSource.isNotEmpty();
+
+                if ((element.type == ElementType::ReactiveImage || element.type == ElementType::SpriteAnimator)
+                    && element.asset.isEmpty()
+                    && element.filmstripAsset.isEmpty())
+                    hasMissingRequiredAsset = true;
+
+                if (element.type == ElementType::AiVisualPrompt && ! element.visualAiGenerated)
+                    hasProAiOnlyBrief = true;
+            }
+
+            if (! hasReactiveBinding)
+            {
+                add (Severity::Warning,
+                     "Visual elements are not bound to motion",
+                     "Animation Lab elements exist, but none have audio, BPM, MIDI, or parameter reactivity. Set React Mode or Animation in the Inspector.",
+                     "Open Animation Lab",
+                     [this] { owner.setBottomTab (BottomPanel::Page::Animation); });
+            }
+            else if (hasMissingRequiredAsset || hasProAiOnlyBrief)
+            {
+                add (Severity::Warning,
+                     "Visual layer needs final artwork assets",
+                     "Reactive image or sprite slots can ship with procedural fallback, but final instruments should import artwork or generate Pro assets before export.",
+                     "Open Animation Lab",
+                     [this] { owner.setBottomTab (BottomPanel::Page::Animation); });
+            }
+            else
+            {
+                add (Severity::Pass,
+                     "Reactive visual layer is export-ready",
+                     plural (visualMotionElements, "Animation Lab element", "Animation Lab elements")
+                        + " with runtime-supported visual motion.");
+            }
+        }
+
         const int macroControls = countElementType (project, ElementType::MacroControl);
         const int modMatrices = countElementType (project, ElementType::ModMatrix);
         const int granularFields = countElementType (project, ElementType::GranularField);

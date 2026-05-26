@@ -19,6 +19,7 @@ namespace patchcraft
     class OneShotMakerPage;
     class WorkflowPage;
     class LaunchCenterPage;
+    class AnimationLabPage;
     class IInstrumentEngine;
     class TestPage;
     class BrandingLabPage;
@@ -38,7 +39,7 @@ namespace patchcraft
     class BottomPanel : public juce::Component
     {
     public:
-        enum class Page { Dashboard = 0, Design = 1, Samples = 2, OneShotMaker = 3, MidiPlayground = 4, ArpStudio = 5, Test = 6, DSP = 7, Widgets = 8, Branding = 9, Export = 10 };
+        enum class Page { Dashboard = 0, Design = 1, Samples = 2, OneShotMaker = 3, MidiPlayground = 4, ArpStudio = 5, Test = 6, DSP = 7, Widgets = 8, Animation = 9, Branding = 10, Export = 11 };
 
         explicit BottomPanel (StudioMainComponent& owner);
         ~BottomPanel() override;
@@ -99,6 +100,9 @@ namespace patchcraft
 
         // ---- Build page (unified Knob/Slider/Meter builder) ---------------
         std::unique_ptr<ControlBuilderComponent> builder;
+
+        // ---- Animation / reactive visual authoring ------------------------
+        std::unique_ptr<AnimationLabPage> animationLab;
 
         // ---- Branding Lab -------------------------------------------------
         std::unique_ptr<BrandingLabPage> brandingLab;

@@ -1056,6 +1056,94 @@ namespace patchcraft
                     drawSpectrumElement (g, r, e, audioReactiveLevel.load (std::memory_order_relaxed));
                     break;
 
+                case ElementType::ReactiveImage:
+                {
+                    juce::Image img;
+                    if (e.asset.isNotEmpty())
+                    {
+                        auto f = juce::File::isAbsolutePath (e.asset)
+                            ? juce::File (e.asset)
+                            : project.getProjectFolder().getChildFile (e.asset);
+                        img = assets.loadImage (f);
+                    }
+                    if (img.isValid())
+                        g.drawImage (img, r.toFloat(), juce::RectanglePlacement::stretchToFit);
+                    else
+                        drawHeroPlaceholder (g, r);
+                    const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
+                    const float level = audioReactiveLevel.load (std::memory_order_relaxed) * juce::jmax (0.1f, e.audioReactiveAmount);
+                    g.setColour (accent.withAlpha (juce::jlimit (0.08f, 0.36f, 0.12f + level * 0.25f)));
+                    g.drawRoundedRectangle (r.toFloat().expanded (level * 12.0f), juce::jmax (4.0f, e.cornerRadius + level * 8.0f), 1.5f + level * 2.0f);
+                    break;
+                }
+
+                case ElementType::SpriteAnimator:
+                {
+                    const auto assetPath = e.asset.isNotEmpty() ? e.asset : e.filmstripAsset;
+                    juce::Image img;
+                    if (assetPath.isNotEmpty())
+                    {
+                        auto f = juce::File::isAbsolutePath (assetPath)
+                            ? juce::File (assetPath)
+                            : project.getProjectFolder().getChildFile (assetPath);
+                        img = assets.loadImage (f);
+                    }
+                    if (img.isValid())
+                    {
+                        const int frames = juce::jmax (1, e.filmstripFrames > 0 ? e.filmstripFrames : 8);
+                        const int frame = ((int) std::floor (juce::Time::getMillisecondCounterHiRes() * 0.001
+                                                             * juce::jmax (0.05f, e.animationRate))) % frames;
+                        if (e.filmstripVertical)
+                        {
+                            const int h = juce::jmax (1, img.getHeight() / frames);
+                            g.drawImage (img, r.getX(), r.getY(), r.getWidth(), r.getHeight(),
+                                         0, frame * h, img.getWidth(), h);
+                        }
+                        else
+                        {
+                            const int w = juce::jmax (1, img.getWidth() / frames);
+                            g.drawImage (img, r.getX(), r.getY(), r.getWidth(), r.getHeight(),
+                                         frame * w, 0, w, img.getHeight());
+                        }
+                    }
+                    else
+                    {
+                        g.setColour (PatchCraftLookAndFeel::panelAlt());
+                        g.fillRoundedRectangle (r.toFloat(), juce::jmax (4.0f, e.cornerRadius));
+                        drawLabel (g, r.reduced (8), e.label.isNotEmpty() ? e.label : "Sprite Animator");
+                    }
+                    break;
+                }
+
+                case ElementType::VisualFxLayer:
+                {
+                    const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
+                    const float level = audioReactiveLevel.load (std::memory_order_relaxed) * juce::jmax (0.1f, e.audioReactiveAmount);
+                    auto bounds = r.reduced (8).toFloat();
+                    const auto centre = bounds.getCentre();
+                    const float seconds = (float) (juce::Time::getMillisecondCounterHiRes() * 0.001);
+                    const float base = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.20f;
+                    for (int i = 0; i < 30; ++i)
+                    {
+                        const float phase = seconds * juce::jmax (0.05f, e.animationRate) + (float) i * 0.45f;
+                        const float radius = base + std::fmod ((float) i * 9.0f + seconds * 20.0f, base * (1.5f + level));
+                        g.setColour (accent.withAlpha (0.12f + level * 0.25f));
+                        g.fillEllipse (centre.x + std::cos (phase) * radius - 2.0f,
+                                       centre.y + std::sin (phase * 0.8f) * radius * 0.7f - 2.0f,
+                                       4.0f + level * 4.0f,
+                                       4.0f + level * 4.0f);
+                    }
+                    break;
+                }
+
+                case ElementType::AiVisualPrompt:
+                    g.setColour (e.backgroundColour.isTransparent() ? PatchCraftLookAndFeel::panelAlt().withAlpha (0.8f) : e.backgroundColour);
+                    g.fillRoundedRectangle (r.toFloat(), juce::jmax (4.0f, e.cornerRadius));
+                    g.setColour (e.accentColour.isTransparent() ? juce::Colour (0xffb98cff) : e.accentColour);
+                    g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (4.0f, e.cornerRadius), 1.0f);
+                    drawLabel (g, r.reduced (8), "Pro AI Visual Brief", 12.0f, e.accentColour);
+                    break;
+
                 case ElementType::Knob:
                 case ElementType::Slider:
                 case ElementType::MacroControl:

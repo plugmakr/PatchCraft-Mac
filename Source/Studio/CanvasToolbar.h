@@ -71,6 +71,7 @@ namespace patchcraft
         juce::TextButton tabArp    { "Arp" };
         juce::TextButton tabDSP    { "DSP" };
         juce::TextButton tabBuild  { "Widgets" };
+        juce::TextButton tabAnimation { "Anim" };
         juce::TextButton tabBranding { "Branding" };
         juce::TextButton tabLaunch { "Export" };
         juce::Label      patchSeparator;

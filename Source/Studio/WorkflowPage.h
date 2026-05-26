@@ -55,6 +55,7 @@ namespace patchcraft
         juce::TextButton advOneShotButton { "Open One Shot Maker" };
         juce::TextButton advMidiButton { "Open Performance Builder" };
         juce::TextButton advBuildButton { "Open Asset Builder" };
+        juce::TextButton advAnimationButton { "Open Animation Lab" };
         juce::TextButton advDesignButton { "Open Design Surface" };
         juce::TextButton advBrandButton { "Open Brand/Test Lab" };
 

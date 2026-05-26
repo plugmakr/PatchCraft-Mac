@@ -126,6 +126,47 @@ namespace patchcraft
             p.lineTo (cx + s * 0.20f, cy + s * 0.20f);
             g.strokePath (p, juce::PathStrokeType (t));
         }
+        else if (key == "reactive")
+        {
+            g.drawEllipse (cx - s * 0.36f, cy - s * 0.36f, s * 0.72f, s * 0.72f, t);
+            g.drawEllipse (cx - s * 0.22f, cy - s * 0.22f, s * 0.44f, s * 0.44f, t);
+            g.fillEllipse (cx - s * 0.06f, cy - s * 0.06f, s * 0.12f, s * 0.12f);
+        }
+        else if (key == "sprite")
+        {
+            for (int y = 0; y < 2; ++y)
+                for (int x = 0; x < 3; ++x)
+                    g.drawRoundedRectangle (cx - s * 0.42f + (float) x * s * 0.29f,
+                                            cy - s * 0.24f + (float) y * s * 0.27f,
+                                            s * 0.22f, s * 0.20f, 2.0f, t);
+            g.fillRoundedRectangle (cx - s * 0.40f, cy - s * 0.22f, s * 0.18f, s * 0.16f, 2.0f);
+        }
+        else if (key == "fx")
+        {
+            for (int i = 0; i < 4; ++i)
+            {
+                const float a = juce::MathConstants<float>::twoPi * (float) i / 4.0f;
+                g.drawLine (cx, cy, cx + std::cos (a) * s * 0.42f, cy + std::sin (a) * s * 0.42f, t);
+                g.fillEllipse (cx + std::cos (a + 0.45f) * s * 0.27f - s * 0.035f,
+                               cy + std::sin (a + 0.45f) * s * 0.27f - s * 0.035f,
+                               s * 0.07f, s * 0.07f);
+            }
+            g.drawEllipse (cx - s * 0.22f, cy - s * 0.22f, s * 0.44f, s * 0.44f, t);
+        }
+        else if (key == "aiVisual")
+        {
+            g.drawRoundedRectangle (cx - s * 0.42f, cy - s * 0.28f, s * 0.84f, s * 0.56f, 3.0f, t);
+            juce::Path sparkle;
+            sparkle.startNewSubPath (cx, cy - s * 0.22f);
+            sparkle.lineTo (cx, cy + s * 0.22f);
+            sparkle.startNewSubPath (cx - s * 0.22f, cy);
+            sparkle.lineTo (cx + s * 0.22f, cy);
+            sparkle.startNewSubPath (cx - s * 0.15f, cy - s * 0.15f);
+            sparkle.lineTo (cx + s * 0.15f, cy + s * 0.15f);
+            sparkle.startNewSubPath (cx + s * 0.15f, cy - s * 0.15f);
+            sparkle.lineTo (cx - s * 0.15f, cy + s * 0.15f);
+            g.strokePath (sparkle, juce::PathStrokeType (t));
+        }
         else if (key == "xy")
         {
             g.drawRect (cx - s * 0.40f, cy - s * 0.40f, s * 0.8f, s * 0.8f, t);
@@ -292,10 +333,12 @@ namespace patchcraft
         scrollContent.addAndMakeVisible (controlSection);
         scrollContent.addAndMakeVisible (analysisSection);
         scrollContent.addAndMakeVisible (uiSection);
+        scrollContent.addAndMakeVisible (motionSection);
+        scrollContent.addAndMakeVisible (proVisualSection);
         scrollContent.addAndMakeVisible (performanceSection);
         scrollContent.addAndMakeVisible (containerSection);
 
-        for (auto* section : { &controlSection, &analysisSection, &uiSection, &performanceSection, &containerSection })
+        for (auto* section : { &controlSection, &analysisSection, &uiSection, &motionSection, &proVisualSection, &performanceSection, &containerSection })
             section->onToggle = [this] { resized(); repaint(); };
 
         struct Entry { ElementType t; juce::String label; juce::String icon; };
@@ -325,6 +368,14 @@ namespace patchcraft
             { ElementType::EqCurve,          "EQ Curve",          "eq" },
             { ElementType::SpectrumAnalyzer, "Spectrum Analyzer", "spectrum" }
         };
+        const Entry motion[] = {
+            { ElementType::ReactiveImage, "Reactive Image", "reactive" },
+            { ElementType::SpriteAnimator, "Sprite Animator", "sprite" },
+            { ElementType::VisualFxLayer, "Visual FX Layer", "fx" }
+        };
+        const Entry proVisuals[] = {
+            { ElementType::AiVisualPrompt, "AI Visual Prompt", "aiVisual" }
+        };
         const Entry performance[] = {
             { ElementType::DrumPad,      "Drum Pad",     "drum" },
             { ElementType::PadGrid,      "Pad Grid",     "grid" },
@@ -353,6 +404,18 @@ namespace patchcraft
         {
             auto type = e.t;
             analysisSection.addRow (std::make_unique<Row> (e.label, e.icon,
+                [this, type] { addElementOfType (type); }));
+        }
+        for (auto& e : motion)
+        {
+            auto type = e.t;
+            motionSection.addRow (std::make_unique<Row> (e.label, e.icon,
+                [this, type] { addElementOfType (type); }));
+        }
+        for (auto& e : proVisuals)
+        {
+            auto type = e.t;
+            proVisualSection.addRow (std::make_unique<Row> (e.label, e.icon,
                 [this, type] { addElementOfType (type); }));
         }
         for (auto& e : performance)
@@ -442,6 +505,10 @@ namespace patchcraft
         else if (type == ElementType::Group)       parameterId = {};
         else if (type == ElementType::Separator)   parameterId = {};
         else if (type == ElementType::Shape)       parameterId = {};
+        else if (type == ElementType::ReactiveImage) parameterId = {};
+        else if (type == ElementType::SpriteAnimator) parameterId = {};
+        else if (type == ElementType::VisualFxLayer) parameterId = {};
+        else if (type == ElementType::AiVisualPrompt) parameterId = {};
 
         owner.addElementToCanvas (type, parameterId);
     }
@@ -467,6 +534,10 @@ namespace patchcraft
         contentHeight += analysisH + 8;
         const int uiH = uiSection.getNeededHeight();
         contentHeight += uiH + 8;
+        const int motionH = motionSection.getNeededHeight();
+        contentHeight += motionH + 8;
+        const int proVisualH = proVisualSection.getNeededHeight();
+        contentHeight += proVisualH + 8;
         const int perfH = performanceSection.getNeededHeight();
         contentHeight += perfH + 8;
         const int containerH = containerSection.getNeededHeight();
@@ -480,6 +551,10 @@ namespace patchcraft
         analysisSection.setBounds (r.removeFromTop (analysisH));
         r.removeFromTop (8);
         uiSection.setBounds (r.removeFromTop (uiH));
+        r.removeFromTop (8);
+        motionSection.setBounds (r.removeFromTop (motionH));
+        r.removeFromTop (8);
+        proVisualSection.setBounds (r.removeFromTop (proVisualH));
         r.removeFromTop (8);
         performanceSection.setBounds (r.removeFromTop (perfH));
         r.removeFromTop (8);

@@ -57,6 +57,8 @@ namespace patchcraft
         Section controlSection { "Sound + Control Elements" };
         Section analysisSection { "EQ + Analysis" };
         Section uiSection { "Visual UI Elements" };
+        Section motionSection { "Reactive Animation" };
+        Section proVisualSection { "Pro / AI Visuals" };
         Section performanceSection { "MIDI + Performance" };
         Section containerSection { "Containers + Layout" };
 

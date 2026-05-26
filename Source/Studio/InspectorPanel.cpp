@@ -382,10 +382,11 @@ namespace patchcraft
         const char* types[] = { "Image", "Knob", "Slider", "Button", "Toggle",
                                 "Dropdown", "Label", "Value Display", "Meter",
                                 "Waveform", "Keyboard", "Panel", "Shape", "XY Pad",
-                                "Granular Field",
-                                "Tab Panel", "Scroll Panel", "Group", "Separator",
-                                "Drum Pad", "Pad Grid", "Drum Grid", "Mixer",
-                                "Macro Control", "Mod Matrix" };
+                                "Granular Field", "Tab Panel", "Scroll Panel", "Group",
+                                "Separator", "Drum Pad", "Pad Grid", "Drum Grid",
+                                "Arp Lane", "Mixer", "Macro Control", "Mod Matrix",
+                                "EQ Curve", "Spectrum Analyzer", "Reactive Image",
+                                "Sprite Animator", "Visual FX Layer", "AI Visual Prompt" };
         int id = 1;
         for (auto* t : types) typeBox.addItem (t, id++);
         addAndMakeVisible (typeBox);
@@ -1264,7 +1265,8 @@ namespace patchcraft
                                || type == ElementType::Meter || type == ElementType::Toggle
                                || type == ElementType::ValueDisplay
                                || type == ElementType::MacroControl);
-        const bool isImage  = (type == ElementType::Image);
+        const bool isImage  = (type == ElementType::Image || type == ElementType::ReactiveImage
+                               || type == ElementType::SpriteAnimator);
         const bool isLabel  = (type == ElementType::Label);
         const bool isShape  = (type == ElementType::Shape || type == ElementType::Panel);
         const bool isDrumGrid = (type == ElementType::DrumGrid);
@@ -1277,7 +1279,11 @@ namespace patchcraft
         const bool canAnimate = (type != ElementType::Group && type != ElementType::Separator);
         const bool hasStyle = (type == ElementType::Knob || type == ElementType::Slider
                                || type == ElementType::Meter || type == ElementType::Button
-                               || type == ElementType::Panel || type == ElementType::Shape);
+                               || type == ElementType::Panel || type == ElementType::Shape
+                               || type == ElementType::ReactiveImage
+                               || type == ElementType::SpriteAnimator
+                               || type == ElementType::VisualFxLayer
+                               || type == ElementType::AiVisualPrompt);
         const bool isKnob   = (type == ElementType::Knob);
         const bool showContainerManager = (el != nullptr && isContainerElement (type));
         const bool showFilmstrip = (type == ElementType::Knob
@@ -1294,7 +1300,11 @@ namespace patchcraft
                                   || type == ElementType::ArpLane
                                   || type == ElementType::PadGrid || type == ElementType::Mixer
                                   || type == ElementType::MacroControl || type == ElementType::ModMatrix
-                                  || type == ElementType::GranularField);
+                                  || type == ElementType::GranularField
+                                  || type == ElementType::ReactiveImage
+                                  || type == ElementType::SpriteAnimator
+                                  || type == ElementType::VisualFxLayer
+                                  || type == ElementType::AiVisualPrompt);
         sectionHeaderBounds.fill ({});
         auto sectionHeader = [this, &r] (juce::Label& label, InspectorSection section, const juce::String& title)
         {

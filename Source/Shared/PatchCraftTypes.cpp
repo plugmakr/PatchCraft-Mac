@@ -412,6 +412,10 @@ namespace patchcraft
             case ElementType::ModMatrix:    return "modMatrix";
             case ElementType::EqCurve:      return "eqCurve";
             case ElementType::SpectrumAnalyzer: return "spectrumAnalyzer";
+            case ElementType::ReactiveImage: return "reactiveImage";
+            case ElementType::SpriteAnimator: return "spriteAnimator";
+            case ElementType::VisualFxLayer: return "visualFxLayer";
+            case ElementType::AiVisualPrompt: return "aiVisualPrompt";
         }
         return "knob";
     }
@@ -446,6 +450,10 @@ namespace patchcraft
         if (s == "modMatrix")    return ElementType::ModMatrix;
         if (s == "eqCurve")      return ElementType::EqCurve;
         if (s == "spectrumAnalyzer") return ElementType::SpectrumAnalyzer;
+        if (s == "reactiveImage") return ElementType::ReactiveImage;
+        if (s == "spriteAnimator") return ElementType::SpriteAnimator;
+        if (s == "visualFxLayer") return ElementType::VisualFxLayer;
+        if (s == "aiVisualPrompt") return ElementType::AiVisualPrompt;
         return ElementType::Knob;
     }
 
@@ -481,6 +489,10 @@ namespace patchcraft
             case ElementType::ModMatrix:    return "Mod Matrix";
             case ElementType::EqCurve:      return "EQ Curve";
             case ElementType::SpectrumAnalyzer: return "Spectrum Analyzer";
+            case ElementType::ReactiveImage: return "Reactive Image";
+            case ElementType::SpriteAnimator: return "Sprite Animator";
+            case ElementType::VisualFxLayer: return "Visual FX Layer";
+            case ElementType::AiVisualPrompt: return "AI Visual Prompt";
         }
         return "Knob";
     }
@@ -525,7 +537,11 @@ namespace patchcraft
             || type == ElementType::MacroControl
             || type == ElementType::ModMatrix
             || type == ElementType::EqCurve
-            || type == ElementType::SpectrumAnalyzer;
+            || type == ElementType::SpectrumAnalyzer
+            || type == ElementType::ReactiveImage
+            || type == ElementType::SpriteAnimator
+            || type == ElementType::VisualFxLayer
+            || type == ElementType::AiVisualPrompt;
     }
 
     // LayoutElement ------------------------------------------------------------
@@ -574,6 +590,16 @@ namespace patchcraft
         obj->setProperty ("audioReactiveAmount", (double) audioReactiveAmount);
         obj->setProperty ("animationMode", animationMode);
         obj->setProperty ("animationRate", (double) animationRate);
+        obj->setProperty ("visualSource", visualSource);
+        obj->setProperty ("visualAction", visualAction);
+        obj->setProperty ("visualPreset", visualPreset);
+        if (visualAiPrompt.isNotEmpty())
+            obj->setProperty ("visualAiPrompt", visualAiPrompt);
+        if (visualAiStyle.isNotEmpty())
+            obj->setProperty ("visualAiStyle", visualAiStyle);
+        obj->setProperty ("visualRequiresPro", visualRequiresPro);
+        obj->setProperty ("visualAiGenerated", visualAiGenerated);
+        obj->setProperty ("visualLowPowerFallback", visualLowPowerFallback);
         obj->setProperty ("textColour",       colourToString (textColour));
         obj->setProperty ("accentColour",     colourToString (accentColour));
         obj->setProperty ("borderColour",     colourToString (borderColour));
@@ -675,6 +701,14 @@ namespace patchcraft
             if (o->hasProperty ("audioReactiveAmount")) e.audioReactiveAmount = juce::jlimit (0.0f, 1.0f, (float) (double) o->getProperty ("audioReactiveAmount"));
             e.animationMode = o->getProperty ("animationMode").toString();
             if (o->hasProperty ("animationRate")) e.animationRate = juce::jmax (0.01f, (float) (double) o->getProperty ("animationRate"));
+            if (o->hasProperty ("visualSource")) e.visualSource = o->getProperty ("visualSource").toString();
+            if (o->hasProperty ("visualAction")) e.visualAction = o->getProperty ("visualAction").toString();
+            if (o->hasProperty ("visualPreset")) e.visualPreset = o->getProperty ("visualPreset").toString();
+            if (o->hasProperty ("visualAiPrompt")) e.visualAiPrompt = o->getProperty ("visualAiPrompt").toString();
+            if (o->hasProperty ("visualAiStyle")) e.visualAiStyle = o->getProperty ("visualAiStyle").toString();
+            if (o->hasProperty ("visualRequiresPro")) e.visualRequiresPro = (bool) o->getProperty ("visualRequiresPro");
+            if (o->hasProperty ("visualAiGenerated")) e.visualAiGenerated = (bool) o->getProperty ("visualAiGenerated");
+            if (o->hasProperty ("visualLowPowerFallback")) e.visualLowPowerFallback = (bool) o->getProperty ("visualLowPowerFallback");
             e.textColour       = colourFromString (o->getProperty ("textColour").toString(),       e.textColour);
             e.accentColour     = colourFromString (o->getProperty ("accentColour").toString(),     e.accentColour);
             e.borderColour     = colourFromString (o->getProperty ("borderColour").toString(),     e.borderColour);
@@ -743,6 +777,10 @@ namespace patchcraft
             if (e.labelPosition.isEmpty()) e.labelPosition = "bottom";
             if (e.audioReactiveMode.isEmpty()) e.audioReactiveMode = "level";
             if (e.animationMode.isEmpty()) e.animationMode = "none";
+            if (e.visualSource.isEmpty()) e.visualSource = "audioLevel";
+            if (e.visualAction.isEmpty()) e.visualAction = "pulseGlow";
+            if (e.visualPreset.isEmpty()) e.visualPreset = "orbitAura";
+            if (e.visualAiStyle.isEmpty()) e.visualAiStyle = "clean instrument artwork";
             if (e.arpLaneMode.isEmpty()) e.arpLaneMode = "bank";
             if (e.arpLaneTarget.isEmpty()) e.arpLaneTarget = "notes";
             if (e.arpLaneDirection.isEmpty()) e.arpLaneDirection = "forward";

@@ -154,7 +154,11 @@ namespace patchcraft
         MacroControl,
         ModMatrix,
         EqCurve,
-        SpectrumAnalyzer
+        SpectrumAnalyzer,
+        ReactiveImage,
+        SpriteAnimator,
+        VisualFxLayer,
+        AiVisualPrompt
     };
 
     juce::String elementTypeToString (ElementType);
@@ -198,6 +202,14 @@ namespace patchcraft
         float audioReactiveAmount = 0.0f;
         juce::String animationMode { "none" };
         float animationRate = 1.0f;
+        juce::String visualSource { "audioLevel" };
+        juce::String visualAction { "pulseGlow" };
+        juce::String visualPreset { "orbitAura" };
+        juce::String visualAiPrompt;
+        juce::String visualAiStyle { "clean instrument artwork" };
+        bool  visualRequiresPro = false;
+        bool  visualAiGenerated = false;
+        bool  visualLowPowerFallback = true;
 
         juce::Colour textColour       { 0xffe6e6e6 };
         juce::Colour accentColour     { 0xfff5a623 };

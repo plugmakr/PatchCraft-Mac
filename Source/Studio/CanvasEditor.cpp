@@ -1010,6 +1010,11 @@ namespace patchcraft
                 make ("granular", "Add Granular Field", "Add a runtime granular control surface.", "sample grain cloud"),
                 make ("arpLane", "Add Arp Studio Lane", "Add a circular arp lane that selects and visualizes a MIDI Playground bank.", "arp sequencer circle lane bank steps"),
                 make ("orbitInstrument", "Add Orbit Groove Instrument Surface", "Add the multi-ring Orbit editor with lane, automation, fill, mute, and step controls.", "patterning circular drum sequencer orbit arplane fills automation lanes"),
+                make ("visualKit", "Add Animation Lab Visual Kit", "Add non-Pro reactive artwork, sprite animation, procedural FX, and Pro AI visual brief elements.", "animation reactive visuals sprite ai pro imagery artwork"),
+                make ("reactiveImage", "Add Reactive Image", "Add an imported artwork slot that can pulse, scale, glow, or fade from audio/MIDI/BPM.", "visual audio reactive image artwork"),
+                make ("spriteAnimator", "Add Sprite Animator", "Add a sprite-sheet animation element with BPM or note-triggered frame playback.", "sprite filmstrip animation bpm"),
+                make ("visualFx", "Add Visual FX Layer", "Add a procedural native JUCE particle/ring/meter visual effect layer.", "particles rings glow procedural visual effects"),
+                make ("aiVisualPrompt", "Add Pro AI Visual Prompt", "Add a Pro brief card for generated banners, thumbnails, masks, and sprite assets.", "ai pro generated artwork prompt"),
                 make ("drumMachine", "Add Drum Machine Surface", "Add pads, pattern grid, bank controls, and mixer.", "drums sequencer pads"),
                 make ("bpm", "Add Project BPM Control", "Add a knob connected to the global preview/standalone BPM.", "tempo global sync"),
                 make ("bpmSync", "Add BPM Sync Toggle", "Add an on/off switch for tempo-synced blocks.", "tempo sync toggle"),
@@ -1938,6 +1943,140 @@ namespace patchcraft
         }
     }
 
+    static void drawReactiveVisualPlaceholder (juce::Graphics& g, juce::Rectangle<int> r,
+                                               const LayoutElement& e, float previewLevel)
+    {
+        const auto bg = e.backgroundColour.isTransparent() ? juce::Colour (0x6610151d) : e.backgroundColour;
+        const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
+        const float amount = juce::jlimit (0.0f, 1.0f, previewLevel + (e.audioReactive ? e.audioReactiveAmount * 0.35f : 0.0f));
+        g.setColour (bg);
+        g.fillRoundedRectangle (r.toFloat(), juce::jmax (6.0f, e.cornerRadius));
+        g.setColour ((e.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : e.borderColour).withAlpha (0.75f));
+        g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (6.0f, e.cornerRadius), juce::jmax (0.5f, e.strokeWidth));
+
+        auto bounds = r.reduced (10).toFloat();
+        const auto centre = bounds.getCentre();
+        const float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * (0.22f + amount * 0.12f);
+        for (int ring = 0; ring < 4; ++ring)
+        {
+            const float scale = 1.0f + (float) ring * 0.58f;
+            g.setColour (accent.withAlpha (0.28f - (float) ring * 0.045f));
+            g.drawEllipse (centre.x - radius * scale,
+                           centre.y - radius * scale,
+                           radius * 2.0f * scale,
+                           radius * 2.0f * scale,
+                           1.2f + amount * 2.0f);
+        }
+
+        g.setColour (accent.withAlpha (0.75f));
+        g.fillEllipse (centre.x - radius * 0.32f, centre.y - radius * 0.32f, radius * 0.64f, radius * 0.64f);
+        g.setColour (PatchCraftLookAndFeel::text());
+        g.setFont (juce::Font (11.0f, juce::Font::bold));
+        g.drawText (e.label.isNotEmpty() ? e.label.toUpperCase() : "REACTIVE IMAGE",
+                    r.reduced (10, 8), juce::Justification::topLeft, true);
+        g.setColour (PatchCraftLookAndFeel::textDim());
+        g.setFont (juce::Font (9.5f));
+        g.drawText (e.visualSource + " -> " + e.visualAction,
+                    r.reduced (10, 8), juce::Justification::bottomRight, true);
+    }
+
+    static void drawSpriteAnimatorPlaceholder (juce::Graphics& g, juce::Rectangle<int> r,
+                                               const LayoutElement& e, juce::Image img)
+    {
+        const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
+        g.setColour (e.backgroundColour.isTransparent() ? juce::Colour (0xaa080b10) : e.backgroundColour);
+        g.fillRoundedRectangle (r.toFloat(), juce::jmax (6.0f, e.cornerRadius));
+        g.setColour (e.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : e.borderColour);
+        g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (6.0f, e.cornerRadius), 1.0f);
+
+        if (img.isValid())
+        {
+            const int frames = juce::jmax (1, e.filmstripFrames > 0 ? e.filmstripFrames : 8);
+            const auto seconds = juce::Time::getMillisecondCounterHiRes() * 0.001;
+            const int frame = ((int) std::floor (seconds * juce::jmax (0.05f, e.animationRate))) % frames;
+            if (e.filmstripVertical)
+            {
+                const int h = juce::jmax (1, img.getHeight() / frames);
+                g.drawImage (img, r.getX(), r.getY(), r.getWidth(), r.getHeight(),
+                             0, frame * h, img.getWidth(), h);
+            }
+            else
+            {
+                const int w = juce::jmax (1, img.getWidth() / frames);
+                g.drawImage (img, r.getX(), r.getY(), r.getWidth(), r.getHeight(),
+                             frame * w, 0, w, img.getHeight());
+            }
+            return;
+        }
+
+        auto area = r.reduced (12, 28);
+        const int cols = 4;
+        const int rows = 2;
+        const int frameW = juce::jmax (1, area.getWidth() / cols);
+        const int frameH = juce::jmax (1, area.getHeight() / rows);
+        const int active = ((int) (juce::Time::getMillisecondCounterHiRes() * 0.001 * juce::jmax (0.05f, e.animationRate))) % (cols * rows);
+        for (int i = 0; i < cols * rows; ++i)
+        {
+            auto cell = juce::Rectangle<int> (area.getX() + (i % cols) * frameW,
+                                              area.getY() + (i / cols) * frameH,
+                                              frameW - 6, frameH - 6);
+            g.setColour (i == active ? accent.withAlpha (0.62f) : accent.withAlpha (0.14f));
+            g.fillRoundedRectangle (cell.toFloat(), 4.0f);
+            g.setColour (accent.withAlpha (0.72f));
+            g.drawRoundedRectangle (cell.toFloat(), 4.0f, 1.0f);
+        }
+        g.setColour (PatchCraftLookAndFeel::text());
+        g.setFont (juce::Font (11.0f, juce::Font::bold));
+        g.drawText (e.label.isNotEmpty() ? e.label.toUpperCase() : "SPRITE ANIMATOR",
+                    r.reduced (10, 8), juce::Justification::topLeft, true);
+    }
+
+    static void drawVisualFxLayer (juce::Graphics& g, juce::Rectangle<int> r,
+                                   const LayoutElement& e, float previewLevel)
+    {
+        const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
+        const float seconds = (float) (juce::Time::getMillisecondCounterHiRes() * 0.001);
+        const float level = juce::jlimit (0.0f, 1.0f, previewLevel + (e.audioReactive ? e.audioReactiveAmount * 0.4f : 0.0f));
+        g.setColour (e.backgroundColour.isTransparent() ? juce::Colour (0x22000000) : e.backgroundColour);
+        g.fillRoundedRectangle (r.toFloat(), juce::jmax (4.0f, e.cornerRadius));
+
+        auto bounds = r.reduced (10).toFloat();
+        if (e.visualPreset == "spectrumBars")
+        {
+            for (int i = 0; i < 18; ++i)
+            {
+                const float h = bounds.getHeight() * (0.12f + 0.78f * std::abs (std::sin (seconds * 1.7f + (float) i * 0.47f)) * (0.35f + level));
+                g.setColour (accent.withHue (std::fmod (accent.getHue() + (float) i * 0.018f, 1.0f)).withAlpha (0.55f));
+                g.fillRoundedRectangle (bounds.getX() + (float) i * bounds.getWidth() / 18.0f,
+                                        bounds.getBottom() - h,
+                                        bounds.getWidth() / 24.0f,
+                                        h,
+                                        2.0f);
+            }
+        }
+        else
+        {
+            const auto centre = bounds.getCentre();
+            const float base = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.18f;
+            for (int i = 0; i < 36; ++i)
+            {
+                const float phase = seconds * juce::jmax (0.05f, e.animationRate) + (float) i * 0.42f;
+                const float radius = base + std::fmod ((float) i * 13.0f + seconds * 28.0f, base * (1.5f + level));
+                const float x = centre.x + std::cos (phase) * radius;
+                const float y = centre.y + std::sin (phase * 0.83f) * radius * 0.72f;
+                g.setColour (accent.withAlpha (0.16f + level * 0.22f));
+                g.fillEllipse (x - 2.0f, y - 2.0f, 4.0f + level * 4.0f, 4.0f + level * 4.0f);
+            }
+            g.setColour (accent.withAlpha (0.36f + level * 0.28f));
+            g.drawEllipse (centre.x - base * 1.6f, centre.y - base * 1.6f, base * 3.2f, base * 3.2f, 1.2f + level * 2.0f);
+        }
+
+        g.setColour (PatchCraftLookAndFeel::textDim());
+        g.setFont (juce::Font (9.0f, juce::Font::bold));
+        g.drawText (e.label.isNotEmpty() ? e.label.toUpperCase() : "VISUAL FX",
+                    r.reduced (8), juce::Justification::topLeft, true);
+    }
+
     static void drawCanvasKeyboard (juce::Graphics& g, juce::Rectangle<int> r)
     {
         g.setColour (juce::Colour (0xff05060a));
@@ -2148,13 +2287,70 @@ namespace patchcraft
             }
         }
 
+        if (e.type == ElementType::ReactiveImage)
+        {
+            juce::Image img;
+            if (e.asset.isNotEmpty())
+            {
+                juce::File f = juce::File::isAbsolutePath (e.asset)
+                    ? juce::File (e.asset)
+                    : owner.getProject().getProjectFolder().getChildFile (e.asset);
+                if (f.existsAsFile())
+                    img = owner.getAssets().loadImage (f);
+            }
+
+            if (img.isValid())
+            {
+                g.drawImage (img, r.toFloat());
+                drawReactiveVisualPlaceholder (g, r, e, 0.25f);
+            }
+            else
+            {
+                drawReactiveVisualPlaceholder (g, r, e, 0.25f);
+            }
+        }
+        else if (e.type == ElementType::SpriteAnimator)
+        {
+            juce::Image img;
+            const auto assetPath = e.asset.isNotEmpty() ? e.asset : e.filmstripAsset;
+            if (assetPath.isNotEmpty())
+            {
+                juce::File f = juce::File::isAbsolutePath (assetPath)
+                    ? juce::File (assetPath)
+                    : owner.getProject().getProjectFolder().getChildFile (assetPath);
+                if (f.existsAsFile())
+                    img = owner.getAssets().loadImage (f);
+            }
+            drawSpriteAnimatorPlaceholder (g, r, e, img);
+        }
+        else if (e.type == ElementType::VisualFxLayer)
+        {
+            drawVisualFxLayer (g, r, e, 0.30f);
+        }
+        else if (e.type == ElementType::AiVisualPrompt)
+        {
+            const auto accent = e.accentColour.isTransparent() ? juce::Colour (0xffb98cff) : e.accentColour;
+            g.setColour (e.backgroundColour.isTransparent() ? juce::Colour (0xdd121019) : e.backgroundColour);
+            g.fillRoundedRectangle (r.toFloat(), juce::jmax (6.0f, e.cornerRadius));
+            g.setColour (accent.withAlpha (0.75f));
+            g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (6.0f, e.cornerRadius), 1.0f);
+            auto area = r.reduced (12, 10);
+            g.setColour (accent);
+            g.setFont (juce::Font (12.0f, juce::Font::bold));
+            g.drawText ("PRO AI VISUAL PROMPT", area.removeFromTop (22), juce::Justification::centredLeft, true);
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (juce::Font (10.5f));
+            const auto prompt = e.visualAiPrompt.isNotEmpty() ? e.visualAiPrompt
+                : "Generate artwork, sprite sheets, masks, or title banners from this instrument's sound and brand direction.";
+            g.drawFittedText (prompt, area, juce::Justification::topLeft, 5);
+        }
         // ---- Image element ------------------------------------------------
         // 'background' (id == "background") falls back to the procedural hero
         //   artwork when no asset is set.
         // 'hero' or any other Image with an empty asset draws an "Artwork"
         //   placeholder so the user knows where to drop a PNG.
         // Any Image with an asset path loads + draws the file.
-        if (e.type == ElementType::Image)
+        else if (e.type == ElementType::Image)
         {
             // Resolve the asset path: explicit asset wins; for the special
             // 'background' element, fall back to project.backgroundImageRelative.
@@ -3095,6 +3291,10 @@ namespace patchcraft
                  : type == ElementType::GranularField ? 440
                  : type == ElementType::EqCurve ? 460
                  : type == ElementType::SpectrumAnalyzer ? 460
+                 : type == ElementType::ReactiveImage ? 320
+                 : type == ElementType::SpriteAnimator ? 260
+                 : type == ElementType::VisualFxLayer ? 420
+                 : type == ElementType::AiVisualPrompt ? 360
                  : type == ElementType::DrumGrid ? 560
                  : type == ElementType::ArpLane ? 260
                  : type == ElementType::Mixer ? 520
@@ -3109,6 +3309,10 @@ namespace patchcraft
                   : type == ElementType::GranularField ? 220
                   : type == ElementType::EqCurve ? 180
                   : type == ElementType::SpectrumAnalyzer ? 160
+                  : type == ElementType::ReactiveImage ? 200
+                  : type == ElementType::SpriteAnimator ? 180
+                  : type == ElementType::VisualFxLayer ? 180
+                  : type == ElementType::AiVisualPrompt ? 170
                   : type == ElementType::DrumGrid ? 220
                   : type == ElementType::ArpLane ? 330
                   : type == ElementType::Mixer ? 260
@@ -3236,6 +3440,65 @@ namespace patchcraft
             el.accentColour = juce::Colour (0xff20d6ff);
             el.backgroundColour = juce::Colour (0x33141822);
             el.borderColour = PatchCraftLookAndFeel::border();
+        }
+        if (type == ElementType::ReactiveImage)
+        {
+            el.label = "Reactive Image";
+            el.parameterId.clear();
+            el.audioReactive = true;
+            el.audioReactiveMode = "level";
+            el.audioReactiveAmount = 0.72f;
+            el.animationMode = "breathe";
+            el.animationRate = 0.75f;
+            el.visualSource = "audioLevel";
+            el.visualAction = "pulseGlow";
+            el.cornerRadius = 10.0f;
+            el.accentColour = PatchCraftLookAndFeel::accent();
+            el.backgroundColour = juce::Colour (0x33141822);
+            el.borderColour = PatchCraftLookAndFeel::border();
+        }
+        if (type == ElementType::SpriteAnimator)
+        {
+            el.label = "Sprite Animator";
+            el.parameterId.clear();
+            el.animationMode = "pulse";
+            el.animationRate = 8.0f;
+            el.visualSource = "bpmClock";
+            el.visualAction = "frameIndex";
+            el.filmstripFrames = 8;
+            el.cornerRadius = 8.0f;
+            el.accentColour = juce::Colour (0xff60e6b7);
+            el.backgroundColour = juce::Colour (0x33141822);
+            el.borderColour = PatchCraftLookAndFeel::border();
+        }
+        if (type == ElementType::VisualFxLayer)
+        {
+            el.label = "Visual FX Layer";
+            el.parameterId.clear();
+            el.audioReactive = true;
+            el.audioReactiveMode = "peak";
+            el.audioReactiveAmount = 0.62f;
+            el.animationMode = "glow";
+            el.animationRate = 1.2f;
+            el.visualPreset = "orbitAura";
+            el.visualSource = "audioPeak";
+            el.visualAction = "particles";
+            el.cornerRadius = 10.0f;
+            el.accentColour = juce::Colour (0xff7ee7ff);
+            el.backgroundColour = juce::Colour (0x22000000);
+            el.borderColour = PatchCraftLookAndFeel::border();
+        }
+        if (type == ElementType::AiVisualPrompt)
+        {
+            el.label = "AI Visual Prompt";
+            el.parameterId.clear();
+            el.visualRequiresPro = true;
+            el.visualAiPrompt = "Create a clean title banner, matching library thumbnail, reactive glow mask, and optional sprite sheet for this instrument.";
+            el.visualAiStyle = "premium playable instrument UI";
+            el.cornerRadius = 10.0f;
+            el.accentColour = juce::Colour (0xffb98cff);
+            el.backgroundColour = juce::Colour (0x44120f19);
+            el.borderColour = juce::Colour (0xff55406f);
         }
         if (type == ElementType::Mixer)
         {
@@ -3692,6 +3955,145 @@ namespace patchcraft
         repaint();
     }
 
+    void CanvasEditor::addVisualReactivityControlLayout (juce::Point<int> canvasPos)
+    {
+        const auto tabGroup = currentTabGroup == "main" ? juce::String() : currentTabGroup;
+        juce::StringArray addedIds;
+
+        owner.getProject().performLayoutEdit ("Add Animation Lab visual kit",
+            [&] (LayoutModel& layout)
+            {
+                LayoutElement panel;
+                panel.type = ElementType::Panel;
+                panel.label = "Animation Lab Visual Kit";
+                panel.x = canvasPos.x;
+                panel.y = canvasPos.y;
+                panel.width = 980;
+                panel.height = 430;
+                panel.groupId = tabGroup;
+                panel.cornerRadius = 16.0f;
+                panel.strokeWidth = 2.0f;
+                panel.backgroundColour = juce::Colour (0xcc080b10);
+                panel.borderColour = PatchCraftLookAndFeel::accent();
+                panel.accentColour = PatchCraftLookAndFeel::accent();
+                auto& addedPanel = layout.add (panel);
+                const auto panelId = addedPanel.id;
+                addedIds.add (panelId);
+
+                auto addChild = [&] (LayoutElement child, const juce::String& prefix)
+                {
+                    child.containerId = panelId;
+                    child.groupId = tabGroup;
+                    if (child.id.isEmpty())
+                        child.id = layout.generateUniqueId (prefix);
+                    auto& added = layout.add (child);
+                    addedIds.add (added.id);
+                };
+
+                LayoutElement title;
+                title.type = ElementType::Label;
+                title.label = "ANIMATION LAB STARTER";
+                title.x = canvasPos.x + 22;
+                title.y = canvasPos.y + 18;
+                title.width = 280;
+                title.height = 24;
+                title.labelSize = 16.0f;
+                title.textColour = PatchCraftLookAndFeel::textBright();
+                addChild (title, "label_");
+
+                LayoutElement guide;
+                guide.type = ElementType::Label;
+                guide.label = "Non-Pro: imported art, sprite sheets, procedural FX. Pro: AI prompts generate banners, thumbnails, masks, and animation sources.";
+                guide.x = canvasPos.x + 312;
+                guide.y = canvasPos.y + 20;
+                guide.width = 620;
+                guide.height = 22;
+                guide.labelSize = 10.5f;
+                guide.textColour = PatchCraftLookAndFeel::textDim();
+                addChild (guide, "label_");
+
+                LayoutElement reactive;
+                reactive.type = ElementType::ReactiveImage;
+                reactive.label = "Reactive Artwork Slot";
+                reactive.x = canvasPos.x + 26;
+                reactive.y = canvasPos.y + 64;
+                reactive.width = 300;
+                reactive.height = 238;
+                reactive.audioReactive = true;
+                reactive.audioReactiveMode = "level";
+                reactive.audioReactiveAmount = 0.82f;
+                reactive.animationMode = "breathe";
+                reactive.animationRate = 0.7f;
+                reactive.visualSource = "master level";
+                reactive.visualAction = "scale + glow";
+                reactive.cornerRadius = 12.0f;
+                reactive.accentColour = PatchCraftLookAndFeel::accent();
+                reactive.backgroundColour = juce::Colour (0x33141822);
+                reactive.borderColour = PatchCraftLookAndFeel::border();
+                addChild (reactive, "reactive_");
+
+                LayoutElement fx;
+                fx.type = ElementType::VisualFxLayer;
+                fx.label = "Orbit Aura FX";
+                fx.x = canvasPos.x + 350;
+                fx.y = canvasPos.y + 64;
+                fx.width = 280;
+                fx.height = 238;
+                fx.audioReactive = true;
+                fx.audioReactiveMode = "peak";
+                fx.audioReactiveAmount = 0.68f;
+                fx.animationMode = "glow";
+                fx.animationRate = 1.2f;
+                fx.visualPreset = "orbitAura";
+                fx.visualSource = "audio peak";
+                fx.visualAction = "particles + trails";
+                fx.cornerRadius = 12.0f;
+                fx.accentColour = juce::Colour (0xff7ee7ff);
+                fx.backgroundColour = juce::Colour (0x22000000);
+                fx.borderColour = PatchCraftLookAndFeel::border();
+                addChild (fx, "visualfx_");
+
+                LayoutElement sprite;
+                sprite.type = ElementType::SpriteAnimator;
+                sprite.label = "Sprite Sheet Slot";
+                sprite.x = canvasPos.x + 654;
+                sprite.y = canvasPos.y + 64;
+                sprite.width = 280;
+                sprite.height = 238;
+                sprite.animationMode = "pulse";
+                sprite.animationRate = 8.0f;
+                sprite.visualSource = "BPM / note gate";
+                sprite.visualAction = "frame index";
+                sprite.filmstripFrames = 8;
+                sprite.cornerRadius = 12.0f;
+                sprite.accentColour = juce::Colour (0xff60e6b7);
+                sprite.backgroundColour = juce::Colour (0x33141822);
+                sprite.borderColour = PatchCraftLookAndFeel::border();
+                addChild (sprite, "sprite_");
+
+                LayoutElement pro;
+                pro.type = ElementType::AiVisualPrompt;
+                pro.label = "Pro AI Visual Brief";
+                pro.x = canvasPos.x + 26;
+                pro.y = canvasPos.y + 320;
+                pro.width = 908;
+                pro.height = 82;
+                pro.visualRequiresPro = true;
+                pro.visualAiPrompt = "Generate a title banner, library thumbnail, reactive glow mask, and 8-frame sprite accents that match this instrument's sound, Orbit motion, and brand colors.";
+                pro.visualAiStyle = "premium plugin artwork, clean, no center text, real instrument UI assets";
+                pro.cornerRadius = 10.0f;
+                pro.accentColour = juce::Colour (0xffb98cff);
+                pro.backgroundColour = juce::Colour (0x44120f19);
+                pro.borderColour = juce::Colour (0xff55406f);
+                addChild (pro, "aivisual_");
+            });
+
+        if (! addedIds.isEmpty())
+            owner.setSelectedElementIds (addedIds);
+
+        repaint();
+    }
+
     void CanvasEditor::addCircleSeqBackgroundKit (juce::Point<int> canvasPos)
     {
         const auto canvas = owner.getProject().getCanvasSize();
@@ -3851,6 +4253,7 @@ namespace patchcraft
         menu.addItem (23, "Add Drum Machine Surface");
         menu.addItem (26, "Add Arp Studio Lane");
         menu.addItem (27, "Add Orbit Groove Instrument Surface");
+        menu.addItem (28, "Add Animation Lab Visual Kit");
         menu.addSeparator();
 
         // Group parameters by ParameterDef::category so the menu doesn't dump
@@ -4020,6 +4423,11 @@ namespace patchcraft
                             else if (actionId == "granular") c->addElementAt (ElementType::GranularField, canvasPos);
                             else if (actionId == "arpLane") c->addElementAt (ElementType::ArpLane, canvasPos);
                             else if (actionId == "orbitInstrument") c->addOrbitInstrumentControlLayout (canvasPos);
+                            else if (actionId == "visualKit") c->addVisualReactivityControlLayout (canvasPos);
+                            else if (actionId == "reactiveImage") c->addElementAt (ElementType::ReactiveImage, canvasPos);
+                            else if (actionId == "spriteAnimator") c->addElementAt (ElementType::SpriteAnimator, canvasPos);
+                            else if (actionId == "visualFx") c->addElementAt (ElementType::VisualFxLayer, canvasPos);
+                            else if (actionId == "aiVisualPrompt") c->addElementAt (ElementType::AiVisualPrompt, canvasPos);
                             else if (actionId == "drumMachine") c->addDrumMachineControlLayout (canvasPos);
                             else if (actionId == "bpm") c->addElementAt (ElementType::Knob, canvasPos, "projectBpm");
                             else if (actionId == "bpmSync") c->addElementAt (ElementType::Toggle, canvasPos, "bpmSync");
@@ -4119,6 +4527,10 @@ namespace patchcraft
                 else if (result == 27)
                 {
                     addOrbitInstrumentControlLayout (canvasPos);
+                }
+                else if (result == 28)
+                {
+                    addVisualReactivityControlLayout (canvasPos);
                 }
                 else if (result == 15)
                 {

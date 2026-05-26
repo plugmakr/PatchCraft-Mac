@@ -70,6 +70,7 @@ namespace patchcraft
         void addMixerChannelAt (juce::Point<int> canvasPos);
         void addDrumMachineControlLayout (juce::Point<int> canvasPos);
         void addOrbitInstrumentControlLayout (juce::Point<int> canvasPos);
+        void addVisualReactivityControlLayout (juce::Point<int> canvasPos);
         void addCircleSeqBackgroundKit (juce::Point<int> canvasPos);
 
     private:

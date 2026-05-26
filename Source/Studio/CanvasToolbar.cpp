@@ -38,6 +38,7 @@ namespace patchcraft
             { &tabArp,      (int) BottomPanel::Page::ArpStudio },
             { &tabDSP,      (int) BottomPanel::Page::DSP },
             { &tabBuild,    (int) BottomPanel::Page::Widgets },
+            { &tabAnimation,(int) BottomPanel::Page::Animation },
             { &tabBranding, (int) BottomPanel::Page::Branding },
             { &tabLaunch,   (int) BottomPanel::Page::Export }
         };
@@ -295,6 +296,7 @@ namespace patchcraft
         tabArp   .setToggleState   (p == BottomPanel::Page::ArpStudio,      juce::dontSendNotification);
         tabDSP   .setToggleState   (p == BottomPanel::Page::DSP,            juce::dontSendNotification);
         tabBuild .setToggleState   (p == BottomPanel::Page::Widgets,          juce::dontSendNotification);
+        tabAnimation.setToggleState (p == BottomPanel::Page::Animation,      juce::dontSendNotification);
         tabBranding.setToggleState (p == BottomPanel::Page::Branding
                                   || p == BottomPanel::Page::Test,         juce::dontSendNotification);
         tabLaunch.setToggleState   (p == BottomPanel::Page::Export,         juce::dontSendNotification);
@@ -509,6 +511,7 @@ namespace patchcraft
         tabMidi  .setBounds (r.removeFromLeft (44));
         tabArp   .setBounds (r.removeFromLeft (44));
         tabBuild .setBounds (r.removeFromLeft (58));
+        tabAnimation.setBounds (r.removeFromLeft (48));
         tabBranding.setBounds (r.removeFromLeft (62));
         tabLaunch.setBounds (r.removeFromLeft (52));
         if (owner.getBottomTab() == BottomPanel::Page::DSP)

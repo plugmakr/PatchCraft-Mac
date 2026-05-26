@@ -17,6 +17,7 @@
 #include "OneShotMakerPage.h"
 #include "WorkflowPage.h"
 #include "LaunchCenterPage.h"
+#include "AnimationLabPage.h"
 
 namespace patchcraft
 {
@@ -105,6 +106,10 @@ namespace patchcraft
         // Build page ---------------------------------------------------------
         builder = std::make_unique<ControlBuilderComponent> (owner);
         addChildComponent (*builder);
+
+        // Animation Lab ------------------------------------------------------
+        animationLab = std::make_unique<AnimationLabPage> (owner);
+        addChildComponent (*animationLab);
 
         // Branding Lab -------------------------------------------------------
         brandingLab = std::make_unique<BrandingLabPage> (owner);
@@ -199,6 +204,7 @@ namespace patchcraft
         if (designDspPage) designDspPage->refresh();
         if (midiPlayground) midiPlayground->refresh();
         if (dspPage) dspPage->refresh();
+        if (animationLab) animationLab->refresh();
         if (launchCenter) launchCenter->refresh();
         repaint();
     }
@@ -220,6 +226,7 @@ namespace patchcraft
         const bool midi    = currentPage == Page::MidiPlayground || currentPage == Page::ArpStudio;
         const bool dsp     = currentPage == Page::DSP;
         const bool build   = currentPage == Page::Widgets;
+        const bool animation = currentPage == Page::Animation;
         const bool launch  = currentPage == Page::Export;
         // "Test" now routes to the Brand Lab — the developer's live test
         // environment is the same surface as their branding workspace.
@@ -249,6 +256,7 @@ namespace patchcraft
         if (launchCenter) launchCenter->setVisible (launch);
 
         if (builder) builder->setVisible (build);
+        if (animationLab) animationLab->setVisible (animation);
         if (brandingLab)
         {
             brandingLab->setVisible (brand);
@@ -343,6 +351,12 @@ namespace patchcraft
             case Page::Widgets:
             {
                 if (builder) builder->setBounds (r);
+                break;
+            }
+
+            case Page::Animation:
+            {
+                if (animationLab) animationLab->setBounds (r);
                 break;
             }
 

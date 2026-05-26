@@ -211,7 +211,7 @@ namespace patchcraft
         exportButton.onClick = [this] { showModuleTutorial (TutorialModule::Export); };
 
         for (auto* button : { &advDspButton, &advMapperButton, &advOneShotButton, &advMidiButton,
-                              &advBuildButton, &advDesignButton, &advBrandButton })
+                              &advBuildButton, &advAnimationButton, &advDesignButton, &advBrandButton })
         {
             styleSecondary (*button);
             button->getProperties().set ("workflowStep", true);
@@ -222,6 +222,7 @@ namespace patchcraft
         advOneShotButton.setButtonText ("One Shot Maker\nRender VST3 notes into sample packs");
         advMidiButton.setButtonText ("MIDI Playground\nArps, chords, patterns, performance");
         advBuildButton.setButtonText ("Asset Builder\nKnobs, sliders, meters, filmstrips");
+        advAnimationButton.setButtonText ("Animation Lab\nReactive imagery, sprite sheets, visual FX, AI briefs");
         advDesignButton.setButtonText ("Design Surface\nPlayer UI, bindings, containers");
         advBrandButton.setButtonText ("Brand / Runtime Lab\nPlayer polish, testing, white-label");
         advDspButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::DSP); };
@@ -229,6 +230,7 @@ namespace patchcraft
         advOneShotButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::OneShotMaker); };
         advMidiButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::MidiPlayground); };
         advBuildButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Widgets); };
+        advAnimationButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Animation); };
         advDesignButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Design); };
         advBrandButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Branding); };
 
@@ -701,8 +703,8 @@ namespace patchcraft
         const bool advanced = advancedMode.getToggleState();
         for (auto* button : { &soundButton, &midiButton, &designButton, &presetsButton, &testButton, &exportButton })
             button->setVisible (! advanced);
-        for (auto* button : { &advDspButton, &advMapperButton, &advMidiButton,
-                              &advBuildButton, &advDesignButton, &advBrandButton })
+        for (auto* button : { &advDspButton, &advMapperButton, &advOneShotButton, &advMidiButton,
+                              &advBuildButton, &advAnimationButton, &advDesignButton, &advBrandButton })
             button->setVisible (advanced);
         resized();
     }
@@ -836,7 +838,7 @@ namespace patchcraft
 
         if (advanced)
             placeButtons ({ &advDspButton, &advMapperButton, &advOneShotButton, &advMidiButton,
-                            &advBuildButton, &advDesignButton, &advBrandButton });
+                            &advBuildButton, &advAnimationButton, &advDesignButton, &advBrandButton });
         else
             placeButtons ({ &soundButton, &midiButton, &designButton,
                             &presetsButton, &testButton, &exportButton });

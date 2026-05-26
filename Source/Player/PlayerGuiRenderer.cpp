@@ -3395,6 +3395,101 @@ namespace patchcraft
                 case ElementType::Meter:    drawMeter (g, r, e); break;
                 case ElementType::EqCurve:  drawEqCurve (g, r, e); break;
                 case ElementType::SpectrumAnalyzer: drawSpectrumAnalyzer (g, r, e); break;
+                case ElementType::ReactiveImage:
+                {
+                    juce::String assetPath = e.asset;
+                    if (assetPath.isNotEmpty())
+                    {
+                        auto f = juce::File::isAbsolutePath (assetPath)
+                                    ? juce::File (assetPath)
+                                    : pack->rootFolder.getChildFile (assetPath);
+                        if (auto img = assets.loadImage (f); img.isValid())
+                            g.drawImage (img, r.toFloat());
+                    }
+                    const float level = juce::jlimit (0.0f, 1.0f, proc.getOutputPeak() * juce::jmax (0.1f, e.audioReactiveAmount));
+                    const auto accent = e.accentColour.isTransparent() ? playerAccent() : e.accentColour;
+                    auto halo = r.reduced (8).toFloat();
+                    for (int ring = 0; ring < 4; ++ring)
+                    {
+                        const float grow = (float) ring * 9.0f + level * 16.0f;
+                        g.setColour (accent.withAlpha (0.22f - (float) ring * 0.035f));
+                        g.drawRoundedRectangle (halo.expanded (grow), juce::jmax (4.0f, e.cornerRadius + grow), 1.0f + level * 2.0f);
+                    }
+                    if (assetPath.isEmpty())
+                    {
+                        g.setColour (playerPanel().withAlpha (0.70f));
+                        g.fillRoundedRectangle (r.toFloat(), juce::jmax (5.0f, e.cornerRadius));
+                        g.setColour (accent.withAlpha (0.75f));
+                        g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (5.0f, e.cornerRadius), 1.0f);
+                    }
+                    break;
+                }
+                case ElementType::SpriteAnimator:
+                {
+                    const auto assetPath = e.asset.isNotEmpty() ? e.asset : e.filmstripAsset;
+                    if (assetPath.isNotEmpty())
+                    {
+                        auto f = juce::File::isAbsolutePath (assetPath)
+                                    ? juce::File (assetPath)
+                                    : pack->rootFolder.getChildFile (assetPath);
+                        if (auto img = assets.loadImage (f); img.isValid())
+                        {
+                            const int frames = juce::jmax (1, e.filmstripFrames > 0 ? e.filmstripFrames : 8);
+                            const int frame = ((int) std::floor (juce::Time::getMillisecondCounterHiRes() * 0.001
+                                                                 * juce::jmax (0.05f, e.animationRate))) % frames;
+                            if (e.filmstripVertical)
+                            {
+                                const int h = juce::jmax (1, img.getHeight() / frames);
+                                g.drawImage (img, r.getX(), r.getY(), r.getWidth(), r.getHeight(),
+                                             0, frame * h, img.getWidth(), h);
+                            }
+                            else
+                            {
+                                const int w = juce::jmax (1, img.getWidth() / frames);
+                                g.drawImage (img, r.getX(), r.getY(), r.getWidth(), r.getHeight(),
+                                             frame * w, 0, w, img.getHeight());
+                            }
+                            break;
+                        }
+                    }
+                    g.setColour (playerPanel().withAlpha (0.65f));
+                    g.fillRoundedRectangle (r.toFloat(), juce::jmax (5.0f, e.cornerRadius));
+                    g.setColour ((e.accentColour.isTransparent() ? playerAccent() : e.accentColour).withAlpha (0.65f));
+                    g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (5.0f, e.cornerRadius), 1.0f);
+                    break;
+                }
+                case ElementType::VisualFxLayer:
+                {
+                    const auto accent = e.accentColour.isTransparent() ? playerAccent() : e.accentColour;
+                    const float level = juce::jlimit (0.0f, 1.0f, proc.getOutputPeak() * juce::jmax (0.1f, e.audioReactiveAmount));
+                    const float seconds = (float) (juce::Time::getMillisecondCounterHiRes() * 0.001);
+                    const auto bounds = r.reduced (8).toFloat();
+                    const auto centre = bounds.getCentre();
+                    const float base = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.18f;
+                    for (int i = 0; i < 32; ++i)
+                    {
+                        const float phase = seconds * juce::jmax (0.05f, e.animationRate) + (float) i * 0.43f;
+                        const float radius = base + std::fmod ((float) i * 11.0f + seconds * 24.0f, base * (1.6f + level));
+                        g.setColour (accent.withAlpha (0.12f + level * 0.24f));
+                        g.fillEllipse (centre.x + std::cos (phase) * radius - 2.0f,
+                                       centre.y + std::sin (phase * 0.8f) * radius * 0.74f - 2.0f,
+                                       4.0f + level * 4.0f,
+                                       4.0f + level * 4.0f);
+                    }
+                    break;
+                }
+                case ElementType::AiVisualPrompt:
+                {
+                    g.setColour (e.backgroundColour.isTransparent() ? playerPanel().withAlpha (0.55f) : e.backgroundColour);
+                    g.fillRoundedRectangle (r.toFloat(), juce::jmax (5.0f, e.cornerRadius));
+                    g.setColour ((e.accentColour.isTransparent() ? juce::Colour (0xffb98cff) : e.accentColour).withAlpha (0.7f));
+                    g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (5.0f, e.cornerRadius), 1.0f);
+                    g.setColour (playerTextDim());
+                    g.setFont (juce::FontOptions (10.0f).withStyle ("bold"));
+                    g.drawFittedText (e.visualAiGenerated ? "AI VISUAL ASSET" : "AI VISUAL PLACEHOLDER",
+                                      r.reduced (8), juce::Justification::centred, 2);
+                    break;
+                }
                 case ElementType::Panel:
                 case ElementType::ScrollPanel:
                     drawPanel (g, r, e.label);

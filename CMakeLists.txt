@@ -182,6 +182,7 @@ if(PATCHCRAFT_BUILD_STUDIO)
         Source/Studio/TopToolbar.cpp
         Source/Studio/ElementPalette.cpp
         Source/Studio/AiImageBuilderComponent.cpp
+        Source/Studio/AnimationLabPage.cpp
         Source/Studio/BrandingLabPage.cpp
         Source/Studio/BuiltAssetLibraryComponent.cpp
         Source/Studio/ExpansionLibraryPanel.cpp

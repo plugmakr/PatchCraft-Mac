@@ -534,6 +534,7 @@ namespace patchcraft
             { BottomPanel::Page::ArpStudio,      "studio-arp-studio.png" },
             { BottomPanel::Page::DSP,            "studio-dsp.png" },
             { BottomPanel::Page::Widgets,          "studio-build.png" },
+            { BottomPanel::Page::Animation,      "studio-animation-lab.png" },
             { BottomPanel::Page::Branding,       "studio-brand-lab.png" },
             { BottomPanel::Page::Test,           "studio-test.png" },
             { BottomPanel::Page::Export,         "studio-launch.png" }
@@ -1326,7 +1327,8 @@ namespace patchcraft
             menu.addItem (4007, "Go To Design");
             menu.addItem (4008, "Go To Arp Studio");
             menu.addItem (4009, "Go To DSP Builder");
-            menu.addItem (4010, "Go To Launch");
+            menu.addItem (4010, "Go To Animation Lab");
+            menu.addItem (4011, "Go To Launch");
         }
         else if (menuName == "Help")
         {
@@ -1424,7 +1426,8 @@ namespace patchcraft
             case 4007: setBottomTab (BottomPanel::Page::Design); break;
             case 4008: setBottomTab (BottomPanel::Page::ArpStudio); break;
             case 4009: setBottomTab (BottomPanel::Page::DSP); break;
-            case 4010: setBottomTab (BottomPanel::Page::Export); break;
+            case 4010: setBottomTab (BottomPanel::Page::Animation); break;
+            case 4011: setBottomTab (BottomPanel::Page::Export); break;
             case 4100: fitCanvasToWindow(); break;
             case 2001: showDspBuilderTutorial(); break;
             case 2002: toggleHelpTooltips(); break;
