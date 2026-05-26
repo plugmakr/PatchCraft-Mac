@@ -114,6 +114,7 @@ namespace patchcraft
                                        int divisions = -1);
         bool setDrumActivePatternFromUi (int pattern);
         bool setMidiPlaygroundActiveBankFromUi (int bank);
+        bool setArpLaneStepFromUi (int lane, int step, float velocity, bool active);
         bool allowsExternalPackLoading() const;
         bool applyPresetByIndex (int presetIndex);
         int getPresetCount() const;

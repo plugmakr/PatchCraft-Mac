@@ -143,7 +143,9 @@ namespace patchcraft
         bool advanceGranularFields();
         bool handlePadClick (const juce::MouseEvent&);
         bool handleDrumGridGesture (const juce::MouseEvent&, bool drag);
-        bool handleArpLaneGesture (const juce::MouseEvent&);
+        bool handleArpLaneGesture (const juce::MouseEvent&, bool drag);
+        bool arpLaneStepAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>,
+                            int& lane, int& step, float& velocity) const;
         juce::Rectangle<int> arpLaneMidiDragHandleBounds (juce::Rectangle<int>) const;
         juce::Rectangle<int> arpLanePlayButtonBounds (juce::Rectangle<int>) const;
         bool startArpLaneMidiDrag (const LayoutElement&);
@@ -156,6 +158,7 @@ namespace patchcraft
 
         bool multiLayerDockCollapsed = true;
         bool mixerDragActive = false;
+        bool arpLaneDragActive = false;
         double lastGranularAdvanceSeconds = 0.0;
         int mixerDragChannel = -1;
         juce::String mixerDragElementId;

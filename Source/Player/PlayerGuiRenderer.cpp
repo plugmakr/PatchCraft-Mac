@@ -2785,7 +2785,46 @@ namespace patchcraft
         return false;
     }
 
-    bool PlayerGuiRenderer::handleArpLaneGesture (const juce::MouseEvent& event)
+    bool PlayerGuiRenderer::arpLaneStepAt (const LayoutElement& element,
+                                           juce::Rectangle<int> r,
+                                           juce::Point<int> pos,
+                                           int& lane,
+                                           int& step,
+                                           float& velocity) const
+    {
+        const auto* pack = proc.getPack();
+        const auto* block = pack != nullptr ? findArpBlock (pack->dspGraph) : nullptr;
+        lane = juce::jlimit (0, 15, element.arpLaneIndex);
+        const int steps = block != nullptr
+            ? juce::jlimit (1, 128, juce::roundToInt (arpLaneValue (*block, lane, "arpSteps", (float) element.arpLaneSteps)))
+            : juce::jlimit (1, 128, element.arpLaneSteps);
+        const int maxDrawSteps = juce::jmin (steps, 64);
+
+        auto area = r.reduced (10);
+        area.removeFromTop (26);
+        const float size = (float) juce::jmin (area.getWidth(), area.getHeight() - 42);
+        if (size <= 24.0f)
+            return false;
+
+        const juce::Point<float> centre ((float) area.getCentreX(), (float) area.getY() + size * 0.52f);
+        const float radius = size * 0.40f;
+        const auto delta = pos.toFloat() - centre;
+        const float distance = delta.getDistanceFromOrigin();
+        if (distance < radius * 0.16f || distance > radius * 1.22f)
+            return false;
+
+        float angle01 = (std::atan2 (delta.y, delta.x) + juce::MathConstants<float>::halfPi)
+            / juce::MathConstants<float>::twoPi;
+        while (angle01 < 0.0f) angle01 += 1.0f;
+        while (angle01 >= 1.0f) angle01 -= 1.0f;
+
+        step = juce::jlimit (0, maxDrawSteps - 1, juce::roundToInt (angle01 * (float) maxDrawSteps) % maxDrawSteps);
+        velocity = juce::jlimit (0.05f, 1.0f,
+            juce::jmap (distance, radius * 0.25f, radius * 0.93f, 0.05f, 1.0f));
+        return true;
+    }
+
+    bool PlayerGuiRenderer::handleArpLaneGesture (const juce::MouseEvent& event, bool drag)
     {
         const auto* pack = proc.getPack();
         if (pack == nullptr)
@@ -2803,20 +2842,37 @@ namespace patchcraft
             if (! r.contains (pos))
                 continue;
 
-            if (arpLanePlayButtonBounds (r).contains (pos))
+            if (! drag && arpLanePlayButtonBounds (r).contains (pos))
             {
                 proc.toggleInternalTransport();
                 repaint (r);
                 return true;
             }
 
-            if (arpLaneMidiDragHandleBounds (r).contains (pos))
+            if (! drag && arpLaneMidiDragHandleBounds (r).contains (pos))
             {
                 arpMidiDragArmed = true;
                 arpMidiDragStart = pos;
                 arpMidiDragElementId = e.id;
                 return true;
             }
+
+            if (drag && ! arpLaneDragActive)
+                return true;
+
+            int lane = -1;
+            int step = -1;
+            float velocity = 0.8f;
+            if (arpLaneStepAt (e, r, pos, lane, step, velocity))
+            {
+                arpLaneDragActive = true;
+                if (proc.setArpLaneStepFromUi (lane, step, velocity, true))
+                    repaint (r);
+                return true;
+            }
+
+            if (drag)
+                return true;
 
             if (proc.setMidiPlaygroundActiveBankFromUi (e.arpLaneIndex))
                 repaint();
@@ -3543,7 +3599,7 @@ namespace patchcraft
         if (handleXYPadGesture (event))
             return;
 
-        if (handleArpLaneGesture (event))
+        if (handleArpLaneGesture (event, false))
             return;
 
         if (handleDrumGridGesture (event, false))
@@ -3677,6 +3733,8 @@ namespace patchcraft
 
         if (handleXYPadGesture (event))
             return;
+        if (handleArpLaneGesture (event, true))
+            return;
         if (handleDrumGridGesture (event, true))
             return;
         if (handleMixerGesture (event, true))
@@ -3709,6 +3767,7 @@ namespace patchcraft
             repaint();
         }
         drumGridDragActive = false;
+        arpLaneDragActive = false;
         lastDrumGridPattern = -1;
         lastDrumGridTrack = -1;
         lastDrumGridStep = -1;

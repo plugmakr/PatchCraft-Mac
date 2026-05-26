@@ -39,16 +39,16 @@
       "arpLaneIndex": 0,
       "arpLaneSteps": 16,
       "arpLaneMode": "bank",
-      "arpLaneTarget": "drums",
-      "arpLaneRootNote": 36,
+      "arpLaneTarget": "notes",
+      "arpLaneRootNote": 60,
       "arpLaneSampleSlots": 8,
-      "arpLaneDirection": "random",
+      "arpLaneDirection": "forward",
       "arpLaneRotate": 3,
       "arpLaneEuclideanPulses": 11,
-      "arpLaneProbability": 0.88,
-      "arpLaneRatchet": 3,
-      "arpLaneFillPulses": 5,
-      "arpLaneFillProbability": 0.42
+      "arpLaneProbability": 0.92,
+      "arpLaneRatchet": 1,
+      "arpLaneFillPulses": 2,
+      "arpLaneFillProbability": 0.18
     },
     {
       "id": "ctrl_bpm",

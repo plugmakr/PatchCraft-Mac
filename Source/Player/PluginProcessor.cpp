@@ -534,9 +534,18 @@ namespace patchcraft
 
     void PlayerProcessor::setInternalTransportPlaying (bool shouldPlay)
     {
+        const bool wasPlaying = internalTransportPlaying.load();
         internalTransportPlaying.store (shouldPlay);
         if (! shouldPlay)
+        {
             internalTransportPpq.store (0.0);
+            if (wasPlaying)
+                handleNoteOff (60);
+        }
+        else if (! wasPlaying)
+        {
+            handleNoteOn (60, 0.78f);
+        }
     }
 
     void PlayerProcessor::toggleInternalTransport()
@@ -1628,9 +1637,11 @@ namespace patchcraft
                 const int lane = juce::jlimit (0, 15, juce::roundToInt (value ("arpLaneIndex", 0.0f)));
                 const int steps = juce::jlimit (1, 128, juce::roundToInt (value ("arpLaneSteps", 16.0f)));
                 const int target = juce::jlimit (0, 4, juce::roundToInt (value ("arpLaneTarget", 0.0f)));
+                const int direction = juce::jlimit (0, 3, juce::roundToInt (value ("arpLaneDirection", 0.0f)));
 
                 block->values["mpActiveBank"] = (float) lane;
                 setArpLaneValue (*block, lane, "arpSteps", (float) steps);
+                setArpLaneValue (*block, lane, "arpPattern", direction == 1 ? 1.0f : direction == 2 ? 2.0f : direction == 3 ? 7.0f : 0.0f);
                 setArpLaneValue (*block, lane, "arpGate", juce::jlimit (0.05f, 1.0f, value ("arpLaneGate", 0.58f)));
                 setArpLaneValue (*block, lane, "arpSwing", juce::jlimit (0.0f, 0.5f, value ("arpLaneSwing", 0.0f)));
                 setArpLaneValue (*block, lane, "rate", juce::jlimit (0.0625f, 16.0f, value ("arpLaneRate", 1.0f)));
@@ -1670,9 +1681,7 @@ namespace patchcraft
                 setArpLaneMetadata (*block, lane, "Target",
                     target == 1 ? "drums" : target == 2 ? "oneShots" : target == 3 ? "loops" : target == 4 ? "samples" : "notes");
                 setArpLaneMetadata (*block, lane, "Direction",
-                    juce::roundToInt (value ("arpLaneDirection", 0.0f)) == 1 ? "reverse"
-                    : juce::roundToInt (value ("arpLaneDirection", 0.0f)) == 2 ? "bounce"
-                    : juce::roundToInt (value ("arpLaneDirection", 0.0f)) == 3 ? "random" : "forward");
+                    direction == 1 ? "reverse" : direction == 2 ? "bounce" : direction == 3 ? "random" : "forward");
                 setArpLaneMetadata (*block, lane, "FillPulses",
                     juce::String (juce::jlimit (0, steps, juce::roundToInt (value ("arpLaneFillPulses", 0.0f)))));
                 setArpLaneMetadata (*block, lane, "FillProbability",
@@ -1798,6 +1807,28 @@ namespace patchcraft
             return false;
 
         midiBlock->values["mpActiveBank"] = (float) juce::jlimit (0, 4, bank);
+        arpeggiator.bind (pack.dspGraph);
+        routingEngine.bind (pack.dspGraph, pack.parameters);
+        routingEngine.prepare (makeRenderContext (currentBlockSize));
+        return true;
+    }
+
+    bool PlayerProcessor::setArpLaneStepFromUi (int lane, int step, float velocity, bool active)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (! loaded)
+            return false;
+
+        auto* midiBlock = findMidiPlaygroundBlock (pack.dspGraph);
+        if (midiBlock == nullptr)
+            return false;
+
+        lane = juce::jlimit (0, 15, lane);
+        step = juce::jlimit (0, 127, step);
+        setArpLaneValue (*midiBlock, lane, "mpVelocity" + juce::String (step), juce::jlimit (0.0f, 1.0f, velocity));
+        setArpLaneValue (*midiBlock, lane, "mpStep" + juce::String (step) + "On", active ? 1.0f : 0.0f);
+        midiBlock->values["mpActiveBank"] = (float) lane;
+
         arpeggiator.bind (pack.dspGraph);
         routingEngine.bind (pack.dspGraph, pack.parameters);
         routingEngine.prepare (makeRenderContext (currentBlockSize));

@@ -199,6 +199,7 @@ namespace patchcraft
 
             block.values["mpActiveBank"] = (float) lane;
             setArpLaneValue (block, lane, "arpSteps", (float) steps);
+            setArpLaneValue (block, lane, "arpPattern", direction == 1 ? 1.0f : direction == 2 ? 2.0f : direction == 3 ? 7.0f : 0.0f);
             setArpLaneValue (block, lane, "arpGate", juce::jlimit (0.05f, 1.0f, value ("arpLaneGate", 0.58f)));
             setArpLaneValue (block, lane, "arpSwing", juce::jlimit (0.0f, 0.5f, value ("arpLaneSwing", 0.0f)));
             setArpLaneValue (block, lane, "rate", juce::jlimit (0.0625f, 16.0f, value ("arpLaneRate", 1.0f)));
@@ -2760,7 +2761,7 @@ namespace patchcraft
                 dragStart    = e.getPosition();
                 dragOriginal = *sel;
                 dragLayoutBefore = owner.getProject().getLayout().getAll();
-                dragActionName = "Resize element";
+                dragActionName = owner.getSelectedElementIds().size() > 1 ? "Scale selection" : "Resize element";
                 mode = DragMode::ResizeBR;
                 return;
             }
@@ -4095,9 +4096,52 @@ namespace patchcraft
         else if (mode == DragMode::ResizeBR)
         {
             if (el == nullptr) return;
-            el->width  = juce::jmax (8, snap (dragOriginal.width  + (int) deltaCanvas.x));
-            el->height = juce::jmax (8, snap (dragOriginal.height + (int) deltaCanvas.y));
-            owner.propagateLinkedElementChange (el->id);
+            const auto selectedIds = owner.getSelectedElementIds();
+            if (selectedIds.size() > 1 && ! dragLayoutBefore.empty())
+            {
+                juce::Rectangle<int> originalBounds;
+                bool hasBounds = false;
+                for (const auto& original : dragLayoutBefore)
+                {
+                    if (! selectedIds.contains (original.id) || original.locked || original.type == ElementType::Group)
+                        continue;
+                    const juce::Rectangle<int> itemBounds (original.x, original.y,
+                                                           juce::jmax (1, original.width),
+                                                           juce::jmax (1, original.height));
+                    originalBounds = hasBounds ? originalBounds.getUnion (itemBounds) : itemBounds;
+                    hasBounds = true;
+                }
+
+                if (hasBounds && originalBounds.getWidth() > 0 && originalBounds.getHeight() > 0)
+                {
+                    const float scaleX = juce::jmax (0.05f, (float) juce::jmax (8, originalBounds.getWidth() + (int) deltaCanvas.x)
+                                                           / (float) originalBounds.getWidth());
+                    const float scaleY = juce::jmax (0.05f, (float) juce::jmax (8, originalBounds.getHeight() + (int) deltaCanvas.y)
+                                                           / (float) originalBounds.getHeight());
+
+                    for (const auto& original : dragLayoutBefore)
+                    {
+                        if (! selectedIds.contains (original.id) || original.locked || original.type == ElementType::Group)
+                            continue;
+                        if (auto* selected = owner.getProject().getLayout().find (original.id))
+                        {
+                            selected->x = snap (originalBounds.getX()
+                                + juce::roundToInt ((float) (original.x - originalBounds.getX()) * scaleX));
+                            selected->y = snap (originalBounds.getY()
+                                + juce::roundToInt ((float) (original.y - originalBounds.getY()) * scaleY));
+                            selected->width = juce::jmax (8, snap (juce::roundToInt ((float) original.width * scaleX)));
+                            selected->height = juce::jmax (8, snap (juce::roundToInt ((float) original.height * scaleY)));
+                            owner.propagateLinkedElementChange (selected->id);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                el->width  = juce::jmax (8, snap (dragOriginal.width  + (int) deltaCanvas.x));
+                el->height = juce::jmax (8, snap (dragOriginal.height + (int) deltaCanvas.y));
+                owner.propagateLinkedElementChange (el->id);
+            }
             layoutChangedDuringDrag = true;
             owner.getProject().markDirty();
         }
