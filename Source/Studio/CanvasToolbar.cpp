@@ -55,8 +55,8 @@ namespace patchcraft
             addAndMakeVisible (*b);
         }
         tabDesign.setToggleState (true, juce::dontSendNotification);
-        tabMidi.setTooltip ("Performance Engine: MIDI, chords, arps, drum patterns, sample chops, and modulation routed into the current Patch.");
-        tabArp.setTooltip ("ArpLane Lab: circular lane editor for the same Performance Engine banks used by the Player ArpLane element.");
+        tabMidi.setTooltip ("Pattern Player: build playable notes, chords, arps, drums, sample chops, and modulation for the current DSP sound.");
+        tabArp.setTooltip ("Circle View: edit the same pattern slots as circular lanes for CircleSEQ-style Player instruments.");
 
         patchSeparator.setText ("|", juce::dontSendNotification);
         patchSeparator.setJustificationType (juce::Justification::centred);

@@ -43,8 +43,8 @@ namespace patchcraft
         juce::Label title;
         juce::Label subtitle;
         juce::Label activeSummary;
-        juce::TextButton performanceViewButton { "Performance Grid" };
-        juce::TextButton arpLaneViewButton { "ArpLane Lab" };
+        juce::TextButton performanceViewButton { "Pattern Builder" };
+        juce::TextButton arpLaneViewButton { "Circle View" };
 
         juce::ComboBox sourceBox;
         juce::ComboBox modeBox;
@@ -79,7 +79,7 @@ namespace patchcraft
         juce::Slider euclideanRotateSlider;
         juce::ToggleButton octaveFoldToggle { "Fold Octaves" };
 
-        juce::TextButton addPlaygroundButton { "Add Performance" };
+        juce::TextButton addPlaygroundButton { "Add Pattern Player" };
         juce::TextButton chordPhraseButton { "Chords" };
         juce::TextButton sampleSliceButton { "Sample Chops" };
         juce::TextButton drumMachineButton { "Drums" };
@@ -87,18 +87,18 @@ namespace patchcraft
         juce::TextButton generateAiMidiButton { "AI Generator" };
         juce::TextButton phraseLibraryButton { "Phrase Library" };
         juce::TextButton randomButton { "Create Variation" };
-        juce::TextButton applyMusicalPresetButton { "Write Bank" };
-        juce::TextButton storeBankButton { "Store Bank" };
-        juce::TextButton duplicateBankButton { "Duplicate Bank" };
+        juce::TextButton applyMusicalPresetButton { "Use This Pattern" };
+        juce::TextButton storeBankButton { "Save Slot" };
+        juce::TextButton duplicateBankButton { "Duplicate Slot" };
         juce::TextButton applyProgressionButton { "Apply Prog" };
-        juce::TextButton applyMidiTemplateButton { "Apply Behavior" };
-        juce::TextButton applyGuiTemplateButton { "Add Player UI" };
+        juce::TextButton applyMidiTemplateButton { "Make Pattern" };
+        juce::TextButton applyGuiTemplateButton { "Add Player Controls" };
         juce::TextButton exportMidiButton { "Export MIDI" };
         juce::TextButton playPatternButton { "Play Pattern" };
         juce::TextButton stopPatternButton { "Stop" };
-        juce::TextButton sourceBuilderButton { "Source Builder" };
+        juce::TextButton sourceBuilderButton { "Build Sound" };
         juce::TextButton sampleMapperButton { "Sample Mapper" };
-        juce::TextButton testButton { "Test Runtime" };
+        juce::TextButton testButton { "Test in Player" };
         std::unique_ptr<juce::FileChooser> exportChooser;
 
         juce::String activeBlockId;
