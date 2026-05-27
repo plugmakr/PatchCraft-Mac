@@ -85,6 +85,24 @@ namespace patchcraft
             param->current = juce::jlimit (param->min, param->max, value);
     }
 
+    bool DspRoutingEngine::setFxBlockParameterValue (const juce::String& parameterId, float value)
+    {
+        bool changed = false;
+        for (auto& block : blocks)
+        {
+            if (! block.block.section.equalsIgnoreCase ("fx"))
+                continue;
+
+            auto found = block.block.values.find (parameterId);
+            if (found == block.block.values.end())
+                continue;
+
+            found->second = value;
+            changed = true;
+        }
+        return changed;
+    }
+
     void DspRoutingEngine::syncFromLiveValues (const LiveValueStore& liveValues)
     {
         for (auto& param : params)

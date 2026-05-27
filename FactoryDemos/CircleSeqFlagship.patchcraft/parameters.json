@@ -1,319 +1,479 @@
-{
-  "parameters": [
-    {
-      "id": "attack",
-      "name": "Attack",
-      "type": "float",
-      "min": 0.001,
-      "max": 5,
-      "default": 0.008,
-      "unit": "s"
-    },
-    {
-      "id": "decay",
-      "name": "Decay",
-      "type": "float",
-      "min": 0.001,
-      "max": 5,
-      "default": 0.18,
-      "unit": "s"
-    },
-    {
-      "id": "sustain",
-      "name": "Sustain",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 0.18,
-      "unit": ""
-    },
-    {
-      "id": "release",
-      "name": "Release",
-      "type": "float",
-      "min": 0.01,
-      "max": 10,
-      "default": 0.34,
-      "unit": "s"
-    },
-    {
-      "id": "filterCutoff",
-      "name": "Cutoff",
-      "type": "float",
-      "min": 20,
-      "max": 20000,
-      "default": 7200,
-      "unit": "Hz"
-    },
-    {
-      "id": "filterResonance",
-      "name": "Resonance",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 0.32,
-      "unit": ""
-    },
-    {
-      "id": "reverbMix",
-      "name": "Reverb",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 0.34,
-      "unit": "%"
-    },
-    {
-      "id": "delayTime",
-      "name": "Delay Time",
-      "type": "float",
-      "min": 0,
-      "max": 2,
-      "default": 0.1875,
-      "unit": "s"
-    },
-    {
-      "id": "delayFeedback",
-      "name": "Delay Feedback",
-      "type": "float",
-      "min": 0,
-      "max": 0.95,
-      "default": 0.48,
-      "unit": ""
-    },
-    {
-      "id": "delayMix",
-      "name": "Delay Mix",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 0.36,
-      "unit": "%"
-    },
-    {
-      "id": "vibratoDepth",
-      "name": "Vibrato Depth",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 0.05,
-      "unit": "%"
-    },
-    {
-      "id": "vibratoRate",
-      "name": "Vibrato Rate",
-      "type": "float",
-      "min": 0.1,
-      "max": 12,
-      "default": 5.2,
-      "unit": "Hz"
-    },
-    {
-      "id": "volume",
-      "name": "Volume",
-      "type": "float",
-      "min": 0,
-      "max": 1.5,
-      "default": 0.78,
-      "unit": ""
-    },
-    {
-      "id": "pan",
-      "name": "Pan",
-      "type": "float",
-      "min": -1,
-      "max": 1,
-      "default": 0,
-      "unit": ""
-    },
-    {
-      "id": "stereoWidth",
-      "name": "Stereo Width",
-      "type": "float",
-      "min": 0,
-      "max": 2,
-      "default": 1.22,
-      "unit": ""
-    },
-    {
-      "id": "outputGainDb",
-      "name": "Output Gain",
-      "type": "float",
-      "min": -24,
-      "max": 12,
-      "default": 0,
-      "unit": "dB"
-    },
-    {
-      "id": "modWheel",
-      "name": "Mod Wheel",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 0.15,
-      "unit": ""
-    },
-    {
-      "id": "expression",
-      "name": "Expression",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 1,
-      "unit": ""
-    },
-    {
-      "id": "macro_motion",
-      "name": "Motion",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 0.44,
-      "unit": ""
-    },
-    {
-      "id": "macro_tone",
-      "name": "Tone",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 0.52,
-      "unit": ""
-    },
-    {
-      "id": "macro_character",
-      "name": "Character",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 0.5,
-      "unit": ""
-    },
-    {
-      "id": "macro_space",
-      "name": "Space",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 0.42,
-      "unit": ""
-    },
-    {
-      "id": "oscType",
-      "name": "Osc Type",
-      "type": "float",
-      "min": 0,
-      "max": 5,
-      "default": 2,
-      "unit": ""
-    },
-    {
-      "id": "osc2Type",
-      "name": "Osc 2 Type",
-      "type": "float",
-      "min": 0,
-      "max": 5,
-      "default": 3,
-      "unit": ""
-    },
-    {
-      "id": "oscBlend",
-      "name": "Osc Blend",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 0.62,
-      "unit": ""
-    },
-    {
-      "id": "octave",
-      "name": "Octave",
-      "type": "float",
-      "min": -2,
-      "max": 2,
-      "default": 0,
-      "unit": ""
-    },
-    {
-      "id": "detune",
-      "name": "Detune",
-      "type": "float",
-      "min": -50,
-      "max": 50,
-      "default": 14,
-      "unit": "ct"
-    },
-    {
-      "id": "osc2Detune",
-      "name": "Osc 2 Detune",
-      "type": "float",
-      "min": -50,
-      "max": 50,
-      "default": -7,
-      "unit": "ct"
-    },
-    {
-      "id": "subBlend",
-      "name": "Sub",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 0.12,
-      "unit": ""
-    },
-    {
-      "id": "noiseBlend",
-      "name": "Noise",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 0.02,
-      "unit": ""
-    },
-    {
-      "id": "lfoRate",
-      "name": "LFO Rate",
-      "type": "float",
-      "min": 0.05,
-      "max": 24,
-      "default": 8,
-      "unit": "Hz"
-    },
-    {
-      "id": "lfoAmount",
-      "name": "LFO Amount",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 0.24,
-      "unit": ""
-    },
-    {
-      "id": "bpmSync",
-      "name": "BPM Sync",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 1,
-      "unit": ""
-    },
-    {
-      "id": "retrigger",
-      "name": "Retrigger",
-      "type": "float",
-      "min": 0,
-      "max": 1,
-      "default": 1,
-      "unit": ""
-    },
-    {
-      "id": "projectBpm",
-      "name": "Project BPM",
-      "type": "float",
-      "min": 40,
-      "max": 240,
-      "default": 120,
-      "unit": "BPM"
-    }
-  ]
+﻿{
+    "parameters":  [
+                       {
+                           "id":  "attack",
+                           "name":  "Attack",
+                           "type":  "float",
+                           "min":  0.001,
+                           "max":  5,
+                           "default":  0.008,
+                           "unit":  "s"
+                       },
+                       {
+                           "id":  "decay",
+                           "name":  "Decay",
+                           "type":  "float",
+                           "min":  0.001,
+                           "max":  5,
+                           "default":  0.18,
+                           "unit":  "s"
+                       },
+                       {
+                           "id":  "sustain",
+                           "name":  "Sustain",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.18,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "release",
+                           "name":  "Release",
+                           "type":  "float",
+                           "min":  0.01,
+                           "max":  10,
+                           "default":  0.34,
+                           "unit":  "s"
+                       },
+                       {
+                           "id":  "filterCutoff",
+                           "name":  "Cutoff",
+                           "type":  "float",
+                           "min":  20,
+                           "max":  20000,
+                           "default":  7200,
+                           "unit":  "Hz"
+                       },
+                       {
+                           "id":  "filterResonance",
+                           "name":  "Resonance",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.32,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "reverbMix",
+                           "name":  "Reverb",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.34,
+                           "unit":  "%"
+                       },
+                       {
+                           "id":  "delayTime",
+                           "name":  "Delay Time",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  2,
+                           "default":  0.1875,
+                           "unit":  "s"
+                       },
+                       {
+                           "id":  "delayFeedback",
+                           "name":  "Delay Feedback",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  0.95,
+                           "default":  0.48,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "delayMix",
+                           "name":  "Delay Mix",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.36,
+                           "unit":  "%"
+                       },
+                       {
+                           "id":  "vibratoDepth",
+                           "name":  "Vibrato Depth",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.05,
+                           "unit":  "%"
+                       },
+                       {
+                           "id":  "vibratoRate",
+                           "name":  "Vibrato Rate",
+                           "type":  "float",
+                           "min":  0.1,
+                           "max":  12,
+                           "default":  5.2,
+                           "unit":  "Hz"
+                       },
+                       {
+                           "id":  "volume",
+                           "name":  "Volume",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  1.5,
+                           "default":  0.78,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "pan",
+                           "name":  "Pan",
+                           "type":  "float",
+                           "min":  -1,
+                           "max":  1,
+                           "default":  0,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "stereoWidth",
+                           "name":  "Stereo Width",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  2,
+                           "default":  1.22,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "outputGainDb",
+                           "name":  "Output Gain",
+                           "type":  "float",
+                           "min":  -24,
+                           "max":  12,
+                           "default":  0,
+                           "unit":  "dB"
+                       },
+                       {
+                           "id":  "modWheel",
+                           "name":  "Mod Wheel",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.15,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "expression",
+                           "name":  "Expression",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  1,
+                           "default":  1,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "macro_motion",
+                           "name":  "Motion",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.44,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "macro_tone",
+                           "name":  "Tone",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.52,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "macro_character",
+                           "name":  "Character",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.5,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "macro_space",
+                           "name":  "Space",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.42,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "oscType",
+                           "name":  "Osc Type",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  5,
+                           "default":  2,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "osc2Type",
+                           "name":  "Osc 2 Type",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  5,
+                           "default":  3,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "oscBlend",
+                           "name":  "Osc Blend",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.62,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "octave",
+                           "name":  "Octave",
+                           "type":  "float",
+                           "min":  -2,
+                           "max":  2,
+                           "default":  0,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "detune",
+                           "name":  "Detune",
+                           "type":  "float",
+                           "min":  -50,
+                           "max":  50,
+                           "default":  14,
+                           "unit":  "ct"
+                       },
+                       {
+                           "id":  "osc2Detune",
+                           "name":  "Osc 2 Detune",
+                           "type":  "float",
+                           "min":  -50,
+                           "max":  50,
+                           "default":  -7,
+                           "unit":  "ct"
+                       },
+                       {
+                           "id":  "subBlend",
+                           "name":  "Sub",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.12,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "noiseBlend",
+                           "name":  "Noise",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.02,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "lfoRate",
+                           "name":  "LFO Rate",
+                           "type":  "float",
+                           "min":  0.05,
+                           "max":  24,
+                           "default":  8,
+                           "unit":  "Hz"
+                       },
+                       {
+                           "id":  "lfoAmount",
+                           "name":  "LFO Amount",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.24,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "bpmSync",
+                           "name":  "BPM Sync",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  1,
+                           "default":  1,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "retrigger",
+                           "name":  "Retrigger",
+                           "type":  "float",
+                           "min":  0,
+                           "max":  1,
+                           "default":  1,
+                           "unit":  ""
+                       },
+                       {
+                           "id":  "projectBpm",
+                           "name":  "Project BPM",
+                           "type":  "float",
+                           "min":  40,
+                           "max":  240,
+                           "default":  120,
+                           "unit":  "BPM"
+                       },
+                       {
+                           "id":  "drive",
+                           "name":  "Drive",
+                           "type":  "float",
+                           "unit":  "",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.16,
+                           "step":  0,
+                           "smoothing":  0,
+                           "category":  "Input",
+                           "section":  "source",
+                           "displayMode":  "continuous",
+                           "enabledBy":  "",
+                           "enableHint":  "",
+                           "hostAutomatable":  true,
+                           "midiLearnable":  true,
+                           "modulatable":  true,
+                           "visible":  true
+                       },
+                       {
+                           "id":  "dynMix",
+                           "name":  "Dynamics Mix",
+                           "type":  "float",
+                           "unit":  "%",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.18,
+                           "step":  0,
+                           "smoothing":  0,
+                           "category":  "Dynamics",
+                           "section":  "fx",
+                           "displayMode":  "continuous",
+                           "enabledBy":  "",
+                           "enableHint":  "",
+                           "hostAutomatable":  true,
+                           "midiLearnable":  true,
+                           "modulatable":  true,
+                           "visible":  true
+                       },
+                       {
+                           "id":  "chorusMix",
+                           "name":  "Chorus Mix",
+                           "type":  "float",
+                           "unit":  "%",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.16,
+                           "step":  0,
+                           "smoothing":  0,
+                           "category":  "Modulation FX",
+                           "section":  "fx",
+                           "displayMode":  "continuous",
+                           "enabledBy":  "",
+                           "enableHint":  "",
+                           "hostAutomatable":  true,
+                           "midiLearnable":  true,
+                           "modulatable":  true,
+                           "visible":  true
+                       },
+                       {
+                           "id":  "phaserMix",
+                           "name":  "Phaser Mix",
+                           "type":  "float",
+                           "unit":  "%",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.12,
+                           "step":  0,
+                           "smoothing":  0,
+                           "category":  "Modulation FX",
+                           "section":  "fx",
+                           "displayMode":  "continuous",
+                           "enabledBy":  "",
+                           "enableHint":  "",
+                           "hostAutomatable":  true,
+                           "midiLearnable":  true,
+                           "modulatable":  true,
+                           "visible":  true
+                       },
+                       {
+                           "id":  "combMix",
+                           "name":  "Comb Mix",
+                           "type":  "float",
+                           "unit":  "%",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.06,
+                           "step":  0,
+                           "smoothing":  0,
+                           "category":  "Resonators",
+                           "section":  "fx",
+                           "displayMode":  "continuous",
+                           "enabledBy":  "",
+                           "enableHint":  "",
+                           "hostAutomatable":  true,
+                           "midiLearnable":  true,
+                           "modulatable":  true,
+                           "visible":  true
+                       },
+                       {
+                           "id":  "spectralMix",
+                           "name":  "Spectral Mix",
+                           "type":  "float",
+                           "unit":  "%",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.1,
+                           "step":  0,
+                           "smoothing":  0,
+                           "category":  "Spectral",
+                           "section":  "fx",
+                           "displayMode":  "continuous",
+                           "enabledBy":  "",
+                           "enableHint":  "",
+                           "hostAutomatable":  true,
+                           "midiLearnable":  true,
+                           "modulatable":  true,
+                           "visible":  true
+                       },
+                       {
+                           "id":  "tapeMix",
+                           "name":  "Tape Mix",
+                           "type":  "float",
+                           "unit":  "%",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.12,
+                           "step":  0,
+                           "smoothing":  0,
+                           "category":  "FX Lab / Tape",
+                           "section":  "fx",
+                           "displayMode":  "continuous",
+                           "enabledBy":  "",
+                           "enableHint":  "",
+                           "hostAutomatable":  true,
+                           "midiLearnable":  true,
+                           "modulatable":  true,
+                           "visible":  true
+                       },
+                       {
+                           "id":  "vinylMix",
+                           "name":  "Vinyl Mix",
+                           "type":  "float",
+                           "unit":  "%",
+                           "min":  0,
+                           "max":  1,
+                           "default":  0.06,
+                           "step":  0,
+                           "smoothing":  0,
+                           "category":  "FX Lab / Vinyl",
+                           "section":  "fx",
+                           "displayMode":  "continuous",
+                           "enabledBy":  "",
+                           "enableHint":  "",
+                           "hostAutomatable":  true,
+                           "midiLearnable":  true,
+                           "modulatable":  true,
+                           "visible":  true
+                       }
+                   ]
 }

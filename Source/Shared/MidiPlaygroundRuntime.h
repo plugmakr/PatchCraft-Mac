@@ -22,6 +22,16 @@ namespace patchcraft
         bool handleNoteOn (IInstrumentEngine&, int midiNote, float velocity);
         bool handleNoteOff (IInstrumentEngine&, int midiNote);
         void process (IInstrumentEngine&, const RenderContext&);
+        int getCurrentStep() const noexcept { return currentStep; }
+        double getPlaybackPosition01 (int stepsPerCycle) const noexcept
+        {
+            const int steps = juce::jlimit (1, kMaxSteps, stepsPerCycle);
+            if (currentStep < 0)
+                return -1.0;
+
+            return juce::jlimit (0.0, 0.999999,
+                ((double) juce::jlimit (0, steps - 1, currentStep) + (phase - std::floor (phase))) / (double) steps);
+        }
 
     private:
         static constexpr int kMaxSteps = 128;
@@ -39,6 +49,7 @@ namespace patchcraft
             bool sync = true;
             int steps = 8;
             int activeBank = 0;
+            bool multiLane = false;
             int pattern = 0;
             int polymeterSteps = 0;
             float gate = 0.55f;
@@ -86,6 +97,8 @@ namespace patchcraft
             std::array<float, kMaxSteps> stepChordSizes {};
             std::array<float, kMaxSteps> stepTies {};
             std::array<float, kMaxPhraseBanks> bankHasData {};
+            std::array<float, kMaxPhraseBanks> bankMuted {};
+            std::array<float, kMaxPhraseBanks> bankSolo {};
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankNotes {};
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankVelocities {};
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankGates {};
@@ -98,6 +111,8 @@ namespace patchcraft
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankStepChordModes {};
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankStepChordSizes {};
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankStepTies {};
+            std::array<float, kMaxPhraseBanks * kMaxSteps> bankAutoFxSends {};
+            std::array<float, kMaxPhraseBanks> bankAutoFxTargets {};
             int drumTracks = 8;
             int drumSteps = 16;
             int drumPattern = 0;
@@ -139,6 +154,11 @@ namespace patchcraft
         std::array<double, kMaxDrumTracks> activeDrumGateEnds {};
         std::array<int, kMaxDrumTracks> activeDrumSubSlots {};
         std::array<float, kDrumFxTargetCount> drumFxState {};
+        std::array<std::array<int, kMaxChordNotes>, kMaxPhraseBanks> activeBankNotes {};
+        std::array<int, kMaxPhraseBanks> activeBankNoteCounts {};
+        std::array<float, kMaxPhraseBanks> activeBankVelocities {};
+        std::array<bool, kMaxPhraseBanks> bankGateOpen {};
+        std::array<int, kMaxPhraseBanks> currentBankRatchetSlots {};
 
         static bool isMidiPlaygroundBlock (const DspBlock&);
         static float valueForKey (const DspBlock&, const juce::String&, float fallback);
@@ -154,18 +174,28 @@ namespace patchcraft
         int baseNoteForSequenceIndex (int index) const;
         int quantizeToScale (int midiNote) const;
         int scaleDegreeToSemitone (int degree) const;
+        bool bankIsAudible (int bank) const;
         bool stepIsEnabled (int step) const;
+        bool bankStepIsEnabled (int bank, int step) const;
         bool stepPassesEuclideanMask (int step) const;
         bool stepPassesProbability (int step) const;
+        bool bankStepPassesProbability (int bank, int step) const;
         float velocityForStep (int step) const;
+        float velocityForBankStep (int bank, int step);
         void buildStepNotes (int step, std::array<int, kMaxChordNotes>& notes, int& count) const;
+        void buildBankStepNotes (int bank, int step, std::array<int, kMaxChordNotes>& notes, int& count);
         void applySampleControl (IInstrumentEngine&, int step) const;
+        void applyBankStepFx (IInstrumentEngine&, int bank, int step, float velocity);
         void triggerPendingNotes (IInstrumentEngine&, int step, double stepPhase);
         void stopActive (IInstrumentEngine&);
+        void stopActiveBank (IInstrumentEngine&, int bank);
+        void stopActiveBanks (IInstrumentEngine&);
         void stopActiveDrums (IInstrumentEngine&);
         void processDrumMachine (IInstrumentEngine&, const RenderContext&);
+        void processMultiLane (IInstrumentEngine&, const RenderContext&);
         void triggerDrumFx (IInstrumentEngine&, int target, float amount, float velocity);
         void applyDrumFxState (IInstrumentEngine&);
         void startStep (IInstrumentEngine&, int step, double stepPhase, double swingDelay, double stepGate);
+        void startBankStep (IInstrumentEngine&, int bank, int step);
     };
 }

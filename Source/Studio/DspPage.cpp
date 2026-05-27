@@ -1481,7 +1481,7 @@ namespace patchcraft
             if (onMixerRequested)
                 onMixerRequested();
         };
-        addArpButton.setTooltip ("Add a MIDI Playground generator: scale-aware ARP, chords, phrase motion, swing, probability, and performance MIDI.");
+        addArpButton.setTooltip ("Add a Performance Engine generator: scale-aware arps, chords, phrase motion, swing, probability, and Player ArpLane banks.");
         addArpButton.setVisible (false);
 
         auto setupBankButton = [this] (juce::TextButton& button, int bank)
@@ -3452,7 +3452,7 @@ namespace patchcraft
             block = &graph.blocks[(size_t) owner.selectedGraphIndex];
 
         if (block == nullptr || block->section != "mod")
-            return "No MIDI Playground block selected. Use Add Playground, then choose a mode.";
+            return "No Performance Engine block selected. Use Add Performance, then choose notes, sample chops, drums, or modulation.";
 
         auto get = [block] (const juce::String& id, float fallback)
         {
@@ -3479,7 +3479,7 @@ namespace patchcraft
         g.drawRoundedRectangle (summary.toFloat(), 8.0f, 1.2f);
         g.setColour (PatchCraftLookAndFeel::text());
         g.setFont (juce::Font (15.0f, juce::Font::bold));
-        g.drawText ("MIDI Playground Sections", summary.removeFromTop (22).reduced (12, 2), juce::Justification::centredLeft);
+        g.drawText ("Performance Engine Sections", summary.removeFromTop (22).reduced (12, 2), juce::Justification::centredLeft);
         g.setColour (PatchCraftLookAndFeel::textDim());
         g.setFont (11.5f);
         g.drawText (selectedBlockSummary(), summary.reduced (12, 2), juce::Justification::centredLeft);
@@ -3499,8 +3499,8 @@ namespace patchcraft
             "Scale root/type, chord mode, chord size, inversions, spread, and future Scaler-style progression tools.",
             "Steps, pattern, Euclidean/seeded random order, swing, gate, probability, velocity, and humanize.",
             "Macros, mod wheel, aftertouch, expression, XY, and DAW-automatable performer switches.",
-            "MIDI controls sample start, length, slice count, slice index, reverse, and pitch for chopped playback.",
-            "Generated notes drive Synth/Sampler/Player; routes can also trigger DSP mods, animations, and exportable MIDI clips."
+            "Performance banks control sample start, length, slice count, slice index, reverse, and pitch for chopped playback.",
+            "Generated notes drive Synth/Sampler/Player; routes can also trigger DSP mods, animations, ArpLane controls, and exportable MIDI clips."
         };
 
         const int columns = 3;
@@ -3526,7 +3526,7 @@ namespace patchcraft
         auto bottom = r.removeFromBottom (92);
         g.setColour (PatchCraftLookAndFeel::textDim());
         g.setFont (12.0f);
-        g.drawFittedText ("MIDI sample control path: hardware/software MIDI -> MIDI Playground step -> sampleSlice/sampleStart/sampleLength/samplePitch -> SampleSynthEngine -> Player export. CC20-23 also provide direct fixed shortcuts for Sample Start, Slice, Length, and Pitch; MIDI Learn can map any visible sample control.",
+        g.drawFittedText ("Performance sample-control path: hardware/software MIDI or ArpLane bank -> Performance step -> sampleSlice/sampleStart/sampleLength/samplePitch -> SampleSynthEngine -> Player export. CC20-23 also provide direct fixed shortcuts for Sample Start, Slice, Length, and Pitch; MIDI Learn can map any visible sample control.",
                           bottom.reduced (4), juce::Justification::topLeft, 3);
     }
 
@@ -4601,7 +4601,7 @@ namespace patchcraft
 
     void DspPage::addArpBlock()
     {
-        // Mirrors the BuilderPanel's "+ MIDI" click behaviour so the canvas
+        // Mirrors the BuilderPanel's "+ Perf" click behaviour so the canvas
         // right-click menu can drop an arpeggiator without forcing the user
         // to navigate the DSP builder by hand.
         if (currentTab != 3)
@@ -7980,7 +7980,7 @@ namespace patchcraft
                 addTypeGroup ("Sequencers", { "midiPlayground", "arp", "stepSequencer" });
                 addTypeGroup ("LFO / Random", { "lfo", "random" });
                 addTypeGroup ("Macro", { "macro" });
-                addTypeGroup ("MIDI / Performance", { "velocity", "keytrack", "midiCC" });
+                addTypeGroup ("Performance / MIDI", { "velocity", "keytrack", "midiCC" });
                 addTypeGroup ("Audio Reactive", { "envelopeFollower", "peakFollower", "rmsFollower",
                                                   "transientDetector", "spectralCentroid", "bandEnergy", "gateTrigger" });
             }
@@ -8303,7 +8303,7 @@ namespace patchcraft
                             minSlider.setTooltip ("Sample Length. MIDI Learn or CC22 can shorten playback for chops.");
                             maxSlider.setTooltip ("Sample Slice. MIDI Learn or CC21 can choose a region inside each mapped sample.");
                             curveSlider.setTooltip ("Slice Count. Defines how many equal regions the sample is divided into.");
-                            editorHint.setText ("Sample Source blocks now expose MIDI-controllable playback start, length, slice, slice count, pitch, volume, and pan. Use MIDI Playground Sample Slice Control for step-driven sample chops.",
+                    editorHint.setText ("Sample Source blocks now expose MIDI-controllable playback start, length, slice, slice count, pitch, volume, and pan. Use Performance Engine Sample Chops for step-driven sample control.",
                                                 juce::dontSendNotification);
                         }
                         else if (noiseBlock)
@@ -8422,7 +8422,7 @@ namespace patchcraft
                     minSlider.setTooltip ("BPM Sync for the ARP Step Sequencer.");
                     maxSlider.setTooltip ("Number of note steps in the ARP pattern.");
                     curveSlider.setTooltip ("Pattern: 0 Custom Notes, 1 Down, 2 Up/Down, 3 Chord Pulse, 4 Odd Steps, 5 Even Steps, 6 Euclidean, 7 Seeded Random.");
-                    editorHint.setText ("MIDI Playground is the shared runtime for scale-aware ARP, chord/phrase generation, swing, probability, and future MIDI tools. This compact inspector edits the basics; the dedicated Playground editor is the next UI slice.",
+                    editorHint.setText ("Performance Engine is the shared runtime for scale-aware ARP, ArpLane, chord/phrase generation, swing, probability, and MIDI tools. This compact inspector edits basics; the Performance page is the full editor.",
                                         juce::dontSendNotification);
                 }
                 else if (lfo)
@@ -11479,7 +11479,10 @@ namespace patchcraft
             surgicalEqPanel.repaint();
 
         if (fxPlaying.load())
+        {
             fxWaveform.repaint();
+            repaint (getLocalBounds().reduced (12, 8).removeFromTop (12));
+        }
     }
 
     void DspPage::refresh()
@@ -11502,6 +11505,17 @@ namespace patchcraft
     void DspPage::paint (juce::Graphics& g)
     {
         g.fillAll (juce::Colour (0xff0a0c10));
+        if (fxPlaying.load())
+        {
+            auto playhead = getLocalBounds().reduced (12, 8).removeFromTop (4);
+            const float x = (float) playhead.getX() + juce::jlimit (0.0f, 1.0f, getFxPlaybackPosition01()) * (float) playhead.getWidth();
+            g.setColour (PatchCraftLookAndFeel::border().withAlpha (0.55f));
+            g.fillRoundedRectangle (playhead.toFloat(), 2.0f);
+            g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.90f));
+            g.fillRoundedRectangle (playhead.withRight (juce::roundToInt (x)).toFloat(), 2.0f);
+            g.setColour (juce::Colours::white.withAlpha (0.86f));
+            g.fillEllipse (x - 4.0f, (float) playhead.getCentreY() - 4.0f, 8.0f, 8.0f);
+        }
         if (quickEdit)
             return;
 

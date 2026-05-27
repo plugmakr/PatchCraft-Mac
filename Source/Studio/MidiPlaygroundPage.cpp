@@ -285,18 +285,18 @@ namespace patchcraft
     {
         setOpaque (true);
 
-        title.setText ("MIDI + PERFORMANCE PLAYGROUND", juce::dontSendNotification);
+        title.setText ("PERFORMANCE ENGINE", juce::dontSendNotification);
         title.setFont (juce::Font (17.0f, juce::Font::bold));
         title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
         addAndMakeVisible (title);
 
-        subtitle.setText ("Drop musical MIDI ideas into the editor, then route them to the current Synth, Sampler, Drum Machine, sample chops, or modulation layer.",
+        subtitle.setText ("DSP is the sound source. Performance Engine only plays, sequences, routes, and modulates that current Patch.",
                           juce::dontSendNotification);
         subtitle.setFont (juce::Font (12.0f));
         subtitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
         addAndMakeVisible (subtitle);
 
-        activeSummary.setText ("No Performance block yet. Choose a template: chords/arp generate notes, Drum Machine triggers pads, Sample Control moves slices/start/length.",
+        activeSummary.setText ("No Performance block yet. Add Performance, choose a behavior, then test it against the current Synth/Sampler/Drum engine.",
                                juce::dontSendNotification);
         activeSummary.setFont (juce::Font (12.0f, juce::Font::bold));
         activeSummary.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::text());
@@ -308,7 +308,7 @@ namespace patchcraft
         sourceBox.setSelectedId (owner.getProject().getEngineType() == "sample" ? 2
                                 : owner.getProject().getEngineType() == "fx" ? 3 : 1,
                                 juce::dontSendNotification);
-        sourceBox.setTooltip ("Choose what the generated MIDI/performance data controls. This is the routing bridge between MIDI Playground and the current instrument.");
+        sourceBox.setTooltip ("Choose what the Performance Engine controls: synth notes, sample zones/slices, drum pads, FX input, or modulation targets.");
         addAndMakeVisible (sourceBox);
 
         modeBox.addItem ("Chord / Progression", 1);
@@ -355,7 +355,7 @@ namespace patchcraft
         musicalPresetBox.addSectionHeading ("Sample Remix");
         musicalPresetBox.addItem ("Sample chopper performance", 5001);
         musicalPresetBox.addItem ("Glitch gate performance", 5002);
-        musicalPresetBox.setTooltip ("Pick a chord, progression, melody, drum groove, or sample-remix behavior, then press Drop MIDI to write it into the editable grid.");
+        musicalPresetBox.setTooltip ("Pick a chord, progression, melody, drum groove, or sample-remix behavior, then press Write Bank to commit it to the editable Performance bank.");
         addAndMakeVisible (musicalPresetBox);
 
         for (int presetId = 1; presetId <= 31; ++presetId)
@@ -567,7 +567,18 @@ namespace patchcraft
 
         // The hidden variation action is deterministic. Authored phrase
         // libraries and musical operators are the primary creation path.
-        for (auto* button : { &addPlaygroundButton, &chordPhraseButton, &sampleSliceButton,
+        performanceViewButton.setClickingTogglesState (true);
+        arpLaneViewButton.setClickingTogglesState (true);
+        performanceViewButton.setRadioGroupId (8822);
+        arpLaneViewButton.setRadioGroupId (8822);
+        performanceViewButton.setTooltip ("Edit the shared Performance Engine block with piano roll, step grid, drum grid, sample chops, and modulation lanes.");
+        arpLaneViewButton.setTooltip ("Edit the same shared performance banks as circular ArpLane lanes for Player-facing sequencer instruments.");
+        performanceViewButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::MidiPlayground); };
+        arpLaneViewButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::ArpStudio); };
+        performanceViewButton.setToggleState (true, juce::dontSendNotification);
+
+        for (auto* button : { &performanceViewButton, &arpLaneViewButton,
+                              &addPlaygroundButton, &chordPhraseButton, &sampleSliceButton,
                               &drumMachineButton, &operatorsButton, &generateAiMidiButton, &phraseLibraryButton,
                               &applyMusicalPresetButton, &storeBankButton, &duplicateBankButton,
                               &applyProgressionButton, &applyMidiTemplateButton, &applyGuiTemplateButton, &exportMidiButton,
@@ -592,7 +603,7 @@ namespace patchcraft
         phraseLibraryButton.setTooltip ("Open categorized hand-authored phrases and grooves for the current editor.");
         applyMusicalPresetButton.onClick = [this] { applySelectedMusicalPreset(); };
         applyMusicalPresetButton.getProperties().set ("primaryAction", true);
-        applyMusicalPresetButton.setTooltip ("Drop the selected musical preset into the visible MIDI/drum editor so it can be edited immediately.");
+        applyMusicalPresetButton.setTooltip ("Write the selected musical preset into the active Performance bank so ArpLane, Test, Player, and export use the same data.");
         storeBankButton.onClick = [this] { storeActivePhraseBank(); };
         duplicateBankButton.onClick = [this] { duplicateActivePhraseBank(); };
         applyProgressionButton.onClick = [this] { applySelectedProgression(); };
@@ -623,9 +634,11 @@ namespace patchcraft
     {
         setArpStudioHardwarePreviewActive (false);
         arpStudioMode = false;
-        title.setText ("MIDI + PERFORMANCE PLAYGROUND", juce::dontSendNotification);
-        subtitle.setText ("Drop musical MIDI ideas into the editor, then route them to the current Synth, Sampler, Drum Machine, sample chops, or modulation layer.",
+        title.setText ("PERFORMANCE ENGINE", juce::dontSendNotification);
+        subtitle.setText ("DSP is the sound source. Performance Engine only plays, sequences, routes, and modulates that current Patch.",
                           juce::dontSendNotification);
+        performanceViewButton.setToggleState (true, juce::dontSendNotification);
+        arpLaneViewButton.setToggleState (false, juce::dontSendNotification);
         if (midiTemplateBox.getSelectedId() == 12)
             midiTemplateBox.setSelectedId (1, juce::dontSendNotification);
         if (guiTemplateBox.getSelectedId() == 7)
@@ -634,7 +647,7 @@ namespace patchcraft
         applyGuiTemplateButton.setButtonText ("Add Player UI");
         activeSummary.setText (activeMidiBlock() != nullptr
             ? blockSummary()
-            : "No Performance block yet. Choose a template: chords/arp generate notes, Drum Machine triggers pads, Sample Control moves slices/start/length.",
+            : "No Performance block yet. Add Performance, choose a behavior, then test it against the current Synth/Sampler/Drum engine.",
             juce::dontSendNotification);
         repaint();
     }
@@ -643,9 +656,11 @@ namespace patchcraft
     {
         arpStudioMode = true;
         setArpStudioHardwarePreviewActive (isShowing());
-        title.setText ("ARP STUDIO BUILDER", juce::dontSendNotification);
-        subtitle.setText ("Author arp/sequencer instruments, then generate the playable CircleSEQ-style Player UI from the workshop state.",
+        title.setText ("PERFORMANCE ENGINE - ARPLANE LAB", juce::dontSendNotification);
+        subtitle.setText ("Circular editor for Performance banks. ArpLane does not make sound; it plays DSP notes, slices, pads, FX sends, and modulation.",
                           juce::dontSendNotification);
+        performanceViewButton.setToggleState (false, juce::dontSendNotification);
+        arpLaneViewButton.setToggleState (true, juce::dontSendNotification);
         sourceBox.setSelectedId (1, juce::dontSendNotification);
         modeBox.setSelectedId (3, juce::dontSendNotification);
         editorViewBox.setSelectedId (1, juce::dontSendNotification);
@@ -654,7 +669,7 @@ namespace patchcraft
         phraseBankBox.setSelectedId (1, juce::dontSendNotification);
         applyMidiTemplateButton.setButtonText ("Build Arp Engine");
         applyGuiTemplateButton.setButtonText ("Update Player UI");
-        activeSummary.setText ("Builder flow: create lane banks, edit steps and velocity, route sources/FX, export MIDI, then update the CircleSEQ-style runtime UI.",
+        activeSummary.setText ("ArpLane flow: build sound in DSP first, pick a bank, edit performance steps, assign DSP slot/FX routing, then update the Player UI.",
                                juce::dontSendNotification);
         repaint();
     }
@@ -1859,7 +1874,7 @@ namespace patchcraft
         const int id = musicalPresetBox.getSelectedId();
         if (id <= 0)
         {
-            activeSummary.setText ("Choose a musical idea, then press Drop MIDI to write it into the editor.",
+            activeSummary.setText ("Choose a musical idea, then press Write Bank to commit it into the shared Performance Engine.",
                                    juce::dontSendNotification);
             repaint();
             return;
@@ -3534,6 +3549,27 @@ namespace patchcraft
         return "No Performance block yet.";
     }
 
+    juce::String MidiPlaygroundPage::performanceRouteSummary() const
+    {
+        const auto engine = owner.getProject().getEngineType();
+        const auto source = engine == "sample" ? juce::String ("Sample Mapper")
+                         : engine == "fx"     ? juce::String ("FX Input")
+                                              : juce::String ("DSP Synth Source");
+        const auto* block = activeMidiBlock();
+        if (block == nullptr)
+            return "Input MIDI -> no Performance block yet -> " + source + " -> DSP/FX -> Player output";
+
+        const bool drum = isDrumMachineBlock (*block);
+        const bool sample = valueFor (*block, "mpSampleControl", 0.0f) >= 0.5f;
+        const auto bank = drum ? juce::String ("Pattern " + juce::String (juce::roundToInt (valueFor (*block, "dmPattern", 0.0f)) + 1))
+                               : juce::String ("Bank " + juce::String (MidiPlaygroundPattern::getActiveBank (*block) + 1));
+        const auto target = drum ? juce::String ("Sampler drum pads")
+                         : sample ? juce::String ("Sample slices/start/length")
+                                  : juce::String ("Notes + " + (block->targetId.isNotEmpty() ? block->targetId : juce::String ("parameter target")));
+
+        return "Input MIDI / transport -> Performance " + bank + " -> " + target + " -> " + source + " -> DSP/FX -> Player output";
+    }
+
     juce::Rectangle<int> MidiPlaygroundPage::drawControl (juce::Graphics& g, juce::Rectangle<int> row,
                                                           const juce::String& label, juce::Component& component)
     {
@@ -3558,18 +3594,18 @@ namespace patchcraft
         const auto* block = activeMidiBlock();
         const juce::String scale = block != nullptr
             ? rootBox.getText() + " " + scaleBox.getText()
-            : juce::String ("(no MIDI block)");
-        const int steps = block != nullptr
-            ? midiStepCount (*block)
-            : 0;
+            : juce::String ("(no performance block)");
+        const int steps = block != nullptr ? midiStepCount (*block) : 0;
+        const auto view = arpStudioMode ? juce::String ("ArpLane Lab") : juce::String ("Performance Grid");
 
         auto inner = area.reduced (12, 0);
         g.setFont (juce::Font (12.0f, juce::Font::bold));
         g.setColour (PatchCraftLookAndFeel::accent());
         const auto pieces = juce::StringArray {
+            "View: " + view,
             "Scale: " + scale,
             "Steps: " + juce::String (steps),
-            "Edit: " + (editorViewBox.getText().isEmpty() ? juce::String ("Lane") : editorViewBox.getText())
+            performanceRouteSummary()
         };
         const int sectionW = inner.getWidth() / juce::jmax (1, pieces.size());
         for (int i = 0; i < pieces.size(); ++i)
@@ -4372,10 +4408,10 @@ namespace patchcraft
     juce::String MidiPlaygroundPage::sourceHelpText() const
     {
         if (sourceBox.getSelectedId() == 2)
-            return "Sampler source = Sample Mapper zones. Performance Builder controls which notes, slices, and pads trigger those samples.";
+            return "Sampler target: Performance banks trigger Sample Mapper zones, pads, slices, start/length, and velocity. Use Sample Mapper first if no samples play.";
         if (sourceBox.getSelectedId() == 3)
-            return "FX source = live or imported audio input. Performance Builder drives gates, throws, and performable controls.";
-        return "Synth source = DSP Builder Source blocks. Performance Builder creates the MIDI and modulation behavior that plays those sources.";
+            return "FX target: Performance banks drive gates, throws, rhythmic modulation, and performable FX targets against live/imported audio.";
+        return "Synth target: Performance banks generate note/gate/velocity/chord/arp data. DSP Builder still defines the actual oscillator/filter/amp sound.";
     }
 
     juce::Rectangle<int> MidiPlaygroundPage::arpStudioLaneBounds (juce::Rectangle<int> area, int lane) const
@@ -4732,6 +4768,7 @@ namespace patchcraft
 
             juce::Component* visible[] =
             {
+                &performanceViewButton, &arpLaneViewButton,
                 &sourceBox, &midiTemplateBox, &guiTemplateBox, &rootBox, &scaleBox, &targetBox,
                 &phraseBankBox, &stepsSlider, &rateSlider, &gateSlider, &swingSlider,
                 &probabilitySlider, &humanizeSlider, &mutationSlider, &ratchetSlider,
@@ -4758,34 +4795,52 @@ namespace patchcraft
                 : juce::jlimit (0, MidiPlaygroundPattern::kPhraseBankCount - 1, phraseBankBox.getSelectedId() - 1);
             const auto selectedAccent = laneColours[juce::jlimit (0, 4, selectedLane)];
 
-            auto top = full.removeFromTop (92);
+            auto top = full.removeFromTop (108);
             PatchCraftLookAndFeel::drawDarkPanel (g, top, 10.0f);
             auto topArea = top.reduced (16, 10);
-            auto brand = topArea.removeFromLeft (360);
+
+            const int actionsWidth = juce::jmin (topArea.getWidth(),
+                                                 juce::jmax (640, topArea.getWidth() - 330));
+            auto actions = topArea.removeFromRight (actionsWidth);
+            topArea.removeFromRight (12);
+            auto brand = topArea;
+
             g.setColour (PatchCraftLookAndFeel::textBright());
             g.setFont (juce::Font (22.0f, juce::Font::bold));
-            g.drawText ("ARP STUDIO BUILDER", brand.removeFromTop (28), juce::Justification::centredLeft, true);
+            g.drawText ("PERFORMANCE ENGINE - ARPLANE LAB", brand.removeFromTop (28), juce::Justification::centredLeft, true);
             g.setColour (PatchCraftLookAndFeel::textDim());
             g.setFont (12.0f);
-            g.drawText ("Author lanes, routing, banks, macros, and export/update the finished Player UI.",
+            g.drawText ("Circular lane editor for the same Performance Engine banks used by Performance Grid.",
                         brand.removeFromTop (22), juce::Justification::centredLeft, true);
             g.setColour (selectedAccent);
             g.setFont (juce::Font (10.0f, juce::Font::bold));
             g.drawText ("Selected lane: " + juce::String (selectedLane + 1) + " " + laneNames[selectedLane],
                         brand, juce::Justification::centredLeft, true);
 
-            auto actions = topArea.removeFromRight (620);
+            auto viewTabs = actions.removeFromTop (28);
+            performanceViewButton.setBounds (viewTabs.removeFromLeft (142).reduced (2));
+            arpLaneViewButton.setBounds (viewTabs.removeFromLeft (118).reduced (2));
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (10.0f);
+            g.drawText ("Same runtime block: banks -> notes/slices/modulation -> current instrument",
+                        viewTabs, juce::Justification::centredRight, true);
+            actions.removeFromTop (2);
             auto actionTop = actions.removeFromTop (32);
-            playPatternButton.setBounds (actionTop.removeFromLeft (104).reduced (2));
-            stopPatternButton.setBounds (actionTop.removeFromLeft (70).reduced (2));
-            sourceBuilderButton.setBounds (actionTop.removeFromLeft (118).reduced (2));
-            sampleMapperButton.setBounds (actionTop.removeFromLeft (122).reduced (2));
-            testButton.setBounds (actionTop.removeFromLeft (112).reduced (2));
+            auto placeActionButton = [] (juce::Rectangle<int>& row, juce::Component& component, int width)
+            {
+                component.setBounds (row.removeFromLeft (juce::jmin (width, row.getWidth())).reduced (2));
+                row.removeFromLeft (6);
+            };
+            placeActionButton (actionTop, playPatternButton, 118);
+            placeActionButton (actionTop, stopPatternButton, 82);
+            placeActionButton (actionTop, sourceBuilderButton, 148);
+            placeActionButton (actionTop, sampleMapperButton, 140);
+            placeActionButton (actionTop, testButton, 116);
             auto actionBottom = actions.removeFromTop (34);
-            applyMidiTemplateButton.setBounds (actionBottom.removeFromLeft (142).reduced (2));
-            applyGuiTemplateButton.setBounds (actionBottom.removeFromLeft (142).reduced (2));
-            exportMidiButton.setBounds (actionBottom.removeFromLeft (110).reduced (2));
-            midiTemplateBox.setBounds (actionBottom.removeFromLeft (176).reduced (2));
+            placeActionButton (actionBottom, applyMidiTemplateButton, 150);
+            placeActionButton (actionBottom, applyGuiTemplateButton, 150);
+            placeActionButton (actionBottom, exportMidiButton, 118);
+            midiTemplateBox.setBounds (actionBottom.removeFromLeft (juce::jmin (190, actionBottom.getWidth())).reduced (2));
 
             full.removeFromTop (12);
             auto body = full;
@@ -4816,7 +4871,7 @@ namespace patchcraft
             auto sourceRow = sourceInner.removeFromTop (28);
             g.setColour (PatchCraftLookAndFeel::textDim());
             g.setFont (9.5f);
-            g.drawText ("Sound", sourceRow.removeFromLeft (52), juce::Justification::centredLeft, true);
+            g.drawText ("DSP", sourceRow.removeFromLeft (52), juce::Justification::centredLeft, true);
             sourceBox.setBounds (sourceRow.reduced (2));
             auto targetRow = sourceInner.removeFromTop (28);
             g.drawText ("Target", targetRow.removeFromLeft (52), juce::Justification::centredLeft, true);
@@ -4841,7 +4896,7 @@ namespace patchcraft
             placeBox ("UI", guiTemplateBox, 178);
             g.setColour (PatchCraftLookAndFeel::textDim());
             g.setFont (juce::Font (10.5f, juce::Font::bold));
-            g.drawText ("Player lane buttons switch the active bank; they do not layer all five banks at once yet.",
+            g.drawText ("DSP owns the sound. Lane buttons choose which Performance bank you are editing and playing.",
                         strip, juce::Justification::centredLeft, true);
 
             main.removeFromTop (8);
@@ -5051,6 +5106,8 @@ namespace patchcraft
         }
 
         for (auto* component : { static_cast<juce::Component*> (&title), static_cast<juce::Component*> (&subtitle),
+                                 static_cast<juce::Component*> (&performanceViewButton),
+                                 static_cast<juce::Component*> (&arpLaneViewButton),
                                  static_cast<juce::Component*> (&activeSummary) })
             component->setVisible (true);
 
@@ -5061,6 +5118,15 @@ namespace patchcraft
 
         PatchCraftLookAndFeel::drawDarkPanel (g, header, 10.0f);
         auto headerContent = header.reduced (14, 10);
+        auto viewTabs = headerContent.removeFromRight (290);
+        performanceViewButton.setBounds (viewTabs.removeFromTop (28).removeFromLeft (150).reduced (2));
+        viewTabs.removeFromTop (2);
+        arpLaneViewButton.setBounds (viewTabs.removeFromTop (28).removeFromLeft (126).reduced (2));
+        g.setColour (PatchCraftLookAndFeel::textDim());
+        g.setFont (9.5f);
+        g.drawFittedText ("Both views edit the same Performance block. ArpLane is the circular editor for phrase banks.",
+                          viewTabs, juce::Justification::topLeft, 3);
+        headerContent.removeFromRight (12);
         title.setBounds (headerContent.removeFromTop (24));
         subtitle.setBounds (headerContent.removeFromTop (20));
         activeSummary.setBounds (headerContent);

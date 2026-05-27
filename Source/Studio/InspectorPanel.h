@@ -16,7 +16,8 @@ namespace patchcraft
         Label, Value Format, Style, Knob Style, Min, Max, Default, Step,
         Value Type, Smoothing + Actions row.
     */
-    class InspectorPanel : public juce::Component
+    class InspectorPanel : public juce::Component,
+                           private juce::ChangeListener
     {
     public:
         explicit InspectorPanel (StudioMainComponent& owner);
@@ -31,6 +32,7 @@ namespace patchcraft
 
     private:
         StudioMainComponent& owner;
+        void changeListenerCallback (juce::ChangeBroadcaster*) override;
 
         // Header label
         juce::Label header;
@@ -215,6 +217,9 @@ namespace patchcraft
         std::map<juce::String, float> drumPatternClipboard;
 
         bool inhibitCallbacks = false;
+        juce::ColourSelector* liveColourSelector = nullptr;
+        juce::TextEditor* liveColourTarget = nullptr;
+        juce::Colour liveColourOriginal { juce::Colours::transparentBlack };
 
         enum class InspectorSection
         {

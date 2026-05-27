@@ -74,7 +74,7 @@ namespace patchcraft
         void addCircleSeqBackgroundKit (juce::Point<int> canvasPos);
 
     private:
-        enum class DragMode { None, Move, ResizeBR, ValueDrag, Marquee, DrumGridEdit };
+        enum class DragMode { None, Move, ResizeBR, ValueDrag, Marquee, DrumGridEdit, ArpLaneEdit };
 
         juce::Rectangle<int> canvasScreenRect() const;
         juce::Rectangle<int> elementScreenRect (const LayoutElement&) const;
@@ -96,6 +96,10 @@ namespace patchcraft
         bool editDrumGridCellAt (const LayoutElement&, juce::Rectangle<int> r,
                                  juce::Point<int> p, const juce::ModifierKeys& mods,
                                  bool startGesture);
+        bool arpLaneStepAt (const LayoutElement&, juce::Rectangle<int> r,
+                            juce::Point<int> p, int& lane, int& step, float& velocity) const;
+        bool editArpLaneStepAt (const LayoutElement&, juce::Rectangle<int> r,
+                                juce::Point<int> p, bool startGesture);
         void showContextMenu (juce::Point<int> screenPos);
         void explodeSelectedMixers();
         bool selectionContainsMixer() const;
@@ -132,6 +136,9 @@ namespace patchcraft
         bool drumGridPaintState = true;
         int lastDrumGridTrack = -1;
         int lastDrumGridStep = -1;
+        juce::String arpLaneEditElementId;
+        int lastArpLane = -1;
+        int lastArpStep = -1;
 
         // Active tab page. Default is "main" so the seeded macro-knob group
         // shows up out of the box.

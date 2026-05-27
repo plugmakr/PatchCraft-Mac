@@ -14,6 +14,7 @@ namespace patchcraft
 
         void bind (const DspGraph& graph, const ParameterModel& parameters);
         void setParameterValue (const juce::String& parameterId, float value);
+        bool setFxBlockParameterValue (const juce::String& parameterId, float value);
         void syncFromLiveValues (const class LiveValueStore& liveValues);
 
         void processToEngine (IInstrumentEngine& engine, int numSamples, double bpm);

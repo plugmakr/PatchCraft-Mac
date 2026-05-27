@@ -55,6 +55,8 @@ namespace patchcraft
             addAndMakeVisible (*b);
         }
         tabDesign.setToggleState (true, juce::dontSendNotification);
+        tabMidi.setTooltip ("Performance Engine: MIDI, chords, arps, drum patterns, sample chops, and modulation routed into the current Patch.");
+        tabArp.setTooltip ("ArpLane Lab: circular lane editor for the same Performance Engine banks used by the Player ArpLane element.");
 
         patchSeparator.setText ("|", juce::dontSendNotification);
         patchSeparator.setJustificationType (juce::Justification::centred);
@@ -508,8 +510,8 @@ namespace patchcraft
         tabMapper.setBounds (r.removeFromLeft (62));
         tabOneShot.setBounds (r.removeFromLeft (70));
         tabDSP   .setBounds (r.removeFromLeft (42));
-        tabMidi  .setBounds (r.removeFromLeft (44));
-        tabArp   .setBounds (r.removeFromLeft (44));
+        tabMidi  .setBounds (r.removeFromLeft (66));
+        tabArp   .setBounds (r.removeFromLeft (62));
         tabBuild .setBounds (r.removeFromLeft (58));
         tabAnimation.setBounds (r.removeFromLeft (48));
         tabBranding.setBounds (r.removeFromLeft (62));

@@ -108,6 +108,59 @@ namespace patchcraft
         block.metadata["arpLane" + juce::String (lane + 1) + key] = newValue;
     }
 
+    static juce::String orbitLaneTargetName (int target)
+    {
+        switch (juce::jlimit (0, 4, target))
+        {
+            case 1:  return "drums";
+            case 2:  return "oneShots";
+            case 3:  return "loops";
+            case 4:  return "samples";
+            default: return "notes";
+        }
+    }
+
+    static juce::String orbitLaneSoundName (int sound)
+    {
+        return "DSP Slot " + juce::String (juce::jlimit (0, 15, sound) + 1);
+    }
+
+    static int orbitLaneSoundNote (int target, int sound, int rootNote)
+    {
+        static const int drumNotes[] =
+        {
+            36, 38, 42, 46, 39, 45, 48, 49,
+            51, 37, 44, 52, 53, 54, 55, 56
+        };
+        sound = juce::jlimit (0, 15, sound);
+        rootNote = juce::jlimit (0, 127, rootNote);
+        if (target == 1)
+            return drumNotes[sound];
+        if (target == 2)
+            return juce::jlimit (0, 127, 48 + sound);
+        if (target == 4)
+            return juce::jlimit (0, 127, rootNote + sound - 7);
+        return rootNote;
+    }
+
+    static bool updateFxBlockValue (DspGraph& graph, const juce::String& parameterId, float value)
+    {
+        bool changed = false;
+        for (auto& block : graph.blocks)
+        {
+            if (! block.section.equalsIgnoreCase ("fx"))
+                continue;
+
+            auto found = block.values.find (parameterId);
+            if (found == block.values.end())
+                continue;
+
+            found->second = value;
+            changed = true;
+        }
+        return changed;
+    }
+
     juce::AudioProcessorValueTreeState::ParameterLayout PlayerProcessor::createLayout()
     {
         std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
@@ -400,6 +453,7 @@ namespace patchcraft
                     if (userSampleOverlayEnabled)
                         userSampleOverlay.setParameter (def.id, v);
                     routingEngine.setParameterValue (def.id, v);
+                    routingEngine.setFxBlockParameterValue (def.id, v);
                 }
 
                 // Layer persistent MIDI overrides on top of the static params.
@@ -561,12 +615,14 @@ namespace patchcraft
 
     double PlayerProcessor::getSequencerPlaybackPosition01 (int stepsPerCycle) const
     {
-        juce::ignoreUnused (stepsPerCycle);
         const auto context = makeRenderContext (currentBlockSize);
         const bool hostPlaying = context.isPlaying;
         const bool internalPlaying = internalTransportPlaying.load();
         if (! hostPlaying && ! internalPlaying)
-            return -1.0;
+        {
+            const juce::SpinLock::ScopedLockType lk (engineLock);
+            return arpeggiator.getPlaybackPosition01 (stepsPerCycle);
+        }
 
         const double ppq = hostPlaying ? context.ppqPosition : internalTransportPpq.load();
         const double cycles = ppq / 4.0;
@@ -1623,6 +1679,8 @@ namespace patchcraft
         if (userSampleOverlayEnabled)
             userSampleOverlay.setParameter (parameterId, limited);
         routingEngine.setParameterValue (parameterId, limited);
+        updateFxBlockValue (pack.dspGraph, parameterId, limited);
+        routingEngine.setFxBlockParameterValue (parameterId, limited);
 
         if (parameterId.startsWith ("arpLane"))
         {
@@ -1634,12 +1692,21 @@ namespace patchcraft
                     return found != runtimeParameterValues.end() ? found->second : fallback;
                 };
 
-                const int lane = juce::jlimit (0, 15, juce::roundToInt (value ("arpLaneIndex", 0.0f)));
+                const int elementLane = juce::jlimit (0, 15, juce::roundToInt (value ("arpLaneIndex", 0.0f)));
+                const int lane = parameterId == "arpLaneIndex"
+                    ? elementLane
+                    : juce::jlimit (0, 15, juce::roundToInt (value ("arpLaneControlBank", (float) elementLane)));
                 const int steps = juce::jlimit (1, 128, juce::roundToInt (value ("arpLaneSteps", 16.0f)));
                 const int target = juce::jlimit (0, 4, juce::roundToInt (value ("arpLaneTarget", 0.0f)));
                 const int direction = juce::jlimit (0, 3, juce::roundToInt (value ("arpLaneDirection", 0.0f)));
+                const int sound = juce::jlimit (0, 15, juce::roundToInt (value ("arpLaneSound", (float) lane)));
+                const int rootNote = juce::jlimit (0, 127, juce::roundToInt (value ("arpLaneRootNote", 60.0f)));
+                const int slots = juce::jlimit (1, 64, juce::roundToInt (value ("arpLaneSampleSlots", 1.0f)));
+                const auto targetName = orbitLaneTargetName (target);
+                juce::ignoreUnused (rootNote);
 
                 block->values["mpActiveBank"] = (float) lane;
+                block->values["mpMultiLane"] = 1.0f;
                 setArpLaneValue (*block, lane, "arpSteps", (float) steps);
                 setArpLaneValue (*block, lane, "arpPattern", direction == 1 ? 1.0f : direction == 2 ? 2.0f : direction == 3 ? 7.0f : 0.0f);
                 setArpLaneValue (*block, lane, "arpGate", juce::jlimit (0.05f, 1.0f, value ("arpLaneGate", 0.58f)));
@@ -1656,14 +1723,26 @@ namespace patchcraft
                 setArpLaneValue (*block, lane, "mpEuclideanPulses", (float) (fillActive && fillPulses > 0 ? fillPulses : basePulses));
                 setArpLaneValue (*block, lane, "mpEuclideanRotate", (float) juce::jlimit (0, 127, juce::roundToInt (value ("arpLaneRotate", 0.0f))));
                 setArpLaneValue (*block, lane, "mpSampleControl", target == 0 ? 0.0f : 1.0f);
-                setArpLaneValue (*block, lane, "mpSampleSliceCount", (float) juce::jlimit (1, 64, juce::roundToInt (value ("arpLaneSampleSlots", 1.0f))));
+                setArpLaneValue (*block, lane, "mpSampleSliceCount", (float) juce::jmax (slots, sound + 1));
                 setArpLaneValue (*block, lane, "mpLaneMute", value ("arpLaneMute", 0.0f) >= 0.5f ? 1.0f : 0.0f);
                 setArpLaneValue (*block, lane, "mpLaneSolo", value ("arpLaneSolo", 0.0f) >= 0.5f ? 1.0f : 0.0f);
+                setArpLaneValue (*block, lane, "mpLaneFxTarget", (float) juce::jlimit (0, 7, juce::roundToInt (value ("arpLaneFxTarget", (float) (lane % 4)))));
+                const float laneFxAmount = juce::jlimit (0.0f, 1.0f, value ("arpLaneFxAmount", 0.0f));
                 block->values["mpPatternLaunch"] = (float) juce::jlimit (0, 7, juce::roundToInt (value ("arpLanePatternLaunch", 0.0f)));
 
                 const int controlLane = juce::jlimit (0, 15, juce::roundToInt (value ("arpLaneControlBank", (float) lane)));
                 const int sliderRole = juce::jlimit (0, 10, juce::roundToInt (value ("arpLaneSliderRole", 0.0f)));
-                const int slots = juce::jlimit (1, 64, juce::roundToInt (value ("arpLaneSampleSlots", 1.0f)));
+                for (int step = 0; step < steps; ++step)
+                {
+                    const auto suffix = juce::String (step);
+                    if (targetName == "loops")
+                        setArpLaneValue (*block, lane, "mpSampleSlice" + suffix, (float) (step % juce::jmax (1, slots)));
+                    else if (target != 0)
+                        setArpLaneValue (*block, lane, "mpSampleSlice" + suffix, (float) sound);
+                    if (parameterId == "arpLaneFxAmount")
+                        setArpLaneValue (*block, lane, "mpAutoFxSend" + suffix, laneFxAmount);
+                }
+
                 for (int step = 0; step < 16; ++step)
                 {
                     const float v = juce::jlimit (0.0f, 1.0f, value ("arpLaneStep" + juce::String (step + 1),
@@ -1693,10 +1772,13 @@ namespace patchcraft
                         setArpLaneValue (*block, controlLane, "mpAutoFxSend" + suffix, v);
                 }
 
-                setArpLaneMetadata (*block, lane, "Target",
-                    target == 1 ? "drums" : target == 2 ? "oneShots" : target == 3 ? "loops" : target == 4 ? "samples" : "notes");
+                setArpLaneMetadata (*block, lane, "Target", targetName);
                 setArpLaneMetadata (*block, lane, "Direction",
                     direction == 1 ? "reverse" : direction == 2 ? "bounce" : direction == 3 ? "random" : "forward");
+                setArpLaneMetadata (*block, lane, "RootNote", juce::String (rootNote));
+                setArpLaneMetadata (*block, lane, "Sound", juce::String (sound));
+                setArpLaneMetadata (*block, lane, "SoundName", orbitLaneSoundName (sound));
+                setArpLaneMetadata (*block, lane, "FxTarget", juce::String (juce::jlimit (0, 7, juce::roundToInt (value ("arpLaneFxTarget", (float) (lane % 4))))));
                 setArpLaneMetadata (*block, lane, "FillPulses",
                     juce::String (juce::jlimit (0, steps, juce::roundToInt (value ("arpLaneFillPulses", 0.0f)))));
                 setArpLaneMetadata (*block, lane, "FillProbability",
@@ -1841,9 +1923,14 @@ namespace patchcraft
 
         lane = juce::jlimit (0, 15, lane);
         step = juce::jlimit (0, 127, step);
-        setArpLaneValue (*midiBlock, lane, "mpVelocity" + juce::String (step), juce::jlimit (0.0f, 1.0f, velocity));
+        const float limitedVelocity = juce::jlimit (0.0f, 1.0f, velocity);
+        setArpLaneValue (*midiBlock, lane, "mpVelocity" + juce::String (step), limitedVelocity);
         setArpLaneValue (*midiBlock, lane, "mpStep" + juce::String (step) + "On", active ? 1.0f : 0.0f);
         midiBlock->values["mpActiveBank"] = (float) lane;
+        midiBlock->values["mpMultiLane"] = 1.0f;
+        runtimeParameterValues["arpLaneControlBank"] = (float) juce::jlimit (0, 4, lane);
+        if (step < 16)
+            runtimeParameterValues["arpLaneStep" + juce::String (step + 1)] = limitedVelocity;
 
         arpeggiator.bind (pack.dspGraph);
         routingEngine.bind (pack.dspGraph, pack.parameters);

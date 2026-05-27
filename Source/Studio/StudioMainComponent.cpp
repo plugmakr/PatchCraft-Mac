@@ -1325,7 +1325,7 @@ namespace patchcraft
             menu.addSeparator();
             menu.addItem (4006, "Go To Dashboard");
             menu.addItem (4007, "Go To Design");
-            menu.addItem (4008, "Go To Arp Studio");
+            menu.addItem (4008, "Go To ArpLane Lab");
             menu.addItem (4009, "Go To DSP Builder");
             menu.addItem (4010, "Go To Animation Lab");
             menu.addItem (4011, "Go To Launch");

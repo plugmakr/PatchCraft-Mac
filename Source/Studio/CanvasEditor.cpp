@@ -2,6 +2,7 @@
 #include "StudioMainComponent.h"
 #include "PatchCraftLookAndFeel.h"
 
+#include <array>
 #include <cmath>
 #include <vector>
 
@@ -102,6 +103,7 @@ namespace patchcraft
             block.values["arpOctaves"] = 1.0f;
             block.values["arpSwing"] = 0.0f;
             block.values["mpActiveBank"] = 0.0f;
+            block.values["mpMultiLane"] = 1.0f;
             block.values["mpProbability"] = 1.0f;
             block.values["mpRatchet"] = 1.0f;
             block.values["mpSampleControl"] = 0.0f;
@@ -128,6 +130,121 @@ namespace patchcraft
         static void setArpLaneMetadata (DspBlock& block, int lane, const juce::String& key, const juce::String& newValue)
         {
             block.metadata["arpLane" + juce::String (lane + 1) + key] = newValue;
+        }
+
+        static juce::String orbitLaneSoundName (int sound);
+
+        static bool hasSeededOrbitLaneData (const DspBlock& block)
+        {
+            for (const auto& value : block.values)
+                if (value.first.startsWith ("mpBank2_")
+                    || value.first.startsWith ("mpBank3_")
+                    || value.first.startsWith ("mpBank4_")
+                    || value.first.startsWith ("mpBank5_"))
+                    return true;
+
+            return block.metadata.find ("arpLane1SoundName") != block.metadata.end();
+        }
+
+        static void seedMusicalOrbitLaneData (DspBlock& block)
+        {
+            if (hasSeededOrbitLaneData (block))
+                return;
+
+            struct LaneSeed
+            {
+                int sound = 0;
+                float pulses = 0.0f;
+                std::array<int, 16> active {};
+                std::array<float, 16> notes {};
+                std::array<float, 16> velocities {};
+                float gate = 0.58f;
+            };
+
+            const std::array<LaneSeed, 5> lanes =
+            {{
+                { 12, 4.0f,
+                  {{ 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0 }},
+                  {{ -12,-12,-12,-12, -10,-10,-10,-10, -7,-7,-7,-7, -10,-10,-10,-10 }},
+                  {{ 0.92f,0.34f,0.32f,0.38f, 0.84f,0.34f,0.32f,0.38f, 0.88f,0.34f,0.32f,0.38f, 0.82f,0.34f,0.32f,0.38f }},
+                  0.72f },
+                { 13, 6.0f,
+                  {{ 1,0,1,0, 0,1,0,1, 1,0,1,0, 0,1,0,1 }},
+                  {{ 0,3,5,7, 10,7,5,3, 0,3,7,10, 12,10,7,5 }},
+                  {{ 0.58f,0.38f,0.66f,0.42f, 0.36f,0.70f,0.40f,0.62f, 0.58f,0.38f,0.68f,0.42f, 0.36f,0.72f,0.40f,0.66f }},
+                  0.46f },
+                { 14, 8.0f,
+                  {{ 1,1,0,1, 1,0,1,0, 1,1,0,1, 0,1,0,1 }},
+                  {{ 12,10,7,10, 12,15,14,10, 12,10,7,5, 7,10,12,15 }},
+                  {{ 0.50f,0.42f,0.30f,0.48f, 0.54f,0.34f,0.46f,0.32f, 0.52f,0.42f,0.30f,0.50f, 0.34f,0.48f,0.38f,0.58f }},
+                  0.32f },
+                { 15, 5.0f,
+                  {{ 0,0,0,1, 0,0,1,0, 0,0,1,0, 0,1,0,0 }},
+                  {{ 24,22,19,15, 19,17,15,12, 15,17,19,22, 24,22,19,15 }},
+                  {{ 0.24f,0.24f,0.24f,0.72f, 0.24f,0.24f,0.66f,0.24f, 0.24f,0.24f,0.70f,0.24f, 0.24f,0.64f,0.24f,0.24f }},
+                  0.38f },
+                { 11, 3.0f,
+                  {{ 0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,1 }},
+                  {{ 7,7,7,7, 10,10,10,10, 12,12,12,12, 15,15,15,19 }},
+                  {{ 0.18f,0.18f,0.18f,0.18f, 0.78f,0.18f,0.18f,0.18f, 0.18f,0.18f,0.18f,0.18f, 0.74f,0.18f,0.18f,0.64f }},
+                  0.60f }
+            }};
+
+            block.values["sync"] = 1.0f;
+            block.values["rate"] = 1.0f;
+            block.values["arpSteps"] = 16.0f;
+            block.values["arpGate"] = 0.58f;
+            block.values["arpSwing"] = 0.08f;
+            block.values["mpActiveBank"] = 0.0f;
+            block.values["mpMultiLane"] = 1.0f;
+            block.values["mpScaleRoot"] = 9.0f;
+            block.values["mpScaleType"] = 2.0f;
+            block.values["mpPatternMorph"] = 0.0f;
+            block.values["mpHumanize"] = 0.015f;
+            block.values["mpMutation"] = 0.0f;
+            block.values["mpProbability"] = 1.0f;
+            block.values["mpRatchet"] = 1.0f;
+            block.values["mpSampleControl"] = 0.0f;
+            block.values["mpSampleSliceCount"] = 16.0f;
+
+            for (int lane = 0; lane < (int) lanes.size(); ++lane)
+            {
+                const auto& seed = lanes[(size_t) lane];
+                setArpLaneValue (block, lane, "arpSteps", 16.0f);
+                setArpLaneValue (block, lane, "arpGate", seed.gate);
+                setArpLaneValue (block, lane, "arpSwing", 0.08f);
+                setArpLaneValue (block, lane, "mpProbability", 1.0f);
+                setArpLaneValue (block, lane, "mpRatchet", 1.0f);
+                setArpLaneValue (block, lane, "mpEuclideanPulses", seed.pulses);
+                setArpLaneValue (block, lane, "mpEuclideanRotate", (float) (lane * 2));
+                setArpLaneValue (block, lane, "mpSampleControl", 0.0f);
+                setArpLaneValue (block, lane, "mpSampleSliceCount", 16.0f);
+                setArpLaneValue (block, lane, "mpLaneMute", 0.0f);
+                setArpLaneValue (block, lane, "mpLaneSolo", 0.0f);
+                setArpLaneValue (block, lane, "mpLaneFxTarget", (float) (lane % 4));
+
+                for (int step = 0; step < 16; ++step)
+                {
+                    const auto suffix = juce::String (step);
+                    setArpLaneValue (block, lane, "mpStep" + suffix + "On", seed.active[(size_t) step] != 0 ? 1.0f : 0.0f);
+                    setArpLaneValue (block, lane, "arpNote" + suffix, seed.notes[(size_t) step]);
+                    setArpLaneValue (block, lane, "mpVelocity" + suffix, seed.velocities[(size_t) step]);
+                    setArpLaneValue (block, lane, "mpGate" + suffix, seed.gate);
+                    setArpLaneValue (block, lane, "mpStepProb" + suffix, 1.0f);
+                    setArpLaneValue (block, lane, "mpStepDiv" + suffix, 1.0f);
+                    setArpLaneValue (block, lane, "mpStepTranspose" + suffix, 0.0f);
+                    setArpLaneValue (block, lane, "mpSampleSlice" + suffix, (float) seed.sound);
+                    setArpLaneValue (block, lane, "mpAutoFxSend" + suffix, lane >= 2 && seed.active[(size_t) step] != 0 ? 0.18f : 0.0f);
+                }
+
+                setArpLaneMetadata (block, lane, "Mode", "performance");
+                setArpLaneMetadata (block, lane, "Target", "notes");
+                setArpLaneMetadata (block, lane, "Direction", "forward");
+                setArpLaneMetadata (block, lane, "Sound", juce::String (seed.sound));
+                setArpLaneMetadata (block, lane, "SoundName", orbitLaneSoundName (seed.sound));
+                setArpLaneMetadata (block, lane, "FxTarget", juce::String (lane % 4));
+                setArpLaneMetadata (block, lane, "SliderRole", "velocity");
+            }
         }
 
         static void applyArpLaneSliderBankToGraph (PatchCraftProject& project, DspBlock& block)
@@ -183,7 +300,42 @@ namespace patchcraft
                                                        : role == 7 ? "transpose"
                                                        : role == 8 ? "filter"
                                                        : role == 9 ? "pan"
-                                                       : "fxSend");
+                                                      : "fxSend");
+        }
+
+        static juce::String orbitLaneTargetName (int target)
+        {
+            switch (juce::jlimit (0, 4, target))
+            {
+                case 1:  return "drums";
+                case 2:  return "oneShots";
+                case 3:  return "loops";
+                case 4:  return "samples";
+                default: return "notes";
+            }
+        }
+
+        static juce::String orbitLaneSoundName (int sound)
+        {
+            return "DSP Slot " + juce::String (juce::jlimit (0, 15, sound) + 1);
+        }
+
+        static int orbitLaneSoundNote (int target, int sound, int rootNote)
+        {
+            static const int drumNotes[] =
+            {
+                36, 38, 42, 46, 39, 45, 48, 49,
+                51, 37, 44, 52, 53, 54, 55, 56
+            };
+            sound = juce::jlimit (0, 15, sound);
+            rootNote = juce::jlimit (0, 127, rootNote);
+            if (target == 1)
+                return drumNotes[sound];
+            if (target == 2)
+                return juce::jlimit (0, 127, 48 + sound);
+            if (target == 4)
+                return juce::jlimit (0, 127, rootNote + sound - 7);
+            return rootNote;
         }
 
         static void applyArpLaneParameterToGraph (PatchCraftProject& project,
@@ -201,12 +353,19 @@ namespace patchcraft
 
             auto& graph = project.getDspGraph();
             auto& block = ensureArpBlock (graph);
-            const int lane = juce::jlimit (0, 15, juce::roundToInt (value ("arpLaneIndex", 0.0f)));
+            const int elementLane = juce::jlimit (0, 15, juce::roundToInt (value ("arpLaneIndex", 0.0f)));
+            const int controlLane = juce::jlimit (0, 15, juce::roundToInt (value ("arpLaneControlBank", (float) elementLane)));
+            const int lane = parameterId == "arpLaneIndex" ? elementLane : controlLane;
             const int steps = juce::jlimit (1, 128, juce::roundToInt (value ("arpLaneSteps", 16.0f)));
             const int target = juce::jlimit (0, 4, juce::roundToInt (value ("arpLaneTarget", 0.0f)));
             const int direction = juce::jlimit (0, 3, juce::roundToInt (value ("arpLaneDirection", 0.0f)));
+            const int sound = juce::jlimit (0, 15, juce::roundToInt (value ("arpLaneSound", (float) lane)));
+            const int rootNote = juce::jlimit (0, 127, juce::roundToInt (value ("arpLaneRootNote", 60.0f)));
+            const int slots = juce::jlimit (1, 64, juce::roundToInt (value ("arpLaneSampleSlots", 1.0f)));
+            const auto targetName = orbitLaneTargetName (target);
 
             block.values["mpActiveBank"] = (float) lane;
+            block.values["mpMultiLane"] = 1.0f;
             setArpLaneValue (block, lane, "arpSteps", (float) steps);
             setArpLaneValue (block, lane, "arpPattern", direction == 1 ? 1.0f : direction == 2 ? 2.0f : direction == 3 ? 7.0f : 0.0f);
             setArpLaneValue (block, lane, "arpGate", juce::jlimit (0.05f, 1.0f, value ("arpLaneGate", 0.58f)));
@@ -223,17 +382,33 @@ namespace patchcraft
             setArpLaneValue (block, lane, "mpEuclideanPulses", (float) (fillActive && fillPulses > 0 ? fillPulses : basePulses));
             setArpLaneValue (block, lane, "mpEuclideanRotate", (float) juce::jlimit (0, 127, juce::roundToInt (value ("arpLaneRotate", 0.0f))));
             setArpLaneValue (block, lane, "mpSampleControl", target == 0 ? 0.0f : 1.0f);
-            setArpLaneValue (block, lane, "mpSampleSliceCount", (float) juce::jlimit (1, 64, juce::roundToInt (value ("arpLaneSampleSlots", 1.0f))));
+            setArpLaneValue (block, lane, "mpSampleSliceCount", (float) juce::jmax (slots, sound + 1));
             setArpLaneValue (block, lane, "mpLaneMute", value ("arpLaneMute", 0.0f) >= 0.5f ? 1.0f : 0.0f);
             setArpLaneValue (block, lane, "mpLaneSolo", value ("arpLaneSolo", 0.0f) >= 0.5f ? 1.0f : 0.0f);
+            setArpLaneValue (block, lane, "mpLaneFxTarget", (float) juce::jlimit (0, 7, juce::roundToInt (value ("arpLaneFxTarget", (float) (lane % 4)))));
+            const float laneFxAmount = juce::jlimit (0.0f, 1.0f, value ("arpLaneFxAmount", 0.0f));
             block.values["mpPatternLaunch"] = (float) juce::jlimit (0, 7, juce::roundToInt (value ("arpLanePatternLaunch", 0.0f)));
 
             setArpLaneMetadata (block, lane, "Mode", juce::roundToInt (value ("arpLaneMode", 0.0f)) == 1 ? "performance" : "bank");
-            setArpLaneMetadata (block, lane, "Target", target == 1 ? "drums" : target == 2 ? "oneShots" : target == 3 ? "loops" : target == 4 ? "samples" : "notes");
+            setArpLaneMetadata (block, lane, "Target", targetName);
             setArpLaneMetadata (block, lane, "Direction", direction == 1 ? "reverse" : direction == 2 ? "bounce" : direction == 3 ? "random" : "forward");
-            setArpLaneMetadata (block, lane, "RootNote", juce::String (juce::jlimit (0, 127, juce::roundToInt (value ("arpLaneRootNote", 60.0f)))));
+            setArpLaneMetadata (block, lane, "RootNote", juce::String (rootNote));
+            setArpLaneMetadata (block, lane, "Sound", juce::String (sound));
+            setArpLaneMetadata (block, lane, "SoundName", orbitLaneSoundName (sound));
+            setArpLaneMetadata (block, lane, "FxTarget", juce::String (juce::jlimit (0, 7, juce::roundToInt (value ("arpLaneFxTarget", (float) (lane % 4))))));
             setArpLaneMetadata (block, lane, "FillPulses", juce::String (juce::jlimit (0, steps, juce::roundToInt (value ("arpLaneFillPulses", 0.0f)))));
             setArpLaneMetadata (block, lane, "FillProbability", juce::String (juce::jlimit (0.0f, 1.0f, value ("arpLaneFillProbability", 0.0f)), 2));
+
+            for (int step = 0; step < steps; ++step)
+            {
+                const auto suffix = juce::String (step);
+                if (targetName == "loops")
+                    setArpLaneValue (block, lane, "mpSampleSlice" + suffix, (float) (step % juce::jmax (1, slots)));
+                else if (target != 0)
+                    setArpLaneValue (block, lane, "mpSampleSlice" + suffix, (float) sound);
+                if (parameterId == "arpLaneFxAmount")
+                    setArpLaneValue (block, lane, "mpAutoFxSend" + suffix, laneFxAmount);
+            }
 
             applyArpLaneSliderBankToGraph (project, block);
 
@@ -409,22 +584,34 @@ namespace patchcraft
                         const float rOffset = juce::jmap (velocity, 0.0f, 1.0f, -band * 0.34f, band * 0.34f);
                         const auto p = centre + juce::Point<float> (std::cos (angle) * (ringRadius + rOffset),
                                                                     std::sin (angle) * (ringRadius + rOffset));
+                        if (! activeRing)
+                            continue;
+
                         if (active >= 0.5f)
                         {
-                            const float dot = 2.5f + velocity * (activeRing ? 2.4f : 1.2f);
-                            g.setColour (ringColour.withAlpha ((activeRing ? 0.86f : 0.48f) * (0.5f + velocity * 0.5f)));
+                            const float dot = 3.0f + velocity * 3.2f;
+                            g.setColour (ringColour.withAlpha (0.86f * (0.5f + velocity * 0.5f)));
+                            g.drawLine (centre.x, centre.y, p.x, p.y, 1.15f);
                             g.fillEllipse (p.x - dot, p.y - dot, dot * 2.0f, dot * 2.0f);
+                        }
+                        else
+                        {
+                            g.setColour (border.withAlpha (0.22f));
+                            g.drawEllipse (p.x - 2.4f, p.y - 2.4f, 4.8f, 4.8f, 0.8f);
                         }
                     }
                 }
 
+                const auto idleDot = centre + juce::Point<float> (0.0f, -(outerRadius + band * 0.46f));
+                g.setColour (accent.withAlpha (0.35f));
+                g.drawEllipse (idleDot.x - 4.2f, idleDot.y - 4.2f, 8.4f, 8.4f, 1.0f);
                 g.setColour (text);
                 g.setFont (juce::FontOptions (22.0f).withStyle ("bold"));
                 g.drawText ("ORBIT", juce::Rectangle<int> ((int) centre.x - 45, (int) centre.y - 23, 90, 25),
                             juce::Justification::centred, true);
                 g.setColour (dim);
                 g.setFont (juce::FontOptions (8.5f).withStyle ("bold"));
-                g.drawText ("ALL LANES", juce::Rectangle<int> ((int) centre.x - 45, (int) centre.y + 3, 90, 18),
+                g.drawText ("LANE " + juce::String (activeLane + 1), juce::Rectangle<int> ((int) centre.x - 45, (int) centre.y + 3, 90, 18),
                             juce::Justification::centred, true);
                 return;
             }
@@ -2982,6 +3169,103 @@ namespace patchcraft
         return true;
     }
 
+    bool CanvasEditor::arpLaneStepAt (const LayoutElement& element, juce::Rectangle<int> r,
+                                      juce::Point<int> p, int& lane, int& step,
+                                      float& velocity) const
+    {
+        const auto* block = findArpBlock (owner.getProject().getDspGraph());
+        lane = juce::jlimit (0, 15, element.arpLaneIndex);
+        const bool orbitMultiRing = element.arpLaneMode.equalsIgnoreCase ("multiRing")
+                                 || element.arpLaneMode.equalsIgnoreCase ("orbit")
+                                 || element.arpLaneMode.equalsIgnoreCase ("orbitMulti");
+        int steps = block != nullptr
+            ? juce::jlimit (1, 128, juce::roundToInt (arpLaneValue (*block, lane, "arpSteps", (float) element.arpLaneSteps)))
+            : juce::jlimit (1, 128, element.arpLaneSteps);
+
+        auto area = r.reduced (12);
+        area.removeFromTop (24);
+        const float size = (float) juce::jmin (area.getWidth(), area.getHeight() - 34);
+        if (size <= 24.0f)
+            return false;
+
+        const juce::Point<float> centre ((float) area.getCentreX(), (float) area.getY() + size * 0.52f);
+        const auto delta = p.toFloat() - centre;
+        const float distance = delta.getDistanceFromOrigin();
+
+        if (orbitMultiRing)
+        {
+            const int laneCount = 5;
+            const float multiRadius = size * 0.42f;
+            const float innerRadius = multiRadius * 0.25f;
+            const float outerRadius = multiRadius * 0.94f;
+            if (distance < innerRadius - 4.0f || distance > outerRadius + 8.0f)
+                return false;
+
+            const float lanePos = juce::jmap (distance, innerRadius, outerRadius, 0.0f, (float) laneCount);
+            lane = juce::jlimit (0, laneCount - 1, (int) std::floor (lanePos));
+            steps = block != nullptr
+                ? juce::jlimit (1, 128, juce::roundToInt (arpLaneValue (*block, lane, "arpSteps", (float) element.arpLaneSteps)))
+                : juce::jlimit (1, 128, element.arpLaneSteps);
+            const float band = (outerRadius - innerRadius) / (float) laneCount;
+            const float laneCentre = innerRadius + band * ((float) lane + 0.5f);
+            velocity = juce::jlimit (0.05f, 1.0f,
+                juce::jmap (distance - laneCentre, -band * 0.45f, band * 0.45f, 0.05f, 1.0f));
+        }
+        else
+        {
+            const float radius = size * 0.40f;
+            if (distance < radius * 0.16f || distance > radius * 1.22f)
+                return false;
+            velocity = juce::jlimit (0.05f, 1.0f,
+                juce::jmap (distance, radius * 0.25f, radius * 0.93f, 0.05f, 1.0f));
+        }
+
+        float angle01 = (std::atan2 (delta.y, delta.x) + juce::MathConstants<float>::halfPi)
+            / juce::MathConstants<float>::twoPi;
+        while (angle01 < 0.0f) angle01 += 1.0f;
+        while (angle01 >= 1.0f) angle01 -= 1.0f;
+
+        const int maxDrawSteps = juce::jmin (steps, 64);
+        step = juce::jlimit (0, maxDrawSteps - 1, juce::roundToInt (angle01 * (float) maxDrawSteps) % maxDrawSteps);
+        return true;
+    }
+
+    bool CanvasEditor::editArpLaneStepAt (const LayoutElement& element, juce::Rectangle<int> r,
+                                          juce::Point<int> p, bool startGesture)
+    {
+        int lane = -1;
+        int step = -1;
+        float velocity = 0.8f;
+        if (! arpLaneStepAt (element, r, p, lane, step, velocity))
+            return false;
+
+        if (! startGesture && lane == lastArpLane && step == lastArpStep)
+            return true;
+
+        auto& graph = owner.getProject().getDspGraph();
+        auto& block = ensureArpBlock (graph);
+        block.values["mpActiveBank"] = (float) lane;
+        block.values["mpMultiLane"] = 1.0f;
+        const auto suffix = juce::String (step);
+        setArpLaneValue (block, lane, "mpStep" + suffix + "On", 1.0f);
+        setArpLaneValue (block, lane, "mpVelocity" + suffix, juce::jlimit (0.05f, 1.0f, velocity));
+        setArpLaneValue (block, lane, "mpGate" + suffix, arpLaneValue (block, lane, "mpGate" + suffix, 0.72f));
+        setArpLaneValue (block, lane, "mpStepProb" + suffix, arpLaneValue (block, lane, "mpStepProb" + suffix, 1.0f));
+        setArpLaneValue (block, lane, "mpStepDiv" + suffix, arpLaneValue (block, lane, "mpStepDiv" + suffix, 1.0f));
+        owner.getProject().getLiveValues().setValue ("arpLaneControlBank", (float) juce::jlimit (0, 4, lane));
+        if (step < 16)
+            owner.getProject().getLiveValues().setValue ("arpLaneStep" + juce::String (step + 1), juce::jlimit (0.05f, 1.0f, velocity));
+
+        graph.userConfigured = true;
+        owner.getProject().markDirty();
+        owner.getProject().notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
+        layoutChangedDuringDrag = true;
+        lastArpLane = lane;
+        lastArpStep = step;
+        repaint (r.expanded (8));
+        return true;
+    }
+
     void CanvasEditor::mouseDown (const juce::MouseEvent& e)
     {
         grabKeyboardFocus();
@@ -3104,6 +3388,17 @@ namespace patchcraft
                 return;
             }
 
+            if (it->type == ElementType::ArpLane
+                && owner.isElementSelected (it->id)
+                && editArpLaneStepAt (*it, r, e.getPosition(), true))
+            {
+                arpLaneEditElementId = it->id;
+                dragStart = e.getPosition();
+                mode = DragMode::ArpLaneEdit;
+                owner.refreshAllPanels();
+                return;
+            }
+
             const bool isInteractiveControl = it->type == ElementType::Knob || it->type == ElementType::Slider
                                            || it->type == ElementType::Toggle || it->type == ElementType::Dropdown
                                            || it->type == ElementType::ValueDisplay
@@ -3206,6 +3501,23 @@ namespace patchcraft
                         menu.addItem (9, "Filter");
                         menu.addItem (10, "Pan");
                         menu.addItem (11, "FX Send");
+                    }
+                    else if (def->id == "arpLaneSound")
+                    {
+                        for (int sound = 0; sound < 16; ++sound)
+                        {
+                            values.push_back ((float) sound);
+                            menu.addItem (sound + 1, orbitLaneSoundName (sound));
+                        }
+                    }
+                    else if (def->id == "arpLaneFxTarget")
+                    {
+                        static const char* fxTargets[] = { "Delay", "Reverb", "Chorus", "Phaser", "Drive", "Resonance", "Width", "Tape" };
+                        for (int target = 0; target < 8; ++target)
+                        {
+                            values.push_back ((float) target);
+                            menu.addItem (target + 1, fxTargets[target]);
+                        }
                     }
                     else if (def->step >= 1.0f && def->max - def->min <= 32.0f)
                     {
@@ -3817,7 +4129,9 @@ namespace patchcraft
     void CanvasEditor::addOrbitInstrumentControlLayout (juce::Point<int> canvasPos)
     {
         auto& graph = owner.getProject().getDspGraph();
-        ensureArpBlock (graph);
+        auto& arpBlock = ensureArpBlock (graph);
+        seedMusicalOrbitLaneData (arpBlock);
+        graph.userConfigured = true;
 
         const auto tabGroup = currentTabGroup == "main" ? juce::String() : currentTabGroup;
         juce::StringArray addedIds;
@@ -3919,8 +4233,10 @@ namespace patchcraft
 
                 addControl (ElementType::Dropdown, "Lane", "arpLaneControlBank", 700, 64, 126, 34, "dropdown_");
                 addControl (ElementType::Dropdown, "Role", "arpLaneSliderRole", 838, 64, 170, 34, "dropdown_");
+                addControl (ElementType::Dropdown, "FX", "arpLaneFxTarget", 1020, 64, 82, 34, "dropdown_");
                 addControl (ElementType::Dropdown, "Target", "arpLaneTarget", 700, 110, 126, 34, "dropdown_");
                 addControl (ElementType::Dropdown, "Direction", "arpLaneDirection", 838, 110, 170, 34, "dropdown_");
+                addControl (ElementType::Dropdown, "Src", "arpLaneSound", 1020, 110, 82, 34, "dropdown_");
                 addControl (ElementType::Button, "FILL HOLD", "arpLaneFillMomentary", 700, 160, 126, 34, "button_");
                 addControl (ElementType::Toggle, "FILL LATCH", "arpLaneFillLatch", 838, 160, 126, 34, "toggle_");
                 addControl (ElementType::Toggle, "MUTE", "arpLaneMute", 976, 160, 72, 34, "toggle_");
@@ -3928,6 +4244,7 @@ namespace patchcraft
                 addControl (ElementType::Knob, "Gate", "arpLaneGate", 790, 218, 70, 76, "knob_");
                 addControl (ElementType::Knob, "Swing", "arpLaneSwing", 880, 218, 70, 76, "knob_");
                 addControl (ElementType::Knob, "Chance", "arpLaneProbability", 970, 218, 70, 76, "knob_");
+                addControl (ElementType::Knob, "FX Amt", "arpLaneFxAmount", 1050, 218, 58, 76, "knob_");
                 addControl (ElementType::Knob, "Fill", "arpLaneFillPulses", 700, 314, 70, 76, "knob_");
                 addControl (ElementType::Knob, "Fill %", "arpLaneFillProbability", 790, 314, 70, 76, "knob_");
                 addControl (ElementType::Knob, "Slots", "arpLaneSampleSlots", 880, 314, 70, 76, "knob_");
@@ -4733,6 +5050,14 @@ namespace patchcraft
             return;
         }
 
+        if (mode == DragMode::ArpLaneEdit)
+        {
+            if (auto* arp = owner.getProject().getLayout().find (arpLaneEditElementId);
+                arp != nullptr && arp->type == ElementType::ArpLane)
+                editArpLaneStepAt (*arp, elementScreenRect (*arp), e.getPosition(), false);
+            return;
+        }
+
         auto* el = owner.getProject().getLayout().find (owner.getSelectedElementId());
 
         const auto deltaCanvas = juce::Point<float> (
@@ -4839,8 +5164,11 @@ namespace patchcraft
         dragParameterId.clear();
         dragValueElementId.clear();
         drumGridEditElementId.clear();
+        arpLaneEditElementId.clear();
         lastDrumGridTrack = -1;
         lastDrumGridStep = -1;
+        lastArpLane = -1;
+        lastArpStep = -1;
         marqueeRect = {};
         multiDragOrigins.clear();
         dragLayoutBefore.clear();

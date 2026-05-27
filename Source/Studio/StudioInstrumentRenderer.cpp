@@ -40,6 +40,11 @@ namespace patchcraft
             return notes;
         }
 
+        static juce::String orbitLaneSoundName (int sound)
+        {
+            return "DSP Slot " + juce::String (juce::jlimit (0, 15, sound) + 1);
+        }
+
         static int whiteNotesBefore (int midiNote)
         {
             int count = 0;
@@ -287,6 +292,10 @@ namespace patchcraft
                 const float innerRadius = radius * 0.25f;
                 const float outerRadius = radius * 0.94f;
                 const float band = (outerRadius - innerRadius) / (float) laneCount;
+                const int activeSteps = block != nullptr
+                    ? juce::jlimit (1, 128, juce::roundToInt (arpLaneValue (*block, activeLane, "arpSteps", (float) element.arpLaneSteps)))
+                    : juce::jlimit (1, 128, element.arpLaneSteps);
+                const double ringPlayback01 = playback01 >= 0.0 ? playback01 : -1.0;
 
                 g.setColour (border.withAlpha (0.22f));
                 for (int spoke = 0; spoke < 16; ++spoke)
@@ -310,10 +319,6 @@ namespace patchcraft
                     const float ringRadius = innerRadius + band * ((float) ringLane + 0.5f);
                     const bool activeRing = laneToDraw == activeLane;
                     const auto ringColour = activeRing ? accent : accent.interpolatedWith (border, 0.45f + 0.08f * (float) ringLane);
-                    const double lanePlayback = activeRing ? displayPlayback01 : -1.0;
-                    const int ringPlayStep = lanePlayback >= 0.0
-                        ? juce::jlimit (0, drawSteps - 1, (int) std::floor (lanePlayback * (double) drawSteps))
-                        : -1;
 
                     g.setColour ((activeRing ? ringColour : border).withAlpha (activeRing ? 0.82f : 0.28f));
                     g.drawEllipse (centre.x - ringRadius, centre.y - ringRadius,
@@ -332,18 +337,47 @@ namespace patchcraft
                         const float rOffset = juce::jmap (velocity, 0.0f, 1.0f, -band * 0.34f, band * 0.34f);
                         const auto p = centre + juce::Point<float> (std::cos (angle) * (ringRadius + rOffset),
                                                                     std::sin (angle) * (ringRadius + rOffset));
-                        const float dot = (stepIndex == ringPlayStep ? 4.4f : 2.5f) + velocity * (activeRing ? 2.4f : 1.2f);
+                        if (! activeRing)
+                            continue;
+
+                        const float dot = 3.0f + velocity * 3.2f;
                         if (active >= 0.5f)
                         {
-                            g.setColour (ringColour.withAlpha ((activeRing ? 0.86f : 0.48f) * (0.5f + velocity * 0.5f)));
+                            g.setColour (ringColour.withAlpha (0.86f * (0.5f + velocity * 0.5f)));
+                            g.drawLine (centre.x, centre.y, p.x, p.y, 1.15f);
                             g.fillEllipse (p.x - dot, p.y - dot, dot * 2.0f, dot * 2.0f);
                         }
-                        else if (activeRing)
+                        else
                         {
-                            g.setColour (border.withAlpha (0.18f));
-                            g.drawEllipse (p.x - 2.0f, p.y - 2.0f, 4.0f, 4.0f, 0.7f);
+                            g.setColour (border.withAlpha (0.22f));
+                            g.drawEllipse (p.x - 2.4f, p.y - 2.4f, 4.8f, 4.8f, 0.8f);
                         }
                     }
+                }
+
+                juce::ignoreUnused (activeSteps);
+                if (ringPlayback01 >= 0.0)
+                {
+                    const float playheadAngle = -juce::MathConstants<float>::halfPi
+                        + juce::MathConstants<float>::twoPi * (float) std::fmod (ringPlayback01, 1.0);
+                    const auto dot = centre + juce::Point<float> (std::cos (playheadAngle) * (outerRadius + band * 0.46f),
+                                                                  std::sin (playheadAngle) * (outerRadius + band * 0.46f));
+                    const auto tick0 = centre + juce::Point<float> (std::cos (playheadAngle) * (innerRadius - band * 0.10f),
+                                                                    std::sin (playheadAngle) * (innerRadius - band * 0.10f));
+                    const auto tick1 = centre + juce::Point<float> (std::cos (playheadAngle) * (outerRadius + band * 0.18f),
+                                                                    std::sin (playheadAngle) * (outerRadius + band * 0.18f));
+                    g.setColour (juce::Colours::white.withAlpha (0.70f));
+                    g.drawLine (tick0.x, tick0.y, tick1.x, tick1.y, 1.4f);
+                    g.setColour (accent.withAlpha (0.92f));
+                    g.fillEllipse (dot.x - 5.2f, dot.y - 5.2f, 10.4f, 10.4f);
+                    g.setColour (juce::Colours::white.withAlpha (0.82f));
+                    g.drawEllipse (dot.x - 5.2f, dot.y - 5.2f, 10.4f, 10.4f, 1.1f);
+                }
+                else
+                {
+                    const auto idleDot = centre + juce::Point<float> (0.0f, -(outerRadius + band * 0.46f));
+                    g.setColour (accent.withAlpha (0.35f));
+                    g.drawEllipse (idleDot.x - 4.2f, idleDot.y - 4.2f, 8.4f, 8.4f, 1.0f);
                 }
 
                 g.setColour (PatchCraftLookAndFeel::text());
@@ -2075,6 +2109,23 @@ namespace patchcraft
                         menu.addItem (9, "Filter");
                         menu.addItem (10, "Pan");
                         menu.addItem (11, "FX Send");
+                    }
+                    else if (def->id == "arpLaneSound")
+                    {
+                        for (int sound = 0; sound < 16; ++sound)
+                        {
+                            values.push_back ((float) sound);
+                            menu.addItem (sound + 1, orbitLaneSoundName (sound));
+                        }
+                    }
+                    else if (def->id == "arpLaneFxTarget")
+                    {
+                        static const char* fxTargets[] = { "Delay", "Reverb", "Chorus", "Phaser", "Drive", "Resonance", "Width", "Tape" };
+                        for (int target = 0; target < 8; ++target)
+                        {
+                            values.push_back ((float) target);
+                            menu.addItem (target + 1, fxTargets[target]);
+                        }
                     }
                     else if (def->step >= 1.0f && def->max - def->min <= 32.0f)
                     {

@@ -26,6 +26,10 @@ namespace patchcraft
         juce::Label proBody;
         juce::Label workflowHeader;
         juce::Label workflowBody;
+        juce::Label stepsHeader;
+        juce::Label stepsBody;
+        juce::Label proofHeader;
+        juce::Label proofBody;
 
         juce::TextButton addVisualKitButton { "Add Complete Visual Kit" };
         juce::TextButton addReactiveButton { "Reactive Image" };

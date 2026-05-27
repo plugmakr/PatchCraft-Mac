@@ -3418,7 +3418,7 @@ namespace patchcraft
                     autoMapDrumPadsAt (36, juce::jmin (16, (int) map.getZones().size()));
                     selectAllZones();
                     applyDrumOneShotRecipeToSelected();
-                    waveformStatus.setText ("Built Remix Kit: mapped imported one-shots to performance pads. Add MIDI Playground Drum Machine to sequence them.",
+                    waveformStatus.setText ("Built Remix Kit: mapped imported one-shots to performance pads. Add Performance Engine Drum Machine to sequence them.",
                                              juce::dontSendNotification);
                     waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
                 }

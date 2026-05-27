@@ -760,7 +760,7 @@ namespace patchcraft
                     "- Put related controls inside clear containers/tabs and avoid duplicate controls visible across tab states.\n"
                     "- Keep knob labels outside filmstrip artwork so imported controls remain reusable.\n"
                     "- Use audio-reactive visuals sparingly: one hero movement and one output/meter behavior is clearer than many moving parts.\n"
-                    "- Treat Designer as source of truth; Test and Player should mirror tab/container states exactly.\n\n"
+                    "- Treat DSP as the sound source of truth; Designer controls it, and Test/Player should mirror tab/container states exactly.\n\n"
                     "Current layout:\n" + context.layoutSummary + "\n\nValidation:\n" + context.validationSummary;
                 break;
 

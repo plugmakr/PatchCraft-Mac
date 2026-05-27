@@ -121,7 +121,7 @@ namespace patchcraft
         addAndMakeVisible (truthTitle);
 
         styleCardLabel (truthBody, 12.0f, false, PatchCraftLookAndFeel::textDim());
-        truthBody.setText ("The Patch is the source of truth. Design only controls it. Test and Export must load that same patch, not a separate mockup.",
+        truthBody.setText ("DSP owns all sound. Performance and ArpLane only play or modulate that DSP patch. Design, Test, Brand Lab, and Export must all use that same patch.",
                            juce::dontSendNotification);
         addAndMakeVisible (truthBody);
 
@@ -533,14 +533,19 @@ namespace patchcraft
                       "10. Save Patch when the sound is playable.";
 
             case TutorialModule::MidiPerformance:
-                return "MIDI / Performance Tutorial\n\n"
-                       "1. Open Performance Builder.\n"
-                       "2. For Patterning-style instruments, start with Orbit: five circular lanes, one active bank, fill hold/latch, lane mute, and per-step role sliders.\n"
-                       "3. Use the Role dropdown to make the 16 sliders edit velocity, gate, probability, ratchet, active/mute, delay, slice, pitch, filter, pan, or FX send.\n"
-                       "4. Choose a curated progression, arp, drum, chop, or modulation behavior when Orbit is not the main surface.\n"
-                       "5. For samples, route MIDI steps to slices/pads so notes can trigger kit pieces, loops, or one-shots.\n"
-                       "6. Test velocity, gate, probability, swing, strum, flam, fill, mute, and automation while Preview is active.\n"
-                       "7. Save MIDI behavior into the Patch so Design, Brand Lab, and export all hear the same result.";
+                return "ArpLane / Performance Engine Deep Tutorial\n\n"
+                       "Mental model: DSP is the only sound source. Performance Engine and ArpLane do not create separate sounds. They decide how the current DSP patch is played: notes, slices, pads, gates, velocity, probability, FX sends, and modulation.\n\n"
+                       "1. Build Sound first. Choose Synth, Sampler, Drum, or FX in DSP Builder. Make sure it is playable from the keyboard before opening ArpLane.\n"
+                       "2. Open Performance Engine. This is the shared performance layer for arps, phrase banks, drum grids, sample chops, and modulation lanes.\n"
+                       "3. Open ArpLane Lab only when a circular sequencer is useful for the finished Player. Pick a lane/bank. The lane edits Performance data, not a second instrument.\n"
+                       "4. Choose Key, Scale, Steps, and Rate. These define the musical timing grid.\n"
+                       "5. Drag a circle dot/spoke to change that step's velocity in real time. The matching Step slider updates too, so the change is visible and stored.\n"
+                       "6. Use Note for pitch offset, Gate for note length, Chance for probability, Ratchet for repeats, and FX Send for per-step effect movement.\n"
+                       "7. Use DSP Source Slot only for selecting a DSP-owned pad/sample/slice slot. It does not create a new sound.\n"
+                       "8. Assign Lane FX Target and FX Amount if a lane should push delay, reverb, chorus, phaser, drive, resonance, width, or tape. The lane is still playing the same DSP sound.\n"
+                       "9. Press Play Pattern or hold a hardware MIDI note. Anything actively playing should show a playhead: Performance Grid, ArpLane circle, drum grid, MIDI clip, and Brand Lab Player preview.\n"
+                       "10. Use Update Player UI to generate or refresh the finished Orbit/CircleSEQ-style customer control. The final product is a playable instrument, FX, or sample instrument in a DAW, not an editor screen.\n"
+                       "11. Export MIDI when you want a DAW clip. Export Player/VST when you want the finished instrument. Test in Brand Lab and a DAW before shipping.";
 
             case TutorialModule::DesignPlayer:
                 return "Design Player Tutorial\n\n"
@@ -580,9 +585,10 @@ namespace patchcraft
                        "3. Send to Expansion Pack when you are building sellable preset/content add-ons.\n"
                        "4. Export Standalone VST3 when you want a dedicated plugin for this instrument.\n"
                        "5. Publish Draft to Plugin.club when the pack is ready for seller-dashboard review.\n"
-                       "6. Export to Documents/PatchCraft/VST3 Exports. Do not write directly into Program Files.\n"
-                       "7. To install into C:\\Program Files\\Common Files\\VST3, copy the exported .vst3 as Administrator or use a future elevated installer flow.\n"
-                       "8. Re-scan your DAW and verify the plugin name, UI, presets, sound, and MIDI behavior.";
+                       "6. PatchCraft can also be used as a DAW-facing Player workflow: install PatchCraft Player VST3, load the exported pack inside the plugin, audition/capture MIDI, and render audio from the DAW.\n"
+                       "7. Export to Documents/PatchCraft/VST3 Exports. Do not write directly into Program Files.\n"
+                       "8. To install into C:\\Program Files\\Common Files\\VST3, copy the exported .vst3 as Administrator or use an installer flow.\n"
+                       "9. Re-scan your DAW and verify the plugin name, UI, presets, sound, MIDI input, MIDI export clips, and automation behavior.";
         }
 
         return {};
@@ -623,7 +629,7 @@ namespace patchcraft
         juce::StringArray lines;
         lines.add ("Instrument: " + project.getManifest().instrumentName);
         lines.add ("Engine: " + engineDisplayName (engine));
-        lines.add ("Patch source of truth: DSP graph + samples + MIDI + parameter values.");
+        lines.add ("Patch source of truth: DSP graph + samples + parameter values. Performance/ArpLane store how that DSP sound is played.");
         lines.add ("Blocks: Source " + juce::String (sourceBlocks)
                    + ", Filter " + juce::String (filterBlocks)
                    + ", Amp " + juce::String (ampBlocks)

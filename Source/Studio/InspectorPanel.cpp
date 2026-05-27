@@ -868,7 +868,15 @@ namespace patchcraft
         knobStyleBox.onChange    = rewrite;
         opacitySlider.onValueChange = rewrite;
         visibleToggle.onClick    = rewrite;
-        lockedToggle.onClick     = rewrite;
+        lockedToggle.onClick     = [this]
+        {
+            if (owner.getSelectedElementIds().size() > 1)
+            {
+                owner.setSelectedLocked (lockedToggle.getToggleState());
+                return;
+            }
+            writeFromUi();
+        };
         shapeKindBox.onChange    = rewrite;
         cornerSlider.onValueChange = rewrite;
         strokeSlider.onValueChange = rewrite;
@@ -1219,19 +1227,44 @@ namespace patchcraft
         alert->addCustomComponent (selector.get());
         alert->addButton ("Apply", 1);
         alert->addButton ("Cancel", 0);
+        liveColourSelector = selector.get();
+        liveColourTarget = &target;
+        liveColourOriginal = current;
+        selector->addChangeListener (this);
         auto* targetEditor = &target;
         alert->enterModalState (true,
             juce::ModalCallbackFunction::create (
                 [this, alert, selector, targetEditor] (int result)
                 {
+                    selector->removeChangeListener (this);
                     std::unique_ptr<juce::AlertWindow> owned (alert);
+                    if (liveColourSelector == selector.get())
+                    {
+                        liveColourSelector = nullptr;
+                        liveColourTarget = nullptr;
+                    }
                     if (result != 1)
+                    {
+                        targetEditor->setText (colourToHex (liveColourOriginal), juce::dontSendNotification);
+                        writeFromUi();
+                        refresh();
                         return;
+                    }
 
                     targetEditor->setText (colourToHex (selector->getCurrentColour()), juce::dontSendNotification);
                     writeFromUi();
                     refresh();
                 }), true);
+    }
+
+    void InspectorPanel::changeListenerCallback (juce::ChangeBroadcaster* source)
+    {
+        if (source != liveColourSelector || liveColourSelector == nullptr || liveColourTarget == nullptr)
+            return;
+
+        liveColourTarget->setText (colourToHex (liveColourSelector->getCurrentColour()), juce::dontSendNotification);
+        writeFromUi();
+        refresh();
     }
 
     void InspectorPanel::layoutDoubleRow (juce::Rectangle<int>& area,

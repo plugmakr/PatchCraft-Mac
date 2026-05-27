@@ -16,8 +16,22 @@ namespace patchcraft
         styleLabel (proBody, "Use the same visual layer, then generate source assets: title banners, library thumbnails, reactive masks, sprite sheets, and matching artwork families. The AI output becomes regular project artwork so Brand Lab and export can verify it.", 12.0f, false, PatchCraftLookAndFeel::text());
         styleLabel (workflowHeader, "DESIGN -> ANIMATION LAB -> BRAND LAB", 12.0f, true, PatchCraftLookAndFeel::accent());
         styleLabel (workflowBody, "Add visuals here, place and bind them in Design, then prove motion, audio reaction, low-power fallback, and layout in Brand Lab before shipping.", 12.0f, false, PatchCraftLookAndFeel::textDim());
+        styleLabel (stepsHeader, "HOW TO USE ANIMATION LAB", 12.0f, true, PatchCraftLookAndFeel::accent());
+        styleLabel (stepsBody,
+                    "1. Add a complete visual kit for a fast starting point, or add only the element you need.\n"
+                    "2. Reactive Image is for logos, backgrounds, masks, or hero art that pulses from audio, MIDI, BPM, or macro values.\n"
+                    "3. Sprite Animator is for frame strips: meters, characters, turntables, LEDs, waveform loops, or note-triggered motion.\n"
+                    "4. Visual FX Layer is native JUCE motion: particles, rings, pulses, spectrum strips, glow, and low-CPU fallbacks.\n"
+                    "5. Pro AI Visual Brief stores the art direction; Generate AI Asset creates source artwork that still becomes normal project art.\n"
+                    "6. Open Design to place, size, layer, bind, and theme the visual elements. Open Brand Lab to prove runtime motion.",
+                    11.0f, false, PatchCraftLookAndFeel::text());
+        styleLabel (proofHeader, "SHIP CHECK", 12.0f, true, juce::Colour (0xffc9a4ff));
+        styleLabel (proofBody,
+                    "Before export: confirm every visual has a fallback, motion is not distracting while playing, CPU stays reasonable, resized plugin windows keep the artwork framed, and the Player still works with no network or AI service available.",
+                    11.0f, false, PatchCraftLookAndFeel::textDim());
 
-        for (auto* label : { &title, &subtitle, &nonProHeader, &nonProBody, &proHeader, &proBody, &workflowHeader, &workflowBody })
+        for (auto* label : { &title, &subtitle, &nonProHeader, &nonProBody, &proHeader, &proBody,
+                              &workflowHeader, &workflowBody, &stepsHeader, &stepsBody, &proofHeader, &proofBody })
             addAndMakeVisible (*label);
 
         for (auto* button : { &addVisualKitButton, &addReactiveButton, &addSpriteButton, &addFxButton,
@@ -113,11 +127,14 @@ namespace patchcraft
         addFxButton.setBounds (left.removeFromTop (32));
         left.removeFromTop (14);
         workflowHeader.setBounds (left.removeFromTop (24));
-        workflowBody.setBounds (left.removeFromTop (72));
+        workflowBody.setBounds (left.removeFromTop (58));
         left.removeFromTop (8);
         openDesignButton.setBounds (left.removeFromTop (32));
         left.removeFromTop (6);
         openBrandButton.setBounds (left.removeFromTop (32));
+        left.removeFromTop (12);
+        stepsHeader.setBounds (left.removeFromTop (24));
+        stepsBody.setBounds (left);
 
         proHeader.setBounds (right.removeFromTop (24));
         proBody.setBounds (right.removeFromTop (116));
@@ -125,5 +142,8 @@ namespace patchcraft
         addAiPromptButton.setBounds (right.removeFromTop (34));
         right.removeFromTop (8);
         generateAiAssetButton.setBounds (right.removeFromTop (34));
+        right.removeFromTop (14);
+        proofHeader.setBounds (right.removeFromTop (24));
+        proofBody.setBounds (right.removeFromTop (112));
     }
 }

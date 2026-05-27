@@ -44,7 +44,7 @@ namespace patchcraft
         juce::TextButton loadFactoryDemoButton { "Choose / Load Demo" };
 
         juce::TextButton soundButton { "1  Build Sound" };
-        juce::TextButton midiButton { "2  MIDI / Performance" };
+        juce::TextButton midiButton { "2  Performance Engine" };
         juce::TextButton designButton { "3  Design Player" };
         juce::TextButton presetsButton { "4  Presets + Packs" };
         juce::TextButton testButton { "5  Test Runtime" };

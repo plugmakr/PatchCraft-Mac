@@ -40,8 +40,8 @@ namespace patchcraft
         juce::String getCurrentPatchSectionId() const;
         juce::String getCurrentPatchSectionLabel() const;
         void beginGuidedTutorial();
-        // Programmatic equivalent of the BuilderPanel's "+ MIDI" button -
-        // switches the DSP builder to the MIDI tab and drops in a default
+        // Programmatic equivalent of the BuilderPanel's "+ Perf" button -
+        // switches the DSP builder to the Performance/MIDI tab and drops in a default
         // arpeggiator block. Used by the canvas right-click "Add ARP" shortcut.
         void addArpBlock();
         std::function<void()> onPatchSectionChanged;
@@ -90,7 +90,7 @@ namespace patchcraft
             juce::TextButton addBlockButton { "+ Block" };
             juce::TextButton addMacroButton { "+ Macro" };
             juce::TextButton addModButton   { "+ Mod" };
-            juce::TextButton addArpButton   { "+ MIDI" };
+            juce::TextButton addArpButton   { "+ Perf" };
             juce::TextButton addAutomationButton { "+ Automation" };
             juce::TextButton importSampleButton { "Import Sample" };
             juce::TextButton savePatchButton { "Save Patch" };

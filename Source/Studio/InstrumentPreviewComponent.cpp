@@ -169,6 +169,7 @@ namespace patchcraft
             const float v = project.getLiveValues().getValue (def.id, def.defaultValue);
             engine->setParameter (def.id, v);
             routingEngine.setParameterValue (def.id, v);
+            routingEngine.setFxBlockParameterValue (def.id, v);
         }
     }
 
@@ -366,6 +367,7 @@ namespace patchcraft
     {
         const juce::SpinLock::ScopedLockType lk (engineLock);
         routingEngine.setParameterValue (id, v);
+        routingEngine.setFxBlockParameterValue (id, v);
         if (engine) engine->setParameter (id, v);
     }
 

@@ -33,6 +33,11 @@ namespace patchcraft
         return it != block.values.end() ? it->second : fallback;
     }
 
+    static juce::String orbitLaneSoundName (int sound)
+    {
+        return "DSP Slot " + juce::String (juce::jlimit (0, 15, sound) + 1);
+    }
+
     static float eqFrequencyToX01 (float frequency)
     {
         const float f = juce::jlimit (20.0f, 20000.0f, frequency);
@@ -234,6 +239,9 @@ namespace patchcraft
         if (parameter == nullptr)
             return "This control points to missing parameter '" + element.parameterId + "'. The exported layout and parameter registry are out of sync.";
 
+        if (parameter->id == "arpLaneSound")
+            return "DSP Source Slot (arpLaneSound)\nSelects a DSP-owned pad/sample/slice slot. It does not create a separate ArpLane sound.";
+
         if (parameter->enabledBy.isNotEmpty())
             return parameter->name + " (" + parameter->id + ")\nIf this appears inactive, enable or raise " + parameter->enabledBy + " first.";
 
@@ -359,7 +367,7 @@ namespace patchcraft
                 if (arpLaneMidiDragHandleBounds (r).contains (pos))
                     return "Drag this handle to a DAW track to export this Arp Studio lane as a MIDI clip.";
 
-                return "Circular Arp Studio lane. Click it to select that MIDI Playground bank; velocity spokes control MIDI note velocity.";
+                return "Circular ArpLane performance bank. DSP makes the sound; this lane edits notes, velocity, gates, FX sends, and timing for that DSP patch. Drag dots while playing to hear the change.";
             }
 
             if (e.type == ElementType::Keyboard)
@@ -1848,6 +1856,10 @@ namespace patchcraft
             const float outerRadius = radius * 0.94f;
             const float band = (outerRadius - innerRadius) / (float) laneCount;
             const float laneAlpha = proc.isAnyTransportPlaying() ? 0.88f : 0.66f;
+            const int activeSteps = block != nullptr
+                ? juce::jlimit (1, 128, juce::roundToInt (arpLaneValue (*block, activeLane, "arpSteps", (float) e.arpLaneSteps)))
+                : juce::jlimit (1, 128, e.arpLaneSteps);
+            const double playback01 = proc.getSequencerPlaybackPosition01 (activeSteps);
 
             g.setColour (borderC.withAlpha (0.22f));
             for (int spoke = 0; spoke < 16; ++spoke)
@@ -1871,10 +1883,6 @@ namespace patchcraft
                 const float ringRadius = innerRadius + band * ((float) ringLane + 0.5f);
                 const bool activeRing = laneToDraw == activeLane;
                 const auto ringColour = activeRing ? accent : accent.interpolatedWith (borderC, 0.45f + 0.08f * (float) ringLane);
-                const double playback01 = activeRing ? proc.getSequencerPlaybackPosition01 (laneSteps) : -1.0;
-                const int playbackStep = playback01 >= 0.0
-                    ? juce::jlimit (0, drawSteps - 1, (int) std::floor (playback01 * (double) drawSteps))
-                    : -1;
 
                 g.setColour ((activeRing ? ringColour : borderC).withAlpha (activeRing ? 0.82f : 0.28f));
                 g.drawEllipse (centre.x - ringRadius, centre.y - ringRadius,
@@ -1893,19 +1901,47 @@ namespace patchcraft
                     const float rOffset = juce::jmap (velocity, 0.0f, 1.0f, -band * 0.34f, band * 0.34f);
                     const auto p = centre + juce::Point<float> (std::cos (angle) * (ringRadius + rOffset),
                                                                 std::sin (angle) * (ringRadius + rOffset));
-                    const float dot = (stepIndex == playbackStep ? 4.4f : 2.5f) + velocity * (activeRing ? 2.4f : 1.2f);
+                    if (! activeRing)
+                        continue;
+
+                    const float dot = 3.0f + velocity * 3.2f;
                     if (active >= 0.5f)
                     {
-                        g.setColour (ringColour.withAlpha ((activeRing ? laneAlpha : 0.48f) * (0.5f + velocity * 0.5f)));
+                        g.setColour (ringColour.withAlpha (laneAlpha * (0.5f + velocity * 0.5f)));
+                        g.drawLine (centre.x, centre.y, p.x, p.y, 1.2f);
                         g.fillEllipse (p.x - dot, p.y - dot, dot * 2.0f, dot * 2.0f);
                     }
-                    else if (activeRing)
+                    else
                     {
-                        g.setColour (borderC.withAlpha (0.18f));
-                        g.drawEllipse (p.x - 2.0f, p.y - 2.0f, 4.0f, 4.0f, 0.7f);
+                        g.setColour (borderC.withAlpha (0.22f));
+                        g.drawEllipse (p.x - 2.4f, p.y - 2.4f, 4.8f, 4.8f, 0.8f);
                     }
                 }
             }
+
+            if (playback01 >= 0.0)
+            {
+                const float playheadAngle = -juce::MathConstants<float>::halfPi
+                    + juce::MathConstants<float>::twoPi * (float) std::fmod (playback01, 1.0);
+                const auto dot = centre + juce::Point<float> (std::cos (playheadAngle) * (outerRadius + band * 0.46f),
+                                                              std::sin (playheadAngle) * (outerRadius + band * 0.46f));
+                const auto tick0 = centre + juce::Point<float> (std::cos (playheadAngle) * (innerRadius - band * 0.10f),
+                                                                std::sin (playheadAngle) * (innerRadius - band * 0.10f));
+                const auto tick1 = centre + juce::Point<float> (std::cos (playheadAngle) * (outerRadius + band * 0.18f),
+                                                                std::sin (playheadAngle) * (outerRadius + band * 0.18f));
+                g.setColour (juce::Colours::white.withAlpha (0.70f));
+                g.drawLine (tick0.x, tick0.y, tick1.x, tick1.y, 1.4f);
+                g.setColour (accent.withAlpha (0.92f));
+                g.fillEllipse (dot.x - 5.2f, dot.y - 5.2f, 10.4f, 10.4f);
+                g.setColour (juce::Colours::white.withAlpha (0.82f));
+                g.drawEllipse (dot.x - 5.2f, dot.y - 5.2f, 10.4f, 10.4f, 1.1f);
+            }
+            else
+            {
+                const auto idleDot = centre + juce::Point<float> (0.0f, -(outerRadius + band * 0.46f));
+                g.setColour (accent.withAlpha (0.35f));
+                g.drawEllipse (idleDot.x - 4.2f, idleDot.y - 4.2f, 8.4f, 8.4f, 1.0f);
+                }
 
             g.setColour (playerText());
             g.setFont (juce::FontOptions (21.0f).withStyle ("bold"));
@@ -4221,6 +4257,23 @@ namespace patchcraft
             menu.addItem (9, "Filter");
             menu.addItem (10, "Pan");
             menu.addItem (11, "FX Send");
+        }
+        else if (def->id == "arpLaneSound")
+        {
+            for (int sound = 0; sound < 16; ++sound)
+            {
+                values.push_back ((float) sound);
+                menu.addItem (sound + 1, orbitLaneSoundName (sound));
+            }
+        }
+        else if (def->id == "arpLaneFxTarget")
+        {
+            static const char* fxTargets[] = { "Delay", "Reverb", "Chorus", "Phaser", "Drive", "Resonance", "Width", "Tape" };
+            for (int target = 0; target < 8; ++target)
+            {
+                values.push_back ((float) target);
+                menu.addItem (target + 1, fxTargets[target]);
+            }
         }
         else if (def->id == "granularDirection")
         {

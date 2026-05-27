@@ -43,6 +43,8 @@ namespace patchcraft
         juce::Label title;
         juce::Label subtitle;
         juce::Label activeSummary;
+        juce::TextButton performanceViewButton { "Performance Grid" };
+        juce::TextButton arpLaneViewButton { "ArpLane Lab" };
 
         juce::ComboBox sourceBox;
         juce::ComboBox modeBox;
@@ -85,7 +87,7 @@ namespace patchcraft
         juce::TextButton generateAiMidiButton { "AI Generator" };
         juce::TextButton phraseLibraryButton { "Phrase Library" };
         juce::TextButton randomButton { "Create Variation" };
-        juce::TextButton applyMusicalPresetButton { "Drop MIDI" };
+        juce::TextButton applyMusicalPresetButton { "Write Bank" };
         juce::TextButton storeBankButton { "Store Bank" };
         juce::TextButton duplicateBankButton { "Duplicate Bank" };
         juce::TextButton applyProgressionButton { "Apply Prog" };
@@ -247,6 +249,7 @@ namespace patchcraft
         std::map<juce::String, float> drumPatternClipboard;
 
         juce::String blockSummary() const;
+        juce::String performanceRouteSummary() const;
         juce::Rectangle<int> drawControl (juce::Graphics&, juce::Rectangle<int>,
                                           const juce::String&, juce::Component&);
         void drawSectionCards (juce::Graphics&, juce::Rectangle<int>);

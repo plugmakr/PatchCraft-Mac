@@ -1446,6 +1446,95 @@ namespace
         pass ("MIDI Playground active bank isolation");
     }
 
+    void smokeMidiPlaygroundMultiLanePlayback()
+    {
+        patchcraft::DspBlock block;
+        block.id = "circle_seq_multi_lane";
+        block.section = "mod";
+        block.type = "midiPlayground";
+        block.name = "CircleSEQ Multi Lane Playback";
+        block.enabled = true;
+        block.values = {
+            { "rate", 1.0f },
+            { "sync", 0.0f },
+            { "arpSteps", 1.0f },
+            { "arpGate", 1.0f },
+            { "arpPattern", 0.0f },
+            { "mpActiveBank", 0.0f },
+            { "mpMultiLane", 1.0f },
+            { "mpScaleType", 0.0f },
+            { "mpChordMode", 0.0f },
+            { "mpChordSize", 1.0f },
+            { "mpProbability", 1.0f },
+            { "mpRatchet", 1.0f }
+        };
+
+        for (int bank = 0; bank < 3; ++bank)
+        {
+            const auto prefix = "mpBank" + juce::String (bank + 1) + "_";
+            block.values[prefix + "arpSteps"] = 1.0f;
+            block.values[prefix + "arpNote0"] = bank == 0 ? 0.0f : bank == 1 ? 12.0f : 19.0f;
+            block.values[prefix + "mpStep0On"] = 1.0f;
+            block.values[prefix + "mpVelocity0"] = 1.0f;
+            block.values[prefix + "mpGate0"] = 1.0f;
+            block.values[prefix + "mpStepProb0"] = 1.0f;
+            block.values[prefix + "mpSampleSlice0"] = -1.0f;
+            block.values[prefix + "mpStepDiv0"] = 1.0f;
+        }
+        block.values["mpBank2_mpAutoFxSend0"] = 0.75f;
+        block.values["mpBank3_mpLaneMute"] = 1.0f;
+
+        patchcraft::DspGraph graph;
+        graph.blocks.push_back (block);
+
+        patchcraft::MidiPlaygroundRuntime runtime;
+        runtime.bind (graph);
+        require (runtime.isEnabled(), "CircleSEQ multi-lane runtime did not bind");
+
+        CountingEngine engine;
+        auto context = makeContext (0);
+        require (runtime.handleNoteOn (engine, 60, 1.0f),
+                 "CircleSEQ multi-lane runtime did not consume note-on");
+
+        for (int blockIndex = 0; blockIndex < 12; ++blockIndex)
+        {
+            runtime.process (engine, context);
+            advanceContext (context);
+        }
+
+        require (std::find (engine.noteOns.begin(), engine.noteOns.end(), 60) != engine.noteOns.end(),
+                 "CircleSEQ multi-lane playback did not trigger lane 1");
+        require (std::find (engine.noteOns.begin(), engine.noteOns.end(), 72) != engine.noteOns.end(),
+                 "CircleSEQ multi-lane playback did not layer lane 2");
+        require (std::find (engine.noteOns.begin(), engine.noteOns.end(), 79) == engine.noteOns.end(),
+                 "CircleSEQ multi-lane playback ignored lane mute");
+        require (engine.parameters.count ("delayMix") != 0 && engine.parameters["delayMix"] > 0.70f,
+                 "CircleSEQ multi-lane FX send did not reach the instrument engine");
+
+        block.values["mpBank2_mpLaneSolo"] = 1.0f;
+        graph.blocks.clear();
+        graph.blocks.push_back (block);
+
+        patchcraft::MidiPlaygroundRuntime soloRuntime;
+        soloRuntime.bind (graph);
+        CountingEngine soloEngine;
+        context = makeContext (0);
+        require (soloRuntime.handleNoteOn (soloEngine, 60, 1.0f),
+                 "CircleSEQ solo-lane runtime did not consume note-on");
+        for (int blockIndex = 0; blockIndex < 12; ++blockIndex)
+        {
+            soloRuntime.process (soloEngine, context);
+            advanceContext (context);
+        }
+
+        require (std::find (soloEngine.noteOns.begin(), soloEngine.noteOns.end(), 72) != soloEngine.noteOns.end(),
+                 "CircleSEQ lane solo did not trigger the soloed lane");
+        require (std::find (soloEngine.noteOns.begin(), soloEngine.noteOns.end(), 60) == soloEngine.noteOns.end(),
+                 "CircleSEQ lane solo allowed an unsoloed lane to play");
+
+        pass ("MIDI Playground multi-lane playback");
+    }
+
     void smokeMidiPlaygroundDspModulationRouting()
     {
         patchcraft::DspBlock block;
@@ -1487,6 +1576,31 @@ namespace
                  "MIDI Playground output did not modulate the DSP target parameter");
 
         pass ("MIDI Playground DSP modulation routing");
+    }
+
+    void smokePlayerFxGraphControlsStayLive()
+    {
+        patchcraft::DspGraph graph;
+        graph.resetForEngine ("synth");
+
+        auto parameters = parametersForEngine ("synth");
+        patchcraft::DspRoutingEngine router;
+        auto context = makeContext (0);
+        router.prepare (context);
+        router.bind (graph, parameters);
+
+        router.setParameterValue ("delayMix", 0.82f);
+        require (router.setFxBlockParameterValue ("delayMix", 0.82f),
+                 "Player FX graph control did not find the delayMix block value");
+
+        CountingEngine engine;
+        router.processToEngine (engine, context);
+        require (engine.parameters.count ("delayMix") != 0,
+                 "Player FX graph control did not reach the audio engine");
+        require (engine.parameters["delayMix"] > 0.75f,
+                 "Player FX graph routing overwrote the live delayMix control");
+
+        pass ("Player FX graph controls stay live");
     }
 
     void smokePlayerInstrumentFactory()
@@ -2657,7 +2771,9 @@ int main()
         smokeMidiPlaygroundPhraseBanksAndExport();
         smokeMidiPlaygroundAdvancedRuntimeAndExport();
         smokeMidiPlaygroundActiveBankIsolation();
+        smokeMidiPlaygroundMultiLanePlayback();
         smokeMidiPlaygroundDspModulationRouting();
+        smokePlayerFxGraphControlsStayLive();
         smokePlayerInstrumentFactory();
         smokePlayerFxFactory();
         smokeMultiInstrumentFactoryAndRouting();
