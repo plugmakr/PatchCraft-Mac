@@ -67,8 +67,8 @@ namespace patchcraft
 
         juce::TextButton tabMapper { "Samples" };
         juce::TextButton tabOneShot { "One-Shots" };
-        juce::TextButton tabMidi   { "Perform" };
-        juce::TextButton tabArp    { "ArpLane" };
+        juce::TextButton tabMidi   { "Patterns" };
+        juce::TextButton tabArp    { "Circles" };
         juce::TextButton tabDSP    { "DSP" };
         juce::TextButton tabBuild  { "Widgets" };
         juce::TextButton tabAnimation { "Anim" };

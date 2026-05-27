@@ -34,8 +34,6 @@ namespace patchcraft
             { &tabDesign,   (int) BottomPanel::Page::Design },
             { &tabMapper,   (int) BottomPanel::Page::Samples },
             { &tabOneShot,  (int) BottomPanel::Page::OneShotMaker },
-            { &tabMidi,     (int) BottomPanel::Page::MidiPlayground },
-            { &tabArp,      (int) BottomPanel::Page::ArpStudio },
             { &tabDSP,      (int) BottomPanel::Page::DSP },
             { &tabBuild,    (int) BottomPanel::Page::Widgets },
             { &tabAnimation,(int) BottomPanel::Page::Animation },
@@ -55,8 +53,8 @@ namespace patchcraft
             addAndMakeVisible (*b);
         }
         tabDesign.setToggleState (true, juce::dontSendNotification);
-        tabMidi.setTooltip ("Pattern Player: build playable notes, chords, arps, drums, sample chops, and modulation for the current DSP sound.");
-        tabArp.setTooltip ("Circle View: edit the same pattern slots as circular lanes for CircleSEQ-style Player instruments.");
+        tabMidi.setTooltip ("Advanced pattern tools are kept for project compatibility, but PatchCraft Standard starts from DSP, Samples, Design, and Export.");
+        tabArp.setTooltip ("Circle sequencer editing is a Pro/advanced workflow. Standard keeps it out of the primary instrument-building path.");
 
         patchSeparator.setText ("|", juce::dontSendNotification);
         patchSeparator.setJustificationType (juce::Justification::centred);
@@ -294,8 +292,8 @@ namespace patchcraft
         tabDesign.setToggleState   (p == BottomPanel::Page::Design,         juce::dontSendNotification);
         tabMapper.setToggleState   (p == BottomPanel::Page::Samples,   juce::dontSendNotification);
         tabOneShot.setToggleState  (p == BottomPanel::Page::OneShotMaker,   juce::dontSendNotification);
-        tabMidi  .setToggleState   (p == BottomPanel::Page::MidiPlayground, juce::dontSendNotification);
-        tabArp   .setToggleState   (p == BottomPanel::Page::ArpStudio,      juce::dontSendNotification);
+        tabMidi  .setToggleState   (false, juce::dontSendNotification);
+        tabArp   .setToggleState   (false, juce::dontSendNotification);
         tabDSP   .setToggleState   (p == BottomPanel::Page::DSP,            juce::dontSendNotification);
         tabBuild .setToggleState   (p == BottomPanel::Page::Widgets,          juce::dontSendNotification);
         tabAnimation.setToggleState (p == BottomPanel::Page::Animation,      juce::dontSendNotification);
@@ -510,8 +508,6 @@ namespace patchcraft
         tabMapper.setBounds (r.removeFromLeft (62));
         tabOneShot.setBounds (r.removeFromLeft (70));
         tabDSP   .setBounds (r.removeFromLeft (42));
-        tabMidi  .setBounds (r.removeFromLeft (66));
-        tabArp   .setBounds (r.removeFromLeft (62));
         tabBuild .setBounds (r.removeFromLeft (58));
         tabAnimation.setBounds (r.removeFromLeft (48));
         tabBranding.setBounds (r.removeFromLeft (62));

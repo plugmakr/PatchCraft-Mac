@@ -82,12 +82,12 @@ namespace patchcraft
 
     WorkflowPage::WorkflowPage (StudioMainComponent& o) : owner (o)
     {
-        title.setText ("PatchCraft Command Center", juce::dontSendNotification);
+        title.setText ("PatchCraft Standard", juce::dontSendNotification);
         title.setFont (juce::Font (27.0f, juce::Font::bold));
         title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
         addAndMakeVisible (title);
 
-        subtitle.setText ("A guided path from sound idea to sellable instrument: sound, performance, UI, presets, runtime proof, export.",
+        subtitle.setText ("A guided path from sound idea to sellable instrument: sound, UI, presets, Player test, export.",
                           juce::dontSendNotification);
         subtitle.setFont (juce::Font (13.0f));
         subtitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
@@ -98,7 +98,7 @@ namespace patchcraft
         addAndMakeVisible (productTitle);
 
         styleCardLabel (productBody, 12.0f, false, PatchCraftLookAndFeel::textDim());
-        productBody.setText ("Pick the kind of product first. PatchCraft keeps sound, performance, design, presets, Brand Lab, and export pointed at one playable Patch.",
+        productBody.setText ("Pick the product type first. PatchCraft keeps DSP, samples, design, presets, Brand Lab, and export pointed at one playable Patch.",
                              juce::dontSendNotification);
         addAndMakeVisible (productBody);
 
@@ -121,7 +121,7 @@ namespace patchcraft
         addAndMakeVisible (truthTitle);
 
         styleCardLabel (truthBody, 12.0f, false, PatchCraftLookAndFeel::textDim());
-        truthBody.setText ("DSP owns all sound. Performance and ArpLane only play or modulate that DSP patch. Design, Test, Brand Lab, and Export must all use that same patch.",
+        truthBody.setText ("DSP and Sample Mapper own the sound. Design, Brand Lab, presets, and Export must all use that same playable Patch.",
                            juce::dontSendNotification);
         addAndMakeVisible (truthBody);
 
@@ -144,7 +144,7 @@ namespace patchcraft
         healthCheckButton.onClick = [this] { showHealthDialog(); };
         addAndMakeVisible (healthCheckButton);
 
-        for (auto* button : { &synthButton, &sampleButton, &drumButton, &orbitButton, &fxButton })
+        for (auto* button : { &synthButton, &sampleButton, &drumButton, &fxButton })
         {
             styleSecondary (*button);
             button->getProperties().set ("workflowProduct", true);
@@ -154,13 +154,11 @@ namespace patchcraft
         }
         synthButton.setButtonText ("Synth Instrument\nOscillators, wavetables, modulation");
         sampleButton.setButtonText ("Sample Instrument\nKeyzones, velocity layers, playback");
-        drumButton.setButtonText ("Drum Machine\nPads, patterns, sample performance");
-        orbitButton.setButtonText ("Orbit Groove Instrument\nCircular lanes, fills, automation");
+        drumButton.setButtonText ("Drum Machine\nPads, kits, sample playback");
         fxButton.setButtonText ("FX Plugin\nLive input, throws, EQ, movement");
         synthButton.onClick = [this] { switchTemplate ("synth", "Synth Instrument"); };
         sampleButton.onClick = [this] { switchTemplate ("sample", "Sample Instrument"); };
         drumButton.onClick = [this] { switchTemplate ("drum", "Drum Machine"); };
-        orbitButton.onClick = [this] { createOrbitStarter(); };
         fxButton.onClick = [this] { switchTemplate ("fx", "FX Plugin"); };
 
         styleCardLabel (factoryDemoLabel, 12.0f, true, PatchCraftLookAndFeel::accent());
@@ -181,7 +179,7 @@ namespace patchcraft
         loadFactoryDemoButton.onClick = [this] { showFactoryDemoMenu(); };
         addAndMakeVisible (loadFactoryDemoButton);
 
-        for (auto* button : { &soundButton, &midiButton, &designButton, &presetsButton, &testButton, &exportButton })
+        for (auto* button : { &soundButton, &designButton, &presetsButton, &testButton, &exportButton })
         {
             stylePrimary (*button);
             button->getProperties().set ("workflowStep", true);
@@ -190,27 +188,24 @@ namespace patchcraft
         }
 
         soundButton.setButtonText ("1  Build Sound\nCreate the real playable source and routing");
-        midiButton.setButtonText ("2  Perform\nArps, chords, sample control, motion, MIDI");
-        designButton.setButtonText ("3  Design Player\nBuild the customer-facing interface");
-        presetsButton.setButtonText ("4  Package Presets\nSave full patches and organize expansions");
-        testButton.setButtonText ("5  Prove Runtime\nTest the exact exported Player behavior");
-        exportButton.setButtonText ("6  Launch\nExport pack, VST3, or Plugin.club draft");
+        designButton.setButtonText ("2  Design Player\nDrag controls onto the customer-facing UI");
+        presetsButton.setButtonText ("3  Save Presets\nCapture full playable patches and packs");
+        testButton.setButtonText ("4  Test Player\nVerify the exact exported Player behavior");
+        exportButton.setButtonText ("5  Export\nBuild pack, VST3, or Plugin.club draft");
 
         soundButton.setTooltip ("Start with the actual sound source: DSP graph for synth/FX, Sample Mapper for samples/drums.");
-        midiButton.setTooltip ("Create Orbit lanes, arps, chords, patterns, sample control, and performance MIDI.");
         designButton.setTooltip ("Build the Player UI and bind knobs/sliders/buttons to real parameters.");
         presetsButton.setTooltip ("Save playable patches and organize them into sellable expansion packs.");
         testButton.setTooltip ("Open the runtime Player surface and verify sound, UI interactions, MIDI, and presets.");
         exportButton.setTooltip ("Export a .patchcraft pack or a standalone VST3 bundle.");
 
         soundButton.onClick = [this] { showModuleTutorial (TutorialModule::BuildSound); };
-        midiButton.onClick = [this] { showModuleTutorial (TutorialModule::MidiPerformance); };
         designButton.onClick = [this] { showModuleTutorial (TutorialModule::DesignPlayer); };
         presetsButton.onClick = [this] { showModuleTutorial (TutorialModule::PresetsPacks); };
         testButton.onClick = [this] { showModuleTutorial (TutorialModule::TestRuntime); };
         exportButton.onClick = [this] { showModuleTutorial (TutorialModule::Export); };
 
-        for (auto* button : { &advDspButton, &advMapperButton, &advOneShotButton, &advMidiButton,
+        for (auto* button : { &advDspButton, &advMapperButton, &advOneShotButton,
                               &advBuildButton, &advAnimationButton, &advDesignButton, &advBrandButton })
         {
             styleSecondary (*button);
@@ -220,7 +215,6 @@ namespace patchcraft
         advDspButton.setButtonText ("DSP Builder\nAdvanced sound graph and modulation");
         advMapperButton.setButtonText ("Sample Mapper\nZones, velocity, pads, sample playback");
         advOneShotButton.setButtonText ("One Shot Maker\nRender VST3 notes into sample packs");
-        advMidiButton.setButtonText ("MIDI Playground\nArps, chords, patterns, performance");
         advBuildButton.setButtonText ("Asset Builder\nKnobs, sliders, meters, filmstrips");
         advAnimationButton.setButtonText ("Animation Lab\nReactive imagery, sprite sheets, visual FX, AI briefs");
         advDesignButton.setButtonText ("Design Surface\nPlayer UI, bindings, containers");
@@ -228,7 +222,6 @@ namespace patchcraft
         advDspButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::DSP); };
         advMapperButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Samples); };
         advOneShotButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::OneShotMaker); };
-        advMidiButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::MidiPlayground); };
         advBuildButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Widgets); };
         advAnimationButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Animation); };
         advDesignButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Design); };
@@ -291,48 +284,6 @@ namespace patchcraft
                     page->owner.refreshAllPanels();
                     page->owner.setBottomTab (engineId == "sample" || engineId == "drum"
                         ? BottomPanel::Page::Samples : BottomPanel::Page::DSP);
-                }
-            });
-    }
-
-    void WorkflowPage::createOrbitStarter()
-    {
-        const bool hasLayout = ! owner.getProject().getLayout().getAll().empty();
-        auto addStarter = [this]
-        {
-            owner.getProject().setEngineType ("sample");
-            owner.refreshAllPanels();
-            owner.setBottomTab (BottomPanel::Page::Design);
-            if (auto* canvas = owner.getCanvasEditor())
-                canvas->addOrbitInstrumentControlLayout ({ 80, 82 });
-        };
-
-        if (! hasLayout)
-        {
-            addStarter();
-            return;
-        }
-
-        juce::Component::SafePointer<WorkflowPage> self (this);
-        juce::AlertWindow::showAsync (
-            juce::MessageBoxOptions()
-                .withTitle ("Add Orbit Groove Starter")
-                .withMessage ("This adds a complete multi-ring Orbit instrument surface to the current Design canvas and prepares the project as a sample/performance instrument. Existing elements stay in place.")
-                .withButton ("Add Starter")
-                .withButton ("Cancel")
-                .withIconType (juce::MessageBoxIconType::QuestionIcon),
-            [self] (int result)
-            {
-                if (result != 1)
-                    return;
-
-                if (auto* page = self.getComponent())
-                {
-                    page->owner.getProject().setEngineType ("sample");
-                    page->owner.refreshAllPanels();
-                    page->owner.setBottomTab (BottomPanel::Page::Design);
-                    if (auto* canvas = page->owner.getCanvasEditor())
-                        canvas->addOrbitInstrumentControlLayout ({ 80, 82 });
                 }
             });
     }
@@ -464,8 +415,6 @@ namespace patchcraft
                 return owner.getProject().getEngineType() == "sample"
                     ? BottomPanel::Page::Samples
                     : BottomPanel::Page::DSP;
-            case TutorialModule::MidiPerformance:
-                return BottomPanel::Page::MidiPlayground;
             case TutorialModule::DesignPlayer:
             case TutorialModule::PresetsPacks:
                 return BottomPanel::Page::Design;
@@ -503,12 +452,11 @@ namespace patchcraft
                        "1. Choose Synth Instrument unless you are building from samples.\n"
                        "2. Open Build Sound. On Source, add or select an oscillator/wavetable block. Change volume/blend while Preview is on.\n"
                        "3. Move through Filter, Amp, Mod, FX, and Out. Every block should have a clear target and audible purpose.\n"
-                       "4. Open MIDI / Performance. Add Orbit lanes, an arp, chord phrase, or performance controller only if the sound needs it.\n"
-                       "5. Open Design Player. Add knobs/sliders/buttons, or use Add Orbit Groove Instrument Surface, then bind each control to a real parameter in the Inspector.\n"
-                       "6. Open Presets + Packs. Save the current sound as a full Patch, then add it to an Expansion Pack.\n"
-                       "7. Open Test Runtime. Play hardware MIDI, move every UI control, switch tabs/presets, and confirm it matches Design.\n"
-                       "8. Run Health Check. Fix unbound controls, missing samples, graph errors, and preset issues.\n"
-                       "9. Export Pack or VST3. Export to Documents first; install to the system VST3 folder separately as Administrator.";
+                       "4. Open Design Player. Drag in knobs, sliders, pads, meters, and labels, then bind each control to a real DSP or sample parameter in the Inspector.\n"
+                       "5. Open Presets + Packs. Save the current sound as a full Patch, then add it to an Expansion Pack.\n"
+                       "6. Open Test Player. Play hardware MIDI, move every UI control, switch tabs/presets, and confirm it matches Design.\n"
+                       "7. Run Health Check. Fix unbound controls, missing samples, graph errors, and preset issues.\n"
+                       "8. Export Pack or VST3. Export to Documents first; install to the system VST3 folder separately as Administrator.";
 
             case TutorialModule::BuildSound:
                 return sample
@@ -532,37 +480,22 @@ namespace patchcraft
                       "9. Open Out. Confirm output gain, limiter, stereo width, and clipping safety.\n"
                       "10. Save Patch when the sound is playable.";
 
-            case TutorialModule::MidiPerformance:
-                return "ArpLane / Performance Engine Deep Tutorial\n\n"
-                       "Mental model: DSP is the only sound source. Performance Engine and ArpLane do not create separate sounds. They decide how the current DSP patch is played: notes, slices, pads, gates, velocity, probability, FX sends, and modulation.\n\n"
-                       "1. Build Sound first. Choose Synth, Sampler, Drum, or FX in DSP Builder. Make sure it is playable from the keyboard before opening ArpLane.\n"
-                       "2. Open Performance Engine. This is the shared performance layer for arps, phrase banks, drum grids, sample chops, and modulation lanes.\n"
-                       "3. Open ArpLane Lab only when a circular sequencer is useful for the finished Player. Pick a lane/bank. The lane edits Performance data, not a second instrument.\n"
-                       "4. Choose Key, Scale, Steps, and Rate. These define the musical timing grid.\n"
-                       "5. Drag a circle dot/spoke to change that step's velocity in real time. The matching Step slider updates too, so the change is visible and stored.\n"
-                       "6. Use Note for pitch offset, Gate for note length, Chance for probability, Ratchet for repeats, and FX Send for per-step effect movement.\n"
-                       "7. Use DSP Source Slot only for selecting a DSP-owned pad/sample/slice slot. It does not create a new sound.\n"
-                       "8. Assign Lane FX Target and FX Amount if a lane should push delay, reverb, chorus, phaser, drive, resonance, width, or tape. The lane is still playing the same DSP sound.\n"
-                       "9. Press Play Pattern or hold a hardware MIDI note. Anything actively playing should show a playhead: Performance Grid, ArpLane circle, drum grid, MIDI clip, and Brand Lab Player preview.\n"
-                       "10. Use Update Player UI to generate or refresh the finished Orbit/CircleSEQ-style customer control. The final product is a playable instrument, FX, or sample instrument in a DAW, not an editor screen.\n"
-                       "11. Export MIDI when you want a DAW clip. Export Player/VST when you want the finished instrument. Test in Brand Lab and a DAW before shipping.";
-
             case TutorialModule::DesignPlayer:
                 return "Design Player Tutorial\n\n"
                        "1. Open Design.\n"
-                       "2. Add a knob/slider/button from Elements or the Library, or right-click and add the Orbit Groove Instrument Surface for a complete circular sequencer UI.\n"
-                       "3. Select it on the canvas. The Inspector is the source for position, style, text, DSP assignment, and Orbit lane mode.\n"
+                       "2. Drag a knob, slider, button, pad, meter, image, or label from Elements or the Library onto the canvas.\n"
+                       "3. Select it on the canvas. The Inspector is the source for position, style, text, and DSP/sample parameter assignment.\n"
                        "4. Assign the control to a real parameter such as filterCutoff, volume, delayMix, macro_motion, or modWheel.\n"
                        "5. Use labels deliberately. If you add a knob, edit its label position, size, and spacing.\n"
                        "6. Add containers/tabs only when they organize controls; every tab should switch correctly in Test.\n"
                        "7. Use alignment/order tools to build a clean customer-facing Player UI.\n"
-                       "8. Move from Design to Brand Lab for runtime proof. Brand Lab must show the same layout, same Orbit rings, and same control behavior.\n"
+                       "8. Move from Design to Brand Lab for runtime proof. Brand Lab must show the same layout and same control behavior.\n"
                        "9. Preview and move controls while audio is playing. If it does not change sound, fix the binding.";
 
             case TutorialModule::PresetsPacks:
                 return "Presets + Expansion Pack Tutorial\n\n"
                        "1. Build a playable sound first. A preset is not just knob values; it should recall the full Patch state.\n"
-                       "2. Save Patch to capture DSP graph, samples, MIDI behavior, parameter values, and mappings.\n"
+                       "2. Save Patch to capture DSP graph, samples, parameter values, UI bindings, and mappings.\n"
                        "3. Save Patch As for variations: Pad, Pluck, Motion, Bass, FX Throw, Drum Kit, etc.\n"
                        "4. Add each preset to an Expansion Pack.\n"
                        "5. Use categories, keywords, and folders so developers can sell organized packs.\n"
@@ -573,8 +506,8 @@ namespace patchcraft
                        "1. Open Test / Brand Lab and turn Preview on.\n"
                        "2. Play the software keyboard and a hardware MIDI keyboard.\n"
                        "3. Confirm hardware note highlights also trigger sound.\n"
-                       "4. Move every knob, slider, Orbit ring, fill button, mute/solo toggle, XY pad, mod wheel, expression, and macro while a note is held.\n"
-                       "5. Switch tabs, Orbit lanes, and presets. The Test UI must match the Design UI exactly.\n"
+                       "4. Move every knob, slider, pad, button, XY pad, mod wheel, expression, and macro while a note is held.\n"
+                       "5. Switch tabs and presets. The Test UI must match the Design UI exactly.\n"
                        "6. Check volume, clipping, stuck notes, MIDI learn, retrigger, and BPM sync.\n"
                        "7. If a control does nothing, return to Design/DSP and fix the assignment before export.";
 
@@ -629,7 +562,7 @@ namespace patchcraft
         juce::StringArray lines;
         lines.add ("Instrument: " + project.getManifest().instrumentName);
         lines.add ("Engine: " + engineDisplayName (engine));
-        lines.add ("Patch source of truth: DSP graph + samples + parameter values. Performance/ArpLane store how that DSP sound is played.");
+        lines.add ("Patch source of truth: DSP graph + samples + parameter values + UI bindings.");
         lines.add ("Blocks: Source " + juce::String (sourceBlocks)
                    + ", Filter " + juce::String (filterBlocks)
                    + ", Amp " + juce::String (ampBlocks)
@@ -686,11 +619,10 @@ namespace patchcraft
             lines.add ("");
             lines.add ("Recommended path:");
             lines.add ("1. Build or map the sound source.");
-            lines.add ("2. Add MIDI/performance behavior if needed.");
-            lines.add ("3. Bind Player UI controls to real parameters.");
-            lines.add ("4. Save full patches/presets into expansion packs.");
-            lines.add ("5. Test the runtime Player surface.");
-            lines.add ("6. Export pack/VST3 from a clean health state.");
+            lines.add ("2. Bind Player UI controls to real parameters.");
+            lines.add ("3. Save full patches/presets into expansion packs.");
+            lines.add ("4. Test the runtime Player surface.");
+            lines.add ("5. Export pack/VST3 from a clean health state.");
         }
 
         return lines.joinIntoString ("\n");
@@ -707,9 +639,9 @@ namespace patchcraft
     void WorkflowPage::updateModeVisibility()
     {
         const bool advanced = advancedMode.getToggleState();
-        for (auto* button : { &soundButton, &midiButton, &designButton, &presetsButton, &testButton, &exportButton })
+        for (auto* button : { &soundButton, &designButton, &presetsButton, &testButton, &exportButton })
             button->setVisible (! advanced);
-        for (auto* button : { &advDspButton, &advMapperButton, &advOneShotButton, &advMidiButton,
+        for (auto* button : { &advDspButton, &advMapperButton, &advOneShotButton,
                               &advBuildButton, &advAnimationButton, &advDesignButton, &advBrandButton })
             button->setVisible (advanced);
         resized();
@@ -740,7 +672,7 @@ namespace patchcraft
             g.drawRoundedRectangle (rail.toFloat().reduced (0.5f, 4.5f), 8.0f, 1.0f);
             g.setColour (PatchCraftLookAndFeel::textDim());
             g.setFont (juce::Font (10.5f, juce::Font::bold));
-            g.drawText ("SOUND  ->  PERFORMANCE  ->  PLAYER UI  ->  PRESETS  ->  RUNTIME PROOF  ->  LAUNCH",
+            g.drawText ("SOUND  ->  PLAYER UI  ->  PRESETS  ->  PLAYER TEST  ->  EXPORT",
                         rail.reduced (14, 0), juce::Justification::centredLeft);
         }
 
@@ -792,7 +724,7 @@ namespace patchcraft
         productBody.setBounds (modeCard.removeFromTop (68));
         modeCard.removeFromTop (8);
 
-        for (auto* button : { &synthButton, &sampleButton, &drumButton, &orbitButton, &fxButton })
+        for (auto* button : { &synthButton, &sampleButton, &drumButton, &fxButton })
         {
             button->setBounds (modeCard.removeFromTop (58));
             modeCard.removeFromTop (6);
@@ -808,7 +740,7 @@ namespace patchcraft
                            juce::dontSendNotification);
         pathBody.setText (advancedMode.getToggleState()
             ? "Direct access for power users. Use this when you already know the specific system to edit."
-            : "Follow the path left-to-right. Each module should produce one real, testable deliverable.",
+            : "Follow the path left-to-right. Each module should produce one real, testable instrument deliverable.",
             juce::dontSendNotification);
         pathTitle.setBounds (pathCard.removeFromTop (24));
         pathBody.setBounds (pathCard.removeFromTop (48));
@@ -843,11 +775,10 @@ namespace patchcraft
         };
 
         if (advanced)
-            placeButtons ({ &advDspButton, &advMapperButton, &advOneShotButton, &advMidiButton,
+            placeButtons ({ &advDspButton, &advMapperButton, &advOneShotButton,
                             &advBuildButton, &advAnimationButton, &advDesignButton, &advBrandButton });
         else
-            placeButtons ({ &soundButton, &midiButton, &designButton,
-                            &presetsButton, &testButton, &exportButton });
+            placeButtons ({ &soundButton, &designButton, &presetsButton, &testButton, &exportButton });
 
         auto healthCard = healthCardOuter.reduced (22, 16);
         truthTitle.setBounds (healthCard.removeFromTop (24));

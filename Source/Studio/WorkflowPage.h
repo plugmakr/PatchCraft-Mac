@@ -37,23 +37,20 @@ namespace patchcraft
         juce::TextButton synthButton { "Synth Instrument" };
         juce::TextButton sampleButton { "Sample Instrument" };
         juce::TextButton drumButton { "Drum Machine" };
-        juce::TextButton orbitButton { "Orbit Groove Instrument" };
         juce::TextButton fxButton { "FX Plugin" };
         juce::Label factoryDemoLabel;
         juce::ComboBox factoryDemoBox;
         juce::TextButton loadFactoryDemoButton { "Choose / Load Demo" };
 
         juce::TextButton soundButton { "1  Build Sound" };
-        juce::TextButton midiButton { "2  Performance Engine" };
-        juce::TextButton designButton { "3  Design Player" };
-        juce::TextButton presetsButton { "4  Presets + Packs" };
-        juce::TextButton testButton { "5  Test Runtime" };
-        juce::TextButton exportButton { "6  Export" };
+        juce::TextButton designButton { "2  Design Player" };
+        juce::TextButton presetsButton { "3  Presets + Packs" };
+        juce::TextButton testButton { "4  Test Player" };
+        juce::TextButton exportButton { "5  Export" };
 
         juce::TextButton advDspButton { "Open DSP Builder" };
         juce::TextButton advMapperButton { "Open Sample Mapper" };
         juce::TextButton advOneShotButton { "Open One Shot Maker" };
-        juce::TextButton advMidiButton { "Open Performance Builder" };
         juce::TextButton advBuildButton { "Open Asset Builder" };
         juce::TextButton advAnimationButton { "Open Animation Lab" };
         juce::TextButton advDesignButton { "Open Design Surface" };
@@ -68,7 +65,6 @@ namespace patchcraft
         {
             FullDemo,
             BuildSound,
-            MidiPerformance,
             DesignPlayer,
             PresetsPacks,
             TestRuntime,
@@ -76,7 +72,6 @@ namespace patchcraft
         };
 
         void switchTemplate (const juce::String& engineId, const juce::String& label);
-        void createOrbitStarter();
         void populateFactoryDemos();
         void showFactoryDemoMenu();
         void loadSelectedFactoryDemo();
