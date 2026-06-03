@@ -1,6 +1,7 @@
 #include "CanvasEditor.h"
 #include "StudioMainComponent.h"
 #include "PatchCraftLookAndFeel.h"
+#include "SampleMap.h"
 
 #include <array>
 #include <cmath>
@@ -14,6 +15,13 @@ namespace patchcraft
         {
             const auto it = block.values.find (key);
             return it != block.values.end() ? it->second : fallback;
+        }
+
+        static bool isSupportedSampleFile (const juce::File& file)
+        {
+            const auto ext = file.getFileExtension().toLowerCase();
+            return file.existsAsFile()
+                && (ext == ".wav" || ext == ".aif" || ext == ".aiff" || ext == ".flac");
         }
 
         static const DspBlock* findDrumMachineBlock (const DspGraph& graph)
@@ -127,12 +135,184 @@ namespace patchcraft
                 block.values[key] = newValue;
         }
 
+        static bool isArpLanePatternKey (const juce::String& key)
+        {
+            return key == "arpSteps"
+                || key == "arpPattern"
+                || key == "arpGate"
+                || key == "arpSwing"
+                || key == "rate"
+                || key == "mpProbability"
+                || key == "mpRatchet"
+                || key == "mpEuclideanPulses"
+                || key == "mpEuclideanRotate"
+                || key == "mpSampleControl"
+                || key == "mpSampleSliceCount"
+                || key == "mpLaneFxTarget"
+                || key.startsWith ("mpStep")
+                || key.startsWith ("arpNote")
+                || key.startsWith ("mpVelocity")
+                || key.startsWith ("mpGate")
+                || key.startsWith ("mpStepProb")
+                || key.startsWith ("mpStepDiv")
+                || key.startsWith ("mpStepDelay")
+                || key.startsWith ("mpStepTranspose")
+                || key.startsWith ("mpSampleSlice")
+                || key.startsWith ("mpAutoFilter")
+                || key.startsWith ("mpAutoPan")
+                || key.startsWith ("mpAutoFxSend");
+        }
+
+        static float normalisedArpLaneSliderValue (const DspBlock& block, int lane, int step, int role, int slots)
+        {
+            const auto suffix = juce::String (step);
+            switch (juce::jlimit (0, 10, role))
+            {
+                case 0:  return juce::jlimit (0.0f, 1.0f, arpLaneValue (block, lane, "mpVelocity" + suffix, 0.72f));
+                case 1:  return juce::jlimit (0.0f, 1.0f, arpLaneValue (block, lane, "mpGate" + suffix, 0.58f));
+                case 2:  return juce::jlimit (0.0f, 1.0f, arpLaneValue (block, lane, "mpStepProb" + suffix, 1.0f));
+                case 3:  return juce::jlimit (0.0f, 1.0f, (arpLaneValue (block, lane, "mpStepDiv" + suffix, 1.0f) - 1.0f) / 7.0f);
+                case 4:  return arpLaneValue (block, lane, "mpStep" + suffix + "On", 0.0f) >= 0.5f ? 1.0f : 0.0f;
+                case 5:  return juce::jlimit (0.0f, 1.0f, arpLaneValue (block, lane, "mpStepDelay" + suffix, 0.0f) / 0.85f);
+                case 6:  return slots > 1 ? juce::jlimit (0.0f, 1.0f, arpLaneValue (block, lane, "mpSampleSlice" + suffix, 0.0f) / (float) (slots - 1)) : 0.0f;
+                case 7:  return juce::jlimit (0.0f, 1.0f, (arpLaneValue (block, lane, "mpStepTranspose" + suffix, 0.0f) + 24.0f) / 48.0f);
+                case 8:  return juce::jlimit (0.0f, 1.0f, arpLaneValue (block, lane, "mpAutoFilter" + suffix, 0.0f));
+                case 9:  return juce::jlimit (0.0f, 1.0f, (arpLaneValue (block, lane, "mpAutoPan" + suffix, 0.0f) + 1.0f) * 0.5f);
+                default: return juce::jlimit (0.0f, 1.0f, arpLaneValue (block, lane, "mpAutoFxSend" + suffix, 0.0f));
+            }
+        }
+
+        static void initialiseArpLaneBank (DspBlock& block, int lane, int steps)
+        {
+            steps = juce::jlimit (1, 128, steps);
+            block.values["mpMultiLane"] = 1.0f;
+            if (block.values.find ("mpActiveBank") == block.values.end())
+                block.values["mpActiveBank"] = (float) lane;
+
+            setArpLaneValue (block, lane, "arpSteps", (float) steps);
+            setArpLaneValue (block, lane, "arpPattern", 0.0f);
+            setArpLaneValue (block, lane, "arpGate", 0.58f);
+            setArpLaneValue (block, lane, "arpSwing", 0.0f);
+            setArpLaneValue (block, lane, "rate", 1.0f);
+            setArpLaneValue (block, lane, "mpProbability", 1.0f);
+            setArpLaneValue (block, lane, "mpRatchet", 1.0f);
+            setArpLaneValue (block, lane, "mpEuclideanPulses", 0.0f);
+            setArpLaneValue (block, lane, "mpEuclideanRotate", 0.0f);
+            setArpLaneValue (block, lane, "mpSampleControl", 0.0f);
+            setArpLaneValue (block, lane, "mpSampleSliceCount", 16.0f);
+            setArpLaneValue (block, lane, "mpLaneMute", 0.0f);
+            setArpLaneValue (block, lane, "mpLaneSolo", 0.0f);
+            setArpLaneValue (block, lane, "mpLaneRetrigger", 1.0f);
+            setArpLaneValue (block, lane, "mpLaneFxTarget", (float) (lane % 4));
+
+            for (int step = 0; step < 128; ++step)
+            {
+                const auto suffix = juce::String (step);
+                setArpLaneValue (block, lane, "mpStep" + suffix + "On", step < steps && step % 4 == 0 ? 1.0f : 0.0f);
+                setArpLaneValue (block, lane, "arpNote" + suffix, 0.0f);
+                setArpLaneValue (block, lane, "mpVelocity" + suffix, step % 4 == 0 ? 0.82f : 0.30f);
+                setArpLaneValue (block, lane, "mpGate" + suffix, 0.58f);
+                setArpLaneValue (block, lane, "mpStepProb" + suffix, 1.0f);
+                setArpLaneValue (block, lane, "mpStepDiv" + suffix, 1.0f);
+                setArpLaneValue (block, lane, "mpStepDelay" + suffix, 0.0f);
+                setArpLaneValue (block, lane, "mpStepTranspose" + suffix, 0.0f);
+                setArpLaneValue (block, lane, "mpSampleSlice" + suffix, (float) (step % 16));
+                setArpLaneValue (block, lane, "mpAutoFilter" + suffix, 0.0f);
+                setArpLaneValue (block, lane, "mpAutoPan" + suffix, 0.0f);
+                setArpLaneValue (block, lane, "mpAutoFxSend" + suffix, 0.0f);
+            }
+        }
+
         static void setArpLaneMetadata (DspBlock& block, int lane, const juce::String& key, const juce::String& newValue)
         {
             block.metadata["arpLane" + juce::String (lane + 1) + key] = newValue;
         }
 
         static juce::String orbitLaneSoundName (int sound);
+
+        static juce::String circleSeqPatternName (int preset)
+        {
+            static const char* names[] =
+            {
+                "Pentatonic Pulse", "Bass Anchor", "Melody Answer", "Bell Topline",
+                "Soft Syncopation", "Arp Climb", "Open Fifths", "Reset Empty"
+            };
+            return names[(size_t) juce::jlimit (0, 7, preset)];
+        }
+
+        static void writeCircleSeqMusicalPreset (DspBlock& block, int lane, int preset)
+        {
+            lane = juce::jlimit (0, 15, lane);
+            preset = juce::jlimit (0, 7, preset);
+
+            struct PatternSeed
+            {
+                float pulses = 4.0f;
+                float gate = 0.58f;
+                std::array<int, 16> active {};
+                std::array<float, 16> notes {};
+                std::array<float, 16> velocity {};
+            };
+
+            const std::array<PatternSeed, 8> patterns =
+            {{
+                { 4.0f, 0.68f,
+                  {{ 1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0 }},
+                  {{ -12,-12,-12,-12, -10,-10,-10,-10, -5,-5,-5,-5, -10,-10,-10,-10 }},
+                  {{ 0.92f,0.30f,0.30f,0.30f, 0.82f,0.30f,0.30f,0.30f, 0.88f,0.30f,0.30f,0.30f, 0.78f,0.30f,0.30f,0.30f }} },
+                { 5.0f, 0.72f,
+                  {{ 1,0,0,1, 0,0,1,0, 1,0,0,0, 0,1,0,0 }},
+                  {{ -24,-24,-19,-17, -12,-12,-10,-7, -12,-12,-10,-7, -5,-7,-10,-12 }},
+                  {{ 0.94f,0.28f,0.28f,0.70f, 0.28f,0.28f,0.76f,0.28f, 0.86f,0.28f,0.28f,0.28f, 0.28f,0.72f,0.28f,0.28f }} },
+                { 6.0f, 0.46f,
+                  {{ 1,0,1,0, 0,1,0,1, 1,0,1,0, 0,1,0,1 }},
+                  {{ 0,2,4,7, 9,7,4,2, 0,2,7,9, 12,9,7,4 }},
+                  {{ 0.56f,0.34f,0.66f,0.34f, 0.30f,0.70f,0.34f,0.62f, 0.58f,0.34f,0.68f,0.34f, 0.30f,0.72f,0.34f,0.66f }} },
+                { 3.0f, 0.38f,
+                  {{ 0,0,0,1, 0,0,1,0, 0,0,1,0, 0,1,0,0 }},
+                  {{ 12,12,16,19, 21,19,16,12, 16,19,21,24, 21,19,16,12 }},
+                  {{ 0.24f,0.24f,0.24f,0.76f, 0.24f,0.24f,0.68f,0.24f, 0.24f,0.24f,0.72f,0.24f, 0.24f,0.66f,0.24f,0.24f }} },
+                { 7.0f, 0.52f,
+                  {{ 1,0,0,1, 0,1,0,0, 1,0,1,0, 0,1,0,1 }},
+                  {{ 0,2,4,7, 9,7,4,2, 4,7,9,12, 9,7,4,2 }},
+                  {{ 0.70f,0.30f,0.30f,0.62f, 0.30f,0.76f,0.30f,0.30f, 0.68f,0.30f,0.72f,0.30f, 0.30f,0.66f,0.30f,0.60f }} },
+                { 8.0f, 0.34f,
+                  {{ 1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1 }},
+                  {{ 0,2,4,7, 9,12,9,7, 4,7,9,12, 16,12,9,7 }},
+                  {{ 0.52f,0.38f,0.56f,0.42f, 0.62f,0.46f,0.58f,0.40f, 0.54f,0.42f,0.60f,0.46f, 0.66f,0.48f,0.60f,0.44f }} },
+                { 4.0f, 0.64f,
+                  {{ 1,0,0,0, 0,0,1,0, 1,0,0,0, 0,1,0,0 }},
+                  {{ -12,-12,-10,-10, -7,-7,-5,-5, 0,0,2,2, 7,7,9,9 }},
+                  {{ 0.86f,0.28f,0.28f,0.28f, 0.28f,0.28f,0.70f,0.28f, 0.78f,0.28f,0.28f,0.28f, 0.28f,0.66f,0.28f,0.28f }} },
+                { 0.0f, 0.58f,
+                  {{ 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 }},
+                  {{ 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 }},
+                  {{ 0.30f,0.30f,0.30f,0.30f, 0.30f,0.30f,0.30f,0.30f, 0.30f,0.30f,0.30f,0.30f, 0.30f,0.30f,0.30f,0.30f }} }
+            }};
+
+            const auto& seed = patterns[(size_t) preset];
+            setArpLaneValue (block, lane, "arpSteps", 16.0f);
+            setArpLaneValue (block, lane, "arpGate", seed.gate);
+            setArpLaneValue (block, lane, "mpEuclideanPulses", seed.pulses);
+            setArpLaneValue (block, lane, "mpSampleControl", 0.0f);
+            setArpLaneValue (block, lane, "mpSampleSliceCount", 16.0f);
+            for (int step = 0; step < 16; ++step)
+            {
+                const auto suffix = juce::String (step);
+                setArpLaneValue (block, lane, "mpStep" + suffix + "On", seed.active[(size_t) step] != 0 ? 1.0f : 0.0f);
+                setArpLaneValue (block, lane, "arpNote" + suffix, seed.notes[(size_t) step]);
+                setArpLaneValue (block, lane, "mpVelocity" + suffix, seed.velocity[(size_t) step]);
+                setArpLaneValue (block, lane, "mpGate" + suffix, seed.gate);
+                setArpLaneValue (block, lane, "mpStepProb" + suffix, 1.0f);
+                setArpLaneValue (block, lane, "mpStepDiv" + suffix, 1.0f);
+                setArpLaneValue (block, lane, "mpStepDelay" + suffix, 0.0f);
+                setArpLaneValue (block, lane, "mpStepTranspose" + suffix, 0.0f);
+                setArpLaneValue (block, lane, "mpAutoFxSend" + suffix, lane >= 2 && seed.active[(size_t) step] != 0 ? 0.16f : 0.0f);
+            }
+            setArpLaneMetadata (block, lane, "Target", "notes");
+            setArpLaneMetadata (block, lane, "Preset", circleSeqPatternName (preset));
+            setArpLaneMetadata (block, lane, "SliderRole", "velocity");
+        }
 
         static bool hasSeededOrbitLaneData (const DspBlock& block)
         {
@@ -198,7 +378,7 @@ namespace patchcraft
             block.values["mpActiveBank"] = 0.0f;
             block.values["mpMultiLane"] = 1.0f;
             block.values["mpScaleRoot"] = 9.0f;
-            block.values["mpScaleType"] = 2.0f;
+            block.values["mpScaleType"] = 8.0f;
             block.values["mpPatternMorph"] = 0.0f;
             block.values["mpHumanize"] = 0.015f;
             block.values["mpMutation"] = 0.0f;
@@ -221,6 +401,7 @@ namespace patchcraft
                 setArpLaneValue (block, lane, "mpSampleSliceCount", 16.0f);
                 setArpLaneValue (block, lane, "mpLaneMute", 0.0f);
                 setArpLaneValue (block, lane, "mpLaneSolo", 0.0f);
+                setArpLaneValue (block, lane, "mpLaneRetrigger", 1.0f);
                 setArpLaneValue (block, lane, "mpLaneFxTarget", (float) (lane % 4));
 
                 for (int step = 0; step < 16; ++step)
@@ -244,6 +425,9 @@ namespace patchcraft
                 setArpLaneMetadata (block, lane, "SoundName", orbitLaneSoundName (seed.sound));
                 setArpLaneMetadata (block, lane, "FxTarget", juce::String (lane % 4));
                 setArpLaneMetadata (block, lane, "SliderRole", "velocity");
+                writeCircleSeqMusicalPreset (block, lane, lane == 0 ? 0 : lane == 1 ? 2 : lane == 2 ? 3 : lane == 3 ? 4 : 6);
+                setArpLaneMetadata (block, lane, "Sound", juce::String (seed.sound));
+                setArpLaneMetadata (block, lane, "SoundName", orbitLaneSoundName (seed.sound));
             }
         }
 
@@ -360,6 +544,7 @@ namespace patchcraft
             const int target = juce::jlimit (0, 4, juce::roundToInt (value ("arpLaneTarget", 0.0f)));
             const int direction = juce::jlimit (0, 3, juce::roundToInt (value ("arpLaneDirection", 0.0f)));
             const int sound = juce::jlimit (0, 15, juce::roundToInt (value ("arpLaneSound", (float) lane)));
+            const int group = juce::jlimit (0, 7, juce::roundToInt (value ("arpLaneGroup", (float) (lane % 5))));
             const int rootNote = juce::jlimit (0, 127, juce::roundToInt (value ("arpLaneRootNote", 60.0f)));
             const int slots = juce::jlimit (1, 64, juce::roundToInt (value ("arpLaneSampleSlots", 1.0f)));
             const auto targetName = orbitLaneTargetName (target);
@@ -385,9 +570,13 @@ namespace patchcraft
             setArpLaneValue (block, lane, "mpSampleSliceCount", (float) juce::jmax (slots, sound + 1));
             setArpLaneValue (block, lane, "mpLaneMute", value ("arpLaneMute", 0.0f) >= 0.5f ? 1.0f : 0.0f);
             setArpLaneValue (block, lane, "mpLaneSolo", value ("arpLaneSolo", 0.0f) >= 0.5f ? 1.0f : 0.0f);
+            setArpLaneValue (block, lane, "mpLaneRetrigger", value ("arpLaneRetrigger", 1.0f) >= 0.5f ? 1.0f : 0.0f);
+            setArpLaneValue (block, lane, "mpLaneGroup", (float) group);
             setArpLaneValue (block, lane, "mpLaneFxTarget", (float) juce::jlimit (0, 7, juce::roundToInt (value ("arpLaneFxTarget", (float) (lane % 4)))));
             const float laneFxAmount = juce::jlimit (0.0f, 1.0f, value ("arpLaneFxAmount", 0.0f));
             block.values["mpPatternLaunch"] = (float) juce::jlimit (0, 7, juce::roundToInt (value ("arpLanePatternLaunch", 0.0f)));
+            if (parameterId == "arpLanePatternLaunch")
+                writeCircleSeqMusicalPreset (block, lane, juce::roundToInt (block.values["mpPatternLaunch"]));
 
             setArpLaneMetadata (block, lane, "Mode", juce::roundToInt (value ("arpLaneMode", 0.0f)) == 1 ? "performance" : "bank");
             setArpLaneMetadata (block, lane, "Target", targetName);
@@ -395,9 +584,11 @@ namespace patchcraft
             setArpLaneMetadata (block, lane, "RootNote", juce::String (rootNote));
             setArpLaneMetadata (block, lane, "Sound", juce::String (sound));
             setArpLaneMetadata (block, lane, "SoundName", orbitLaneSoundName (sound));
+            setArpLaneMetadata (block, lane, "Group", "Group " + juce::String (group + 1));
             setArpLaneMetadata (block, lane, "FxTarget", juce::String (juce::jlimit (0, 7, juce::roundToInt (value ("arpLaneFxTarget", (float) (lane % 4))))));
             setArpLaneMetadata (block, lane, "FillPulses", juce::String (juce::jlimit (0, steps, juce::roundToInt (value ("arpLaneFillPulses", 0.0f)))));
             setArpLaneMetadata (block, lane, "FillProbability", juce::String (juce::jlimit (0.0f, 1.0f, value ("arpLaneFillProbability", 0.0f)), 2));
+            setArpLaneMetadata (block, lane, "Retrigger", value ("arpLaneRetrigger", 1.0f) >= 0.5f ? "on" : "off");
 
             for (int step = 0; step < steps; ++step)
             {
@@ -410,7 +601,25 @@ namespace patchcraft
                     setArpLaneValue (block, lane, "mpAutoFxSend" + suffix, laneFxAmount);
             }
 
-            applyArpLaneSliderBankToGraph (project, block);
+            if (parameterId == "arpLanePatternLaunch")
+            {
+                auto& live = project.getLiveValues();
+                for (int step = 0; step < 16; ++step)
+                    live.setValue ("arpLaneStep" + juce::String (step + 1),
+                                   arpLaneValue (block, lane, "mpVelocity" + juce::String (step), 0.5f));
+            }
+            else if (parameterId == "arpLaneControlBank" || parameterId == "arpLaneSliderRole")
+            {
+                auto& live = project.getLiveValues();
+                const int sliderRole = juce::jlimit (0, 10, juce::roundToInt (value ("arpLaneSliderRole", 0.0f)));
+                for (int step = 0; step < 16; ++step)
+                    live.setValue ("arpLaneStep" + juce::String (step + 1),
+                                   normalisedArpLaneSliderValue (block, lane, step, sliderRole, slots));
+            }
+            else if (parameterId.startsWith ("arpLaneStep"))
+            {
+                applyArpLaneSliderBankToGraph (project, block);
+            }
 
             graph.userConfigured = true;
         }
@@ -584,19 +793,16 @@ namespace patchcraft
                         const float rOffset = juce::jmap (velocity, 0.0f, 1.0f, -band * 0.34f, band * 0.34f);
                         const auto p = centre + juce::Point<float> (std::cos (angle) * (ringRadius + rOffset),
                                                                     std::sin (angle) * (ringRadius + rOffset));
-                        if (! activeRing)
-                            continue;
-
                         if (active >= 0.5f)
                         {
                             const float dot = 3.0f + velocity * 3.2f;
-                            g.setColour (ringColour.withAlpha (0.86f * (0.5f + velocity * 0.5f)));
-                            g.drawLine (centre.x, centre.y, p.x, p.y, 1.15f);
+                            g.setColour (ringColour.withAlpha ((activeRing ? 0.86f : 0.42f) * (0.5f + velocity * 0.5f)));
+                            g.drawLine (centre.x, centre.y, p.x, p.y, activeRing ? 1.15f : 0.75f);
                             g.fillEllipse (p.x - dot, p.y - dot, dot * 2.0f, dot * 2.0f);
                         }
                         else
                         {
-                            g.setColour (border.withAlpha (0.22f));
+                            g.setColour (border.withAlpha (activeRing ? 0.22f : 0.12f));
                             g.drawEllipse (p.x - 2.4f, p.y - 2.4f, 4.8f, 4.8f, 0.8f);
                         }
                     }
@@ -616,12 +822,11 @@ namespace patchcraft
                 return;
             }
 
-            const float size = (float) juce::jmin (area.getWidth(), area.getHeight() - 42);
+            const float size = (float) juce::jmin (area.getWidth(), area.getHeight() - 34);
             const juce::Point<float> centre ((float) area.getCentreX(),
                                              (float) area.getY() + size * 0.52f);
             const float radius = size * 0.40f;
             const float innerRadius = radius * 0.70f;
-            const float noteRadius = radius * 1.10f;
             const int maxDrawSteps = juce::jmin (steps, 64);
             const int slotCount = juce::jlimit (1, 12, element.arpLaneSampleSlots);
             const bool multiRing = slotCount > 1 && element.arpLaneTarget != "notes";
@@ -639,19 +844,6 @@ namespace patchcraft
                     g.setColour (border.withAlpha (slot == 0 ? 0.28f : 0.16f));
                     g.drawEllipse (centre.x - rr, centre.y - rr, rr * 2.0f, rr * 2.0f, 0.7f);
                 }
-            }
-
-            static const char* noteLabels[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-            g.setFont (juce::FontOptions (8.5f));
-            for (int note = 0; note < 12; ++note)
-            {
-                const float angle = -juce::MathConstants<float>::halfPi
-                    + juce::MathConstants<float>::twoPi * (float) note / 12.0f;
-                const auto p = centre + juce::Point<float> (std::cos (angle) * noteRadius,
-                                                            std::sin (angle) * noteRadius);
-                g.setColour (dim);
-                g.drawText (noteLabels[note], juce::Rectangle<int> ((int) p.x - 12, (int) p.y - 6, 24, 12),
-                            juce::Justification::centred, true);
             }
 
             for (int step = 0; step < maxDrawSteps; ++step)
@@ -712,6 +904,7 @@ namespace patchcraft
             const auto targetLabel = element.arpLaneTarget == "drums" ? "DRUMS"
                                   : element.arpLaneTarget == "oneShots" ? "ONE SHOTS"
                                   : element.arpLaneTarget == "loops" ? "LOOP SLICES"
+                                  : element.arpLaneTarget == "effects" ? "FX SENDS"
                                   : element.arpLaneTarget == "samples" ? "SAMPLES" : "NOTES";
 
             g.setColour (text);
@@ -722,24 +915,6 @@ namespace patchcraft
             g.setFont (juce::FontOptions (9.5f).withStyle ("bold"));
             g.drawText (targetLabel, juce::Rectangle<int> ((int) centre.x - 46, (int) centre.y + 6, 92, 18),
                         juce::Justification::centred, true);
-
-            auto footer = r.reduced (12).removeFromBottom (34);
-            const juce::String footerLabels[] =
-            {
-                element.arpLaneDirection.toUpperCase().substring (0, 4),
-                "PUL " + juce::String (element.arpLaneEuclideanPulses),
-                "RAT " + juce::String (element.arpLaneRatchet),
-                "FIL " + juce::String (element.arpLaneFillPulses)
-            };
-            for (int i = 0; i < 4; ++i)
-            {
-                auto cell = footer.removeFromLeft (juce::jmax (1, footer.getWidth() / (4 - i))).reduced (3, 1);
-                g.setColour (dim);
-                g.setFont (juce::FontOptions (8.0f).withStyle ("bold"));
-                g.drawText (footerLabels[i], cell.removeFromTop (12), juce::Justification::centred, true);
-                g.setColour (accent.withAlpha (0.85f));
-                g.fillRoundedRectangle (cell.toFloat().withHeight (4.0f).withY ((float) cell.getCentreY() - 2.0f), 2.0f);
-            }
         }
 
         static void drawDrumGridPreview (juce::Graphics& g,
@@ -1196,7 +1371,7 @@ namespace patchcraft
                 make ("modMatrix", "Add Mod Matrix", "Add a modulation matrix UI element.", "modulation routing"),
                 make ("granular", "Add Granular Field", "Add a runtime granular control surface.", "sample grain cloud"),
                 make ("arpLane", "Add Arp Studio Lane", "Add a circular arp lane that selects and visualizes a MIDI Playground bank.", "arp sequencer circle lane bank steps"),
-                make ("orbitInstrument", "Add Orbit Groove Instrument Surface", "Add the multi-ring Orbit editor with lane, automation, fill, mute, and step controls.", "patterning circular drum sequencer orbit arplane fills automation lanes"),
+                make ("orbitInstrument", "Add CircleSEQ Musical Surface", "Add a five-ring CircleSEQ element with lane source, timing, fill, FX, bypass, and step-role controls.", "patterning circular drum sequencer circleseq orbit arplane fills automation lanes musical surface"),
                 make ("visualKit", "Add Animation Lab Visual Kit", "Add non-Pro reactive artwork, sprite animation, procedural FX, and Pro AI visual brief elements.", "animation reactive visuals sprite ai pro imagery artwork"),
                 make ("reactiveImage", "Add Reactive Image", "Add an imported artwork slot that can pulse, scale, glow, or fade from audio/MIDI/BPM.", "visual audio reactive image artwork"),
                 make ("spriteAnimator", "Add Sprite Animator", "Add a sprite-sheet animation element with BPM or note-triggered frame playback.", "sprite filmstrip animation bpm"),
@@ -1327,7 +1502,7 @@ namespace patchcraft
     void CanvasEditor::mouseWheelMove (const juce::MouseEvent& e,
                                        const juce::MouseWheelDetails& wheel)
     {
-        if (! e.mods.isShiftDown())
+        if (! e.mods.isShiftDown() && ! e.mods.isCtrlDown() && ! e.mods.isCommandDown())
         {
             Component::mouseWheelMove (e, wheel);
             return;
@@ -1429,8 +1604,8 @@ namespace patchcraft
         const auto& cs = owner.getProject().getCanvasSize();
         const int w = juce::roundToInt (cs.width  * zoom);
         const int h = juce::roundToInt (cs.height * zoom);
-        const int x = (getWidth()  - w) / 2 + (showRulers ? kRulerSize / 2 : 0);
-        const int y = (getHeight() - h) / 2 + (showRulers ? kRulerSize / 2 : 0);
+        const int x = (getWidth()  - w) / 2 + (showRulers ? kRulerSize / 2 : 0) + canvasPanOffset.x;
+        const int y = (getHeight() - h) / 2 + (showRulers ? kRulerSize / 2 : 0) + canvasPanOffset.y;
         return { x, y, w, h };
     }
 
@@ -1476,6 +1651,7 @@ namespace patchcraft
         autoFitCanvas = true;
         const auto& cs = owner.getProject().getCanvasSize();
         if (cs.width <= 0 || cs.height <= 0) return;
+        canvasPanOffset = {};
         const int avail = juce::jmax (200, getWidth() - kRulerSize * 2 - 60);
         const int availV = juce::jmax (200, getHeight() - kRulerSize * 2 - 60);
         zoom = juce::jmin ((float) avail / (float) cs.width,
@@ -1519,6 +1695,26 @@ namespace patchcraft
         }
 
         drawSelectionGuides (g);
+
+        juce::Rectangle<int> multiBounds;
+        if (getMultiSelectionScreenBounds (multiBounds))
+        {
+            const auto accent = PatchCraftLookAndFeel::accent();
+            g.setColour (accent.withAlpha (0.95f));
+            g.drawRect (multiBounds.expanded (3), 2);
+
+            constexpr int handleSize = 10;
+            const juce::Rectangle<int> handle (multiBounds.getRight() - handleSize,
+                                               multiBounds.getBottom() - handleSize,
+                                               handleSize * 2,
+                                               handleSize * 2);
+            g.setColour (PatchCraftLookAndFeel::bg().withAlpha (0.92f));
+            g.fillRect (handle);
+            g.setColour (accent);
+            g.drawRect (handle, 2);
+            g.drawLine ((float) handle.getX() + 4.0f, (float) handle.getBottom() - 4.0f,
+                        (float) handle.getRight() - 4.0f, (float) handle.getY() + 4.0f, 1.2f);
+        }
 
         if (hoverGuidance.isNotEmpty() && ! hoverGuidanceBounds.isEmpty())
         {
@@ -1579,8 +1775,18 @@ namespace patchcraft
             {
                 const auto category = object->getProperty ("category").toString();
                 const juce::File file (object->getProperty ("path").toString());
-                const int frames = juce::jmax (1, (int) object->getProperty ("frames"));
+                const int frames = juce::jmax (0, (int) object->getProperty ("frames"));
                 const bool vertical = (bool) object->getProperty ("vertical");
+                if (isSupportedSampleFile (file))
+                {
+                    if (const auto* zone = sampleDropZoneAt (details.localPosition))
+                    {
+                        juce::Array<juce::File> samples;
+                        samples.add (file);
+                        assignSamplesToDropZone (zone->id, samples);
+                        return;
+                    }
+                }
                 owner.addLibraryAssetToCanvas (category, file, frames, vertical, screenToCanvas (details.localPosition));
                 return;
             }
@@ -1595,6 +1801,192 @@ namespace patchcraft
             return;
 
         addElementAt (ElementType::Knob, screenToCanvas (details.localPosition), parameterId);
+    }
+
+    bool CanvasEditor::isInterestedInFileDrag (const juce::StringArray& files)
+    {
+        for (const auto& path : files)
+            if (isSupportedSampleFile (juce::File (path)))
+                return true;
+        return false;
+    }
+
+    void CanvasEditor::filesDropped (const juce::StringArray& files, int x, int y)
+    {
+        juce::Array<juce::File> samples;
+        for (const auto& path : files)
+        {
+            juce::File file (path);
+            if (isSupportedSampleFile (file))
+                samples.add (file);
+        }
+
+        if (samples.isEmpty())
+            return;
+
+        if (const auto* zone = sampleDropZoneAt ({ x, y }))
+        {
+            assignSamplesToDropZone (zone->id, samples);
+            return;
+        }
+    }
+
+    const LayoutElement* CanvasEditor::sampleDropZoneAt (juce::Point<int> localPosition) const
+    {
+        const auto& elements = owner.getProject().getLayout().getAll();
+        for (auto it = elements.rbegin(); it != elements.rend(); ++it)
+        {
+            if (! it->visible || it->type != ElementType::SampleDropZone || ! isElementOnCurrentTab (*it))
+                continue;
+            if (elementScreenRect (*it).contains (localPosition))
+                return &*it;
+        }
+        return nullptr;
+    }
+
+    void CanvasEditor::assignSamplesToDropZone (const juce::String& elementId, const juce::Array<juce::File>& files)
+    {
+        if (files.isEmpty())
+            return;
+
+        int circleSeqLane = -1;
+        if (const auto* dropZone = owner.getProject().getLayout().find (elementId))
+        {
+            if (dropZone->semanticRole.startsWith ("circleSeqLaneSample:"))
+                circleSeqLane = juce::jlimit (0, 4, dropZone->semanticRole.fromFirstOccurrenceOf (":", false, false).getIntValue());
+        }
+
+        std::vector<SampleZoneDef> zonesToAdd;
+        zonesToAdd.reserve ((size_t) files.size());
+        int fallbackNote = 60;
+        for (const auto& file : files)
+        {
+            bool usedNamePitch = false;
+            bool usedAudioPitch = false;
+            auto zone = SampleMap::inferZoneFromFileWithAudio (file,
+                                                               fallbackNote,
+                                                               files.size() > 1 ? fallbackNote : 0,
+                                                               files.size() > 1 ? fallbackNote : 127,
+                                                               &usedNamePitch,
+                                                               &usedAudioPitch);
+            zone.group = elementId;
+            if (circleSeqLane >= 0)
+            {
+                zone.rootNote = juce::jlimit (0, 127, 36 + circleSeqLane * 12 + (int) zonesToAdd.size());
+                zone.lowNote = zone.rootNote;
+                zone.highNote = zone.rootNote;
+                zone.oneShot = true;
+                zone.padIndex = circleSeqLane * 16 + (int) zonesToAdd.size();
+            }
+            zone.padLabel = file.getFileNameWithoutExtension();
+            zonesToAdd.push_back (zone);
+            if (++fallbackNote > 84)
+                fallbackNote = 60;
+        }
+
+        const auto firstPath = files[0].getFullPathName();
+        const auto firstName = files[0].getFileNameWithoutExtension();
+        owner.getProject().performSampleMapEdit ("Drop sample on canvas",
+            [zonesToAdd, circleSeqLane] (SampleMap& map)
+            {
+                for (const auto& zone : zonesToAdd)
+                    map.add (zone);
+                if (circleSeqLane < 0 && zonesToAdd.size() > 1)
+                    map.autoMapByRootNotes();
+            });
+
+        if (circleSeqLane >= 0)
+        {
+            auto& graph = owner.getProject().getDspGraph();
+            auto& block = ensureArpBlock (graph);
+            const int slots = juce::jlimit (1, 64, (int) files.size());
+            block.values["mpActiveBank"] = (float) circleSeqLane;
+            block.values["mpMultiLane"] = 1.0f;
+            setArpLaneValue (block, circleSeqLane, "mpSampleControl", 1.0f);
+            setArpLaneValue (block, circleSeqLane, "mpSampleSliceCount", (float) slots);
+            setArpLaneMetadata (block, circleSeqLane, "Target", "samples");
+            setArpLaneMetadata (block, circleSeqLane, "SoundName", "Sample Group " + juce::String (circleSeqLane + 1));
+            for (int step = 0; step < 128; ++step)
+                setArpLaneValue (block, circleSeqLane, "mpSampleSlice" + juce::String (step), (float) (step % slots));
+
+            auto& live = owner.getProject().getLiveValues();
+            live.setValue ("arpLaneControlBank", (float) circleSeqLane);
+            live.setValue ("arpLaneTarget", 4.0f);
+            live.setValue ("arpLaneSampleSlots", (float) slots);
+            live.setValue ("arpLaneSliderRole", 6.0f);
+            graph.userConfigured = true;
+            owner.getProject().notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
+        }
+        else if (owner.getProject().getEngineType() != "sample")
+            owner.getProject().setEngineType ("sample");
+
+        owner.getProject().performLayoutEdit ("Bind sample drop zone",
+            [this, elementId, firstPath, firstName, circleSeqLane] (LayoutModel& layout)
+            {
+                auto* zone = layout.find (elementId);
+                if (zone == nullptr)
+                    return;
+
+                zone->asset = firstPath;
+                zone->label = firstName.isNotEmpty() ? firstName : "Dropped Sample";
+                zone->parameterId = zone->parameterId.isNotEmpty() ? zone->parameterId : "sampleStart";
+                if (circleSeqLane < 0)
+                    zone->semanticRole = "sampleDropZone:" + zone->id;
+
+                const auto role = zone->semanticRole;
+                if (circleSeqLane >= 0)
+                    return;
+
+                bool hasLinkedControls = false;
+                for (const auto& element : layout.getAll())
+                    if (element.id != zone->id && element.semanticRole == role)
+                    {
+                        hasLinkedControls = true;
+                        break;
+                    }
+
+                if (hasLinkedControls)
+                    return;
+
+                const auto controlGroupId = zone->groupId;
+                const auto controlContainerId = zone->containerId;
+                const auto controlAccent = zone->accentColour;
+                const int baseX = zone->x;
+                const int baseY = zone->y + zone->height + 16;
+
+                auto addLinkedControl = [&] (ElementType type, const juce::String& parameterId,
+                                             const juce::String& label, int x, int y, int w, int h)
+                {
+                    if (owner.getProject().getParameters().find (parameterId) == nullptr)
+                        return;
+
+                    LayoutElement control;
+                    control.type = type;
+                    control.id = layout.generateUniqueId (elementTypeToString (type) + "_");
+                    control.x = x;
+                    control.y = y;
+                    control.width = w;
+                    control.height = h;
+                    control.parameterId = parameterId;
+                    control.label = label;
+                    control.groupId = controlGroupId;
+                    control.containerId = controlContainerId;
+                    control.semanticRole = role;
+                    control.style = "Modern Dark";
+                    control.accentColour = controlAccent;
+                    control.borderColour = PatchCraftLookAndFeel::border();
+                    control.backgroundColour = juce::Colour (0x33141822);
+                    control.cornerRadius = type == ElementType::Slider ? 8.0f : 12.0f;
+                    layout.add (control);
+                };
+
+                addLinkedControl (ElementType::Slider, "sampleStart",  "Start",  baseX,       baseY, 78, 128);
+                addLinkedControl (ElementType::Slider, "sampleLength", "Length", baseX + 86,  baseY, 78, 128);
+                addLinkedControl (ElementType::Knob,   "samplePitch",  "Pitch",  baseX + 180, baseY, 92, 92);
+                addLinkedControl (ElementType::Knob,   "volume",       "Level",  baseX + 282, baseY, 92, 92);
+            });
+
+        repaint();
     }
 
     void CanvasEditor::addMoveOriginWithChildren (const juce::String& id)
@@ -1617,6 +2009,44 @@ namespace patchcraft
         multiDragOrigins.clear();
         for (const auto& id : owner.getSelectedElementIds())
             addMoveOriginWithChildren (id);
+    }
+
+    bool CanvasEditor::getMultiSelectionScreenBounds (juce::Rectangle<int>& bounds) const
+    {
+        const auto& selectedIds = owner.getSelectedElementIds();
+        if (selectedIds.size() < 2)
+            return false;
+
+        bool hasBounds = false;
+        int scalableItems = 0;
+        for (const auto& id : selectedIds)
+        {
+            if (auto* element = owner.getProject().getLayout().find (id))
+            {
+                if (! element->visible || element->locked || element->type == ElementType::Group || ! isElementOnCurrentTab (*element))
+                    continue;
+
+                const auto r = elementScreenRect (*element);
+                bounds = hasBounds ? bounds.getUnion (r) : r;
+                hasBounds = true;
+                ++scalableItems;
+            }
+        }
+
+        return scalableItems >= 2;
+    }
+
+    bool CanvasEditor::multiSelectionResizeHandleContains (juce::Point<int> point) const
+    {
+        juce::Rectangle<int> bounds;
+        if (! getMultiSelectionScreenBounds (bounds))
+            return false;
+
+        constexpr int handleSize = 10;
+        return juce::Rectangle<int> (bounds.getRight() - handleSize,
+                                     bounds.getBottom() - handleSize,
+                                     handleSize * 2,
+                                     handleSize * 2).contains (point);
     }
 
     // ---- Rulers --------------------------------------------------------------
@@ -1660,6 +2090,21 @@ namespace patchcraft
         // Outer canvas surface
         g.setColour (juce::Colour (0xff0c0e12));
         g.fillRect (r);
+
+        const auto backgroundPath = owner.getProject().backgroundImageRelative;
+        if (backgroundPath.isNotEmpty())
+        {
+            const auto file = juce::File::isAbsolutePath (backgroundPath)
+                ? juce::File (backgroundPath)
+                : owner.getProject().getProjectFolder().getChildFile (backgroundPath);
+
+            if (file.existsAsFile())
+            {
+                const auto image = owner.getAssets().loadImage (file);
+                if (image.isValid())
+                    g.drawImage (image, r.toFloat(), juce::RectanglePlacement::stretchToFit);
+            }
+        }
 
         // Grid
         if (showGrid)
@@ -2601,6 +3046,76 @@ namespace patchcraft
                             juce::Justification::centred);
             }
         }
+        else if (e.type == ElementType::SampleDropZone)
+        {
+            const auto bg = e.backgroundColour.isTransparent() ? juce::Colour (0xdd10141a) : e.backgroundColour;
+            const auto border = e.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : e.borderColour;
+            const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
+            g.setColour (bg);
+            g.fillRoundedRectangle (r.toFloat(), juce::jmax (6.0f, e.cornerRadius));
+            g.setColour (border);
+            g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (6.0f, e.cornerRadius), 1.0f);
+
+            const bool compactDropZone = r.getHeight() <= 64 || e.semanticRole.startsWith ("circleSeqLaneSample:");
+            if (compactDropZone)
+            {
+                auto pill = r.reduced (5, 4);
+                g.setColour (accent.withAlpha (0.18f));
+                g.fillRoundedRectangle (pill.toFloat(), juce::jmax (5.0f, e.cornerRadius - 1.0f));
+                g.setColour (accent.withAlpha (0.85f));
+                g.drawRoundedRectangle (pill.toFloat().reduced (0.5f), juce::jmax (5.0f, e.cornerRadius - 1.0f), 1.2f);
+
+                auto textArea = pill.reduced (7, 3);
+                g.setFont (juce::Font (10.5f, juce::Font::bold));
+                g.setColour (PatchCraftLookAndFeel::textBright());
+                g.drawFittedText ((e.label.isNotEmpty() ? e.label : "DROP SAMPLES").toUpperCase(),
+                                  textArea.removeFromTop (18), juce::Justification::centred, 1);
+                g.setFont (juce::Font (8.5f, juce::Font::bold));
+                g.setColour (e.asset.isNotEmpty() ? accent : PatchCraftLookAndFeel::textDim());
+                g.drawFittedText (e.asset.isNotEmpty() ? juce::File (e.asset).getFileName() : "DROP WAV/AIFF",
+                                  textArea, juce::Justification::centred, 1);
+                return;
+            }
+
+            auto area = r.reduced (12, 10);
+            g.setColour (accent.withAlpha (0.26f));
+            g.drawRoundedRectangle (area.toFloat().reduced (0.5f), juce::jmax (4.0f, e.cornerRadius - 2.0f), 1.0f);
+            auto header = area.removeFromTop (24);
+            g.setColour (accent);
+            g.setFont (juce::Font (12.0f, juce::Font::bold));
+            g.drawText ("SAMPLE DROP ZONE", header.removeFromLeft (150), juce::Justification::centredLeft, true);
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (juce::Font (10.0f));
+            g.drawText (e.parameterId.isNotEmpty() ? "target " + e.parameterId : "target sampleStart",
+                        header, juce::Justification::centredRight, true);
+
+            area.removeFromTop (8);
+            juce::Path wave;
+            const auto waveBounds = area.removeFromTop (juce::jmax (36, area.getHeight() / 2)).reduced (6, 0).toFloat();
+            for (int i = 0; i < 48; ++i)
+            {
+                const float x = waveBounds.getX() + (float) i / 47.0f * waveBounds.getWidth();
+                const float y = waveBounds.getCentreY()
+                    + std::sin ((float) i * 0.62f) * waveBounds.getHeight() * (0.16f + 0.28f * (float) ((i % 7) + 1) / 7.0f);
+                if (i == 0) wave.startNewSubPath (x, y);
+                else        wave.lineTo (x, y);
+            }
+            g.setColour (accent.withAlpha (0.85f));
+            g.strokePath (wave, juce::PathStrokeType (1.5f));
+
+            area.removeFromTop (8);
+            const auto fileLabel = e.asset.isNotEmpty()
+                ? juce::File (e.asset).getFileName()
+                : juce::String ("Drop WAV / AIFF / FLAC here");
+            g.setColour (e.asset.isNotEmpty() ? PatchCraftLookAndFeel::textBright() : PatchCraftLookAndFeel::textDim());
+            g.setFont (juce::Font (12.0f, juce::Font::bold));
+            g.drawFittedText (fileLabel, area.removeFromTop (24), juce::Justification::centred, 1);
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (10.0f);
+            g.drawFittedText (e.semanticRole.isNotEmpty() ? "linked controls: " + e.semanticRole.fromFirstOccurrenceOf (":", false, false)
+                                                          : "drop once to create linked Start / Length / Pitch / Level controls",
+                              area, juce::Justification::centred, 2);
+        }
         else if (e.type == ElementType::Knob)
         {
             const auto* p = owner.getProject().getParameters().find (e.parameterId);
@@ -2625,6 +3140,11 @@ namespace patchcraft
                 else
                     value = juce::String (live, 2);
             }
+            else if (e.filmstripAsset.isNotEmpty())
+            {
+                pos01 = juce::jlimit (0.0f, 1.0f, e.controlPreviewValue);
+                value = juce::String (juce::roundToInt (pos01 * 100.0f)) + " %";
+            }
 
             // Filmstrip override - load PNG and draw frame.
             if (e.filmstripAsset.isNotEmpty())
@@ -2633,12 +3153,14 @@ namespace patchcraft
                                 ? e.filmstripAsset
                                 : owner.getProject().getProjectFolder()
                                        .getChildFile (e.filmstripAsset).getFullPathName());
-                if (auto img = owner.getAssets().loadImage (f); img.isValid())
+                if (auto img = owner.getAssets().loadControlFilmstrip (f, e.filmstripFrames, e.filmstripVertical); img.isValid())
                 {
                     int frames = e.filmstripFrames;
-                    if (frames <= 0)
-                        frames = PatchCraftLookAndFeel::detectFilmstripFrames (img, e.filmstripVertical);
-                    auto stripRect = r.withTrimmedBottom (juce::roundToInt (r.getHeight() * 0.30f));
+                    if (frames <= 1)
+                        frames = juce::jmax (frames, PatchCraftLookAndFeel::detectFilmstripFrames (img, e.filmstripVertical));
+                    auto stripRect = e.labelPosition == "hidden"
+                        ? r.reduced (2)
+                        : r.withTrimmedBottom (juce::roundToInt (r.getHeight() * 0.30f));
                     PatchCraftLookAndFeel::drawFilmstripFrame (
                         g, stripRect, img, frames, pos01, e.filmstripVertical);
 
@@ -3038,7 +3560,9 @@ namespace patchcraft
                                            juce::Rectangle<int> r,
                                            juce::Point<int> p) const
     {
-        if (el.parameterId.isEmpty()) return false;
+        const bool hasLocalPreviewValue = el.parameterId.isEmpty()
+                                       && (el.type == ElementType::Knob || el.type == ElementType::Slider);
+        if (el.parameterId.isEmpty() && ! hasLocalPreviewValue) return false;
         if (el.type == ElementType::Knob || el.type == ElementType::MacroControl)
         {
             // Use a circle inside r (matching how the knob is drawn).
@@ -3236,11 +3760,50 @@ namespace patchcraft
         int lane = -1;
         int step = -1;
         float velocity = 0.8f;
-        if (! arpLaneStepAt (element, r, p, lane, step, velocity))
-            return false;
+        auto velocityForLockedLane = [&] (int lockedLane, float& v)
+        {
+            auto area = r.reduced (12);
+            area.removeFromTop (24);
+            const float size = (float) juce::jmin (area.getWidth(), area.getHeight() - 34);
+            if (size <= 24.0f)
+                return false;
 
-        if (! startGesture && lane == lastArpLane && step == lastArpStep)
+            const juce::Point<float> centre ((float) area.getCentreX(), (float) area.getY() + size * 0.52f);
+            const float distance = (p.toFloat() - centre).getDistanceFromOrigin();
+            const bool orbitMultiRing = element.arpLaneMode.equalsIgnoreCase ("multiRing")
+                                     || element.arpLaneMode.equalsIgnoreCase ("orbit")
+                                     || element.arpLaneMode.equalsIgnoreCase ("orbitMulti");
+            if (orbitMultiRing)
+            {
+                const int laneCount = 5;
+                const float multiRadius = size * 0.42f;
+                const float innerRadius = multiRadius * 0.25f;
+                const float outerRadius = multiRadius * 0.94f;
+                const float band = (outerRadius - innerRadius) / (float) laneCount;
+                const float laneCentre = innerRadius + band * ((float) juce::jlimit (0, laneCount - 1, lockedLane) + 0.5f);
+                v = juce::jlimit (0.05f, 1.0f,
+                    juce::jmap (distance - laneCentre, -band * 0.50f, band * 0.50f, 0.05f, 1.0f));
+            }
+            else
+            {
+                const float radius = size * 0.40f;
+                v = juce::jlimit (0.05f, 1.0f,
+                    juce::jmap (distance, radius * 0.25f, radius * 0.93f, 0.05f, 1.0f));
+            }
             return true;
+        };
+
+        if (! startGesture && lastArpLane >= 0 && lastArpStep >= 0)
+        {
+            lane = lastArpLane;
+            step = lastArpStep;
+            if (! velocityForLockedLane (lane, velocity))
+                return false;
+        }
+        else if (! arpLaneStepAt (element, r, p, lane, step, velocity))
+        {
+            return false;
+        }
 
         auto& graph = owner.getProject().getDspGraph();
         auto& block = ensureArpBlock (graph);
@@ -3274,7 +3837,16 @@ namespace patchcraft
         dragActionName.clear();
         if (e.mods.isPopupMenu())
         {
-            showContextMenu (e.getPosition());
+            showContextMenu (e.getPosition(), e.mods.isCtrlDown() || e.mods.isCommandDown());
+            return;
+        }
+
+        if (juce::KeyPress::isKeyCurrentlyDown (juce::KeyPress::spaceKey))
+        {
+            dragStart = e.getPosition();
+            panDragOrigin = canvasPanOffset;
+            mode = DragMode::Pan;
+            setMouseCursor (juce::MouseCursor::DraggingHandCursor);
             return;
         }
         const auto& elements = owner.getProject().getLayout().getAll();
@@ -3325,7 +3897,16 @@ namespace patchcraft
             }
         }
 
-        // 1. BR-resize on selected element first.
+        // 1. BR-resize on the selection group first, then on a single selected element.
+        if (multiSelectionResizeHandleContains (e.getPosition()))
+        {
+            dragStart = e.getPosition();
+            dragLayoutBefore = owner.getProject().getLayout().getAll();
+            dragActionName = "Scale selection";
+            mode = DragMode::ResizeBR;
+            return;
+        }
+
         auto* sel = owner.getProject().getLayout().find (owner.getSelectedElementId());
         if (sel != nullptr && ! sel->locked)
         {
@@ -3339,6 +3920,17 @@ namespace patchcraft
                 dragLayoutBefore = owner.getProject().getLayout().getAll();
                 dragActionName = owner.getSelectedElementIds().size() > 1 ? "Scale selection" : "Resize element";
                 mode = DragMode::ResizeBR;
+                return;
+            }
+
+            if (sel->type == ElementType::Group && r.contains (e.getPosition()))
+            {
+                dragStart    = e.getPosition();
+                dragOriginal = *sel;
+                dragLayoutBefore = owner.getProject().getLayout().getAll();
+                dragActionName = "Move group";
+                captureMoveOriginsForSelection();
+                mode = DragMode::Move;
                 return;
             }
         }
@@ -3403,13 +3995,16 @@ namespace patchcraft
                                            || it->type == ElementType::Toggle || it->type == ElementType::Dropdown
                                            || it->type == ElementType::ValueDisplay
                                            || it->type == ElementType::MacroControl;
+            const bool isVisualOnlyFilmstripControl = it->parameterId.isEmpty()
+                                                   && it->filmstripAsset.isNotEmpty()
+                                                   && (it->type == ElementType::Knob || it->type == ElementType::Slider);
             if (! e.mods.isShiftDown() && owner.getProject().getManifest().playerShowParameterGuidance && isInteractiveControl)
             {
                 const bool attemptedControlUse = (it->type == ElementType::Knob || it->type == ElementType::Slider
                                                || it->type == ElementType::MacroControl)
                     ? hitTestControlBody (*it, r, e.getPosition())
                     : r.contains (e.getPosition());
-                if (attemptedControlUse)
+                if (attemptedControlUse && ! isVisualOnlyFilmstripControl)
                 {
                     const auto guidance = canvasControlGuidance (owner.getProject(), *it);
                     if (guidance.isNotEmpty())
@@ -3423,6 +4018,32 @@ namespace patchcraft
                         mode = DragMode::None;
                         return;
                     }
+                }
+            }
+
+            if (! e.mods.isShiftDown()
+                && e.getNumberOfClicks() > 1
+                && isInteractiveControl
+                && it->type != ElementType::Dropdown
+                && it->parameterId.isNotEmpty()
+                && hitTestControlBody (*it, r, e.getPosition()))
+            {
+                if (auto* def = owner.getProject().getParameters().find (it->parameterId);
+                    def != nullptr && canvasParameterIsEnabled (owner.getProject(), *def))
+                {
+                    if (e.mods.isCommandDown() || e.mods.isCtrlDown())
+                        owner.toggleSelectedElementId (it->id);
+                    else
+                        owner.setSelectedElementId (it->id);
+
+                    owner.getProject().getLiveValues().setValue (it->parameterId, def->defaultValue);
+                    applyArpLaneParameterToGraph (owner.getProject(), it->parameterId);
+                    if (it->parameterId.startsWith ("arpLane"))
+                        owner.getProject().notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
+                    else
+                        owner.getProject().markDirty();
+                    repaint();
+                    return;
                 }
             }
 
@@ -3446,7 +4067,10 @@ namespace patchcraft
                 }
             }
 
-            if (! e.mods.isShiftDown() && it->type == ElementType::Dropdown && it->parameterId.isNotEmpty())
+            if (! e.mods.isShiftDown()
+                && it->type == ElementType::Dropdown
+                && it->parameterId.isNotEmpty()
+                && (e.getNumberOfClicks() > 1 || e.mods.isAltDown()))
             {
                 if (auto* def = owner.getProject().getParameters().find (it->parameterId);
                     def != nullptr && canvasParameterIsEnabled (owner.getProject(), *def))
@@ -3487,6 +4111,14 @@ namespace patchcraft
                         for (int bank = 0; bank < 5; ++bank)
                             menu.addItem (bank + 1, "Lane " + juce::String (bank + 1));
                     }
+                    else if (def->id == "arpLaneGroup")
+                    {
+                        for (int groupIndex = 0; groupIndex < 8; ++groupIndex)
+                        {
+                            values.push_back ((float) groupIndex);
+                            menu.addItem (groupIndex + 1, "Group " + juce::String (groupIndex + 1));
+                        }
+                    }
                     else if (def->id == "arpLaneSliderRole")
                     {
                         values = { 0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f, 10.0f };
@@ -3517,6 +4149,14 @@ namespace patchcraft
                         {
                             values.push_back ((float) target);
                             menu.addItem (target + 1, fxTargets[target]);
+                        }
+                    }
+                    else if (def->id == "arpLanePatternLaunch")
+                    {
+                        for (int preset = 0; preset < 8; ++preset)
+                        {
+                            values.push_back ((float) preset);
+                            menu.addItem (preset + 1, circleSeqPatternName (preset));
                         }
                     }
                     else if (def->step >= 1.0f && def->max - def->min <= 32.0f)
@@ -3564,6 +4204,23 @@ namespace patchcraft
                     dragValueElementId = it->id;
                     dragValueStart   = owner.getProject().getLiveValues()
                                             .getValue (it->parameterId, def->defaultValue);
+                    dragValueIsLocalPreview = false;
+                    mode = DragMode::ValueDrag;
+                    setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
+                    return;
+                }
+
+                if (isVisualOnlyFilmstripControl)
+                {
+                    if (e.mods.isCommandDown() || e.mods.isCtrlDown())
+                        owner.toggleSelectedElementId (it->id);
+                    else
+                        owner.setSelectedElementId (it->id);
+                    dragStart = e.getPosition();
+                    dragParameterId.clear();
+                    dragValueElementId = it->id;
+                    dragValueStart = juce::jlimit (0.0f, 1.0f, it->controlPreviewValue);
+                    dragValueIsLocalPreview = true;
                     mode = DragMode::ValueDrag;
                     setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
                     return;
@@ -3607,6 +4264,7 @@ namespace patchcraft
                  : type == ElementType::SpriteAnimator ? 260
                  : type == ElementType::VisualFxLayer ? 420
                  : type == ElementType::AiVisualPrompt ? 360
+                 : type == ElementType::SampleDropZone ? 320
                  : type == ElementType::DrumGrid ? 560
                  : type == ElementType::ArpLane ? 260
                  : type == ElementType::Mixer ? 520
@@ -3625,6 +4283,7 @@ namespace patchcraft
                   : type == ElementType::SpriteAnimator ? 180
                   : type == ElementType::VisualFxLayer ? 180
                   : type == ElementType::AiVisualPrompt ? 170
+                  : type == ElementType::SampleDropZone ? 156
                   : type == ElementType::DrumGrid ? 220
                   : type == ElementType::ArpLane ? 330
                   : type == ElementType::Mixer ? 260
@@ -3717,14 +4376,26 @@ namespace patchcraft
         {
             el.label = "Arp Lane";
             el.parameterId.clear();
-            el.arpLaneIndex = 0;
+            int nextLane = 0;
+            for (const auto& existing : owner.getProject().getLayout().getAll())
+                if (existing.type == ElementType::ArpLane)
+                    nextLane = juce::jmax (nextLane, existing.arpLaneIndex + 1);
+
+            el.arpLaneIndex = juce::jlimit (0, 15, nextLane);
             el.arpLaneSteps = 16;
-            el.arpLaneMode = "bank";
+            el.arpLaneMode = "multiRing";
             el.cornerRadius = 12.0f;
             el.strokeWidth = 1.4f;
             el.accentColour = PatchCraftLookAndFeel::accent();
             el.backgroundColour = juce::Colour (0xdd10141a);
             el.borderColour = PatchCraftLookAndFeel::border();
+
+            auto& graph = owner.getProject().getDspGraph();
+            auto& block = ensureArpBlock (graph);
+            block.values["mpActiveBank"] = (float) el.arpLaneIndex;
+            block.values["mpMultiLane"] = 1.0f;
+            seedMusicalOrbitLaneData (block);
+            graph.userConfigured = true;
         }
         if (type == ElementType::GranularField)
         {
@@ -3733,6 +4404,17 @@ namespace patchcraft
             el.cornerRadius = 10.0f;
             el.accentColour = PatchCraftLookAndFeel::accent();
             el.backgroundColour = juce::Colour (0x33141822);
+            el.borderColour = PatchCraftLookAndFeel::border();
+        }
+        if (type == ElementType::SampleDropZone)
+        {
+            el.label = "Drop Sample";
+            el.parameterId = el.parameterId.isNotEmpty() ? el.parameterId : "sampleStart";
+            el.semanticRole = "sampleDropZone:" + el.id;
+            el.cornerRadius = 10.0f;
+            el.strokeWidth = 1.4f;
+            el.accentColour = PatchCraftLookAndFeel::accent();
+            el.backgroundColour = juce::Colour (0xdd10141a);
             el.borderColour = PatchCraftLookAndFeel::border();
         }
         if (type == ElementType::EqCurve)
@@ -3889,6 +4571,8 @@ namespace patchcraft
             {
                 auto copy = el;
                 auto& added = m.add (copy);
+                if (added.type == ElementType::SampleDropZone)
+                    added.semanticRole = "sampleDropZone:" + added.id;
                 addedId = added.id;
             });
         if (addedId.isNotEmpty())
@@ -4126,22 +4810,42 @@ namespace patchcraft
         repaint();
     }
 
-    void CanvasEditor::addOrbitInstrumentControlLayout (juce::Point<int> canvasPos)
+    void CanvasEditor::addCircleSeqInstrumentLayout (juce::Point<int> canvasPos)
     {
         auto& graph = owner.getProject().getDspGraph();
         auto& arpBlock = ensureArpBlock (graph);
         seedMusicalOrbitLaneData (arpBlock);
+        auto& live = owner.getProject().getLiveValues();
+        live.setValue ("arpLaneMode", 1.0f);
+        live.setValue ("arpLaneControlBank", 0.0f);
+        live.setValue ("arpLaneSliderRole", 0.0f);
+        live.setValue ("arpLaneTarget", 0.0f);
+        live.setValue ("arpLaneSound", 12.0f);
+        live.setValue ("arpLaneRootNote", 57.0f);
+        live.setValue ("arpLaneSampleSlots", 16.0f);
+        live.setValue ("arpLaneDirection", 0.0f);
+        live.setValue ("arpLaneRate", 1.0f);
+        live.setValue ("arpLaneGate", 0.58f);
+        live.setValue ("arpLaneSwing", 0.08f);
+        live.setValue ("arpLaneProbability", 1.0f);
+        live.setValue ("arpLaneEuclideanPulses", 4.0f);
+        live.setValue ("arpLaneRatchet", 1.0f);
+        live.setValue ("arpLaneFillPulses", 3.0f);
+        live.setValue ("arpLaneFillProbability", 0.32f);
+        live.setValue ("arpLaneRetrigger", 1.0f);
+        live.setValue ("arpLaneMute", 0.0f);
+        live.setValue ("arpLaneSolo", 0.0f);
         graph.userConfigured = true;
 
         const auto tabGroup = currentTabGroup == "main" ? juce::String() : currentTabGroup;
         juce::StringArray addedIds;
 
-        owner.getProject().performLayoutEdit ("Add Orbit groove instrument surface",
+        owner.getProject().performLayoutEdit ("Add CircleSEQ musical surface",
             [&] (LayoutModel& layout)
             {
                 LayoutElement panel;
                 panel.type = ElementType::Panel;
-                panel.label = "Orbit Groove Instrument";
+                panel.label = "CircleSEQ Musical Surface";
                 panel.x = canvasPos.x;
                 panel.y = canvasPos.y;
                 panel.width = 1120;
@@ -4168,10 +4872,10 @@ namespace patchcraft
 
                 LayoutElement title;
                 title.type = ElementType::Label;
-                title.label = "ORBIT GROOVE BUILDER";
+                title.label = "CIRCLESEQ MUSICAL SURFACE";
                 title.x = canvasPos.x + 22;
                 title.y = canvasPos.y + 16;
-                title.width = 340;
+                title.width = 360;
                 title.height = 24;
                 title.labelSize = 16.0f;
                 title.textColour = PatchCraftLookAndFeel::textBright();
@@ -4180,7 +4884,7 @@ namespace patchcraft
 
                 LayoutElement help;
                 help.type = ElementType::Label;
-                help.label = "Edit five circular lanes, choose the lane bank and automation role, then prove it in Brand Lab before export.";
+                help.label = "Five rings share the DSP engine: choose a lane, pick sound/timing/role, then push and pull steps in real time.";
                 help.x = canvasPos.x + 370;
                 help.y = canvasPos.y + 18;
                 help.width = 700;
@@ -4191,7 +4895,7 @@ namespace patchcraft
 
                 LayoutElement orbit;
                 orbit.type = ElementType::ArpLane;
-                orbit.label = "Orbit Lane";
+                orbit.label = "CircleSEQ";
                 orbit.x = canvasPos.x + 22;
                 orbit.y = canvasPos.y + 58;
                 orbit.width = 650;
@@ -4201,7 +4905,9 @@ namespace patchcraft
                 orbit.arpLaneMode = "multiRing";
                 orbit.arpLaneTarget = "notes";
                 orbit.arpLaneSampleSlots = 8;
-                orbit.arpLaneEuclideanPulses = 11;
+                orbit.arpLaneRootNote = 57;
+                orbit.arpLaneEuclideanPulses = 4;
+                orbit.arpLaneRatchet = 1;
                 orbit.arpLaneFillPulses = 3;
                 orbit.arpLaneFillProbability = 0.32f;
                 orbit.cornerRadius = 14.0f;
@@ -4209,6 +4915,28 @@ namespace patchcraft
                 orbit.borderColour = PatchCraftLookAndFeel::border();
                 orbit.accentColour = PatchCraftLookAndFeel::accent();
                 addChild (orbit, "orbit_");
+
+                for (int lane = 0; lane < 5; ++lane)
+                {
+                    LayoutElement drop;
+                    drop.type = ElementType::SampleDropZone;
+                    drop.label = "R" + juce::String (lane + 1) + " SAMPLES";
+                    drop.x = canvasPos.x + 30 + lane * 128;
+                    drop.y = canvasPos.y + 496;
+                    drop.width = 118;
+                    drop.height = 50;
+                    drop.parameterId = "arpLaneSampleSlots";
+                    drop.semanticRole = "circleSeqLaneSample:" + juce::String (lane);
+                    drop.cornerRadius = 8.0f;
+                    drop.backgroundColour = juce::Colour (0xaa0d1720);
+                    drop.accentColour = lane == 0 ? juce::Colour (0xff14d9ff)
+                                      : lane == 1 ? juce::Colour (0xff9b6cff)
+                                      : lane == 2 ? juce::Colour (0xffff5d8f)
+                                      : lane == 3 ? juce::Colour (0xffffa316)
+                                                  : juce::Colour (0xff7ed957);
+                    drop.borderColour = drop.accentColour;
+                    addChild (drop, "sampleDrop_");
+                }
 
                 auto addControl = [&] (ElementType type, juce::String label, juce::String parameter,
                                        int x, int y, int w, int h, const juce::String& prefix)
@@ -4231,24 +4959,31 @@ namespace patchcraft
                     addChild (control, prefix);
                 };
 
-                addControl (ElementType::Dropdown, "Lane", "arpLaneControlBank", 700, 64, 126, 34, "dropdown_");
-                addControl (ElementType::Dropdown, "Role", "arpLaneSliderRole", 838, 64, 170, 34, "dropdown_");
-                addControl (ElementType::Dropdown, "FX", "arpLaneFxTarget", 1020, 64, 82, 34, "dropdown_");
-                addControl (ElementType::Dropdown, "Target", "arpLaneTarget", 700, 110, 126, 34, "dropdown_");
-                addControl (ElementType::Dropdown, "Direction", "arpLaneDirection", 838, 110, 170, 34, "dropdown_");
-                addControl (ElementType::Dropdown, "Src", "arpLaneSound", 1020, 110, 82, 34, "dropdown_");
-                addControl (ElementType::Button, "FILL HOLD", "arpLaneFillMomentary", 700, 160, 126, 34, "button_");
-                addControl (ElementType::Toggle, "FILL LATCH", "arpLaneFillLatch", 838, 160, 126, 34, "toggle_");
-                addControl (ElementType::Toggle, "MUTE", "arpLaneMute", 976, 160, 72, 34, "toggle_");
-                addControl (ElementType::Knob, "Rate", "arpLaneRate", 700, 218, 70, 76, "knob_");
-                addControl (ElementType::Knob, "Gate", "arpLaneGate", 790, 218, 70, 76, "knob_");
-                addControl (ElementType::Knob, "Swing", "arpLaneSwing", 880, 218, 70, 76, "knob_");
-                addControl (ElementType::Knob, "Chance", "arpLaneProbability", 970, 218, 70, 76, "knob_");
-                addControl (ElementType::Knob, "FX Amt", "arpLaneFxAmount", 1050, 218, 58, 76, "knob_");
-                addControl (ElementType::Knob, "Fill", "arpLaneFillPulses", 700, 314, 70, 76, "knob_");
-                addControl (ElementType::Knob, "Fill %", "arpLaneFillProbability", 790, 314, 70, 76, "knob_");
-                addControl (ElementType::Knob, "Slots", "arpLaneSampleSlots", 880, 314, 70, 76, "knob_");
-                addControl (ElementType::Knob, "Rotate", "arpLaneRotate", 970, 314, 70, 76, "knob_");
+                addControl (ElementType::Dropdown, "Lane", "arpLaneControlBank", 700, 64, 98, 34, "dropdown_");
+                addControl (ElementType::Dropdown, "Target", "arpLaneTarget", 806, 64, 98, 34, "dropdown_");
+                addControl (ElementType::Dropdown, "Sound", "arpLaneSound", 912, 64, 92, 34, "dropdown_");
+                addControl (ElementType::Dropdown, "Role", "arpLaneSliderRole", 1012, 64, 96, 34, "dropdown_");
+                addControl (ElementType::Dropdown, "Direction", "arpLaneDirection", 700, 110, 132, 34, "dropdown_");
+                addControl (ElementType::Dropdown, "FX", "arpLaneFxTarget", 840, 110, 88, 34, "dropdown_");
+                addControl (ElementType::Dropdown, "Group", "arpLaneGroup", 936, 110, 82, 34, "dropdown_");
+                addControl (ElementType::Dropdown, "Preset", "arpLanePatternLaunch", 1034, 110, 74, 34, "dropdown_");
+                addControl (ElementType::Button, "FILL", "arpLaneFillMomentary", 700, 166, 88, 30, "button_");
+                addControl (ElementType::Toggle, "LATCH", "arpLaneFillLatch", 796, 166, 82, 30, "toggle_");
+                addControl (ElementType::Toggle, "BYPASS", "arpLaneMute", 886, 166, 82, 30, "toggle_");
+                addControl (ElementType::Toggle, "SOLO", "arpLaneSolo", 976, 166, 58, 30, "toggle_");
+                addControl (ElementType::Toggle, "RTRG", "arpLaneRetrigger", 1042, 166, 58, 30, "toggle_");
+                addControl (ElementType::Knob, "Rate", "arpLaneRate", 700, 218, 58, 76, "knob_");
+                addControl (ElementType::Knob, "Gate", "arpLaneGate", 768, 218, 58, 76, "knob_");
+                addControl (ElementType::Knob, "Swing", "arpLaneSwing", 836, 218, 58, 76, "knob_");
+                addControl (ElementType::Knob, "Chance", "arpLaneProbability", 904, 218, 58, 76, "knob_");
+                addControl (ElementType::Knob, "FX Amt", "arpLaneFxAmount", 972, 218, 58, 76, "knob_");
+                addControl (ElementType::Knob, "Root", "arpLaneRootNote", 1040, 218, 58, 76, "knob_");
+                addControl (ElementType::Knob, "Pulses", "arpLaneEuclideanPulses", 700, 314, 58, 76, "knob_");
+                addControl (ElementType::Knob, "Ratchet", "arpLaneRatchet", 768, 314, 58, 76, "knob_");
+                addControl (ElementType::Knob, "Rotate", "arpLaneRotate", 836, 314, 58, 76, "knob_");
+                addControl (ElementType::Knob, "Fill", "arpLaneFillPulses", 904, 314, 58, 76, "knob_");
+                addControl (ElementType::Knob, "Fill %", "arpLaneFillProbability", 972, 314, 58, 76, "knob_");
+                addControl (ElementType::Knob, "Slots", "arpLaneSampleSlots", 1040, 314, 58, 76, "knob_");
 
                 for (int step = 0; step < 16; ++step)
                 {
@@ -4270,6 +5005,11 @@ namespace patchcraft
 
         applyArpLaneParameterToGraph (owner.getProject(), "arpLaneIndex");
         repaint();
+    }
+
+    void CanvasEditor::addOrbitInstrumentControlLayout (juce::Point<int> canvasPos)
+    {
+        addCircleSeqInstrumentLayout (canvasPos);
     }
 
     void CanvasEditor::addVisualReactivityControlLayout (juce::Point<int> canvasPos)
@@ -4351,7 +5091,7 @@ namespace patchcraft
 
                 LayoutElement fx;
                 fx.type = ElementType::VisualFxLayer;
-                fx.label = "Orbit Aura FX";
+                fx.label = "CircleSEQ Aura FX";
                 fx.x = canvasPos.x + 350;
                 fx.y = canvasPos.y + 64;
                 fx.width = 280;
@@ -4396,7 +5136,7 @@ namespace patchcraft
                 pro.width = 908;
                 pro.height = 82;
                 pro.visualRequiresPro = true;
-                pro.visualAiPrompt = "Generate a title banner, library thumbnail, reactive glow mask, and 8-frame sprite accents that match this instrument's sound, Orbit motion, and brand colors.";
+                pro.visualAiPrompt = "Generate a title banner, library thumbnail, reactive glow mask, and 8-frame sprite accents that match this instrument's sound, CircleSEQ motion, and brand colors.";
                 pro.visualAiStyle = "premium plugin artwork, clean, no center text, real instrument UI assets";
                 pro.cornerRadius = 10.0f;
                 pro.accentColour = juce::Colour (0xffb98cff);
@@ -4515,32 +5255,130 @@ namespace patchcraft
         (void) canvasPos;
     }
 
-    void CanvasEditor::showContextMenu (juce::Point<int> screenPos)
+    void CanvasEditor::copySelectedArpLanePattern()
+    {
+        copiedArpLanePattern.clear();
+
+        const auto* selected = owner.getProject().getLayout().find (owner.getSelectedElementId());
+        const auto* block = findArpBlock (owner.getProject().getDspGraph());
+        if (selected == nullptr || selected->type != ElementType::ArpLane || block == nullptr)
+            return;
+
+        const int lane = juce::jlimit (0, 15, selected->arpLaneIndex);
+        const auto prefix = arpBankPrefix (lane);
+        for (const auto& value : block->values)
+        {
+            if (! value.first.startsWith (prefix))
+                continue;
+
+            const auto key = value.first.substring (prefix.length());
+            if (isArpLanePatternKey (key))
+                copiedArpLanePattern[key] = value.second;
+        }
+
+        if (copiedArpLanePattern.empty() && lane == 0)
+            for (const auto& value : block->values)
+                if (isArpLanePatternKey (value.first))
+                    copiedArpLanePattern[value.first] = value.second;
+    }
+
+    void CanvasEditor::pasteArpLanePatternToSelection()
+    {
+        if (copiedArpLanePattern.empty())
+            return;
+
+        auto* selected = owner.getProject().getLayout().find (owner.getSelectedElementId());
+        if (selected == nullptr || selected->type != ElementType::ArpLane)
+            return;
+
+        auto& graph = owner.getProject().getDspGraph();
+        auto& block = ensureArpBlock (graph);
+        const int lane = juce::jlimit (0, 15, selected->arpLaneIndex);
+        block.values["mpActiveBank"] = (float) lane;
+        block.values["mpMultiLane"] = 1.0f;
+
+        for (const auto& value : copiedArpLanePattern)
+            setArpLaneValue (block, lane, value.first, value.second);
+
+        graph.userConfigured = true;
+        owner.getProject().markDirty();
+        owner.getProject().notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
+        repaint();
+    }
+
+    void CanvasEditor::resetSelectedArpLanePattern()
+    {
+        auto* selected = owner.getProject().getLayout().find (owner.getSelectedElementId());
+        if (selected == nullptr || selected->type != ElementType::ArpLane)
+            return;
+
+        auto& graph = owner.getProject().getDspGraph();
+        auto& block = ensureArpBlock (graph);
+        const int lane = juce::jlimit (0, 15, selected->arpLaneIndex);
+        const int steps = juce::jlimit (1, 128, selected->arpLaneSteps);
+
+        block.values["mpActiveBank"] = (float) lane;
+        block.values["mpMultiLane"] = 1.0f;
+        setArpLaneValue (block, lane, "arpSteps", (float) steps);
+        setArpLaneValue (block, lane, "mpLaneMute", 0.0f);
+        setArpLaneValue (block, lane, "mpLaneSolo", 0.0f);
+        setArpLaneValue (block, lane, "mpLaneRetrigger", 1.0f);
+
+        for (int step = 0; step < 128; ++step)
+        {
+            const auto suffix = juce::String (step);
+            setArpLaneValue (block, lane, "mpStep" + suffix + "On", 0.0f);
+            setArpLaneValue (block, lane, "arpNote" + suffix, 0.0f);
+            setArpLaneValue (block, lane, "mpVelocity" + suffix, 0.30f);
+            setArpLaneValue (block, lane, "mpGate" + suffix, 0.58f);
+            setArpLaneValue (block, lane, "mpStepProb" + suffix, 1.0f);
+            setArpLaneValue (block, lane, "mpStepDiv" + suffix, 1.0f);
+            setArpLaneValue (block, lane, "mpStepDelay" + suffix, 0.0f);
+            setArpLaneValue (block, lane, "mpStepTranspose" + suffix, 0.0f);
+            setArpLaneValue (block, lane, "mpAutoFilter" + suffix, 0.0f);
+            setArpLaneValue (block, lane, "mpAutoPan" + suffix, 0.0f);
+            setArpLaneValue (block, lane, "mpAutoFxSend" + suffix, 0.0f);
+        }
+
+        graph.userConfigured = true;
+        owner.getProject().markDirty();
+        owner.getProject().notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
+        repaint();
+    }
+
+    void CanvasEditor::showContextMenu (juce::Point<int> screenPos, bool forceMainMenu)
     {
         const auto canvasPos = screenToCanvas (screenPos);
         juce::String clickedElementId;
         bool clickedAssignableControl = false;
-        for (auto it = owner.getProject().getLayout().getAll().rbegin();
-             it != owner.getProject().getLayout().getAll().rend(); ++it)
+        if (! forceMainMenu)
         {
-            if (! it->visible || it->type == ElementType::Group || ! isElementOnCurrentTab (*it))
-                continue;
-            if (! elementScreenRect (*it).contains (screenPos))
-                continue;
+            for (auto it = owner.getProject().getLayout().getAll().rbegin();
+                 it != owner.getProject().getLayout().getAll().rend(); ++it)
+            {
+                if (! it->visible || it->type == ElementType::Group || ! isElementOnCurrentTab (*it))
+                    continue;
+                if (! elementScreenRect (*it).contains (screenPos))
+                    continue;
 
-            clickedElementId = it->id;
-            clickedAssignableControl = it->type == ElementType::Knob
-                                    || it->type == ElementType::Slider
-                                    || it->type == ElementType::Button
-                                    || it->type == ElementType::Toggle
-                                    || it->type == ElementType::Dropdown
-                                    || it->type == ElementType::ValueDisplay
-                                    || it->type == ElementType::MacroControl;
-            break;
+                clickedElementId = it->id;
+                clickedAssignableControl = it->type == ElementType::Knob
+                                        || it->type == ElementType::Slider
+                                        || it->type == ElementType::Button
+                                        || it->type == ElementType::Toggle
+                                        || it->type == ElementType::Dropdown
+                                        || it->type == ElementType::ValueDisplay
+                                        || it->type == ElementType::MacroControl
+                                        || it->type == ElementType::SampleDropZone;
+                break;
+            }
         }
 
         if (clickedElementId.isNotEmpty() && ! owner.isElementSelected (clickedElementId))
             owner.setSelectedElementId (clickedElementId);
+
+        const auto* selectedForMenu = owner.getProject().getLayout().find (owner.getSelectedElementId());
+        const bool selectedArpLane = selectedForMenu != nullptr && selectedForMenu->type == ElementType::ArpLane;
 
         juce::PopupMenu menu;
         menu.addItem (99, "Search Canvas Actions...");
@@ -4569,9 +5407,17 @@ namespace patchcraft
         menu.addItem (22, "Add Granular Field");
         menu.addItem (23, "Add Drum Machine Surface");
         menu.addItem (26, "Add Arp Studio Lane");
-        menu.addItem (27, "Add Orbit Groove Instrument Surface");
+        menu.addItem (27, "Add CircleSEQ Musical Surface");
         menu.addItem (28, "Add Animation Lab Visual Kit");
         menu.addSeparator();
+        if (selectedArpLane)
+        {
+            menu.addSectionHeader ("Circle Pattern");
+            menu.addItem (31, "Copy Circle Pattern");
+            menu.addItem (32, "Paste Pattern To This Circle", ! copiedArpLanePattern.empty());
+            menu.addItem (33, "Reset Circle To No Sound");
+            menu.addSeparator();
+        }
 
         // Group parameters by ParameterDef::category so the menu doesn't dump
         // every parameter as a flat 50-row wall of text. Each category becomes
@@ -4739,7 +5585,7 @@ namespace patchcraft
                             else if (actionId == "modMatrix") c->addElementAt (ElementType::ModMatrix, canvasPos);
                             else if (actionId == "granular") c->addElementAt (ElementType::GranularField, canvasPos);
                             else if (actionId == "arpLane") c->addElementAt (ElementType::ArpLane, canvasPos);
-                            else if (actionId == "orbitInstrument") c->addOrbitInstrumentControlLayout (canvasPos);
+                            else if (actionId == "orbitInstrument") c->addCircleSeqInstrumentLayout (canvasPos);
                             else if (actionId == "visualKit") c->addVisualReactivityControlLayout (canvasPos);
                             else if (actionId == "reactiveImage") c->addElementAt (ElementType::ReactiveImage, canvasPos);
                             else if (actionId == "spriteAnimator") c->addElementAt (ElementType::SpriteAnimator, canvasPos);
@@ -4792,7 +5638,8 @@ namespace patchcraft
                                                 || el->type == ElementType::Toggle
                                                 || el->type == ElementType::Dropdown
                                                 || el->type == ElementType::ValueDisplay
-                                                || el->type == ElementType::MacroControl;
+                                                || el->type == ElementType::MacroControl
+                                                || el->type == ElementType::SampleDropZone;
                                             if (! assignable)
                                                 continue;
                                             el->parameterId = paramId;
@@ -4843,11 +5690,23 @@ namespace patchcraft
                 }
                 else if (result == 27)
                 {
-                    addOrbitInstrumentControlLayout (canvasPos);
+                    addCircleSeqInstrumentLayout (canvasPos);
                 }
                 else if (result == 28)
                 {
                     addVisualReactivityControlLayout (canvasPos);
+                }
+                else if (result == 31)
+                {
+                    copySelectedArpLanePattern();
+                }
+                else if (result == 32)
+                {
+                    pasteArpLanePatternToSelection();
+                }
+                else if (result == 33)
+                {
+                    resetSelectedArpLanePattern();
                 }
                 else if (result == 15)
                 {
@@ -4897,7 +5756,8 @@ namespace patchcraft
                                                 || el->type == ElementType::Toggle
                                                 || el->type == ElementType::Dropdown
                                                 || el->type == ElementType::ValueDisplay
-                                                || el->type == ElementType::MacroControl;
+                                                || el->type == ElementType::MacroControl
+                                                || el->type == ElementType::SampleDropZone;
                                             if (! assignable) continue;
                                             el->parameterId = paramId;
                                             if (el->label.isEmpty() && label.isNotEmpty())
@@ -4994,7 +5854,8 @@ namespace patchcraft
                                         || el->type == ElementType::Toggle
                                         || el->type == ElementType::Dropdown
                                         || el->type == ElementType::ValueDisplay
-                                        || el->type == ElementType::MacroControl;
+                                        || el->type == ElementType::MacroControl
+                                        || el->type == ElementType::SampleDropZone;
                                     if (! assignable)
                                         continue;
                                     el->parameterId = paramId;
@@ -5022,6 +5883,25 @@ namespace patchcraft
 
         if (mode == DragMode::ValueDrag)
         {
+            if (dragValueIsLocalPreview)
+            {
+                const int dyPixels = dragStart.y - e.getPosition().y;
+                const float fineMult = e.mods.isShiftDown() ? 0.2f : 1.0f;
+                const float deltaNorm = (float) dyPixels / 220.0f * fineMult;
+                const float nextValue = juce::jlimit (0.0f, 1.0f, dragValueStart + deltaNorm);
+                if (auto* dragged = owner.getProject().getLayout().find (dragValueElementId))
+                {
+                    dragged->controlPreviewValue = nextValue;
+                    repaint (elementScreenRect (*dragged).expanded (8));
+                }
+                else
+                {
+                    repaint();
+                }
+                layoutChangedDuringDrag = true;
+                return;
+            }
+
             auto* def = owner.getProject().getParameters().find (dragParameterId);
             if (def == nullptr) return;
             const int dyPixels = dragStart.y - e.getPosition().y;     // up = increase
@@ -5058,7 +5938,25 @@ namespace patchcraft
             return;
         }
 
+        if (mode == DragMode::Pan)
+        {
+            canvasPanOffset = panDragOrigin + (e.getPosition() - dragStart);
+            repaint();
+            return;
+        }
+
         auto* el = owner.getProject().getLayout().find (owner.getSelectedElementId());
+        juce::Rectangle<int> dirtyBefore;
+        bool hasDirtyBefore = false;
+        if (mode == DragMode::Move || mode == DragMode::ResizeBR)
+        {
+            hasDirtyBefore = getMultiSelectionScreenBounds (dirtyBefore);
+            if (! hasDirtyBefore && el != nullptr)
+            {
+                dirtyBefore = elementScreenRect (*el);
+                hasDirtyBefore = true;
+            }
+        }
 
         const auto deltaCanvas = juce::Point<float> (
             (e.getPosition().x - dragStart.x) / zoom,
@@ -5144,6 +6042,25 @@ namespace patchcraft
             repaint();
             return;
         }
+
+        if (hasDirtyBefore)
+        {
+            juce::Rectangle<int> dirtyAfter;
+            bool hasDirtyAfter = getMultiSelectionScreenBounds (dirtyAfter);
+            if (! hasDirtyAfter)
+            {
+                if (auto* selected = owner.getProject().getLayout().find (owner.getSelectedElementId()))
+                {
+                    dirtyAfter = elementScreenRect (*selected);
+                    hasDirtyAfter = true;
+                }
+            }
+
+            repaint (hasDirtyAfter ? dirtyBefore.getUnion (dirtyAfter).expanded (28)
+                                   : dirtyBefore.expanded (28));
+            return;
+        }
+
         repaint();
     }
 
@@ -5163,8 +6080,10 @@ namespace patchcraft
         mode = DragMode::None;
         dragParameterId.clear();
         dragValueElementId.clear();
+        dragValueIsLocalPreview = false;
         drumGridEditElementId.clear();
         arpLaneEditElementId.clear();
+        panDragOrigin = {};
         lastDrumGridTrack = -1;
         lastDrumGridStep = -1;
         lastArpLane = -1;
@@ -5252,7 +6171,13 @@ namespace patchcraft
                 repaint (hoverGuidanceBounds.expanded (4));
         }
 
-        // BR-corner resize cursor on selected element
+        // BR-corner resize cursor on selected group or selected element
+        if (multiSelectionResizeHandleContains (e.getPosition()))
+        {
+            setMouseCursor (juce::MouseCursor::BottomRightCornerResizeCursor);
+            return;
+        }
+
         auto* sel = owner.getProject().getLayout().find (owner.getSelectedElementId());
         if (sel != nullptr && ! sel->locked)
         {

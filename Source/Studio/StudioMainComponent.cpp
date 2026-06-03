@@ -192,6 +192,58 @@ namespace patchcraft
             return fallback;
         }
 
+        static juce::DynamicObject::Ptr readStudioPreferencesObject()
+        {
+            const auto file = studioPreferencesFile();
+            if (file.existsAsFile())
+            {
+                auto parsed = juce::JSON::parse (file);
+                if (auto* object = parsed.getDynamicObject())
+                    return object;
+            }
+
+            return new juce::DynamicObject();
+        }
+
+        static void writeStudioPreferencesObject (juce::DynamicObject::Ptr object)
+        {
+            auto file = studioPreferencesFile();
+            if (object == nullptr || ! file.getParentDirectory().createDirectory())
+                return;
+
+            file.replaceWithText (juce::JSON::toString (juce::var (object.get()), true));
+        }
+
+        static juce::StringArray readRecentProjectPreference()
+        {
+            juce::StringArray paths;
+            auto object = readStudioPreferencesObject();
+            if (object == nullptr)
+                return paths;
+
+            if (auto* recent = object->getProperty ("recentProjects").getArray())
+                for (const auto& item : *recent)
+                    if (auto path = item.toString().trim(); path.isNotEmpty())
+                        paths.addIfNotAlreadyThere (path);
+
+            return paths;
+        }
+
+        static void writeRecentProjectPreference (const juce::StringArray& paths)
+        {
+            auto object = readStudioPreferencesObject();
+            if (object == nullptr)
+                object = new juce::DynamicObject();
+
+            juce::Array<juce::var> recent;
+            for (const auto& path : paths)
+                if (path.isNotEmpty())
+                    recent.add (path);
+
+            object->setProperty ("recentProjects", juce::var (recent));
+            writeStudioPreferencesObject (object);
+        }
+
         static juce::String copilotTaskDescription (AiAssistService::TaskType task)
         {
             switch (task)
@@ -408,13 +460,11 @@ namespace patchcraft
 
         static void writeStudioTutorialPreference (bool enabled)
         {
-            auto file = studioPreferencesFile();
-            if (! file.getParentDirectory().createDirectory())
-                return;
-
-            auto* object = new juce::DynamicObject();
+            auto object = readStudioPreferencesObject();
+            if (object == nullptr)
+                object = new juce::DynamicObject();
             object->setProperty ("studioShowTutorials", enabled);
-            file.replaceWithText (juce::JSON::toString (juce::var (object), true));
+            writeStudioPreferencesObject (object);
         }
 
         static juce::String defaultParameterForLibraryAsset (const PatchCraftProject& project,
@@ -738,6 +788,11 @@ namespace patchcraft
     {
         // Canvas and test controls derive directly from LiveValueStore.
         // Avoid full panel rebuilds while dragging controls; that stalls audio/UI response.
+        const auto nowMs = juce::Time::getMillisecondCounterHiRes();
+        if (nowMs - lastLiveValueUiRepaintMs < 33.0)
+            return;
+
+        lastLiveValueUiRepaintMs = nowMs;
         if (canvasEditor != nullptr)
             canvasEditor->repaint();
         if (bottomPanel != nullptr)
@@ -840,6 +895,44 @@ namespace patchcraft
                                                        int frames, bool vertical,
                                                        juce::Point<int> canvasPosition)
     {
+        auto addBackgroundLayer = [this] (const juce::File& imageFile)
+        {
+            if (! imageFile.existsAsFile())
+                return;
+
+            project.performLayoutEdit ("Add background layer", [&] (LayoutModel& layout)
+            {
+                const auto& canvas = project.getCanvasSize();
+                auto* background = layout.find ("background");
+                if (background == nullptr)
+                {
+                    LayoutElement layer;
+                    layer.type = ElementType::Image;
+                    layer.id = "background";
+                    layer.label = "Background";
+                    layer.x = 0;
+                    layer.y = 0;
+                    layer.width = juce::jmax (1, canvas.width);
+                    layer.height = juce::jmax (1, canvas.height);
+                    layer.locked = true;
+                    layer.asset = imageFile.getFullPathName();
+                    layout.add (layer);
+                }
+                else
+                {
+                    background->type = ElementType::Image;
+                    background->label = background->label.isNotEmpty() ? background->label : "Background";
+                    background->x = 0;
+                    background->y = 0;
+                    background->width = juce::jmax (1, canvas.width);
+                    background->height = juce::jmax (1, canvas.height);
+                    background->locked = true;
+                    background->visible = true;
+                    background->asset = imageFile.getFullPathName();
+                }
+            });
+        };
+
         if (category.equalsIgnoreCase ("templates"))
         {
             juce::Component::SafePointer<StudioMainComponent> safe (this);
@@ -868,8 +961,7 @@ namespace patchcraft
 
             project.backgroundImageRelative = file.getFullPathName();
             project.getManifest().backgroundImage = project.backgroundImageRelative;
-            if (auto* background = project.getLayout().find ("background"))
-                background->asset.clear();
+            addBackgroundLayer (file);
             assets.clear();
             project.notifyChanged();
             return;
@@ -895,12 +987,70 @@ namespace patchcraft
         else if (category.startsWithIgnoreCase ("meter"))
             type = ElementType::Meter;
 
+        auto isRenderImage = [] (const juce::File& candidate)
+        {
+            const auto extension = candidate.getFileExtension().toLowerCase();
+            return extension == ".png" || extension == ".jpg" || extension == ".jpeg"
+                || extension == ".gif" || extension == ".webp";
+        };
+        auto sourceSidecarRenderFile = [] (const juce::File& candidate)
+        {
+            const auto name = candidate.getFileName();
+            for (const auto& suffix : { juce::String (".patchcraft-knob.json"),
+                                        juce::String (".patchcraft-slider.json"),
+                                        juce::String (".patchcraft-meter.json") })
+            {
+                if (name.endsWithIgnoreCase (suffix))
+                {
+                    const auto stem = name.dropLastCharacters (suffix.length());
+                    return candidate.getParentDirectory().getChildFile (stem + ".png");
+                }
+            }
+            return juce::File();
+        };
+
+        auto renderFile = file;
+        if (type != ElementType::Image)
+        {
+            const auto sourcePng = sourceSidecarRenderFile (file);
+            if (sourcePng.existsAsFile())
+                renderFile = sourcePng;
+            else if (! isRenderImage (renderFile))
+            {
+                const auto siblingPng = file.withFileExtension ("png");
+                if (siblingPng.existsAsFile())
+                    renderFile = siblingPng;
+            }
+        }
+
         auto& canvas = project.getCanvasSize();
         int assetWidth = type == ElementType::Slider ? 52 : (type == ElementType::Image ? 240 : 112);
         int assetHeight = type == ElementType::Slider ? 220 : (type == ElementType::Image ? 160 : 112);
-        if (auto image = juce::ImageFileFormat::loadFrom (file); image.isValid())
+        auto inferFramesFromImage = [] (const juce::Image& image, int requestedFrames, bool isVertical)
         {
-            const int safeFrames = juce::jmax (1, frames);
+            int detectedFrames = juce::jmax (0, requestedFrames);
+            if (image.isValid() && detectedFrames <= 1)
+            {
+                const int w = juce::jmax (1, image.getWidth());
+                const int h = juce::jmax (1, image.getHeight());
+                const int inferred = isVertical ? juce::roundToInt ((double) h / (double) w)
+                                                : juce::roundToInt ((double) w / (double) h);
+                if (inferred > detectedFrames)
+                    detectedFrames = inferred;
+            }
+            return juce::jmax (1, detectedFrames);
+        };
+
+        int detectedFrames = juce::jmax (0, frames);
+        bool renderImageValid = false;
+        if (auto image = type == ElementType::Image
+                ? assets.loadImage (renderFile)
+                : assets.loadControlFilmstrip (renderFile, frames, vertical);
+            image.isValid())
+        {
+            renderImageValid = true;
+            detectedFrames = inferFramesFromImage (image, frames, vertical);
+            const int safeFrames = juce::jmax (1, detectedFrames);
             const int frameWidth = vertical ? image.getWidth()
                                             : juce::jmax (1, image.getWidth() / safeFrames);
             const int frameHeight = vertical ? juce::jmax (1, image.getHeight() / safeFrames)
@@ -928,20 +1078,122 @@ namespace patchcraft
             element.height = assetHeight;
             if (type == ElementType::Image)
             {
-                element.asset = file.getFullPathName();
+                element.asset = renderFile.getFullPathName();
                 element.parameterId = {};
             }
             else
             {
-                element.filmstripAsset = file.getFullPathName();
-                element.filmstripFrames = frames;
+                if (renderImageValid && renderFile.existsAsFile())
+                    element.filmstripAsset = renderFile.getFullPathName();
+                element.filmstripFrames = detectedFrames;
                 element.filmstripVertical = vertical;
-                element.parameterId = defaultParameterForLibraryAsset (project, type);
+                element.parameterId = {};
+                element.controlPreviewValue = 0.5f;
+                element.labelPosition = "hidden";
+                element.labelSpacing = 0.0f;
+                element.labelOffsetX = 0.0f;
+                element.labelOffsetY = 0.0f;
             }
             layout.add (element);
         });
 
         setSelectedElementId (project.getLayout().getAll().back().id);
+    }
+
+    bool StudioMainComponent::applyBrandingAsset (const juce::String& category, const juce::File& file)
+    {
+        if (! file.existsAsFile())
+            return false;
+
+        const auto extension = file.getFileExtension().toLowerCase();
+        if (extension != ".png" && extension != ".jpg" && extension != ".jpeg"
+            && extension != ".gif" && extension != ".webp")
+            return false;
+
+        auto& manifest = project.getManifest();
+        auto target = category.toLowerCase();
+        bool sidecarProvidedTitleTheme = false;
+        const auto sidecar = file.withFileExtension ("patchcraft-branding.json");
+        if (sidecar.existsAsFile())
+        {
+            auto parsed = juce::JSON::parse (sidecar);
+            if (auto* obj = parsed.getDynamicObject())
+            {
+                const auto sidecarTarget = obj->getProperty ("target").toString().toLowerCase();
+                if (sidecarTarget.isNotEmpty())
+                    target = sidecarTarget;
+                if (obj->hasProperty ("playerTitleBarTheme"))
+                {
+                    manifest.playerTitleBarTheme = obj->getProperty ("playerTitleBarTheme").toString();
+                    sidecarProvidedTitleTheme = manifest.playerTitleBarTheme.isNotEmpty();
+                }
+                if (obj->hasProperty ("playerTitleTextPlacement"))
+                    manifest.playerTitleTextPlacement = obj->getProperty ("playerTitleTextPlacement").toString();
+                if (obj->hasProperty ("playerTitleButtonStyle"))
+                    manifest.playerTitleButtonStyle = obj->getProperty ("playerTitleButtonStyle").toString();
+                if (obj->hasProperty ("playerTitleFontFamily"))
+                    manifest.playerTitleFontFamily = obj->getProperty ("playerTitleFontFamily").toString();
+            }
+        }
+
+        const auto path = file.getFullPathName();
+        if (target.contains ("font"))
+        {
+            auto name = file.getFileNameWithoutExtension().fromFirstOccurrenceOf ("font_", false, true)
+                .replaceCharacter ('_', ' ')
+                .trim();
+            if (name.isEmpty())
+                name = "Default";
+            if (name.equalsIgnoreCase ("segoe ui")) name = "Segoe UI";
+            else if (name.equalsIgnoreCase ("arial")) name = "Arial";
+            else if (name.equalsIgnoreCase ("verdana")) name = "Verdana";
+            else if (name.equalsIgnoreCase ("georgia")) name = "Georgia";
+            else if (name.equalsIgnoreCase ("consolas")) name = "Consolas";
+            else if (name.equalsIgnoreCase ("default")) name = "Default";
+            manifest.playerTitleFontFamily = name;
+            project.notifyChanged();
+            refreshAllPanels();
+            return true;
+        }
+
+        const bool titleTarget = target.contains ("title")
+                              || target.contains ("banner")
+                              || target.contains ("texture")
+                              || target.contains ("template");
+        const bool logoTarget = target.contains ("logo")
+                             || target.contains ("icon")
+                             || target.contains ("badge");
+
+        if (titleTarget || ! logoTarget)
+        {
+            manifest.playerTitleBannerImage = path;
+            if (! sidecarProvidedTitleTheme
+                && (manifest.playerTitleBarTheme.isEmpty()
+                || manifest.playerTitleBarTheme == "classic"
+                || manifest.playerTitleBarTheme == "minimal"
+                || manifest.playerTitleBarTheme == "no-chrome"))
+                manifest.playerTitleBarTheme = "custom";
+            project.performLayoutEdit ("Use Player chrome title banner", [&] (LayoutModel& layout)
+            {
+                juce::StringArray idsToRemove;
+                for (const auto& element : layout.getAll())
+                    if (element.id == "player_titlebar_artwork"
+                        || element.id == "player_titlebar_mock"
+                        || element.semanticRole == "playerTitleBarArtwork"
+                        || element.semanticRole == "playerTitleBar")
+                        idsToRemove.addIfNotAlreadyThere (element.id);
+
+                for (const auto& id : idsToRemove)
+                    layout.remove (id);
+            });
+        }
+        if (logoTarget)
+            manifest.playerLogoImage = path;
+
+        project.notifyChanged();
+        assets.clear();
+        refreshAllPanels();
+        return true;
     }
 
     void StudioMainComponent::setSelectedElementId (juce::String id)
@@ -990,6 +1242,14 @@ namespace patchcraft
     void StudioMainComponent::clearSelection()
     {
         setSelectedElementIds ({});
+    }
+
+    void StudioMainComponent::selectAllElements()
+    {
+        juce::StringArray ids;
+        for (const auto& element : project.getLayout().getAll())
+            ids.addIfNotAlreadyThere (element.id);
+        setSelectedElementIds (ids);
     }
 
     // -------------------------------------------------------------------------
@@ -1167,7 +1427,7 @@ namespace patchcraft
 
     juce::StringArray StudioMainComponent::getMenuBarNames()
     {
-        return { "File", "Design", "Window", "Help" };
+        return { "File", "Design", "Window", "Store", "Help" };
     }
 
     juce::PopupMenu StudioMainComponent::getMenuForIndex (int, const juce::String& menuName)
@@ -1177,6 +1437,25 @@ namespace patchcraft
         {
             menu.addItem (1001, "New Project");
             menu.addItem (1002, "Open Project...");
+            menu.addItem (1024, "Project Browser...");
+
+            juce::PopupMenu recentMenu;
+            const auto recentPaths = getRecentProjectPaths();
+            if (recentPaths.isEmpty())
+            {
+                recentMenu.addItem (1199, "No recent projects", false);
+            }
+            else
+            {
+                for (int i = 0; i < juce::jmin (recentPaths.size(), 12); ++i)
+                {
+                    const auto file = juce::File (recentPaths[i]);
+                    recentMenu.addItem (1100 + i,
+                                        file.getFileName().isNotEmpty() ? file.getFileName() : recentPaths[i],
+                                        file.isDirectory());
+                }
+            }
+            menu.addSubMenu ("Load Recent", recentMenu, ! recentPaths.isEmpty());
             menu.addSeparator();
             menu.addItem (1003, "Save Project");
             menu.addItem (1004, "Save Project As...");
@@ -1224,6 +1503,8 @@ namespace patchcraft
             menu.addItem (3004, "Copy Selection Without Parameters", hasSelection);
             menu.addItem (3005, "Paste Elements", hasCopiedElements());
             menu.addItem (3006, "Copy Selection To All Tabs", hasSelection);
+            menu.addSeparator();
+            menu.addItem (3007, "Select All Layers", ! project.getLayout().getAll().empty());
             menu.addSeparator();
             menu.addItem (3001, "Duplicate Selection", hasSelection);
             menu.addItem (3002, "Delete Selection", hasSelection);
@@ -1316,6 +1597,8 @@ namespace patchcraft
             }
             menu.addSubMenu ("Canvas Zoom", zoomMenu);
             menu.addSeparator();
+            menu.addItem (4012, "Reset Canvas To Blank", true);
+            menu.addSeparator();
             menu.addItem (4001, "Hide All Windows");
             menu.addItem (4002, "Show Main Windows");
             menu.addItem (4003, "Dock All Floating Windows", ! floatingPanels.empty());
@@ -1329,6 +1612,16 @@ namespace patchcraft
             menu.addItem (4009, "Go To DSP Builder");
             menu.addItem (4010, "Go To Animation Lab");
             menu.addItem (4011, "Go To Launch");
+            menu.addItem (4014, "Go To Expansions");
+            menu.addItem (4013, "Full Screen Sample Mapper Zones");
+        }
+        else if (menuName == "Store")
+        {
+            menu.addItem (5000, "PatchCraft Expansions...");
+            menu.addItem (5001, "Open Plugin.club...");
+            menu.addSeparator();
+            menu.addItem (5002, "Browse Marketplace Packs...", false);
+            menu.addItem (5003, "Import Purchased Pack...", false);
         }
         else if (menuName == "Help")
         {
@@ -1354,18 +1647,22 @@ namespace patchcraft
             case 1022: generateAiBackground(); break;
 #endif
             case 1023: setBottomTab (BottomPanel::Page::Export); break;
+            case 1024: setBottomTab (BottomPanel::Page::ProjectBrowser); break;
             case 1007: exportPack(); break;
             case 1008: sendToExpansionPack(); break;
             case 1020: exportVstPlugin(); break;
             case 1021: publishToPluginClub(); break;
             case 1009: openSettings(); break;
             case 1010: juce::JUCEApplication::getInstance()->systemRequestedQuit(); break;
+            case 5000: setBottomTab (BottomPanel::Page::Expansions); break;
+            case 5001: juce::URL ("https://plugin.club").launchInDefaultBrowser(); break;
             case 2998: undo(); break;
             case 2999: redo(); break;
             case 3003: copySelectedElements (true); break;
             case 3004: copySelectedElements (false); break;
             case 3005: pasteCopiedElements(); break;
             case 3006: copySelectedToAllTabs(); break;
+            case 3007: selectAllElements(); break;
             case 3001: duplicateSelected(); break;
             case 3002: deleteSelected(); break;
             case 3010: groupSelectedElements(); break;
@@ -1428,6 +1725,13 @@ namespace patchcraft
             case 4009: setBottomTab (BottomPanel::Page::DSP); break;
             case 4010: setBottomTab (BottomPanel::Page::Animation); break;
             case 4011: setBottomTab (BottomPanel::Page::Export); break;
+            case 4014: setBottomTab (BottomPanel::Page::Expansions); break;
+            case 4013: openSampleMapperZoneManager(); break;
+            case 4012:
+                project.resetCanvasToBlank();
+                clearSelection();
+                setBottomTab (BottomPanel::Page::Design);
+                break;
             case 4100: fitCanvasToWindow(); break;
             case 2001: showDspBuilderTutorial(); break;
             case 2002: toggleHelpTooltips(); break;
@@ -1437,6 +1741,14 @@ namespace patchcraft
             case 1011: restoreAllPresets(); break;
             case 1012: setDefaultPreset(); break;
             default:
+                if (menuItemID >= 1100 && menuItemID < 1116)
+                {
+                    const auto recent = getRecentProjectPaths();
+                    const int index = menuItemID - 1100;
+                    if (index >= 0 && index < recent.size())
+                        openProjectFolder (juce::File (recent[index]));
+                    break;
+                }
                 if (menuItemID > 4100 && menuItemID <= 4500)
                     setCanvasZoom ((float) (menuItemID - 4100) / 100.0f);
                 break;
@@ -1521,6 +1833,7 @@ namespace patchcraft
     void StudioMainComponent::newProject()
     {
         project.resetToDefaultInstrument();
+        project.resetCanvasToBlank();
         selectedElementId.clear();
         selectedElementIds.clear();
         project.notifyChanged();
@@ -1538,44 +1851,91 @@ namespace patchcraft
             {
                 auto folder = fc.getResult();
                 if (folder == juce::File()) return;
-                juce::String err;
-
-                if (folder.getChildFile ("manifest.json").existsAsFile())
-                {
-                    if (! project.loadRuntimePackAsProject (folder, err))
-                    {
-                        juce::AlertWindow::showAsync (
-                            juce::MessageBoxOptions()
-                                .withTitle ("Open demo/template")
-                                .withMessage (err.isEmpty() ? "Failed to open PatchCraft demo/template." : err)
-                                .withButton ("OK")
-                                .withIconType (juce::MessageBoxIconType::WarningIcon),
-                            nullptr);
-                        return;
-                    }
-                    selectedElementId.clear();
-                    selectedElementIds.clear();
-                    assets.clear();
-                    refreshAllPanels();
-                    setBottomTab (BottomPanel::Page::Design);
-                    return;
-                }
-
-                if (! project.load (folder, err))
-                {
-                    juce::AlertWindow::showAsync (
-                        juce::MessageBoxOptions()
-                            .withTitle ("Open project")
-                            .withMessage ((err.containsIgnoreCase ("project.json") && folder.getChildFile ("manifest.json").existsAsFile())
-                                ? "This is a PatchCraft runtime pack/demo, not a saved authoring project. It will now be opened as an editable demo."
-                                : (err.isEmpty() ? "Failed to open project." : err))
-                            .withButton ("OK")
-                            .withIconType (juce::MessageBoxIconType::WarningIcon),
-                        nullptr);
-                    return;
-                }
-                project.notifyChanged();
+                openProjectFolder (folder);
             });
+    }
+
+    void StudioMainComponent::openProjectFolder (const juce::File& folder)
+    {
+        if (! folder.isDirectory())
+            return;
+
+        juce::String err;
+        const bool runtimePack = folder.getChildFile ("manifest.json").existsAsFile();
+        const bool authoringProject = folder.getChildFile ("project.json").existsAsFile();
+
+        if (runtimePack)
+        {
+            if (! project.loadRuntimePackAsProject (folder, err))
+            {
+                juce::AlertWindow::showAsync (
+                    juce::MessageBoxOptions()
+                        .withTitle ("Open demo/template")
+                        .withMessage (err.isEmpty() ? "Failed to open PatchCraft demo/template." : err)
+                        .withButton ("OK")
+                        .withIconType (juce::MessageBoxIconType::WarningIcon),
+                    nullptr);
+                return;
+            }
+        }
+        else if (authoringProject)
+        {
+            if (! project.load (folder, err))
+            {
+                juce::AlertWindow::showAsync (
+                    juce::MessageBoxOptions()
+                        .withTitle ("Open project")
+                        .withMessage (err.isEmpty() ? "Failed to open project." : err)
+                        .withButton ("OK")
+                        .withIconType (juce::MessageBoxIconType::WarningIcon),
+                    nullptr);
+                return;
+            }
+        }
+        else
+        {
+            juce::AlertWindow::showAsync (
+                juce::MessageBoxOptions()
+                    .withTitle ("Open project")
+                    .withMessage ("Choose a folder that contains project.json or manifest.json.")
+                    .withButton ("OK")
+                    .withIconType (juce::MessageBoxIconType::WarningIcon),
+                nullptr);
+            return;
+        }
+
+        selectedElementId.clear();
+        selectedElementIds.clear();
+        assets.clear();
+        addRecentProject (folder);
+        project.notifyChanged();
+        refreshAllPanels();
+        setBottomTab (BottomPanel::Page::Design);
+    }
+
+    juce::StringArray StudioMainComponent::getRecentProjectPaths() const
+    {
+        return readRecentProjectPreference();
+    }
+
+    void StudioMainComponent::addRecentProject (const juce::File& folder)
+    {
+        if (! folder.isDirectory())
+            return;
+
+        const auto fullPath = folder.getFullPathName();
+        auto paths = readRecentProjectPreference();
+
+        for (int i = paths.size(); --i >= 0;)
+            if (juce::File (paths[i]) == folder || paths[i].equalsIgnoreCase (fullPath))
+                paths.remove (i);
+
+        paths.insert (0, fullPath);
+        while (paths.size() > 16)
+            paths.remove (paths.size() - 1);
+
+        writeRecentProjectPreference (paths);
+        menuBar.repaint();
     }
 
     void StudioMainComponent::loadFactoryDemo (const juce::File& demoPackFolder)
@@ -1596,6 +1956,7 @@ namespace patchcraft
         selectedElementId.clear();
         selectedElementIds.clear();
         assets.clear();
+        addRecentProject (demoPackFolder);
         refreshAllPanels();
         setBottomTab (BottomPanel::Page::Design);
     }
@@ -1616,6 +1977,7 @@ namespace patchcraft
                     nullptr);
                 return;
             }
+            addRecentProject (project.getProjectFolder());
             refreshAllPanels();
             return;
         }
@@ -1647,6 +2009,7 @@ namespace patchcraft
                         nullptr);
                     return;
                 }
+                addRecentProject (folder);
                 refreshAllPanels();
             });
     }
@@ -2142,8 +2505,40 @@ namespace patchcraft
                     project.backgroundImageRelative = f.getFullPathName();
                     project.getManifest().backgroundImage = project.backgroundImageRelative;
                 }
-                if (auto* bg = project.getLayout().find ("background"))
-                    bg->asset.clear();
+                auto imageFile = juce::File::isAbsolutePath (project.backgroundImageRelative)
+                    ? juce::File (project.backgroundImageRelative)
+                    : project.getProjectFolder().getChildFile (project.backgroundImageRelative);
+                project.performLayoutEdit ("Add background layer", [&] (LayoutModel& layout)
+                {
+                    const auto& canvas = project.getCanvasSize();
+                    auto* bg = layout.find ("background");
+                    if (bg == nullptr)
+                    {
+                        LayoutElement layer;
+                        layer.type = ElementType::Image;
+                        layer.id = "background";
+                        layer.label = "Background";
+                        layer.x = 0;
+                        layer.y = 0;
+                        layer.width = juce::jmax (1, canvas.width);
+                        layer.height = juce::jmax (1, canvas.height);
+                        layer.locked = true;
+                        layer.asset = imageFile.getFullPathName();
+                        layout.add (layer);
+                    }
+                    else
+                    {
+                        bg->type = ElementType::Image;
+                        bg->label = bg->label.isNotEmpty() ? bg->label : "Background";
+                        bg->x = 0;
+                        bg->y = 0;
+                        bg->width = juce::jmax (1, canvas.width);
+                        bg->height = juce::jmax (1, canvas.height);
+                        bg->locked = true;
+                        bg->visible = true;
+                        bg->asset = imageFile.getFullPathName();
+                    }
+                });
                 assets.clear();
                 project.notifyChanged();
             });
@@ -2200,8 +2595,38 @@ namespace patchcraft
                                 project.backgroundImageRelative = result.outputFile.getFullPathName();
 
                             project.getManifest().backgroundImage = project.backgroundImageRelative;
-                            if (auto* background = project.getLayout().find ("background"))
-                                background->asset.clear();
+                            const auto imageFile = result.outputFile;
+                            project.performLayoutEdit ("Add generated background layer", [&] (LayoutModel& layout)
+                            {
+                                const auto& canvas = project.getCanvasSize();
+                                auto* background = layout.find ("background");
+                                if (background == nullptr)
+                                {
+                                    LayoutElement layer;
+                                    layer.type = ElementType::Image;
+                                    layer.id = "background";
+                                    layer.label = "Background";
+                                    layer.x = 0;
+                                    layer.y = 0;
+                                    layer.width = juce::jmax (1, canvas.width);
+                                    layer.height = juce::jmax (1, canvas.height);
+                                    layer.locked = true;
+                                    layer.asset = imageFile.getFullPathName();
+                                    layout.add (layer);
+                                }
+                                else
+                                {
+                                    background->type = ElementType::Image;
+                                    background->label = background->label.isNotEmpty() ? background->label : "Background";
+                                    background->x = 0;
+                                    background->y = 0;
+                                    background->width = juce::jmax (1, canvas.width);
+                                    background->height = juce::jmax (1, canvas.height);
+                                    background->locked = true;
+                                    background->visible = true;
+                                    background->asset = imageFile.getFullPathName();
+                                }
+                            });
                             safeThis->assets.clear();
                             project.markDirty();
                             project.notifyChanged();
@@ -2410,22 +2835,53 @@ namespace patchcraft
         const auto ids = selectedElementIds;
         if (ids.isEmpty()) return;
 
+        juce::StringArray expandedIds;
+        auto addWithChildren = [&] (auto& self, const juce::String& id) -> void
+        {
+            if (id.isEmpty() || expandedIds.contains (id))
+                return;
+
+            expandedIds.add (id);
+            for (const auto& child : project.getLayout().getAll())
+                if (child.containerId == id)
+                    self (self, child.id);
+        };
+
+        for (const auto& id : ids)
+            addWithChildren (addWithChildren, id);
+
+        juce::Rectangle<int> sourceBounds;
+        bool hasBounds = false;
+        for (const auto& id : expandedIds)
+        {
+            if (auto* el = project.getLayout().find (id))
+            {
+                const juce::Rectangle<int> itemBounds (el->x, el->y,
+                                                       juce::jmax (1, el->width),
+                                                       juce::jmax (1, el->height));
+                sourceBounds = hasBounds ? sourceBounds.getUnion (itemBounds) : itemBounds;
+                hasBounds = true;
+            }
+        }
+
+        const int duplicateOffsetX = hasBounds ? sourceBounds.getWidth() + 24 : 120;
         juce::StringArray newIds;
         std::map<juce::String, juce::String> idRemap;
         project.performLayoutEdit ("Duplicate selection", [&] (LayoutModel& m)
         {
             // First pass: copy every selected element and record old->new id.
-            for (const auto& id : ids)
+            for (const auto& id : expandedIds)
             {
                 if (auto* el = m.find (id))
                 {
                     LayoutElement copy = *el;
                     const auto oldId = copy.id;
                     copy.id.clear();          // forces add() to mint a unique id
-                    copy.x += 16; copy.y += 16;
+                    copy.x += duplicateOffsetX;
                     auto& added = m.add (copy);
                     idRemap[oldId] = added.id;
-                    newIds.add (added.id);
+                    if (ids.contains (oldId))
+                        newIds.add (added.id);
                 }
             }
 
@@ -3303,6 +3759,15 @@ namespace patchcraft
     void StudioMainComponent::togglePacksPanel()
     {
         togglePanelFloat (expansionLibraryPanel.get(), "Packs");
+    }
+
+    void StudioMainComponent::openSampleMapperZoneManager()
+    {
+        setBottomTab (BottomPanel::Page::Samples);
+        if (bottomPanel != nullptr && ! isPanelFloating (bottomPanel.get()))
+            bottomPanel->setSize (juce::jmax (1080, getWidth() - 120),
+                                  juce::jmax (700, getHeight() - 120));
+        togglePanelFloat (bottomPanel.get(), "Sample Mapper Zones");
     }
 
     void StudioMainComponent::togglePanelFloat (juce::Component* panel, juce::String title)

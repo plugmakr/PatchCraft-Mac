@@ -86,6 +86,16 @@ namespace patchcraft
 
     juce::File BuiltAssetLibraryComponent::getWritableModeRoot() const
     {
+        if (owner.getBottomTab() == BottomPanel::Page::Branding)
+        {
+            auto root = getAssetLibraryRoot().getChildFile ("assets").getChildFile ("branding");
+            if (mode == LibraryMode::Templates)
+                return root.getChildFile ("title-bars");
+            if (mode == LibraryMode::Sounds)
+                return root.getChildFile ("icons");
+            return root.getChildFile ("images");
+        }
+
         if (mode == LibraryMode::Templates)
             return getAssetLibraryRoot().getChildFile ("templates");
         if (mode == LibraryMode::Assets)
@@ -115,7 +125,7 @@ namespace patchcraft
 
     bool BuiltAssetLibraryComponent::isSupportedAssetFile (const juce::File& file)
     {
-        return isSupportedImageFile (file);
+        return isSupportedImageFile (file) || file.getFileExtension().equalsIgnoreCase (".knob");
     }
 
     bool BuiltAssetLibraryComponent::isSupportedSoundFile (const juce::File& file)
@@ -220,11 +230,32 @@ namespace patchcraft
         r.removeFromTop (3);
 
         auto modes = r.removeFromTop (28);
-        const int modeWidth = modes.getWidth() / 4;
-        backgroundsButton.setBounds (modes.removeFromLeft (modeWidth).reduced (2));
-        templatesButton.setBounds (modes.removeFromLeft (modeWidth).reduced (2));
-        assetsButton.setBounds (modes.removeFromLeft (modeWidth).reduced (2));
-        soundsButton.setBounds (modes.reduced (2));
+        const bool brandingMode = owner.getBottomTab() == BottomPanel::Page::Branding;
+        backgroundsButton.setVisible (! brandingMode);
+        title.setText (brandingMode ? "Player Library" : "Library", juce::dontSendNotification);
+        if (brandingMode)
+        {
+            templatesButton.setButtonText ("Title Bars");
+            assetsButton.setButtonText ("Images");
+            soundsButton.setButtonText ("Icons");
+            const int modeWidth = modes.getWidth() / 3;
+            templatesButton.setBounds (modes.removeFromLeft (modeWidth).reduced (2));
+            assetsButton.setBounds (modes.removeFromLeft (modeWidth).reduced (2));
+            soundsButton.setBounds (modes.reduced (2));
+            backgroundsButton.setBounds ({});
+        }
+        else
+        {
+            backgroundsButton.setButtonText ("Backgrounds");
+            templatesButton.setButtonText ("Templates");
+            assetsButton.setButtonText ("Assets");
+            soundsButton.setButtonText ("Sounds");
+            const int modeWidth = modes.getWidth() / 4;
+            backgroundsButton.setBounds (modes.removeFromLeft (modeWidth).reduced (2));
+            templatesButton.setBounds (modes.removeFromLeft (modeWidth).reduced (2));
+            assetsButton.setBounds (modes.removeFromLeft (modeWidth).reduced (2));
+            soundsButton.setBounds (modes.reduced (2));
+        }
         r.removeFromTop (3);
 
         auto actions = r.removeFromTop (28);
@@ -242,16 +273,22 @@ namespace patchcraft
     void BuiltAssetLibraryComponent::refresh()
     {
         stopSoundPreview();
+        if (owner.getBottomTab() == BottomPanel::Page::Branding && mode == LibraryMode::Backgrounds)
+            mode = LibraryMode::Assets;
+
         entries.clear();
         selectedRow = -1;
         backgroundsButton.setToggleState (mode == LibraryMode::Backgrounds, juce::dontSendNotification);
         templatesButton.setToggleState (mode == LibraryMode::Templates, juce::dontSendNotification);
         assetsButton.setToggleState (mode == LibraryMode::Assets, juce::dontSendNotification);
         soundsButton.setToggleState (mode == LibraryMode::Sounds, juce::dontSendNotification);
-        addButton.setButtonText (mode == LibraryMode::Sounds ? "To Mapper" : "Add");
-        autoAuditionToggle.setVisible (mode == LibraryMode::Sounds);
+        const bool brandingMode = owner.getBottomTab() == BottomPanel::Page::Branding;
+        addButton.setButtonText (brandingMode ? "Apply" : (mode == LibraryMode::Sounds ? "To Mapper" : "Add"));
+        autoAuditionToggle.setVisible (! brandingMode && mode == LibraryMode::Sounds);
 
-        if (mode == LibraryMode::Backgrounds)
+        if (brandingMode)
+            scanBrandingAssets();
+        else if (mode == LibraryMode::Backgrounds)
             scanBackgrounds();
         else if (mode == LibraryMode::Templates)
             scanTemplates();
@@ -280,8 +317,7 @@ namespace patchcraft
             return;
 
         mode = newMode;
-        if (mode != LibraryMode::Sounds)
-            activeSoundFolder = juce::File();
+        activeFolder = juce::File();
         refresh();
     }
 
@@ -371,42 +407,30 @@ namespace patchcraft
 
     void BuiltAssetLibraryComponent::scanBackgrounds()
     {
-        for (const auto& root : getTemplateRoots())
+        if (activeFolder.isDirectory())
         {
-            auto packs = root.findChildFiles (juce::File::findDirectories, true, "*.patchcraft");
-            for (const auto& pack : packs)
+            Entry back;
+            back.category = "backgrounds";
+            back.title = "All Backgrounds";
+            back.subtitle = "Back to the main background library";
+            back.folderPath = "Library";
+            back.isFolder = true;
+            entries.push_back (std::move (back));
+
+            addFolderEntriesForRoot (activeFolder, "backgrounds", false);
+            for (auto file : activeFolder.findChildFiles (juce::File::findFiles, false, "*.png;*.jpg;*.jpeg;*.gif;*.webp"))
             {
-                auto manifestFile = pack.getChildFile ("manifest.json");
-                if (! manifestFile.existsAsFile())
+                if (! isSupportedImageFile (file))
                     continue;
-
-                juce::String title = pack.getFileNameWithoutExtension();
-                auto manifest = juce::JSON::parse (manifestFile);
-                if (auto* obj = manifest.getDynamicObject())
-                {
-                    const auto display = obj->getProperty ("instrumentName").toString();
-                    if (display.isNotEmpty())
-                        title = display;
-                }
-
-                const auto assets = pack.getChildFile ("assets");
-                for (const auto& name : { juce::String ("background.png"),
-                                          juce::String ("background-sectioned.png"),
-                                          juce::String ("background-clean.png") })
-                {
-                    auto file = assets.getChildFile (name);
-                    if (file.existsAsFile())
-                    {
-                        Entry entry;
-                        entry.category = "backgrounds";
-                        entry.file = file;
-                        entry.title = title + " - " + file.getFileNameWithoutExtension();
-                        entry.subtitle = pack.getFileName();
-                        entry.folderPath = folderLabelFor (root, pack);
-                        entries.push_back (entry);
-                    }
-                }
+                Entry entry;
+                entry.category = "backgrounds";
+                entry.file = file;
+                entry.title = file.getFileNameWithoutExtension();
+                entry.subtitle = "Background";
+                entry.folderPath = folderLabelFor (activeFolder, file);
+                entries.push_back (entry);
             }
+            return;
         }
 
         for (const auto& root : getBackgroundRoots())
@@ -414,7 +438,7 @@ namespace patchcraft
             if (isUserLibraryFile (root))
                 root.createDirectory();
             addFolderEntriesForRoot (root, "backgrounds", false);
-            for (auto file : root.findChildFiles (juce::File::findFiles, true, "*.png;*.jpg;*.jpeg;*.gif;*.webp"))
+            for (auto file : root.findChildFiles (juce::File::findFiles, false, "*.png;*.jpg;*.jpeg;*.gif;*.webp"))
             {
                 if (! isSupportedImageFile (file))
                     continue;
@@ -431,13 +455,69 @@ namespace patchcraft
 
     void BuiltAssetLibraryComponent::scanTemplates()
     {
+        auto templateIdentityFor = [] (const juce::File& folder, const juce::String& displayName)
+        {
+            auto key = displayName.isNotEmpty() ? displayName : folder.getFileNameWithoutExtension();
+            return key.trim().toLowerCase()
+                      + "|"
+                      + folder.getChildFile ("manifest.json").getFileName().toLowerCase();
+        };
+
+        if (activeFolder.isDirectory())
+        {
+            juce::StringArray seenTemplates;
+            Entry back;
+            back.category = "templates";
+            back.title = "All Templates";
+            back.subtitle = "Back to the main template library";
+            back.folderPath = "Library";
+            back.isFolder = true;
+            entries.push_back (std::move (back));
+
+            addFolderEntriesForRoot (activeFolder, "templates", true);
+            auto folders = activeFolder.findChildFiles (juce::File::findDirectories, false, "*.patchcraft");
+            for (const auto& folder : folders)
+            {
+                auto manifestFile = folder.getChildFile ("manifest.json");
+                if (! manifestFile.existsAsFile())
+                    continue;
+
+                Entry entry;
+                entry.category = "templates";
+                entry.file = folder;
+                entry.title = folder.getFileNameWithoutExtension();
+                entry.subtitle = "PatchCraft template";
+                entry.folderPath = folderLabelFor (activeFolder, folder);
+
+                auto manifest = juce::JSON::parse (manifestFile);
+                if (auto* obj = manifest.getDynamicObject())
+                {
+                    const auto display = obj->getProperty ("instrumentName").toString();
+                    const auto engine = obj->getProperty ("engine").toString();
+                    const auto category = obj->getProperty ("category").toString();
+                    if (display.isNotEmpty())
+                        entry.title = display;
+                    entry.subtitle = (engine.isNotEmpty() ? engine.toUpperCase() : juce::String ("PACK"))
+                        + (category.isNotEmpty() ? " | " + category : juce::String());
+                }
+
+                const auto key = templateIdentityFor (folder, entry.title);
+                if (seenTemplates.contains (key))
+                    continue;
+                seenTemplates.add (key);
+                entries.push_back (entry);
+            }
+            return;
+        }
+
+        juce::StringArray seenTemplates;
         for (const auto& root : getTemplateRoots())
         {
             if (isUserLibraryFile (root))
                 root.createDirectory();
             addFolderEntriesForRoot (root, "templates", true);
 
-            auto folders = root.findChildFiles (juce::File::findDirectories, true, "*.patchcraft");
+            auto folders = root.findChildFiles (juce::File::findDirectories, false, "*.patchcraft");
             for (const auto& folder : folders)
             {
                 auto manifestFile = folder.getChildFile ("manifest.json");
@@ -463,6 +543,10 @@ namespace patchcraft
                         + (category.isNotEmpty() ? " | " + category : juce::String());
                 }
 
+                const auto key = templateIdentityFor (folder, entry.title);
+                if (seenTemplates.contains (key))
+                    continue;
+                seenTemplates.add (key);
                 entries.push_back (entry);
             }
         }
@@ -499,6 +583,8 @@ namespace patchcraft
                 return juce::String ("meters");
             if (path.contains ("/knobs/") || path.contains ("/knob/"))
                 return juce::String ("knobs");
+            if (file.getFileExtension().equalsIgnoreCase (".knob"))
+                return juce::String ("knobs");
             if (file.withFileExtension ("patchcraft-slider.json").existsAsFile())
                 return juce::String ("sliders");
             if (file.withFileExtension ("patchcraft-meter.json").existsAsFile())
@@ -507,6 +593,33 @@ namespace patchcraft
                 return juce::String ("knobs");
             return juce::String ("assets");
         };
+
+        if (activeFolder.isDirectory())
+        {
+            Entry back;
+            back.category = "assets";
+            back.title = "All Assets";
+            back.subtitle = "Back to the full asset library";
+            back.folderPath = "Assets";
+            back.isFolder = true;
+            entries.push_back (std::move (back));
+
+            addFolderEntriesForRoot (activeFolder, "assets", false);
+
+            for (auto file : activeFolder.findChildFiles (juce::File::findFiles, false, "*.png;*.jpg;*.jpeg;*.gif;*.webp;*.knob"))
+            {
+                if (! isSupportedAssetFile (file))
+                    continue;
+
+                auto entry = inspectAssetFile (file, categoryForFile (file));
+                entry.folderPath = folderLabelFor (activeFolder, file);
+                if (entry.category == "assets")
+                    entry.subtitle = "Image asset";
+                addEntry (std::move (entry));
+            }
+
+            return;
+        }
 
         const auto app = juce::File::getSpecialLocation (juce::File::currentApplicationFile);
         const auto appDir = app.isDirectory() ? app : app.getParentDirectory();
@@ -527,7 +640,7 @@ namespace patchcraft
                 if (! folder.isDirectory())
                     continue;
 
-                for (auto file : folder.findChildFiles (juce::File::findFiles, true, "*.png;*.jpg;*.jpeg;*.gif;*.webp"))
+                for (auto file : folder.findChildFiles (juce::File::findFiles, true, "*.png;*.jpg;*.jpeg;*.gif;*.webp;*.knob"))
                 {
                     if (! isSupportedAssetFile (file))
                         continue;
@@ -548,7 +661,7 @@ namespace patchcraft
                 continue;
             addFolderEntriesForRoot (root, "assets", false);
 
-            for (auto file : root.findChildFiles (juce::File::findFiles, true, "*.png;*.jpg;*.jpeg;*.gif;*.webp"))
+            for (auto file : root.findChildFiles (juce::File::findFiles, true, "*.png;*.jpg;*.jpeg;*.gif;*.webp;*.knob"))
             {
                 if (! isSupportedAssetFile (file))
                     continue;
@@ -556,6 +669,122 @@ namespace patchcraft
                 entry.folderPath = folderLabelFor (root, file);
                 if (entry.category == "assets")
                     entry.subtitle = "Image asset";
+                addEntry (std::move (entry));
+            }
+        }
+    }
+
+    void BuiltAssetLibraryComponent::scanBrandingAssets()
+    {
+        juce::Array<juce::File> roots;
+        juce::StringArray seenRootPaths;
+        auto addRoot = [&] (const juce::File& folder)
+        {
+            const auto key = folder.getFullPathName().replaceCharacter ('\\', '/').trimCharactersAtEnd ("/").toLowerCase();
+            if (! seenRootPaths.contains (key))
+            {
+                roots.add (folder);
+                seenRootPaths.add (key);
+            }
+        };
+
+        const auto app = juce::File::getSpecialLocation (juce::File::currentApplicationFile);
+        const auto appDir = app.isDirectory() ? app : app.getParentDirectory();
+        addRoot (getAssetLibraryRoot().getChildFile ("assets").getChildFile ("branding"));
+        addRoot (appDir.getChildFile ("Library").getChildFile ("Assets").getChildFile ("branding"));
+        addRoot (juce::File::getCurrentWorkingDirectory().getChildFile ("Library").getChildFile ("Assets").getChildFile ("branding"));
+
+        auto userBrandRoot = getAssetLibraryRoot().getChildFile ("assets").getChildFile ("branding");
+        userBrandRoot.createDirectory();
+
+        juce::StringArray seenAssetPaths;
+        auto addEntry = [&] (Entry entry)
+        {
+            const auto key = entry.file.getFullPathName().replaceCharacter ('\\', '/').trimCharactersAtEnd ("/").toLowerCase();
+            if (seenAssetPaths.contains (key))
+                return;
+            seenAssetPaths.add (key);
+            entries.push_back (std::move (entry));
+        };
+
+        auto categoryForBrandingFile = [] (const juce::File& file)
+        {
+            const auto path = file.getFullPathName().replaceCharacter ('\\', '/').toLowerCase();
+            if (path.contains ("/title-bars/") || path.contains ("/titlebars/") || path.contains ("/banners/"))
+                return juce::String ("branding-titlebars");
+            if (path.contains ("/logos/"))
+                return juce::String ("branding-logos");
+            if (path.contains ("/icons/"))
+                return juce::String ("branding-icons");
+            if (path.contains ("/badges/"))
+                return juce::String ("branding-badges");
+            if (path.contains ("/textures/"))
+                return juce::String ("branding-textures");
+            if (path.contains ("/fonts/"))
+                return juce::String ("branding-fonts");
+            return juce::String ("branding-images");
+        };
+
+        auto includeForMode = [this] (const juce::String& category)
+        {
+            if (mode == LibraryMode::Templates)
+                return category == "branding-titlebars";
+            if (mode == LibraryMode::Sounds)
+                return category == "branding-icons" || category == "branding-logos" || category == "branding-badges";
+            return category != "branding-titlebars";
+        };
+
+        if (activeFolder.isDirectory())
+        {
+            Entry back;
+            back.category = "branding";
+            back.title = mode == LibraryMode::Templates ? "All Title Bars"
+                       : mode == LibraryMode::Sounds ? "All Icons"
+                                                     : "All Branding Images";
+            back.subtitle = "Back to the branding library";
+            back.folderPath = "Branding";
+            back.isFolder = true;
+            entries.push_back (std::move (back));
+
+            addFolderEntriesForRoot (activeFolder, "branding", false);
+            for (auto file : activeFolder.findChildFiles (juce::File::findFiles, false, "*.png;*.jpg;*.jpeg;*.gif;*.webp"))
+            {
+                const auto category = categoryForBrandingFile (file);
+                if (! includeForMode (category))
+                    continue;
+                auto entry = inspectAssetFile (file, category);
+                entry.folderPath = folderLabelFor (activeFolder, file);
+                entry.subtitle = category == "branding-titlebars" ? "Player title bar template"
+                               : category == "branding-logos" ? "Player logo"
+                               : category == "branding-icons" ? "Player title icon"
+                               : category == "branding-badges" ? "Player badge"
+                               : category == "branding-fonts" ? "Font preview"
+                                                               : "Branding image";
+                addEntry (std::move (entry));
+            }
+            return;
+        }
+
+        for (const auto& root : roots)
+        {
+            if (! root.isDirectory())
+                continue;
+            addFolderEntriesForRoot (root, "branding", false);
+            for (auto file : root.findChildFiles (juce::File::findFiles, true, "*.png;*.jpg;*.jpeg;*.gif;*.webp"))
+            {
+                const auto category = categoryForBrandingFile (file);
+                if (! includeForMode (category))
+                    continue;
+
+                auto entry = inspectAssetFile (file, category);
+                entry.folderPath = folderLabelFor (root, file);
+                entry.subtitle = category == "branding-titlebars" ? "Player title bar template"
+                               : category == "branding-logos" ? "Player logo"
+                               : category == "branding-icons" ? "Player title icon"
+                               : category == "branding-badges" ? "Player badge"
+                               : category == "branding-textures" ? "Branding texture"
+                               : category == "branding-fonts" ? "Font preview"
+                                                                 : "Branding image";
                 addEntry (std::move (entry));
             }
         }
@@ -587,7 +816,7 @@ namespace patchcraft
             addEntry (std::move (entry));
         };
 
-        if (activeSoundFolder.isDirectory())
+        if (activeFolder.isDirectory())
         {
             Entry back;
             back.category = "sounds";
@@ -597,9 +826,9 @@ namespace patchcraft
             back.isFolder = true;
             entries.push_back (std::move (back));
 
-            addFolderEntriesForRoot (activeSoundFolder, "sounds", false);
-            for (auto file : activeSoundFolder.findChildFiles (juce::File::findFiles, false, "*.wav;*.aif;*.aiff;*.flac"))
-                addSoundFile (activeSoundFolder, file);
+            addFolderEntriesForRoot (activeFolder, "sounds", false);
+            for (auto file : activeFolder.findChildFiles (juce::File::findFiles, false, "*.wav;*.aif;*.aiff;*.flac"))
+                addSoundFile (activeFolder, file);
             return;
         }
 
@@ -618,7 +847,7 @@ namespace patchcraft
                                                               const juce::String& category,
                                                               bool skipPatchcraftTemplates)
     {
-        if (! isUserLibraryFile (root) || ! root.isDirectory())
+        if (! root.isDirectory())
             return;
 
         juce::StringArray seenPaths;
@@ -626,7 +855,7 @@ namespace patchcraft
             if (existing.isFolder)
                 seenPaths.addIfNotAlreadyThere (existing.file.getFullPathName().replaceCharacter ('\\', '/').trimCharactersAtEnd ("/").toLowerCase());
 
-        auto folders = root.findChildFiles (juce::File::findDirectories, true, "*");
+        auto folders = root.findChildFiles (juce::File::findDirectories, false, "*");
         for (const auto& folder : folders)
         {
             if (skipPatchcraftTemplates
@@ -673,6 +902,13 @@ namespace patchcraft
         entry.file = std::move (file);
         entry.category = std::move (category);
         entry.title = entry.file.getFileNameWithoutExtension();
+        if (entry.file.getFileExtension().equalsIgnoreCase (".knob"))
+        {
+            entry.category = "knobs";
+            entry.frames = 1;
+            entry.vertical = true;
+            entry.subtitle = "KnobMan .knob source";
+        }
 
         auto sidecarForCategory = [&]
         {
@@ -771,11 +1007,17 @@ namespace patchcraft
             auto thumbFile = entry.file.getChildFile ("assets").getChildFile ("thumbnail.png");
             if (! thumbFile.existsAsFile())
                 thumbFile = entry.file.getChildFile ("assets").getChildFile ("background.png");
-            image = juce::ImageFileFormat::loadFrom (thumbFile);
+            image = owner.getAssets().loadImage (thumbFile);
+        }
+        else if (entry.category.startsWithIgnoreCase ("knob")
+              || entry.category.startsWithIgnoreCase ("slider")
+              || entry.category.startsWithIgnoreCase ("meter"))
+        {
+            image = owner.getAssets().loadControlFilmstrip (entry.file, entry.frames, entry.vertical, 96);
         }
         else
         {
-            image = juce::ImageFileFormat::loadFrom (entry.file);
+            image = owner.getAssets().loadImage (entry.file);
         }
         if (image.isValid())
         {
@@ -805,6 +1047,18 @@ namespace patchcraft
             }
             g.strokePath (path, juce::PathStrokeType (1.6f));
         }
+        else if (entry.file.getFileExtension().equalsIgnoreCase (".knob"))
+        {
+            g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.14f));
+            g.fillEllipse (thumb.toFloat().reduced (2.0f));
+            g.setColour (PatchCraftLookAndFeel::accent());
+            g.drawEllipse (thumb.toFloat().reduced (3.0f), 1.4f);
+            auto indicator = thumb.toFloat().getCentre();
+            g.drawLine (indicator.x, indicator.y,
+                        indicator.x + thumb.getWidth() * 0.22f,
+                        indicator.y - thumb.getHeight() * 0.26f,
+                        2.0f);
+        }
 
         g.setColour (selected ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::text());
         g.setFont (juce::Font (12.0f, juce::Font::bold));
@@ -830,18 +1084,20 @@ namespace patchcraft
         selectedRow = lastRowSelected;
         if (selectedRow >= 0
             && selectedRow < (int) entries.size()
-            && mode == LibraryMode::Sounds
             && list.getSelectedRows().size() == 1)
         {
             const auto& entry = entries[(size_t) selectedRow];
             if (entry.isFolder)
             {
-                activeSoundFolder = entry.file.isDirectory() ? entry.file : juce::File();
+                activeFolder = entry.file.isDirectory() ? entry.file : juce::File();
                 refresh();
                 return;
             }
 
-            if (autoAuditionToggle.getToggleState() && entry.file.existsAsFile())
+            if (owner.getBottomTab() != BottomPanel::Page::Branding
+                && mode == LibraryMode::Sounds
+                && autoAuditionToggle.getToggleState()
+                && entry.file.existsAsFile())
                 auditionSoundFile (entry.file);
         }
     }
@@ -851,11 +1107,10 @@ namespace patchcraft
         selectedRow = row;
         if (selectedRow >= 0
             && selectedRow < (int) entries.size()
-            && mode == LibraryMode::Sounds
             && entries[(size_t) selectedRow].isFolder)
         {
             const auto& entry = entries[(size_t) selectedRow];
-            activeSoundFolder = entry.file.isDirectory() ? entry.file : juce::File();
+            activeFolder = entry.file.isDirectory() ? entry.file : juce::File();
             refresh();
             return;
         }
@@ -870,7 +1125,7 @@ namespace patchcraft
 
         juce::Array<juce::var> paths;
         juce::String category;
-        int frames = 1;
+        int frames = 0;
         bool vertical = true;
         juce::String title;
         juce::String primaryPath;
@@ -926,6 +1181,9 @@ namespace patchcraft
         auto root = getWritableModeRoot();
         root.createDirectory();
 
+        if (activeFolder.isDirectory() && isUserLibraryFile (activeFolder))
+            return activeFolder;
+
         const int hoverRow = rowAtLocalPosition (localPosition);
         if (hoverRow >= 0 && hoverRow < (int) entries.size())
         {
@@ -948,6 +1206,9 @@ namespace patchcraft
 
     bool BuiltAssetLibraryComponent::entryCanBeDroppedIntoCurrentMode (const juce::File& file) const
     {
+        if (owner.getBottomTab() == BottomPanel::Page::Branding)
+            return file.existsAsFile() && isSupportedImageFile (file);
+
         if (file.isDirectory())
             return mode == LibraryMode::Sounds || mode == LibraryMode::Templates;
 
@@ -1088,6 +1349,14 @@ namespace patchcraft
         if (entry.isFolder)
             return;
 
+        if (owner.getBottomTab() == BottomPanel::Page::Branding
+            && entry.category.startsWithIgnoreCase ("branding"))
+        {
+            owner.applyBrandingAsset (entry.category, entry.file);
+            refresh();
+            return;
+        }
+
         if (entry.category == "sounds")
         {
             juce::Array<juce::File> files;
@@ -1106,30 +1375,37 @@ namespace patchcraft
         auto targetFolder = getTargetFolderForImport();
         targetFolder.createDirectory();
 
-        const auto titleText = modeToImport == LibraryMode::Templates
+        const bool brandingMode = owner.getBottomTab() == BottomPanel::Page::Branding;
+        const auto titleText = brandingMode
+            ? (modeToImport == LibraryMode::Templates ? "Import Player title bar images"
+               : (modeToImport == LibraryMode::Sounds ? "Import Player branding icons"
+                                                       : "Import Player branding images"))
+            : modeToImport == LibraryMode::Templates
             ? "Import PatchCraft template folders"
             : (modeToImport == LibraryMode::Backgrounds ? "Import background images"
                 : (modeToImport == LibraryMode::Sounds ? "Import sounds into the PatchCraft sound library"
                                                        : "Import built assets or image assets"));
 
-        const auto wildcards = modeToImport == LibraryMode::Templates
+        const auto wildcards = brandingMode
+            ? juce::String ("*.png;*.jpg;*.jpeg;*.gif;*.webp")
+            : modeToImport == LibraryMode::Templates
             ? juce::String ("*")
             : (modeToImport == LibraryMode::Sounds ? juce::String ("*.wav;*.aif;*.aiff;*.flac")
-                                                   : juce::String ("*.png;*.jpg;*.jpeg;*.gif;*.webp"));
+                                                   : juce::String ("*.png;*.jpg;*.jpeg;*.gif;*.webp;*.knob"));
 
         int flags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectMultipleItems;
-        if (modeToImport == LibraryMode::Templates)
+        if (! brandingMode && modeToImport == LibraryMode::Templates)
             flags |= juce::FileBrowserComponent::canSelectDirectories;
         else
             flags |= juce::FileBrowserComponent::canSelectFiles;
-        if (modeToImport == LibraryMode::Sounds)
+        if (! brandingMode && modeToImport == LibraryMode::Sounds)
             flags |= juce::FileBrowserComponent::canSelectDirectories;
 
         importChooser = std::make_unique<juce::FileChooser> (titleText,
                                                              juce::File::getSpecialLocation (juce::File::userDesktopDirectory),
                                                              wildcards);
         juce::Component::SafePointer<BuiltAssetLibraryComponent> safe (this);
-        importChooser->launchAsync (flags, [safe, modeToImport, targetFolder] (const juce::FileChooser& chooser)
+        importChooser->launchAsync (flags, [safe, modeToImport, targetFolder, brandingMode] (const juce::FileChooser& chooser)
         {
             auto* component = safe.getComponent();
             if (component == nullptr)
@@ -1140,6 +1416,21 @@ namespace patchcraft
 
             for (const auto& source : chooser.getResults())
             {
+                if (brandingMode)
+                {
+                    if (! source.existsAsFile() || ! isSupportedImageFile (source))
+                    {
+                        errors.add (source.getFileName() + ": unsupported branding image");
+                        continue;
+                    }
+
+                    const auto errorCountBefore = errors.size();
+                    copyAssetWithSidecars (source, targetFolder, errors);
+                    if (errors.size() == errorCountBefore)
+                        ++imported;
+                    continue;
+                }
+
                 if (modeToImport == LibraryMode::Templates)
                 {
                     if (! source.isDirectory() || ! source.getChildFile ("manifest.json").existsAsFile())
@@ -1198,14 +1489,18 @@ namespace patchcraft
                     continue;
                 }
 
-                if (! source.existsAsFile() || ! isSupportedImageFile (source))
+                if (! source.existsAsFile() || (modeToImport == LibraryMode::Backgrounds ? ! isSupportedImageFile (source)
+                                                                                          : ! isSupportedAssetFile (source)))
                 {
                     errors.add (source.getFileName() + ": unsupported image file");
                     continue;
                 }
 
                 const auto errorCountBefore = errors.size();
-                copyAssetWithSidecars (source, targetFolder, errors);
+                const auto destinationFolder = source.getFileExtension().equalsIgnoreCase (".knob")
+                    ? getAssetLibraryRoot().getChildFile ("assets").getChildFile ("knobs")
+                    : targetFolder;
+                copyAssetWithSidecars (source, destinationFolder, errors);
                 if (errors.size() == errorCountBefore)
                     ++imported;
             }
@@ -1247,6 +1542,21 @@ namespace patchcraft
         {
             const juce::File source (path);
 
+            if (owner.getBottomTab() == BottomPanel::Page::Branding)
+            {
+                if (! source.existsAsFile() || ! isSupportedImageFile (source))
+                {
+                    errors.add (source.getFileName() + ": unsupported branding image");
+                    continue;
+                }
+
+                const auto errorCountBefore = errors.size();
+                copyAssetWithSidecars (source, targetFolder, errors);
+                if (errors.size() == errorCountBefore)
+                    ++imported;
+                continue;
+            }
+
             if (mode == LibraryMode::Templates)
             {
                 if (source.isDirectory() && source.getChildFile ("manifest.json").existsAsFile())
@@ -1285,14 +1595,18 @@ namespace patchcraft
                 continue;
             }
 
-            if (! source.existsAsFile() || ! isSupportedImageFile (source))
+            if (! source.existsAsFile() || (mode == LibraryMode::Backgrounds ? ! isSupportedImageFile (source)
+                                                                              : ! isSupportedAssetFile (source)))
             {
                 errors.add (source.getFileName() + ": unsupported file");
                 continue;
             }
 
             const auto errorCountBefore = errors.size();
-            copyAssetWithSidecars (source, targetFolder, errors);
+            const auto destinationFolder = source.getFileExtension().equalsIgnoreCase (".knob")
+                ? getAssetLibraryRoot().getChildFile ("assets").getChildFile ("knobs")
+                : targetFolder;
+            copyAssetWithSidecars (source, destinationFolder, errors);
             if (errors.size() == errorCountBefore)
                 ++imported;
         }
@@ -1335,11 +1649,12 @@ namespace patchcraft
             return;
         }
 
-        if (mode == LibraryMode::Assets)
+        if (mode == LibraryMode::Assets || owner.getBottomTab() == BottomPanel::Page::Branding)
         {
             for (const auto& sidecarExtension : { juce::String ("patchcraft-knob.json"),
                                                  juce::String ("patchcraft-slider.json"),
-                                                 juce::String ("patchcraft-meter.json") })
+                                                 juce::String ("patchcraft-meter.json"),
+                                                 juce::String ("patchcraft-branding.json") })
             {
                 auto sidecar = source.withFileExtension (sidecarExtension);
                 if (! sidecar.existsAsFile())
@@ -1393,7 +1708,8 @@ namespace patchcraft
                 {
                     for (const auto& sidecarExtension : { juce::String ("patchcraft-knob.json"),
                                                          juce::String ("patchcraft-slider.json"),
-                                                         juce::String ("patchcraft-meter.json") })
+                                                         juce::String ("patchcraft-meter.json"),
+                                                         juce::String ("patchcraft-branding.json") })
                     {
                         auto sidecar = entry.file.withFileExtension (sidecarExtension);
                         if (sidecar.existsAsFile() && isUserLibraryFile (sidecar))
@@ -1458,10 +1774,7 @@ namespace patchcraft
             return;
 
         if (entry.category == "sounds")
-        {
             auditionSoundFile (entry.file);
-            return;
-        }
 
         juce::File imageFile = entry.file;
         if (entry.category == "templates")
@@ -1482,15 +1795,22 @@ namespace patchcraft
                   entry (std::move (entryToUse)),
                   image (std::move (imageToUse))
             {
-                addButton.setButtonText (entry.category == "templates" ? "Load Template"
-                    : (entry.category == "sounds" ? "Import To Mapper" : "Add To Canvas"));
-                addButton.setTooltip (entry.category == "templates"
+                const bool brandingAsset = entry.category.startsWithIgnoreCase ("branding");
+                addButton.setButtonText (brandingAsset ? "Apply Branding"
+                    : (entry.category == "templates" ? "Load Template"
+                    : (entry.category == "sounds" ? "Import To Mapper" : "Add To Canvas")));
+                addButton.setTooltip (brandingAsset ? "Apply this image to the Player title bar, logo, or branding style."
+                    : (entry.category == "templates"
                     ? "Load this full template. This replaces the current project; it does not merge controls."
                     : (entry.category == "sounds" ? "Import this sound into the current Sample Mapper."
-                                                   : "Add this asset to the current canvas."));
+                                                   : "Add this asset to the current canvas.")));
                 addButton.onClick = [this]
                 {
-                    if (entry.category == "sounds")
+                    if (entry.category.startsWithIgnoreCase ("branding"))
+                    {
+                        owner.applyBrandingAsset (entry.category, entry.file);
+                    }
+                    else if (entry.category == "sounds")
                     {
                         juce::Array<juce::File> files;
                         files.add (entry.file);
