@@ -1,0 +1,8 @@
+{
+  "target": "titleBanner",
+  "playerTitleBarTheme": "clean-pro",
+  "playerTitleTextPlacement": "left",
+  "playerTitleButtonStyle": "minimal",
+  "playerTitleFontFamily": "Arial",
+  "name": "Clean Pro"
+}

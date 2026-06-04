@@ -1,0 +1,8 @@
+{
+  "target": "titleBanner",
+  "playerTitleBarTheme": "minimal",
+  "playerTitleTextPlacement": "left",
+  "playerTitleButtonStyle": "minimal",
+  "playerTitleFontFamily": "Arial",
+  "name": "Minimal Line"
+}

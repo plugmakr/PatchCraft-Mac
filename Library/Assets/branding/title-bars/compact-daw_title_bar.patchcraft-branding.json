@@ -1,0 +1,8 @@
+{
+  "target": "titleBanner",
+  "playerTitleBarTheme": "compact-daw",
+  "playerTitleTextPlacement": "left",
+  "playerTitleButtonStyle": "square",
+  "playerTitleFontFamily": "Consolas",
+  "name": "Compact DAW"
+}

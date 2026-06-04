@@ -1,0 +1,8 @@
+{
+  "target": "titleBanner",
+  "playerTitleBarTheme": "banner",
+  "playerTitleTextPlacement": "left",
+  "playerTitleButtonStyle": "outlined",
+  "playerTitleFontFamily": "Arial",
+  "name": "Photo Banner"
+}

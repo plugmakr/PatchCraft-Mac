@@ -1,0 +1,8 @@
+{
+  "target": "titleBanner",
+  "playerTitleBarTheme": "classic",
+  "playerTitleTextPlacement": "left",
+  "playerTitleButtonStyle": "outlined",
+  "playerTitleFontFamily": "Default",
+  "name": "Classic Rail"
+}

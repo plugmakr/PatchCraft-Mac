@@ -1,0 +1,8 @@
+{
+  "target": "titleBanner",
+  "playerTitleBarTheme": "glass",
+  "playerTitleTextPlacement": "center",
+  "playerTitleButtonStyle": "pill",
+  "playerTitleFontFamily": "Segoe UI",
+  "name": "Glass Chrome"
+}

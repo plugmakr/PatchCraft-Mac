@@ -1,0 +1,8 @@
+{
+  "target": "titleBanner",
+  "playerTitleBarTheme": "bottom-tools",
+  "playerTitleTextPlacement": "center",
+  "playerTitleButtonStyle": "filled",
+  "playerTitleFontFamily": "Arial",
+  "name": "Bottom Tools"
+}

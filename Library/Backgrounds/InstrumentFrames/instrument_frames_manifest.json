@@ -1,0 +1,36 @@
+{
+  "collection": "InstrumentFrames",
+  "description": "Original dark premium instrument-frame backgrounds. No text, logos, labels, or prebuilt controls.",
+  "size": [
+    1280,
+    800
+  ],
+  "count": 25,
+  "files": [
+    "01_urban_red_speaker_wall.png",
+    "02_violet_loft_city_window.png",
+    "03_black_gold_skyline_lux.png",
+    "04_cyan_orange_concrete_mural.png",
+    "05_teal_neon_warehouse.png",
+    "06_amber_reactor_bay.png",
+    "07_blue_rain_city_frame.png",
+    "08_brutalist_silver_dusk.png",
+    "09_magma_black_studio.png",
+    "10_purple_arcade_wall.png",
+    "11_green_circuit_bunker.png",
+    "12_rust_subway_frame.png",
+    "13_ice_chrome_aurora.png",
+    "14_desert_noir_gold.png",
+    "15_crimson_industrial_stage.png",
+    "16_ocean_lab_dark.png",
+    "17_violet_orbital_hangar.png",
+    "18_emerald_glass_city.png",
+    "19_mono_grit_tape_wall.png",
+    "20_orange_blue_street_art.png",
+    "21_midnight_copper_console.png",
+    "22_neon_green_underpass.png",
+    "23_royal_purple_black_marble.png",
+    "24_red_white_cutout_collage.png",
+    "25_deep_space_control_room.png"
+  ]
+}

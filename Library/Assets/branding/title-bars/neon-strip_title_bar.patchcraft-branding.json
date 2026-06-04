@@ -1,0 +1,8 @@
+{
+  "target": "titleBanner",
+  "playerTitleBarTheme": "neon-strip",
+  "playerTitleTextPlacement": "center",
+  "playerTitleButtonStyle": "outlined",
+  "playerTitleFontFamily": "Verdana",
+  "name": "Neon Strip"
+}

@@ -8,6 +8,13 @@ import sys
 from pathlib import Path
 import shutil
 
+# Avoid encoding issues on Windows when printing unicode characters
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except AttributeError:
+    pass
+
 def copy_patchcraft_to_mac():
     """Copy entire PatchCraft project to Mac repository"""
     

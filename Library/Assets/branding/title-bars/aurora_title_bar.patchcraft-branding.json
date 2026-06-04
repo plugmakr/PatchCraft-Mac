@@ -1,0 +1,8 @@
+{
+  "target": "titleBanner",
+  "playerTitleBarTheme": "aurora",
+  "playerTitleTextPlacement": "left",
+  "playerTitleButtonStyle": "pill",
+  "playerTitleFontFamily": "Segoe UI",
+  "name": "Aurora Glow"
+}

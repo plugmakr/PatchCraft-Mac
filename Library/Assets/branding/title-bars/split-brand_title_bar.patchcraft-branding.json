@@ -1,0 +1,8 @@
+{
+  "target": "titleBanner",
+  "playerTitleBarTheme": "split-brand",
+  "playerTitleTextPlacement": "left",
+  "playerTitleButtonStyle": "filled",
+  "playerTitleFontFamily": "Segoe UI",
+  "name": "Split Brand"
+}

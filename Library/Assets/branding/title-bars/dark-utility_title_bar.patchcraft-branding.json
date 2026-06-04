@@ -1,0 +1,8 @@
+{
+  "target": "titleBanner",
+  "playerTitleBarTheme": "dark-utility",
+  "playerTitleTextPlacement": "left",
+  "playerTitleButtonStyle": "square",
+  "playerTitleFontFamily": "Arial",
+  "name": "Dark Utility"
+}
