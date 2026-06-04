@@ -1,6 +1,10 @@
 #include "LibraryBrowser.h"
 #include "PatchCraftLookAndFeel.h"
 
+#include <algorithm>
+#include <map>
+#include <vector>
+
 namespace patchcraft
 {
     namespace
@@ -142,6 +146,67 @@ namespace patchcraft
         repaint();
     }
 
+    // ---- LibraryFolderComponent ---------------------------------------------
+    LibraryFolderComponent::LibraryFolderComponent (juce::File folderToUse, int itemCountToUse)
+        : folder (std::move (folderToUse)), itemCount (itemCountToUse)
+    {
+        setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        setTooltip ("Double-click to open " + folder.getFileName());
+    }
+
+    void LibraryFolderComponent::paint (juce::Graphics& g)
+    {
+        auto bounds = getLocalBounds().toFloat();
+        g.setColour (isHovered ? juce::Colour (0xff1a2230) : juce::Colour (0xff10131a));
+        g.fillRoundedRectangle (bounds, 8.0f);
+        g.setColour (isHovered ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::borderSoft());
+        g.drawRoundedRectangle (bounds.reduced (0.7f), 8.0f, isHovered ? 1.6f : 1.0f);
+
+        auto icon = bounds.reduced (18.0f).withHeight (116.0f);
+        g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.14f));
+        g.fillRoundedRectangle (icon, 10.0f);
+        g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.85f));
+        auto folderBody = icon.reduced (18.0f, 28.0f);
+        auto tab = folderBody.withHeight (18.0f).withWidth (folderBody.getWidth() * 0.45f);
+        g.fillRoundedRectangle (tab, 4.0f);
+        folderBody = folderBody.withTrimmedTop (10.0f);
+        g.fillRoundedRectangle (folderBody, 7.0f);
+
+        auto text = bounds.reduced (12.0f).withTop (icon.getBottom() + 12.0f);
+        g.setColour (PatchCraftLookAndFeel::textBright());
+        g.setFont (juce::FontOptions (15.0f).withStyle ("bold"));
+        g.drawFittedText (folder.getFileName(), text.toNearestInt().removeFromTop (42),
+                          juce::Justification::centredLeft, 2, 0.88f);
+        g.setColour (PatchCraftLookAndFeel::textDim());
+        g.setFont (juce::FontOptions (12.0f));
+        g.drawText (juce::String (itemCount) + " pack" + (itemCount == 1 ? "" : "s"),
+                    text.withY (text.getY() + 48.0f).withHeight (20.0f),
+                    juce::Justification::centredLeft, true);
+        g.setColour (PatchCraftLookAndFeel::accent());
+        g.setFont (juce::FontOptions (10.5f).withStyle ("bold"));
+        g.drawText ("DOUBLE-CLICK TO OPEN",
+                    bounds.reduced (12.0f).withTop (bounds.getBottom() - 34.0f).withHeight (22.0f),
+                    juce::Justification::centredLeft, true);
+    }
+
+    void LibraryFolderComponent::mouseDoubleClick (const juce::MouseEvent&)
+    {
+        if (onOpenFolder)
+            onOpenFolder();
+    }
+
+    void LibraryFolderComponent::mouseEnter (const juce::MouseEvent&)
+    {
+        isHovered = true;
+        repaint();
+    }
+
+    void LibraryFolderComponent::mouseExit (const juce::MouseEvent&)
+    {
+        isHovered = false;
+        repaint();
+    }
+
     // ---- LibraryBrowser -------------------------------------------------------
     LibraryBrowser::LibraryBrowser (LibraryScanner& s, PackFilter filter)
         : scanner (s), packFilter (filter)
@@ -173,6 +238,17 @@ namespace patchcraft
             applyFilters();
         };
         addAndMakeVisible (*refreshButton);
+
+        upButton = std::make_unique<juce::TextButton> ("Up");
+        upButton->setColour (juce::TextButton::buttonColourId, juce::Colour (0xff202631));
+        upButton->setColour (juce::TextButton::textColourOffId, PatchCraftLookAndFeel::text());
+        upButton->setTooltip ("Return to library folders.");
+        upButton->onClick = [this]
+        {
+            currentFolder = {};
+            applyFilters();
+        };
+        addAndMakeVisible (*upButton);
         
         // Close button - labelled "Close" instead of bare X so users have a
         // discoverable exit even on a confused first encounter, and styled
@@ -241,6 +317,9 @@ namespace patchcraft
         topBar.removeFromRight (10);
         refreshButton->setBounds (topBar.removeFromRight (84).reduced (0, 5));
         topBar.removeFromRight (10);
+        upButton->setBounds (topBar.removeFromRight (62).reduced (0, 5));
+        upButton->setVisible (currentFolder.isDirectory());
+        topBar.removeFromRight (10);
         categoryButton->setBounds (topBar.removeFromRight (110).reduced (0, 5));
         topBar.removeFromRight (10);
         searchBox->setBounds (topBar.reduced (0, 5));
@@ -286,14 +365,9 @@ namespace patchcraft
         int y = padding;
         int col = 0;
 
-        for (auto& entry : filteredEntries)
+        auto addGridComponent = [&] (std::unique_ptr<juce::Component> item)
         {
-            auto item = std::make_unique<LibraryItemComponent> (entry);
             item->setBounds (x, y, itemWidth, itemHeight);
-            item->onLoadClicked = [this, entry] {
-                if (onPackSelected)
-                    onPackSelected (entry.folder);
-            };
             gridContainer->addAndMakeVisible (item.release());
 
             col++;
@@ -303,6 +377,54 @@ namespace patchcraft
                 col = 0;
                 x = padding;
                 y += itemHeight + padding;
+            }
+        };
+
+        if (! currentFolder.isDirectory())
+        {
+            std::map<juce::String, std::pair<juce::File, int>> folders;
+            for (auto& entry : filteredEntries)
+            {
+                const auto parent = entry.folder.getParentDirectory();
+                const auto key = parent.getFullPathName().replaceCharacter ('\\', '/').toLowerCase();
+                auto& record = folders[key];
+                record.first = parent;
+                ++record.second;
+            }
+
+            std::vector<std::pair<juce::File, int>> sortedFolders;
+            for (const auto& item : folders)
+                sortedFolders.push_back (item.second);
+            std::sort (sortedFolders.begin(), sortedFolders.end(),
+                [] (const auto& a, const auto& b)
+                {
+                    return a.first.getFileName().compareIgnoreCase (b.first.getFileName()) < 0;
+                });
+
+            for (const auto& folder : sortedFolders)
+            {
+                auto item = std::make_unique<LibraryFolderComponent> (folder.first, folder.second);
+                item->onOpenFolder = [this, folder]
+                {
+                    currentFolder = folder.first;
+                    refreshGrid();
+                };
+                addGridComponent (std::move (item));
+            }
+        }
+        else
+        {
+            for (auto& entry : filteredEntries)
+            {
+                if (entry.folder.getParentDirectory() != currentFolder)
+                    continue;
+
+                auto item = std::make_unique<LibraryItemComponent> (entry);
+                item->onLoadClicked = [this, entry] {
+                    if (onPackSelected)
+                        onPackSelected (entry.folder);
+                };
+                addGridComponent (std::move (item));
             }
         }
 
@@ -385,6 +507,7 @@ namespace patchcraft
         {
             menu.addItem (cat, true, cat == currentCategory, [this, cat] {
                 currentCategory = cat;
+                currentFolder = {};
                 categoryButton->setButtonText (cat);
                 applyFilters();
             });

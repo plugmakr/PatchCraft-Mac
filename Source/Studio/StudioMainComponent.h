@@ -20,8 +20,8 @@ namespace patchcraft
     class CanvasEditor;
     class CanvasToolbar;
     class InspectorPanel;
-    class BottomPanel;
     class PresetsComponent;
+    class ScriptEditorComponent;
 
     /**
         Top-level Studio layout: top toolbar + left sidebar + canvas + inspector
@@ -115,6 +115,7 @@ namespace patchcraft
         void addElementToCanvas (ElementType type, juce::String parameterId = {});
         void addMixerChannelToCanvas();
         void addDrumMachineControlsToCanvas();
+        void addModuleToCanvas (const juce::String& moduleType);
         void toggleCanvasGrid();
         void toggleCanvasRulers();
         void setCanvasZoom (float zoomFactor);
@@ -182,6 +183,7 @@ namespace patchcraft
         std::unique_ptr<BuiltAssetLibraryComponent> assetLibraryPanel;
         std::unique_ptr<ExpansionLibraryPanel>      expansionLibraryPanel;
         std::unique_ptr<LayersPanel>     layersPanel;
+        std::unique_ptr<ScriptEditorComponent> scriptEditor;
         std::unique_ptr<CanvasEditor>    canvasEditor;
         std::unique_ptr<CanvasToolbar>   canvasToolbar;
         std::unique_ptr<InspectorPanel>  inspectorPanel;
@@ -223,6 +225,7 @@ namespace patchcraft
         bool hasCopiedDesignStyle = false;
         bool showLayersInsteadOfElements = false;
         bool showLibraryInsteadOfElements = false;
+        bool showScriptEditorInsteadOfElements = false;
 
         bool sampleLibraryDrawerOpen = false;
         bool dspTutorialShownThisSession = false;

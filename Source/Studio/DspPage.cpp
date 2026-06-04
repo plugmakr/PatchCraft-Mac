@@ -4487,6 +4487,7 @@ namespace patchcraft
         deleteGraphItemButton.getProperties().set ("smallButton", true);
         deleteGraphItemButton.onClick = [this] { deleteSelectedGraphItem(); };
         enableGraphItemButton.getProperties().set ("smallButton", true);
+        enableGraphItemButton.setClickingTogglesState (true);
         enableGraphItemButton.onClick = [this] { toggleSelectedGraphItemEnabled(); };
 
         hoverHelpLabel.setInterceptsMouseClicks (false, false);
@@ -4934,12 +4935,12 @@ namespace patchcraft
 
         if (project.getEngineType() == "synth")
         {
-            setRaw ("oscType", (float) rng.nextInt (5));
-            setRaw ("osc2Type", (float) rng.nextInt (5));
-            setRange ("oscBlend", 0.08f, 0.76f);
+            setRaw ("oscType", (float) rng.nextInt (4));
+            setRaw ("osc2Type", (float) rng.nextInt (4));
+            setRange ("oscBlend", 0.08f, 0.55f);
             setRange ("osc2Detune", -18.0f, 18.0f);
             setRange ("subBlend", 0.0f, lower.contains ("bass") ? 0.62f : 0.30f);
-            setRange ("noiseBlend", 0.0f, lower.contains ("fx") ? 0.30f : lower.contains ("arp") ? 0.10f : 0.18f);
+            setRaw ("noiseBlend", 0.0f);
         }
 
         if (lower.contains ("arp"))
@@ -4997,7 +4998,14 @@ namespace patchcraft
         clamp ("delayFeedback", 0.0f, lower.contains ("arp") ? 0.62f : 0.72f);
         clamp ("reverbMix", 0.0f, lower.contains ("arp") ? 0.36f : 0.62f);
         clamp ("filterResonance", 0.0f, lower.contains ("arp") ? 0.55f : 0.72f);
-        clamp ("noiseBlend", 0.0f, lower.contains ("arp") ? 0.12f : 0.32f);
+        clamp ("oscBlend", 0.0f, 0.55f);
+        preset.values["noiseBlend"] = 0.0f;
+        for (const juce::String id : { "oscType", "osc2Type" })
+        {
+            auto it = preset.values.find (id);
+            if (it != preset.values.end() && juce::roundToInt (it->second) >= 4)
+                it->second = 1.0f;
+        }
         clamp ("subBlend", 0.0f, lower.contains ("bass") ? 0.68f : 0.40f);
         clamp ("lfoAmount", 0.0f, lower.contains ("arp") ? 0.58f : 0.78f);
         clamp ("vibratoDepth", 0.0f, lower.contains ("arp") ? 0.16f : 0.36f);
@@ -5054,14 +5062,15 @@ namespace patchcraft
                 else
                 {
                     block.targetId = block.type.containsIgnoreCase ("noise") ? "noiseBlend" : "oscBlend";
-                    block.values["oscType"] = normalised ("oscType", block.values.count ("oscType") ? block.values["oscType"] : 0.25f);
-                    block.values["osc2Type"] = normalised ("osc2Type", block.values.count ("osc2Type") ? block.values["osc2Type"] : 0.75f);
-                    block.values["oscBlend"] = normalised ("oscBlend", block.values.count ("oscBlend") ? block.values["oscBlend"] : 0.0f);
+                    const auto safeOscNorm = [] (float value01) { return juce::jlimit (0.0f, 0.75f, value01); };
+                    block.values["oscType"] = safeOscNorm (normalised ("oscType", block.values.count ("oscType") ? block.values["oscType"] : 0.25f));
+                    block.values["osc2Type"] = safeOscNorm (normalised ("osc2Type", block.values.count ("osc2Type") ? block.values["osc2Type"] : 0.75f));
+                    block.values["oscBlend"] = juce::jmin (0.55f, normalised ("oscBlend", block.values.count ("oscBlend") ? block.values["oscBlend"] : 0.0f));
                     block.values["osc2Detune"] = normalised ("osc2Detune", block.values.count ("osc2Detune") ? block.values["osc2Detune"] : 0.535f);
                     block.values["detune"] = normalised ("detune", block.values.count ("detune") ? block.values["detune"] : 0.50f);
                     block.values["octave"] = normalised ("octave", block.values.count ("octave") ? block.values["octave"] : 0.50f);
                     block.values["subBlend"] = normalised ("subBlend", block.values.count ("subBlend") ? block.values["subBlend"] : 0.0f);
-                    block.values["noiseBlend"] = normalised ("noiseBlend", block.values.count ("noiseBlend") ? block.values["noiseBlend"] : 0.0f);
+                    block.values["noiseBlend"] = 0.0f;
                     block.values["volume"] = juce::jmin (0.72f, normalised ("volume", block.values.count ("volume") ? block.values["volume"] : 0.65f));
                 }
             }
@@ -7340,6 +7349,12 @@ namespace patchcraft
                 return key.startsWith ("wtShape") || key.startsWith ("wtFrame");
             }
 
+            static float valueOrDefault (const DspBlock& block, const juce::String& key, float fallback)
+            {
+                const auto it = block.values.find (key);
+                return it != block.values.end() ? it->second : fallback;
+            }
+
             void rebuildTabs()
             {
                 tabs.clearTabs();
@@ -7376,14 +7391,162 @@ namespace patchcraft
             juce::Component* makeBlockValuesPanel (const DspBlock& currentBlock)
             {
                 auto* panel = new FormulaRowsPanel ("Block-local values");
+                juce::StringArray addedKeys;
+                auto addEditableValue = [&] (const juce::String& key, float fallback)
+                {
+                    if (key.isEmpty() || key == "bank" || isShapeDataKey (key) || addedKeys.contains (key))
+                        return;
+                    panel->addBlockRow (owner, blockIndex, key, valueOrDefault (currentBlock, key, fallback));
+                    addedKeys.add (key);
+                };
+
                 for (const auto& [key, value] : currentBlock.values)
                 {
-                    if (key == "bank")
-                        continue;
-                    if (isShapeDataKey (key))
-                        continue;
-                    panel->addBlockRow (owner, blockIndex, key, value);
+                    addEditableValue (key, value);
                 }
+
+                const auto section = currentBlock.section.toLowerCase();
+                const auto type = currentBlock.type.toLowerCase();
+                if (section == "source")
+                {
+                    if (type.contains ("sample") || type.contains ("granular") || type.contains ("layer"))
+                    {
+                        addEditableValue ("volume", 0.80f);
+                        addEditableValue ("pan", 0.0f);
+                        addEditableValue ("sampleStart", 0.0f);
+                        addEditableValue ("sampleLength", 1.0f);
+                        addEditableValue ("sampleSlice", 0.0f);
+                        addEditableValue ("sampleSliceCount", 16.0f);
+                        addEditableValue ("samplePitch", 0.0f);
+                    }
+                    else if (type.contains ("wavetable"))
+                    {
+                        addEditableValue ("wtPosition", 0.0f);
+                        addEditableValue ("wtMorph", 0.0f);
+                        addEditableValue ("wtWarp", 0.0f);
+                        addEditableValue ("wtUnison", 1.0f);
+                        addEditableValue ("wtLevel", 0.7f);
+                        addEditableValue ("wtDetune", 0.12f);
+                    }
+                    else
+                    {
+                        addEditableValue ("volume", 0.80f);
+                        addEditableValue ("oscBlend", 0.0f);
+                        addEditableValue ("osc2Detune", 0.0f);
+                        addEditableValue ("subBlend", 0.0f);
+                        addEditableValue ("noiseBlend", 0.0f);
+                        addEditableValue ("detune", 0.0f);
+                        addEditableValue ("octave", 0.0f);
+                    }
+                }
+                else if (section == "filter")
+                {
+                    if (type.contains ("eq") || type.contains ("surgical"))
+                    {
+                        addEditableValue ("eqFreq", 1000.0f);
+                        addEditableValue ("eqGainDb", 0.0f);
+                        addEditableValue ("eqQ", 0.70f);
+                        addEditableValue ("eqMix", 1.0f);
+                    }
+                    else
+                    {
+                        addEditableValue ("cutoff", 0.64f);
+                        addEditableValue ("resonance", 0.20f);
+                        addEditableValue ("lfoAmount", 0.0f);
+                        addEditableValue ("rate", 0.25f);
+                    }
+                }
+                else if (section == "amp")
+                {
+                    addEditableValue ("attack", 0.01f);
+                    addEditableValue ("decay", 0.18f);
+                    addEditableValue ("sustain", 0.78f);
+                    addEditableValue ("release", 0.28f);
+                    addEditableValue ("volume", 0.85f);
+                }
+                else if (section == "mod")
+                {
+                    if (type.contains ("arp") || type.contains ("midi"))
+                    {
+                        addEditableValue ("amount", 1.0f);
+                        addEditableValue ("rate", 1.0f);
+                        addEditableValue ("arpGate", 0.75f);
+                        addEditableValue ("sync", 1.0f);
+                        addEditableValue ("arpSteps", 16.0f);
+                        addEditableValue ("arpPattern", 0.0f);
+                    }
+                    else if (type.contains ("audio"))
+                    {
+                        addEditableValue ("amount", 0.5f);
+                        addEditableValue ("smoothingMs", 45.0f);
+                        addEditableValue ("thresholdDb", -24.0f);
+                        addEditableValue ("band", 0.0f);
+                        addEditableValue ("bipolar", 0.0f);
+                    }
+                    else
+                    {
+                        addEditableValue ("amount", 0.5f);
+                        addEditableValue ("rate", 1.0f);
+                        addEditableValue ("sync", 1.0f);
+                        addEditableValue ("value", 0.0f);
+                    }
+                }
+                else if (section == "fx")
+                {
+                    if (type.contains ("delay") || type.contains ("tap"))
+                    {
+                        addEditableValue (type.contains ("tap") ? "multiTapMix" : "delayMix", 0.24f);
+                        addEditableValue (type.contains ("tap") ? "multiTapTime" : "delayTime", 0.35f);
+                        addEditableValue (type.contains ("tap") ? "multiTapFeedback" : "delayFeedback", 0.35f);
+                        addEditableValue ("sync", 1.0f);
+                    }
+                    else if (type.contains ("dist") || type.contains ("drive"))
+                    {
+                        addEditableValue ("drive", 0.35f);
+                        addEditableValue ("mix", 0.55f);
+                    }
+                    else if (type.contains ("dyn") || type.contains ("comp"))
+                    {
+                        addEditableValue ("dynThresholdDb", -18.0f);
+                        addEditableValue ("dynRatio", 3.0f);
+                        addEditableValue ("dynAttackMs", 8.0f);
+                        addEditableValue ("dynReleaseMs", 120.0f);
+                        addEditableValue ("dynMakeupDb", 0.0f);
+                        addEditableValue ("dynMix", 1.0f);
+                    }
+                    else if (type.contains ("chorus"))
+                    {
+                        addEditableValue ("chorusDepth", 0.35f);
+                        addEditableValue ("chorusRate", 0.25f);
+                        addEditableValue ("chorusFeedback", 0.15f);
+                        addEditableValue ("chorusMix", 0.32f);
+                    }
+                    else if (type.contains ("phaser"))
+                    {
+                        addEditableValue ("phaserDepth", 0.45f);
+                        addEditableValue ("phaserRate", 0.20f);
+                        addEditableValue ("phaserFeedback", 0.25f);
+                        addEditableValue ("phaserMix", 0.35f);
+                    }
+                    else
+                    {
+                        addEditableValue ("reverbMix", 0.25f);
+                        addEditableValue ("reverbSize", 0.45f);
+                        addEditableValue ("mix", 0.5f);
+                    }
+                }
+                else if (section == "out")
+                {
+                    addEditableValue ("outputGainDb", 0.0f);
+                    addEditableValue ("inputTrimDb", 0.0f);
+                    addEditableValue ("stereoWidth", 1.0f);
+                    addEditableValue ("monoMaker", 0.0f);
+                    addEditableValue ("outputLimiter", 1.0f);
+                    addEditableValue ("outputCeilingDb", -0.8f);
+                    addEditableValue ("volume", 0.85f);
+                    addEditableValue ("pan", 0.0f);
+                }
+
                 return panel;
             }
 
@@ -7863,6 +8026,7 @@ namespace patchcraft
         const bool canBypass = (selectedGraphKind == 1 || selectedGraphKind == 3) && selectedGraphIndex >= 0;
         enableGraphItemButton.setEnabled (canBypass);
         enableGraphItemButton.setToggleState (false, juce::dontSendNotification);
+        enableGraphItemButton.setButtonText ("Enabled");
         enableGraphItemButton.setTooltip (canBypass
             ? "Bypass/enable this Block or Mod Route without deleting it."
             : "Bypass is available for Blocks and Mod Routes. Automation and Macros remain editable/deletable.");
@@ -7938,6 +8102,7 @@ namespace patchcraft
         {
             auto& block = project.getDspGraph().blocks[(size_t) selectedGraphIndex];
             enableGraphItemButton.setToggleState (block.enabled, juce::dontSendNotification);
+            enableGraphItemButton.setButtonText (block.enabled ? "Enabled" : "Bypassed");
             editorHint.setText ("Block '" + block.name + "' directly shapes " + block.section
                                 + ". Target chooses what it drives; value/rate/amount define the audible behavior.",
                                 juce::dontSendNotification);
@@ -8563,6 +8728,7 @@ namespace patchcraft
         {
             auto& route = project.getDspGraph().modulation[(size_t) selectedGraphIndex];
             enableGraphItemButton.setToggleState (route.enabled, juce::dontSendNotification);
+            enableGraphItemButton.setButtonText (route.enabled ? "Enabled" : "Bypassed");
             editorHint.setText ("Mod route: source creates movement, target receives it. Depth controls range; source rate/sync edit the LFO/random source when available.",
                                 juce::dontSendNotification);
             amountLabel.setText ("DEPTH", juce::dontSendNotification);
@@ -9025,10 +9191,12 @@ namespace patchcraft
         if (selectedGraphKind == 1 && selectedGraphIndex < (int) project.getDspGraph().blocks.size())
         {
             project.getDspGraph().blocks[(size_t) selectedGraphIndex].enabled = enabled;
+            enableGraphItemButton.setButtonText (enabled ? "Enabled" : "Bypassed");
         }
         else if (selectedGraphKind == 3 && selectedGraphIndex < (int) project.getDspGraph().modulation.size())
         {
             project.getDspGraph().modulation[(size_t) selectedGraphIndex].enabled = enabled;
+            enableGraphItemButton.setButtonText (enabled ? "Enabled" : "Bypassed");
         }
         else
         {

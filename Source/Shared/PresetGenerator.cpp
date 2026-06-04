@@ -421,8 +421,8 @@ namespace patchcraft
                 // theme so a "Pads" preset doesn't accidentally start as a
                 // square-wave bass and a "Bass" preset doesn't start as a
                 // sine pad. 0=sine, 1=saw, 2=square, 3=triangle, 4=noise.
-                float oscMain  = (float) (index % 5);
-                float oscLayer = (float) ((index + 2) % 5);
+                float oscMain  = (float) (index % 4);
+                float oscLayer = (float) ((index + 2) % 4);
                 if (lower.contains ("pad") || lower.contains ("choir") || lower.contains ("string"))
                 {
                     oscMain  = (index % 2 == 0) ? 1.0f : 3.0f;   // saw / triangle
@@ -440,9 +440,9 @@ namespace patchcraft
                 }
                 setValue (preset, model, "oscType", oscMain);
                 setValue (preset, model, "osc2Type", oscLayer);
-                setNorm (preset, model, "oscBlend", lower.contains ("bass") ? value01 (rng, 0.18f, 0.14f)
-                                                                            : lower.contains ("string") || lower.contains ("pad") ? value01 (rng, 0.42f, 0.24f)
-                                                                                                                                   : value01 (rng, 0.30f, 0.22f));
+                setNorm (preset, model, "oscBlend", lower.contains ("bass") ? value01 (rng, 0.16f, 0.10f)
+                                                                            : lower.contains ("string") || lower.contains ("pad") ? value01 (rng, 0.34f, 0.16f)
+                                                                                                                                   : value01 (rng, 0.24f, 0.14f));
                 setValue (preset, model, "octave", lower.contains ("string") ? 0.0f : (float) ((index % 3) - 1));
                 setValue (preset, model, "detune", (rng.nextFloat() * 2.0f - 1.0f) * (lower.contains ("string") ? 14.0f : 7.0f));
                 setValue (preset, model, "osc2Detune", (rng.nextFloat() * 2.0f - 1.0f)
@@ -450,9 +450,7 @@ namespace patchcraft
                 setNorm (preset, model, "subBlend", lower.contains ("bass") ? value01 (rng, 0.52f, 0.24f)
                                                                              : lower.contains ("pluck") ? value01 (rng, 0.12f, 0.10f)
                                                                                                          : value01 (rng, 0.20f, 0.18f));
-                setNorm (preset, model, "noiseBlend", lower.contains ("arp") || lower.contains ("motion") ? value01 (rng, 0.22f, 0.18f)
-                                                                                                           : lower.contains ("string") ? value01 (rng, 0.08f, 0.08f)
-                                                                                                                                      : value01 (rng, 0.12f, 0.10f));
+                setValue (preset, model, "noiseBlend", 0.0f);
                 setNorm (preset, model, "vibratoDepth", lower.contains ("string") ? value01 (rng, 0.18f, 0.12f) : 0.0f);
                 setValue (preset, model, "vibratoRate", value01 (rng, 0.45f, 0.25f) * 8.0f);
             }

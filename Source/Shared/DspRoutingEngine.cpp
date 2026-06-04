@@ -90,9 +90,6 @@ namespace patchcraft
         bool changed = false;
         for (auto& block : blocks)
         {
-            if (! block.block.section.equalsIgnoreCase ("fx"))
-                continue;
-
             auto found = block.block.values.find (parameterId);
             if (found == block.block.values.end())
                 continue;

@@ -5,6 +5,7 @@
 #include "LayoutModel.h"
 #include "SampleMap.h"
 #include "LiveValueStore.h"
+#include "PScriptEngine.h"
 
 #include <juce_data_structures/juce_data_structures.h>
 
@@ -95,6 +96,7 @@ namespace patchcraft
 
         // ---- Helpers ----------------------------------------------------------
         void resetToDefaultInstrument();          // sampler default
+        void resetCanvasToBlank();
         // Switch the project's engine. Replaces parameter palette and layout
         // with that engine's template. Destructive - undo via UndoManager.
         void setEngineType (const juce::String& engineId);
@@ -107,6 +109,12 @@ namespace patchcraft
 
         // Background image (relative path inside the project assets folder).
         juce::String backgroundImageRelative;
+
+        // pScript integration
+        juce::String getPscriptSource() const                    { return pscriptSource; }
+        void         setPscriptSource (const juce::String& src) { pscriptSource = src; scriptEngine.compile (src); }
+        PScriptEngine& getScriptEngine()                         { return scriptEngine; }
+        const PScriptEngine& getScriptEngine() const             { return scriptEngine; }
 
         // Listener interface --------------------------------------------------
         struct Listener
@@ -136,6 +144,8 @@ namespace patchcraft
         DspGraph        dspGraph;
         LiveValueStore  liveValues;
         juce::UndoManager undoManager;
+        juce::String pscriptSource;
+        PScriptEngine scriptEngine;
 
         juce::ListenerList<Listener> listeners;
     };

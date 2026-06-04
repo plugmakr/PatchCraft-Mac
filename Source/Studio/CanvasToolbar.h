@@ -42,6 +42,7 @@ namespace patchcraft
         juce::ComboBox snapBox;
         juce::ComboBox zoomBox;
         juce::TextButton canvasPropsBtn { "Canvas" };
+        juce::TextButton createBtn { "Create" };
         juce::TextButton fitBtn   { "Fit" };
         juce::TextButton fillBtn  { "100%" };
         juce::Label    snapLabel;
@@ -90,6 +91,14 @@ namespace patchcraft
         void showCanvasProperties();
         void showCanvasSizeDialog();
         void showCanvasColourMenu (bool gridColour);
+        void showQuickCreateMenu();
+        void showPromptCreator();
+        void createStarterPlugin (juce::String engineId,
+                                  juce::String productName,
+                                  juce::String description);
+        juce::String inferEngineFromPrompt (juce::String prompt) const;
+        juce::String productNameFromPrompt (juce::String prompt,
+                                            const juce::String& engineId) const;
 
         // Find the dropdown index that matches the current canvas size, or -1.
         int presetIndexFor (int w, int h) const;

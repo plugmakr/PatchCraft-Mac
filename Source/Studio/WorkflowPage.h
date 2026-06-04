@@ -42,8 +42,8 @@ namespace patchcraft
         juce::ComboBox factoryDemoBox;
         juce::TextButton loadFactoryDemoButton { "Choose / Load Demo" };
 
-        juce::TextButton soundButton { "1  Build Sound" };
-        juce::TextButton designButton { "2  Design Player" };
+        juce::TextButton designButton { "1  Design Player" };
+        juce::TextButton soundButton { "2  Connect Sound" };
         juce::TextButton presetsButton { "3  Presets + Packs" };
         juce::TextButton testButton { "4  Test Player" };
         juce::TextButton exportButton { "5  Export" };

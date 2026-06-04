@@ -236,6 +236,8 @@ namespace patchcraft
     {
         try
         {
+            scriptEngine.bindStore (&liveValues);
+
             for (auto& level : noteHighlightLevels)
                 level.store (0.0f);
 
@@ -429,6 +431,13 @@ namespace patchcraft
             if (loaded)
             {
                 const auto& defs = pack.parameters.getAll();
+
+                // First, sync up current values to liveValues
+                for (const auto& def : defs)
+                {
+                    liveValues.setValue (def.id, getCurrentPackParameterValue (def.id));
+                }
+
                 for (const auto& def : defs)
                 {
                     float v = def.defaultValue;
@@ -446,9 +455,23 @@ namespace patchcraft
                         const auto& slot = paramSlots[(size_t) slotIt->second];
                         const float nv = slot.value != nullptr ? slot.value->load() : 0.0f;
                         v = juce::jmap (juce::jlimit (0.0f, 1.0f, nv), 0.0f, 1.0f, def.min, def.max);
-                        runtimeParameterValues[def.id] = v;
+                        
+                        const float oldVal = liveValues.getValue (def.id, def.defaultValue);
+                        if (std::abs (v - oldVal) > 0.0001f)
+                        {
+                            liveValues.setValue (def.id, v);
+                            std::map<juce::String, float> args;
+                            args["value"] = v;
+                            scriptEngine.triggerEvent ("knob moves", args, def.id);
+                        }
                     }
+                }
 
+                // Copy updated values from liveValues back to engine and routing engine
+                for (const auto& def : defs)
+                {
+                    float v = liveValues.getValue (def.id, def.defaultValue);
+                    runtimeParameterValues[def.id] = v;
                     engine->setParameter (def.id, v);
                     if (userSampleOverlayEnabled)
                         userSampleOverlay.setParameter (def.id, v);
@@ -1453,6 +1476,17 @@ namespace patchcraft
             }
             bindRoutingFromPack();
             rebuildApvtsFromPack();
+
+            {
+                auto scriptFile = packFolder.getChildFile ("pscript.txt");
+                if (scriptFile.existsAsFile())
+                    scriptEngine.compile (scriptFile.loadFileAsString());
+                else
+                    scriptEngine.compile ("");
+
+                scriptEngine.triggerEvent ("preset loads", {});
+            }
+
             editorListeners.call ([] (EditorListener& l) { l.packChanged(); });
             ok = true;
         }
@@ -2582,6 +2616,9 @@ namespace patchcraft
             const int note = juce::jlimit (0, 127, message.getNoteNumber());
             noteHighlightLevels[(size_t) note].store (1.0f);
             heldNotes[(size_t) note] = false;
+
+            scriptEngine.triggerEvent ("note starts", {{"velocity", message.getFloatVelocity() * 127.0f}});
+
             if (! arpeggiator.handleNoteOn (*engine, note, message.getFloatVelocity()))
             {
                 if (auto* multi = dynamic_cast<MultiInstrumentEngine*> (engine.get()))
@@ -2597,6 +2634,9 @@ namespace patchcraft
         if (message.isNoteOff())
         {
             const int note = juce::jlimit (0, 127, message.getNoteNumber());
+
+            scriptEngine.triggerEvent ("note ends", {});
+
             if (sustainPedalDown)
                 heldNotes[(size_t) note] = true;
             else if (! arpeggiator.handleNoteOff (*engine, note))
@@ -2654,6 +2694,7 @@ namespace patchcraft
                 // Stored as -1 when the wheel hasn't been touched so the
                 // user's static LFO/vibrato depths still apply.
                 midiModWheel.store (normalised);
+                scriptEngine.triggerEvent ("modwheel moves", {{"modwheel", normalised * 127.0f}});
             }
             else if (controller == 11)
             {

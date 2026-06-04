@@ -6,7 +6,8 @@ namespace patchcraft
 {
     class StudioMainComponent;
 
-    class AnimationLabPage : public juce::Component
+    class AnimationLabPage : public juce::Component,
+                             private juce::Timer
     {
     public:
         explicit AnimationLabPage (StudioMainComponent& owner);
@@ -30,11 +31,22 @@ namespace patchcraft
         juce::Label stepsBody;
         juce::Label proofHeader;
         juce::Label proofBody;
+        juce::Label bindHeader;
+        juce::Label bindBody;
+        juce::Label targetLabel;
+        juce::Label sourceLabel;
+        juce::Label actionLabel;
+        juce::Label previewLabel;
+        juce::ComboBox targetBox;
+        juce::ComboBox sourceBox;
+        juce::ComboBox actionBox;
 
         juce::TextButton addVisualKitButton { "Add Complete Visual Kit" };
         juce::TextButton addReactiveButton { "Reactive Image" };
         juce::TextButton addSpriteButton { "Sprite Animator" };
         juce::TextButton addFxButton { "Visual FX Layer" };
+        juce::TextButton addBoundVisualButton { "Add Bound Visual" };
+        juce::TextButton previewMotionButton { "Preview Motion" };
         juce::TextButton addAiPromptButton { "Pro AI Visual Brief" };
         juce::TextButton generateAiAssetButton { "Generate AI Asset" };
         juce::TextButton openDesignButton { "Open Design" };
@@ -43,5 +55,11 @@ namespace patchcraft
         void styleLabel (juce::Label&, const juce::String& text, float size, bool bold, juce::Colour colour);
         void styleButton (juce::TextButton&, bool primary = false);
         void addCanvasElement (int elementTypeIndex);
+        void addBoundVisualToCanvas();
+        void refreshParameterChoices();
+        void timerCallback() override;
+
+        bool previewActive = false;
+        float previewPhase = 0.0f;
     };
 }

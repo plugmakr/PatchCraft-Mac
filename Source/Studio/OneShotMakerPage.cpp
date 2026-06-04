@@ -16,6 +16,22 @@ namespace patchcraft
     {
         constexpr int kRenderBlockSize = 512;
 
+        juce::File defaultVst3Folder()
+        {
+           #if JUCE_WINDOWS
+            auto folder = juce::File ("C:\\Program Files\\Common Files\\VST3");
+           #elif JUCE_MAC
+            auto folder = juce::File ("/Library/Audio/Plug-Ins/VST3");
+           #else
+            auto folder = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+           #endif
+
+            if (folder.exists())
+                return folder;
+
+            return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
+        }
+
         juce::String formatPercent (float value)
         {
             return juce::String (juce::roundToInt (juce::jlimit (0.0f, 1.0f, value) * 100.0f)) + "%";
@@ -44,7 +60,7 @@ namespace patchcraft
 
     OneShotMakerPage::OneShotMakerPage (StudioMainComponent& o) : owner (o)
     {
-        juce::addHeadlessDefaultFormatsToManager (pluginFormatManager);
+        juce::addDefaultFormatsToManager (pluginFormatManager);
         audioFormatManager.registerBasicFormats();
 
         outputBaseFolder = defaultOutputFolder();
@@ -57,8 +73,8 @@ namespace patchcraft
         setupLabel (settingsSectionTitle, "2  Capture Template", 14.0f, true, PatchCraftLookAndFeel::accent());
         setupLabel (exportSectionTitle, "3  Render Plan", 14.0f, true, PatchCraftLookAndFeel::accent());
         setupLabel (planSectionTitle, "Render Log", 13.0f, true, PatchCraftLookAndFeel::accent());
-        setupLabel (pluginEditorTitle, "Plugin", 14.0f, true, PatchCraftLookAndFeel::accent());
-        setupLabel (pluginEditorStatusLabel, "Load a VST3 to show its full editor here.", 12.0f, false, PatchCraftLookAndFeel::textDim());
+        setupLabel (pluginEditorTitle, "VST Interface", 14.0f, true, PatchCraftLookAndFeel::accent());
+        setupLabel (pluginEditorStatusLabel, "Load a VST3, then open its real plugin interface here or in a floating window.", 12.0f, false, PatchCraftLookAndFeel::textDim());
         setupLabel (sampleEditorTitle, "One Shot Editor", 14.0f, true, PatchCraftLookAndFeel::accent());
         setupLabel (sampleEditorStatusLabel, "Render or audition a sound to review the captured WAV.", 12.0f, false, PatchCraftLookAndFeel::textDim());
         setupLabel (pluginPathLabel, "No VST3 loaded.", 12.0f, false, PatchCraftLookAndFeel::textDim());
@@ -109,11 +125,11 @@ namespace patchcraft
         sendToMapperButton.setTooltip ("Map the rendered WAVs into Sample Mapper as playable zones.");
         createPatchButton.setTooltip ("Create a playable PatchCraft sample patch and preset from this pack.");
         publishPackButton.setTooltip ("Publish the current rendered pack to Plugin.club as a seller draft.");
-        refreshPluginEditorButton.setTooltip ("Rebuild the embedded plugin editor if it did not open correctly.");
+        refreshPluginEditorButton.setTooltip ("Open or rebuild the loaded VST plugin's own editor interface.");
         auditionPluginButton.setTooltip ("Render and preview one note from the current plugin sound.");
         floatPluginEditorButton.setTooltip ("Pop the plugin editor into a floating window.");
         closePluginEditorButton.setTooltip ("Close the embedded/floating plugin editor.");
-        livePluginToggle.setTooltip ("Route hardware/software MIDI through the loaded plugin for live sound design before rendering.");
+        livePluginToggle.setTooltip ("Route hardware/software MIDI through only the loaded VST. Studio Preview is stopped first so you do not hear two instruments at once.");
         hardwareCaptureToggle.setTooltip ("Record one-shots from your audio interface input. Optionally sends the render notes to a selected MIDI output for external synths.");
         hardwareMidiOutputBox.setTooltip ("Optional MIDI output used to trigger an external keyboard or synth during hardware capture.");
         previewSampleButton.setTooltip ("Preview the selected rendered WAV with current edit settings.");
@@ -134,7 +150,12 @@ namespace patchcraft
         sendToMapperButton.onClick = [this] { sendToSampleMapper(); };
         createPatchButton.onClick = [this] { createPatchFromOneShotPack(); };
         publishPackButton.onClick = [this] { publishOneShotPackToPluginClub(); };
-        refreshPluginEditorButton.onClick = [this] { rebuildPluginEditor(); };
+        refreshPluginEditorButton.onClick = [this]
+        {
+            if (pluginEditor == nullptr)
+                rebuildPluginEditor();
+            floatPluginEditor();
+        };
         auditionPluginButton.onClick = [this] { auditionCurrentPluginSound(); };
         floatPluginEditorButton.onClick = [this] { floatPluginEditor(); };
         closePluginEditorButton.onClick = [this] { closePluginEditor(); };
@@ -540,7 +561,7 @@ namespace patchcraft
 
         auto chooser = std::make_shared<juce::FileChooser> (
             "Choose a VST3 instrument",
-            juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+            defaultVst3Folder(),
             "*.vst3");
 
         chooser->launchAsync (juce::FileBrowserComponent::openMode
@@ -689,7 +710,7 @@ namespace patchcraft
 
         pluginEditor.reset();
         pluginEditorHost.setSize (0, 0);
-        pluginEditorStatusLabel.setText ("Load a VST3 to show its full editor here.", juce::dontSendNotification);
+        pluginEditorStatusLabel.setText ("Load a VST3, then open its real plugin interface here or in a floating window.", juce::dontSendNotification);
         resized();
     }
 
@@ -705,9 +726,10 @@ namespace patchcraft
 
         if (pluginInstance->hasEditor())
         {
-            pluginEditor.reset (pluginInstance->createEditorIfNeeded());
+            pluginEditor.reset (pluginInstance->createEditor());
         }
-        else
+
+        if (pluginEditor == nullptr)
         {
             pluginEditor = std::make_unique<juce::GenericAudioProcessorEditor> (*pluginInstance);
         }
@@ -724,8 +746,11 @@ namespace patchcraft
         const int editorHeight = pluginEditor->getHeight() > 0 ? pluginEditor->getHeight() : 420;
         pluginEditor->setBounds (0, 0, editorWidth, editorHeight);
         pluginEditorHost.setSize (editorWidth, editorHeight);
+        pluginEditor->setVisible (true);
+        pluginEditorViewport.setVisible (true);
+        pluginEditorViewport.toFront (false);
 
-        pluginEditorStatusLabel.setText ("Editor loaded. Choose a preset/sound here, then audition or render.",
+        pluginEditorStatusLabel.setText ("VST interface loaded. Choose a preset/sound here, then audition, monitor, or render.",
                                          juce::dontSendNotification);
         resized();
     }
@@ -777,7 +802,7 @@ namespace patchcraft
         const int editorHeight = pluginEditor->getHeight() > 0 ? pluginEditor->getHeight() : 420;
         pluginEditor->setBounds (0, 0, editorWidth, editorHeight);
         pluginEditorHost.setSize (editorWidth, editorHeight);
-        pluginEditorStatusLabel.setText ("Editor docked. Choose a preset/sound here, then play MIDI or render.",
+        pluginEditorStatusLabel.setText ("VST interface docked. Choose a preset/sound here, then play MIDI or render.",
                                          juce::dontSendNotification);
         resized();
     }
@@ -785,7 +810,7 @@ namespace patchcraft
     void OneShotMakerPage::closePluginEditor()
     {
         destroyPluginEditor();
-        pluginEditorStatusLabel.setText ("Plugin editor closed. The plugin stays loaded; use Refresh Editor to reopen it.",
+        pluginEditorStatusLabel.setText ("VST interface closed. The plugin stays loaded; use Open VST UI to reopen it.",
                                          juce::dontSendNotification);
     }
 
@@ -863,6 +888,11 @@ namespace patchcraft
             return;
         }
 
+        if (owner.isPreviewActive())
+            owner.togglePreview();
+        if (reviewCallbackActive || reviewPreviewPlaying.load())
+            stopReviewPreview();
+
         juce::String error;
         if (! owner.getAudio().ensureOpen (error))
         {
@@ -886,7 +916,7 @@ namespace patchcraft
             prepareLivePluginForDevice (device);
 
         ensureSharedAudioCallback();
-        pluginEditorStatusLabel.setText ("Live monitor on. Hardware MIDI and the plugin's own keyboard now feed audio.",
+        pluginEditorStatusLabel.setText ("Live monitor on. Studio Preview is muted; MIDI is routed to the loaded VST only.",
                                          juce::dontSendNotification);
         startTimerHz (20);
         setControlsEnabledForRenderState();
@@ -3386,9 +3416,9 @@ namespace patchcraft
         if (! rendering.load())
         {
             if (livePluginCallbackActive)
-                pluginEditorStatusLabel.setText ("Live monitor on. Output peak "
+                pluginEditorStatusLabel.setText ("Live monitor on. Studio Preview muted. Output peak "
                                                  + juce::String (juce::Decibels::gainToDecibels (livePluginPeak.load(), -100.0f), 1)
-                                                 + " dB. Hardware MIDI is routed to the plugin.",
+                                                 + " dB. Hardware MIDI is routed to the loaded VST only.",
                                                  juce::dontSendNotification);
 
             if (! reviewCallbackActive && ! livePluginCallbackActive)
@@ -3613,7 +3643,7 @@ namespace patchcraft
         auto pe = pluginEditorCard.reduced (16, 14);
         auto peHeader = pe.removeFromTop (30);
         auto peActions = peHeader.removeFromRight (juce::jmin (330, peHeader.getWidth() / 2));
-        pluginEditorTitle.setBounds (peHeader.removeFromLeft (90));
+        pluginEditorTitle.setBounds (peHeader.removeFromLeft (116));
         pluginEditorStatusLabel.setBounds (peHeader);
         refreshPluginEditorButton.setBounds (peActions.removeFromLeft (108));
         peActions.removeFromLeft (6);

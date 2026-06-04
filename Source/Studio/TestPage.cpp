@@ -161,6 +161,36 @@ namespace patchcraft
                 block.values[key] = value;
         }
 
+        static float arpLaneValue (const DspBlock& block, int lane, const juce::String& key, float fallback)
+        {
+            const auto bankKey = arpBankPrefix (lane) + key;
+            const auto bankIt = block.values.find (bankKey);
+            if (bankIt != block.values.end())
+                return bankIt->second;
+
+            const auto directIt = block.values.find (key);
+            return directIt != block.values.end() ? directIt->second : fallback;
+        }
+
+        static float normalisedArpLaneSliderValue (const DspBlock& block, int lane, int step, int role, int slots)
+        {
+            const auto suffix = juce::String (step);
+            switch (juce::jlimit (0, 10, role))
+            {
+                case 0:  return juce::jlimit (0.0f, 1.0f, arpLaneValue (block, lane, "mpVelocity" + suffix, 0.72f));
+                case 1:  return juce::jlimit (0.0f, 1.0f, arpLaneValue (block, lane, "mpGate" + suffix, 0.58f));
+                case 2:  return juce::jlimit (0.0f, 1.0f, arpLaneValue (block, lane, "mpStepProb" + suffix, 1.0f));
+                case 3:  return juce::jlimit (0.0f, 1.0f, (arpLaneValue (block, lane, "mpStepDiv" + suffix, 1.0f) - 1.0f) / 7.0f);
+                case 4:  return arpLaneValue (block, lane, "mpStep" + suffix + "On", 0.0f) >= 0.5f ? 1.0f : 0.0f;
+                case 5:  return juce::jlimit (0.0f, 1.0f, arpLaneValue (block, lane, "mpStepDelay" + suffix, 0.0f) / 0.85f);
+                case 6:  return slots > 1 ? juce::jlimit (0.0f, 1.0f, arpLaneValue (block, lane, "mpSampleSlice" + suffix, 0.0f) / (float) (slots - 1)) : 0.0f;
+                case 7:  return juce::jlimit (0.0f, 1.0f, (arpLaneValue (block, lane, "mpStepTranspose" + suffix, 0.0f) + 24.0f) / 48.0f);
+                case 8:  return juce::jlimit (0.0f, 1.0f, arpLaneValue (block, lane, "mpAutoFilter" + suffix, 0.0f));
+                case 9:  return juce::jlimit (0.0f, 1.0f, (arpLaneValue (block, lane, "mpAutoPan" + suffix, 0.0f) + 1.0f) * 0.5f);
+                default: return juce::jlimit (0.0f, 1.0f, arpLaneValue (block, lane, "mpAutoFxSend" + suffix, 0.0f));
+            }
+        }
+
         static juce::String orbitLaneSoundName (int sound)
         {
             return "DSP Slot " + juce::String (juce::jlimit (0, 15, sound) + 1);
@@ -213,10 +243,12 @@ namespace patchcraft
             const int target = juce::jlimit (0, 4, juce::roundToInt (value ("arpLaneTarget", 0.0f)));
             const int direction = juce::jlimit (0, 3, juce::roundToInt (value ("arpLaneDirection", 0.0f)));
             const int sound = juce::jlimit (0, 15, juce::roundToInt (value ("arpLaneSound", (float) lane)));
+            const int group = juce::jlimit (0, 7, juce::roundToInt (value ("arpLaneGroup", (float) (lane % 5))));
             const int rootNote = juce::jlimit (0, 127, juce::roundToInt (value ("arpLaneRootNote", 60.0f)));
             const int slots = juce::jlimit (1, 64, juce::roundToInt (value ("arpLaneSampleSlots", 1.0f)));
             const auto targetName = orbitLaneTargetName (target);
             juce::ignoreUnused (rootNote);
+            const int sliderRole = juce::jlimit (0, 10, juce::roundToInt (value ("arpLaneSliderRole", 0.0f)));
 
             block.values["mpActiveBank"] = (float) lane;
             block.values["mpMultiLane"] = 1.0f;
@@ -232,6 +264,8 @@ namespace patchcraft
             setArpLaneValue (block, lane, "mpSampleControl", target == 0 ? 0.0f : 1.0f);
             setArpLaneValue (block, lane, "mpSampleSliceCount", (float) juce::jmax (slots, sound + 1));
             setArpLaneValue (block, lane, "mpLaneMute", value ("arpLaneMute", 0.0f) >= 0.5f ? 1.0f : 0.0f);
+            setArpLaneValue (block, lane, "mpLaneRetrigger", value ("arpLaneRetrigger", 1.0f) >= 0.5f ? 1.0f : 0.0f);
+            setArpLaneValue (block, lane, "mpLaneGroup", (float) group);
             setArpLaneValue (block, lane, "mpLaneFxTarget", (float) juce::jlimit (0, 7, juce::roundToInt (value ("arpLaneFxTarget", (float) (lane % 4)))));
             const float laneFxAmount = juce::jlimit (0.0f, 1.0f, value ("arpLaneFxAmount", 0.0f));
 
@@ -246,10 +280,48 @@ namespace patchcraft
                     setArpLaneValue (block, lane, "mpAutoFxSend" + suffix, laneFxAmount);
             }
 
+            if (parameterId.startsWith ("arpLaneStep"))
+            {
+                for (int step = 0; step < 16; ++step)
+                {
+                    const float v = juce::jlimit (0.0f, 1.0f, value ("arpLaneStep" + juce::String (step + 1),
+                                                                     step % 4 == 0 ? 0.92f : 0.68f));
+                    const auto suffix = juce::String (step);
+                    if (sliderRole == 0)
+                        setArpLaneValue (block, lane, "mpVelocity" + suffix, v);
+                    else if (sliderRole == 1)
+                        setArpLaneValue (block, lane, "mpGate" + suffix, juce::jlimit (0.05f, 1.0f, 0.05f + v * 0.95f));
+                    else if (sliderRole == 2)
+                        setArpLaneValue (block, lane, "mpStepProb" + suffix, v);
+                    else if (sliderRole == 3)
+                        setArpLaneValue (block, lane, "mpStepDiv" + suffix, (float) juce::jlimit (1, 8, 1 + juce::roundToInt (v * 7.0f)));
+                    else if (sliderRole == 4)
+                        setArpLaneValue (block, lane, "mpStep" + suffix + "On", v >= 0.5f ? 1.0f : 0.0f);
+                    else if (sliderRole == 5)
+                        setArpLaneValue (block, lane, "mpStepDelay" + suffix, juce::jlimit (0.0f, 0.85f, v * 0.85f));
+                    else if (sliderRole == 6)
+                        setArpLaneValue (block, lane, "mpSampleSlice" + suffix, (float) juce::jlimit (0, slots - 1, juce::roundToInt (v * (float) juce::jmax (1, slots - 1))));
+                    else if (sliderRole == 7)
+                        setArpLaneValue (block, lane, "mpStepTranspose" + suffix, (float) juce::jlimit (-24, 24, juce::roundToInt (v * 48.0f - 24.0f)));
+                    else if (sliderRole == 8)
+                        setArpLaneValue (block, lane, "mpAutoFilter" + suffix, v);
+                    else if (sliderRole == 9)
+                        setArpLaneValue (block, lane, "mpAutoPan" + suffix, juce::jlimit (-1.0f, 1.0f, v * 2.0f - 1.0f));
+                    else if (sliderRole == 10)
+                        setArpLaneValue (block, lane, "mpAutoFxSend" + suffix, v);
+                }
+            }
+
             block.metadata["arpLane" + juce::String (lane + 1) + "Target"] = targetName;
             block.metadata["arpLane" + juce::String (lane + 1) + "Sound"] = juce::String (sound);
             block.metadata["arpLane" + juce::String (lane + 1) + "SoundName"] = orbitLaneSoundName (sound);
+            block.metadata["arpLane" + juce::String (lane + 1) + "Group"] = "Group " + juce::String (group + 1);
             block.metadata["arpLane" + juce::String (lane + 1) + "FxTarget"] = juce::String (juce::jlimit (0, 7, juce::roundToInt (value ("arpLaneFxTarget", (float) (lane % 4)))));
+
+            if (parameterId == "arpLaneControlBank" || parameterId == "arpLaneSliderRole")
+                for (int step = 0; step < 16; ++step)
+                    project.getLiveValues().setValue ("arpLaneStep" + juce::String (step + 1),
+                                                       normalisedArpLaneSliderValue (block, lane, step, sliderRole, slots));
             graph.userConfigured = true;
         }
     }
@@ -290,12 +362,13 @@ namespace patchcraft
         }
     };
 
-    class TestPage::ClipView : public juce::Component, public juce::KeyListener
+    class TestPage::ClipView : public juce::Component, public juce::KeyListener, private juce::Timer
     {
     public:
         explicit ClipView (TestPage& p) : page (p)
         {
             setWantsKeyboardFocus (true);
+            startTimerHz (30);
         }
 
         void paint (juce::Graphics& g) override
@@ -308,14 +381,73 @@ namespace patchcraft
             g.setColour (PatchCraftLookAndFeel::border());
             g.drawRoundedRectangle (r.toFloat(), 4.0f, 1.0f);
 
+            auto header = r.removeFromTop (24).reduced (8, 2);
+            int noteCount = 0;
+            {
+                const juce::ScopedLock lock (page.clipLock);
+                noteCount = (int) page.clip.size();
+            }
+
+            g.setFont (juce::Font (11.0f, juce::Font::bold));
+            g.setColour (page.recording.load() ? juce::Colour (0xffe6504a) : PatchCraftLookAndFeel::accent());
+            juce::String state = page.recording.load() ? "REC ARMED" : (page.playing.load() ? "PLAYING" : "STOPPED");
+            state << "  |  " << noteCount << " note" << (noteCount == 1 ? "" : "s")
+                  << "  |  double-click to add, drag note edge to lengthen, Delete removes selected";
+            g.drawText (state, header, juce::Justification::centredLeft, true);
+
+            r.removeFromTop (4);
+            auto keyboardArea = r.removeFromLeft (48);
+            auto roll = r;
+
+            constexpr int minNote = 36;
+            constexpr int maxNote = 84;
+            const auto noteY = [roll] (int note)
+            {
+                return juce::jmap (note, 84, 36, roll.getY() + 4, roll.getBottom() - 8);
+            };
+
+            g.setFont (juce::FontOptions (9.5f));
+            for (int note = minNote; note <= maxNote; ++note)
+            {
+                const bool black = ((note % 12) == 1 || (note % 12) == 3 || (note % 12) == 6 || (note % 12) == 8 || (note % 12) == 10);
+                const int y = noteY (note);
+                g.setColour (black ? juce::Colour (0xff10151b) : juce::Colour (0xff151b22));
+                g.fillRect (roll.getX(), y - 4, roll.getWidth(), 8);
+                g.setColour (black ? juce::Colour (0xff141413) : juce::Colour (0xffe9d8b8));
+                g.fillRoundedRectangle ((float) keyboardArea.getX() + 2.0f, (float) y - 4.0f,
+                                        (float) keyboardArea.getWidth() - 5.0f, 7.0f, 1.5f);
+                if (note % 12 == 0)
+                {
+                    g.setColour (PatchCraftLookAndFeel::textDim());
+                    g.drawText (juce::MidiMessage::getMidiNoteName (note, true, true, 4),
+                                keyboardArea.reduced (4, 0).withY (y - 8).withHeight (16),
+                                juce::Justification::centredLeft, true);
+                }
+            }
+
+            const int beatCount = juce::jmax (1, page.clipBars * 4);
+            for (int beat = 0; beat <= beatCount; ++beat)
+            {
+                const float x = (float) roll.getX() + ((float) beat / (float) beatCount) * (float) roll.getWidth();
+                const bool bar = beat % 4 == 0;
+                g.setColour ((bar ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::border()).withAlpha (bar ? 0.38f : 0.45f));
+                g.drawVerticalLine (juce::roundToInt (x), (float) roll.getY(), (float) roll.getBottom());
+                if (bar && beat < beatCount)
+                {
+                    g.setColour (PatchCraftLookAndFeel::textDim());
+                    g.drawText (juce::String (beat / 4 + 1), juce::roundToInt (x) + 3, roll.getY() + 2, 24, 14,
+                                juce::Justification::centredLeft);
+                }
+            }
+
             {
                 const juce::ScopedLock lock (page.clipLock);
                 for (int i = 0; i < (int) page.clip.size(); ++i)
                 {
                     const auto& event = page.clip[(size_t) i];
-                    const auto x = r.getX() + juce::roundToInt ((event.time / page.clipLengthSeconds()) * r.getWidth());
-                    const auto w = juce::jmax (8, juce::roundToInt ((event.length / page.clipLengthSeconds()) * r.getWidth()));
-                    const auto y = juce::jmap (event.note, 84, 36, r.getY() + 4, r.getBottom() - 8);
+                    const auto x = roll.getX() + juce::roundToInt ((event.time / page.clipLengthSeconds()) * roll.getWidth());
+                    const auto w = juce::jmax (8, juce::roundToInt ((event.length / page.clipLengthSeconds()) * roll.getWidth()));
+                    const auto y = noteY (event.note);
                     g.setColour (i == page.selectedClipIndex
                         ? PatchCraftLookAndFeel::accent()
                         : PatchCraftLookAndFeel::accent().withAlpha (0.72f));
@@ -323,15 +455,15 @@ namespace patchcraft
                 }
             }
 
-            const auto playX = r.getX() + juce::roundToInt ((page.playPosSeconds.load() / page.clipLengthSeconds()) * r.getWidth());
-            g.setColour (juce::Colours::white.withAlpha (0.8f));
-            g.drawVerticalLine (playX, (float) r.getY(), (float) r.getBottom());
+            const auto playX = roll.getX() + juce::roundToInt ((page.playPosSeconds.load() / page.clipLengthSeconds()) * roll.getWidth());
+            g.setColour ((page.recording.load() ? juce::Colour (0xffe6504a) : juce::Colours::white).withAlpha (0.86f));
+            g.drawVerticalLine (playX, (float) roll.getY(), (float) roll.getBottom());
         }
 
         void mouseDown (const juce::MouseEvent& e) override
         {
             grabKeyboardFocus();
-            auto r = getLocalBounds().reduced (10);
+            auto r = clipRollBounds();
             page.selectedClipIndex = hitNote (r, e.getPosition());
             page.dragClipIndex = page.selectedClipIndex;
 
@@ -355,7 +487,7 @@ namespace patchcraft
         {
             if (page.dragClipIndex < 0) return;
 
-            auto r = getLocalBounds().reduced (10);
+            auto r = clipRollBounds();
             const auto endTime = juce::jlimit (0.0, page.clipLengthSeconds(),
                 ((double) (e.x - r.getX()) / (double) r.getWidth()) * page.clipLengthSeconds());
 
@@ -410,6 +542,19 @@ namespace patchcraft
 
     private:
         TestPage& page;
+
+        void timerCallback() override
+        {
+            repaint();
+        }
+
+        juce::Rectangle<int> clipRollBounds() const
+        {
+            auto r = getLocalBounds().reduced (10);
+            r.removeFromTop (28);
+            r.removeFromLeft (48);
+            return r;
+        }
 
         int hitNote (juce::Rectangle<int> r, juce::Point<int> point) const
         {
@@ -537,6 +682,10 @@ namespace patchcraft
         {
             return setArpLaneStepFromUi (lane, step, velocity, active);
         };
+        instrumentRenderer->onRuntimeStatus = [this] (const juce::String& message)
+        {
+            statusLabel.setText (message, juce::dontSendNotification);
+        };
         addAndMakeVisible (*instrumentRenderer);
 
         keyboard = std::make_unique<juce::MidiKeyboardComponent> (
@@ -642,7 +791,7 @@ namespace patchcraft
                 title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
                 addAndMakeVisible (title);
 
-                subtitle.setText ("Record, draw, drag, lengthen, and delete notes without permanently occupying the Player preview.",
+                subtitle.setText ("Record or draw a MIDI phrase while the Player keeps running. Move this window aside to tweak instrument controls during playback.",
                                   juce::dontSendNotification);
                 subtitle.setFont (juce::Font (11.0f));
                 subtitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
@@ -661,7 +810,11 @@ namespace patchcraft
                 addAndMakeVisible (tempo);
 
                 addAndMakeVisible (clipView);
-                setSize (860, 380);
+                status.setFont (juce::FontOptions (10.5f));
+                status.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+                status.setText ("Ready. Arm Rec, play notes, then edit them in the piano roll.", juce::dontSendNotification);
+                addAndMakeVisible (status);
+                setSize (960, 500);
             }
 
             void paint (juce::Graphics& g) override
@@ -689,6 +842,8 @@ namespace patchcraft
                 tempo.setBounds (controls.removeFromLeft (220));
 
                 r.removeFromTop (10);
+                status.setBounds (r.removeFromTop (22));
+                r.removeFromTop (4);
                 clipView.setBounds (r);
             }
 
@@ -701,6 +856,7 @@ namespace patchcraft
             juce::TextButton clearButton { "Clear" };
             juce::ToggleButton loopToggle;
             juce::Slider tempo;
+            juce::Label status;
         };
 
         auto* content = new ClipModalContent (*this);
@@ -708,12 +864,22 @@ namespace patchcraft
         content->stopButton.onClick = [this] { onTransportStopPressed(); };
         content->recordButton.setClickingTogglesState (true);
         content->recordButton.setToggleState (recording.load(), juce::dontSendNotification);
+        content->recordButton.setButtonText (recording.load() ? "Recording" : "Arm Rec");
         content->recordButton.onClick = [this, content]
         {
             recordBtn.setToggleState (content->recordButton.getToggleState(), juce::dontSendNotification);
             onTransportRecordPressed();
+            content->recordButton.setButtonText (recording.load() ? "Recording" : "Arm Rec");
+            content->status.setText (recording.load()
+                ? "Recording armed. The first note starts transport; the red playhead shows capture position."
+                : "Recording disarmed. Use Play to audition the clip while tweaking parameters.",
+                juce::dontSendNotification);
         };
-        content->clearButton.onClick = [this] { clearClip(); };
+        content->clearButton.onClick = [this, content]
+        {
+            clearClip();
+            content->status.setText ("Clip cleared.", juce::dontSendNotification);
+        };
         content->loopToggle.setToggleState (looping.load(), juce::dontSendNotification);
         content->loopToggle.onClick = [this, content] { looping.store (content->loopToggle.getToggleState()); };
         content->tempo.setValue (bpm.load(), juce::dontSendNotification);
@@ -1319,7 +1485,23 @@ namespace patchcraft
         if (diagnostic.isNotEmpty())
             return prefix + " | " + diagnostic;
 
-        return prefix + " | Engine: " + (projectEngine.isNotEmpty() ? projectEngine : "synth");
+        int noteCount = 0;
+        {
+            const juce::ScopedLock lock (clipLock);
+            noteCount = (int) clip.size();
+        }
+
+        juce::String transport;
+        if (recording.load())
+            transport = playing.load() ? "Recording MIDI clip" : "REC armed: play a key to start capture";
+        else if (playing.load())
+            transport = "Playing MIDI clip";
+        else
+            transport = "Stopped";
+
+        return prefix + " | " + transport
+             + " | Clip: " + juce::String (noteCount) + " note" + (noteCount == 1 ? "" : "s")
+             + " | Engine: " + (projectEngine.isNotEmpty() ? projectEngine : "synth");
     }
 
     void TestPage::refreshPlaybackStatus()
@@ -1339,7 +1521,8 @@ namespace patchcraft
                           || text.containsIgnoreCase ("no zone")
                           || text.containsIgnoreCase ("0/");
         statusLabel.setColour (juce::Label::textColourId,
-                               warning ? juce::Colour (0xffffc857)
+                               recording.load() ? juce::Colour (0xffe6504a)
+                                     : warning ? juce::Colour (0xffffc857)
                                        : PatchCraftLookAndFeel::accent());
     }
 
@@ -1359,6 +1542,7 @@ namespace patchcraft
         playing.store (false);
         recording.store (false);
         recordBtn.setToggleState (false, juce::dontSendNotification);
+        recordBtn.setButtonText ("Arm Rec");
         playPosSeconds.store (0.0);
         recordingNoteIndices.clear();
 
@@ -1557,9 +1741,15 @@ namespace patchcraft
         recording.store (recordBtn.getToggleState());
         if (recording.load())
         {
+            recordBtn.setButtonText ("Recording");
             playing.store (false);
             playPosSeconds.store (0.0);
         }
+        else
+        {
+            recordBtn.setButtonText ("Arm Rec");
+        }
+        refreshPlaybackStatus();
     }
 
 

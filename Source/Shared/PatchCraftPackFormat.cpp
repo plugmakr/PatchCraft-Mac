@@ -79,6 +79,14 @@ namespace patchcraft
                 || text.contains ("stutter") || text.contains ("texture") || text.contains ("gate");
         }
 
+        static bool isLeadPreset (const Preset& preset)
+        {
+            const auto text = presetSearchText (preset);
+            return text.contains ("lead") || text.contains ("supersaw") || text.contains ("saw")
+                || text.contains ("hoover") || text.contains ("goa") || text.contains ("festival")
+                || text.contains ("hands up") || text.contains ("stadium");
+        }
+
         static bool isWavetablePreset (const Preset& preset)
         {
             const auto text = presetSearchText (preset);
@@ -138,8 +146,8 @@ namespace patchcraft
             preset.values["decay"] = 0.12f + 0.025f * (float) recipe;
             preset.values["sustain"] = recipe == 5 ? 0.32f : 0.10f;
             preset.values["release"] = 0.12f + 0.04f * (float) recipe;
-            preset.values["delayMix"] = 0.24f + 0.035f * (float) recipe;
-            preset.values["delayFeedback"] = 0.36f + 0.04f * (float) recipe;
+            preset.values["delayMix"] = 0.10f + 0.025f * (float) recipe;
+            preset.values["delayFeedback"] = 0.20f + 0.035f * (float) recipe;
             preset.values["bpmSync"] = 1.0f;
             preset.values["retrigger"] = 1.0f;
             preset.tags.addIfNotAlreadyThere ("true-arp");
@@ -209,7 +217,7 @@ namespace patchcraft
             preset.values["octave"] = variant == 0 ? -2.0f : -1.0f;
             preset.values["oscBlend"] = 0.10f + 0.06f * (float) variant;
             preset.values["subBlend"] = 0.52f + 0.08f * (float) (variant % 3);
-            preset.values["noiseBlend"] = variant == 3 ? 0.08f : 0.0f;
+            preset.values["noiseBlend"] = 0.0f;
             preset.values["attack"] = 0.001f;
             preset.values["decay"] = variant == 1 ? 0.20f : 0.10f + 0.05f * (float) variant;
             preset.values["sustain"] = variant == 2 ? 0.82f : 0.0f + 0.12f * (float) (variant % 2);
@@ -237,10 +245,56 @@ namespace patchcraft
             preset.values["filterResonance"] = 0.20f + 0.055f * (float) variant;
             preset.values["delayTime"] = variant % 2 == 0 ? 0.1875f : 0.25f;
             preset.values["delayFeedback"] = 0.28f + 0.06f * (float) variant;
-            preset.values["delayMix"] = 0.18f + 0.045f * (float) variant;
+            preset.values["delayMix"] = 0.06f + 0.025f * (float) variant;
+            preset.values["delayFeedback"] = 0.18f + 0.035f * (float) variant;
             preset.values["reverbMix"] = 0.20f + 0.055f * (float) variant;
             preset.values["retrigger"] = 1.0f;
             preset.tags.addIfNotAlreadyThere ("pluck-like");
+        }
+
+        static void applyLeadRecipe (DspGraph&, Preset& preset, int index)
+        {
+            const int variant = index % 6;
+            preset.values["oscType"] = variant == 3 ? 2.0f : 1.0f;
+            preset.values["osc2Type"] = variant == 4 ? 3.0f : 1.0f;
+            preset.values["oscBlend"] = 0.24f + 0.055f * (float) variant;
+            preset.values["detune"] = 5.0f + 3.5f * (float) variant;
+            preset.values["osc2Detune"] = -4.0f + 2.0f * (float) variant;
+            preset.values["attack"] = variant == 5 ? 0.012f : 0.002f;
+            preset.values["decay"] = 0.18f + 0.07f * (float) variant;
+            preset.values["sustain"] = 0.62f + 0.045f * (float) (variant % 4);
+            preset.values["release"] = 0.18f + 0.11f * (float) variant;
+            preset.values["filterCutoff"] = 4200.0f + 1000.0f * (float) variant;
+            preset.values["filterResonance"] = 0.18f + 0.045f * (float) variant;
+            preset.values["lfoRate"] = variant == 2 ? 5.5f : 0.5f + 0.25f * (float) variant;
+            preset.values["lfoAmount"] = variant == 2 ? 0.18f : 0.04f + 0.025f * (float) variant;
+            preset.values["delayTime"] = variant % 2 == 0 ? 0.125f : 0.1875f;
+            preset.values["delayMix"] = 0.04f + 0.025f * (float) (variant % 4);
+            preset.values["delayFeedback"] = 0.14f + 0.035f * (float) variant;
+            preset.values["reverbMix"] = 0.12f + 0.035f * (float) variant;
+            preset.values["retrigger"] = 1.0f;
+            preset.tags.addIfNotAlreadyThere ("lead-like");
+            preset.tags.addIfNotAlreadyThere ("crisp");
+        }
+
+        static void sanitisePresetPlaybackValues (Preset& preset)
+        {
+            preset.values["noiseBlend"] = 0.0f;
+
+            for (const auto& id : { juce::String ("oscType"), juce::String ("osc2Type") })
+            {
+                auto it = preset.values.find (id);
+                if (it == preset.values.end())
+                    continue;
+
+                if (juce::roundToInt (it->second) >= 4)
+                    it->second = id == "osc2Type" ? 3.0f : 1.0f;
+                else
+                    it->second = juce::jlimit (0.0f, 3.0f, it->second);
+            }
+
+            if (auto blend = preset.values.find ("oscBlend"); blend != preset.values.end())
+                blend->second = juce::jlimit (0.0f, 0.35f, blend->second);
         }
 
         static void applyMotionRecipe (DspGraph&, Preset& preset, int index)
@@ -254,8 +308,9 @@ namespace patchcraft
             preset.values["decay"] = 0.18f + 0.08f * (float) variant;
             preset.values["sustain"] = 0.24f + 0.09f * (float) variant;
             preset.values["release"] = 0.20f + 0.12f * (float) variant;
-            preset.values["delayMix"] = 0.12f + 0.04f * (float) variant;
-            preset.values["reverbMix"] = 0.16f + 0.04f * (float) variant;
+            preset.values["delayMix"] = 0.04f + 0.025f * (float) variant;
+            preset.values["delayFeedback"] = 0.16f + 0.035f * (float) variant;
+            preset.values["reverbMix"] = 0.10f + 0.035f * (float) variant;
             preset.tags.addIfNotAlreadyThere ("motion-like");
         }
 
@@ -263,7 +318,10 @@ namespace patchcraft
         {
             const int variant = index % 8;
             preset.values["wtEnabled"] = 1.0f;
-            preset.values["oscType"] = 4.0f;
+            preset.values["oscType"] = 1.0f;
+            preset.values["osc2Type"] = 3.0f;
+            preset.values["oscBlend"] = 0.24f;
+            preset.values["noiseBlend"] = 0.0f;
             preset.values["wtTable"] = (float) variant;
             preset.values["wtPosition"] = 0.12f + 0.10f * (float) variant;
             preset.values["wtMorph"] = 0.25f + 0.07f * (float) variant;
@@ -312,17 +370,21 @@ namespace patchcraft
                         block.values["wtUnison"] = raw ("wtUnison", block.values.count ("wtUnison") ? block.values["wtUnison"] : 1.0f);
                         block.values["wtDetune"] = raw ("wtDetune", block.values.count ("wtDetune") ? block.values["wtDetune"] : 12.0f);
                     }
-                    else
+                else
+                {
+                    block.targetId = block.type.containsIgnoreCase ("noise") ? "noiseBlend" : "oscBlend";
+                    const auto safeOscNorm = [] (float value01)
                     {
-                        block.targetId = block.type.containsIgnoreCase ("noise") ? "noiseBlend" : "oscBlend";
-                        block.values["oscType"] = normalised ("oscType", block.values.count ("oscType") ? block.values["oscType"] : 0.25f);
-                        block.values["osc2Type"] = normalised ("osc2Type", block.values.count ("osc2Type") ? block.values["osc2Type"] : 0.75f);
-                        block.values["oscBlend"] = normalised ("oscBlend", block.values.count ("oscBlend") ? block.values["oscBlend"] : 0.0f);
+                        return juce::jlimit (0.0f, 0.75f, value01);
+                    };
+                    block.values["oscType"] = safeOscNorm (normalised ("oscType", block.values.count ("oscType") ? block.values["oscType"] : 0.25f));
+                    block.values["osc2Type"] = safeOscNorm (normalised ("osc2Type", block.values.count ("osc2Type") ? block.values["osc2Type"] : 0.75f));
+                    block.values["oscBlend"] = juce::jmin (0.35f, normalised ("oscBlend", block.values.count ("oscBlend") ? block.values["oscBlend"] : 0.0f));
                         block.values["osc2Detune"] = normalised ("osc2Detune", block.values.count ("osc2Detune") ? block.values["osc2Detune"] : 0.50f);
                         block.values["detune"] = normalised ("detune", block.values.count ("detune") ? block.values["detune"] : 0.50f);
                         block.values["octave"] = normalised ("octave", block.values.count ("octave") ? block.values["octave"] : 0.50f);
                         block.values["subBlend"] = normalised ("subBlend", block.values.count ("subBlend") ? block.values["subBlend"] : 0.0f);
-                        block.values["noiseBlend"] = normalised ("noiseBlend", block.values.count ("noiseBlend") ? block.values["noiseBlend"] : 0.0f);
+                    block.values["noiseBlend"] = 0.0f;
                         block.values["volume"] = juce::jmin (0.72f, normalised ("volume", block.values.count ("volume") ? block.values["volume"] : 0.62f));
                     }
                 }
@@ -393,6 +455,8 @@ namespace patchcraft
                 applyBassRecipe (patch.dspGraph, preset, index);
             else if (isPluckPreset (preset))
                 applyPluckRecipe (patch.dspGraph, preset, index);
+            else if (isLeadPreset (preset))
+                applyLeadRecipe (patch.dspGraph, preset, index);
             else if (isWavetablePreset (preset))
                 applyWavetableRecipe (patch.dspGraph, preset, index);
             else if (isMotionPreset (preset))
@@ -400,6 +464,7 @@ namespace patchcraft
             else if (isPadPreset (preset))
                 applyPadRecipe (patch.dspGraph, preset, index);
 
+            sanitisePresetPlaybackValues (preset);
             syncPresetValuesIntoGraph (patch.dspGraph, preset, model);
             patch.parameterValues = preset.values;
         }

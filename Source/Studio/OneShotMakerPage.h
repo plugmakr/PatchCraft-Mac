@@ -205,7 +205,7 @@ namespace patchcraft
         juce::TextButton sendToMapperButton { "Send to Sample Mapper" };
         juce::TextButton createPatchButton { "Create Patch From Pack" };
         juce::TextButton publishPackButton { "Publish" };
-        juce::TextButton refreshPluginEditorButton { "Refresh Editor" };
+        juce::TextButton refreshPluginEditorButton { "Open VST UI" };
         juce::TextButton auditionPluginButton { "Audition Current Sound" };
         juce::TextButton floatPluginEditorButton { "Float Editor" };
         juce::TextButton closePluginEditorButton { "Close Editor" };

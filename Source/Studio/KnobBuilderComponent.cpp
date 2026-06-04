@@ -87,6 +87,8 @@ namespace patchcraft
         configureSlider (importedBaseOpacitySlider, 0.0, 1.0, 0.01, style.importedBaseOpacity);
         configureSlider (overlayOpacitySlider, 0.0, 1.0, 0.01, style.overlayOpacity);
         configureSlider (imageScaleSlider, 0.25, 2.0, 0.01, style.imageScale, " x");
+        configureSlider (imageOffsetXSlider, -256.0, 256.0, 0.25, style.imageOffsetX, " px");
+        configureSlider (imageOffsetYSlider, -256.0, 256.0, 0.25, style.imageOffsetY, " px");
         configureSlider (imageRotationSlider, -180.0, 180.0, 1.0, style.imageRotation, "Â°");
         configureSlider (animationDepthSlider, 0.0, 1.0, 0.01, style.animationDepth);
         configureSlider (surfaceTextureSlider, 0.0, 1.0, 0.01, style.surfaceTexture);
@@ -94,6 +96,13 @@ namespace patchcraft
         configureSlider (ringInsetSlider, 0.0, 1.0, 0.01, style.ringInset);
         configureSlider (pointerLengthSlider, 0.20, 1.25, 0.01, style.pointerLength);
         configureSlider (motionCurveSlider, 0.0, 1.0, 0.01, style.motionCurve);
+        configureSlider (backgroundToleranceSlider, 0.0, 1.0, 0.01, style.backgroundTolerance);
+        configureSlider (maskRadiusSlider, 0.02, 1.00, 0.01, style.maskRadius);
+        configureSlider (maskFeatherSlider, 0.0, 0.50, 0.01, style.maskFeather);
+        configureSlider (maskOffsetXSlider, -0.50, 0.50, 0.001, style.maskOffsetX);
+        configureSlider (maskOffsetYSlider, -0.50, 0.50, 0.001, style.maskOffsetY);
+        configureSlider (pivotXSlider, 0.0, 1.0, 0.001, style.pivotX);
+        configureSlider (pivotYSlider, 0.0, 1.0, 0.001, style.pivotY);
         sizeSlider.setTooltip ("Output frame size for each knob frame.");
         valueSlider.setTooltip ("Scrubs the live preview and filmstrip frame position.");
         startSlider.setTooltip ("Minimum angle for the knob throw.");
@@ -106,6 +115,8 @@ namespace patchcraft
         importedBaseOpacitySlider.setTooltip ("Opacity of imported PNG or KnobMan artwork.");
         overlayOpacitySlider.setTooltip ("Opacity of PatchCraft-generated edits over imported art.");
         imageScaleSlider.setTooltip ("Scale imported art before rendering it into the knob.");
+        imageOffsetXSlider.setTooltip ("Move the imported image left/right before masking or animation.");
+        imageOffsetYSlider.setTooltip ("Move the imported image up/down before masking or animation.");
         imageRotationSlider.setTooltip ("Rotate imported art before animation is applied.");
         animationDepthSlider.setTooltip ("Amount of pulse, glow, or spin applied across the rendered frames.");
         surfaceTextureSlider.setTooltip ("Procedural surface texture amount applied to the generated face.");
@@ -113,13 +124,23 @@ namespace patchcraft
         ringInsetSlider.setTooltip ("Moves the value ring inward for deeper 3D knob shapes.");
         pointerLengthSlider.setTooltip ("Length of the pointer, needle, or indicator line.");
         motionCurveSlider.setTooltip ("Non-linear frame/value response for animated filmstrips.");
+        backgroundToleranceSlider.setTooltip ("Removes a flat-image background by keying from the image corners. Higher values remove more.");
+        maskRadiusSlider.setTooltip ("Radius of the editable mask around the pivot point.");
+        maskFeatherSlider.setTooltip ("Soft edge for the positive/negative mask.");
+        maskOffsetXSlider.setTooltip ("Fine horizontal nudge for the mask shape, independent from the image and pivot.");
+        maskOffsetYSlider.setTooltip ("Fine vertical nudge for the mask shape, independent from the image and pivot.");
+        pivotXSlider.setTooltip ("Horizontal pivot point for rotating imported pointer art. Ctrl-click the preview to set it.");
+        pivotYSlider.setTooltip ("Vertical pivot point for rotating imported pointer art. Ctrl-click the preview to set it.");
 
         for (auto* slider : { &sizeSlider, &valueSlider, &startSlider, &endSlider, &ringWidthSlider,
                               &pointerWidthSlider, &bevelSlider, &glowSlider, &framesSlider,
                               &importedBaseOpacitySlider, &overlayOpacitySlider, &imageScaleSlider,
-                              &imageRotationSlider, &animationDepthSlider, &surfaceTextureSlider,
+                              &imageOffsetXSlider, &imageOffsetYSlider, &imageRotationSlider,
+                              &animationDepthSlider, &surfaceTextureSlider,
                               &lightAngleSlider, &ringInsetSlider, &pointerLengthSlider,
-                              &motionCurveSlider })
+                              &motionCurveSlider, &backgroundToleranceSlider, &maskRadiusSlider,
+                              &maskFeatherSlider, &maskOffsetXSlider, &maskOffsetYSlider,
+                              &pivotXSlider, &pivotYSlider })
         {
             slider->onValueChange = [this] { updateStyleFromControls(); };
             addAndMakeVisible (*slider);
@@ -161,6 +182,17 @@ namespace patchcraft
         imageFitBox.setTooltip ("Controls how imported art is fitted inside the knob frame.");
         addAndMakeVisible (imageFitBox);
 
+        maskShapeBox.addItem ("Circle Mask", 1);
+        maskShapeBox.addItem ("Wide Ellipse", 2);
+        maskShapeBox.addItem ("Tall Ellipse", 3);
+        maskShapeBox.addItem ("Rectangle", 4);
+        maskShapeBox.addItem ("Diamond", 5);
+        maskShapeBox.setSelectedId (style.maskShape, juce::dontSendNotification);
+        maskShapeBox.onChange = [this] { updateStyleFromControls(); };
+        maskShapeBox.setTooltip ("Shape used to isolate the pointer or selected area from imported art.");
+        addAndMakeVisible (maskShapeBox);
+        maskShapeBox.setEnabled (false);
+
         animationBox.addItem ("Static", 1);
         animationBox.addItem ("Value Sweep", 2);
         animationBox.addItem ("Pulse Ring", 3);
@@ -184,14 +216,45 @@ namespace patchcraft
         labelToggle.setToggleState (style.label, juce::dontSendNotification);
         importedBaseToggle.setToggleState (false, juce::dontSendNotification);
         overlayToggle.setToggleState (true, juce::dontSendNotification);
+        removeBackgroundToggle.setToggleState (style.removeBackground, juce::dontSendNotification);
+        maskToggle.setToggleState (style.maskEnabled, juce::dontSendNotification);
+        positiveMaskToggle.setToggleState (style.positiveMask, juce::dontSendNotification);
+        rotateMaskedToggle.setToggleState (style.rotateMaskedRegion, juce::dontSendNotification);
+        lockUnmaskedToggle.setToggleState (style.lockUnmaskedRegion, juce::dontSendNotification);
         for (auto* toggle : { &ringToggle, &ticksToggle, &shadowToggle, &labelToggle,
-                              &importedBaseToggle, &overlayToggle })
+                              &importedBaseToggle, &overlayToggle, &removeBackgroundToggle,
+                              &maskToggle, &positiveMaskToggle, &rotateMaskedToggle, &lockUnmaskedToggle })
         {
             toggle->onClick = [this] { updateStyleFromControls(); };
             addAndMakeVisible (*toggle);
         }
         importedBaseToggle.setEnabled (false);
         overlayToggle.setEnabled (false);
+        removeBackgroundToggle.setEnabled (false);
+        maskToggle.setEnabled (false);
+        positiveMaskToggle.setEnabled (false);
+        rotateMaskedToggle.setEnabled (false);
+        lockUnmaskedToggle.setEnabled (false);
+
+        auto wireNudgeButton = [this] (juce::TextButton& button, float dx, float dy, bool mask)
+        {
+            button.onClick = [this, dx, dy, mask]
+            {
+                if (mask)
+                    nudgeMask (dx, dy);
+                else
+                    nudgeImportedImage (dx, dy);
+            };
+            addAndMakeVisible (button);
+        };
+        wireNudgeButton (imageNudgeLeftBtn,  -2.0f,   0.0f, false);
+        wireNudgeButton (imageNudgeRightBtn,  2.0f,   0.0f, false);
+        wireNudgeButton (imageNudgeUpBtn,     0.0f,  -2.0f, false);
+        wireNudgeButton (imageNudgeDownBtn,   0.0f,   2.0f, false);
+        wireNudgeButton (maskNudgeLeftBtn,   -0.005f, 0.0f, true);
+        wireNudgeButton (maskNudgeRightBtn,   0.005f, 0.0f, true);
+        wireNudgeButton (maskNudgeUpBtn,      0.0f,  -0.005f, true);
+        wireNudgeButton (maskNudgeDownBtn,    0.0f,   0.005f, true);
 
         importBtn.onClick = [this] { importExistingKnob(); };
         importBtn.setTooltip ("Import a PNG/JPG filmstrip, PatchCraft knob source JSON, or best-effort KnobMan .knob file.");
@@ -233,6 +296,19 @@ namespace patchcraft
         for (auto* label : { &assetLbl, &importLbl, &geometryLbl, &paintLbl, &behaviorLbl, &exportLbl })
             addAndMakeVisible (*label);
 
+        juce::Component* scrollForwarders[] {
+            &nameEdit, &styleBox, &indicatorBox, &outputBox, &imageRoleBox, &imageFitBox, &animationBox, &maskShapeBox,
+            &ringToggle, &ticksToggle, &shadowToggle, &labelToggle, &importedBaseToggle, &overlayToggle,
+            &removeBackgroundToggle, &maskToggle, &positiveMaskToggle, &rotateMaskedToggle, &lockUnmaskedToggle,
+            &imageNudgeLeftBtn, &imageNudgeRightBtn, &imageNudgeUpBtn, &imageNudgeDownBtn,
+            &maskNudgeLeftBtn, &maskNudgeRightBtn, &maskNudgeUpBtn, &maskNudgeDownBtn,
+            &importBtn, &clearImportBtn, &proDemoBtn, &indicatorColourBtn, &ringColourBtn,
+            &backgroundColourBtn, &borderColourBtn, &tickColourBtn, &exportBtn, &exportJsonBtn,
+            &addToProjectBtn, &publishBtn
+        };
+        for (auto* component : scrollForwarders)
+            component->addMouseListener (this, true);
+
         buildLayers = {
             { "Imported Filmstrip Base", true },
             { "Value Arc", true },
@@ -257,6 +333,7 @@ namespace patchcraft
         slider.setTextBoxStyle (juce::Slider::TextBoxRight, true, 58, 22);
         slider.setTextValueSuffix (suffix);
         slider.setScrollWheelEnabled (false);
+        slider.addMouseListener (this, true);
     }
 
     void KnobBuilderComponent::updateStyleFromControls()
@@ -273,6 +350,8 @@ namespace patchcraft
         style.importedBaseOpacity = (float) importedBaseOpacitySlider.getValue();
         style.overlayOpacity = (float) overlayOpacitySlider.getValue();
         style.imageScale = (float) imageScaleSlider.getValue();
+        style.imageOffsetX = (float) imageOffsetXSlider.getValue();
+        style.imageOffsetY = (float) imageOffsetYSlider.getValue();
         style.imageRotation = (float) imageRotationSlider.getValue();
         style.animationDepth = (float) animationDepthSlider.getValue();
         style.surfaceTexture = (float) surfaceTextureSlider.getValue();
@@ -280,10 +359,24 @@ namespace patchcraft
         style.ringInset = (float) ringInsetSlider.getValue();
         style.pointerLength = (float) pointerLengthSlider.getValue();
         style.motionCurve = (float) motionCurveSlider.getValue();
+        style.backgroundTolerance = (float) backgroundToleranceSlider.getValue();
+        style.maskRadius = (float) maskRadiusSlider.getValue();
+        style.maskFeather = (float) maskFeatherSlider.getValue();
+        style.maskOffsetX = (float) maskOffsetXSlider.getValue();
+        style.maskOffsetY = (float) maskOffsetYSlider.getValue();
+        style.pivotX = (float) pivotXSlider.getValue();
+        style.pivotY = (float) pivotYSlider.getValue();
+        style.maskShape = juce::jlimit (1, 5, maskShapeBox.getSelectedId() == 0 ? style.maskShape : maskShapeBox.getSelectedId());
         style.ring = ringToggle.getToggleState();
         style.ticks = ticksToggle.getToggleState();
         style.shadow = shadowToggle.getToggleState();
         style.label = labelToggle.getToggleState();
+        style.removeBackground = removeBackgroundToggle.getToggleState();
+        style.maskEnabled = maskToggle.getToggleState();
+        style.positiveMask = positiveMaskToggle.getToggleState();
+        style.rotateMaskedRegion = rotateMaskedToggle.getToggleState();
+        style.lockUnmaskedRegion = lockUnmaskedToggle.getToggleState();
+        invalidateImportedProcessingCache();
         repaint();
     }
 
@@ -372,6 +465,43 @@ namespace patchcraft
         auto previewArea = previewColumn.removeFromTop (juce::jmax (220, previewColumn.getHeight() - 134)).reduced (12, 4);
         previewKnobBounds = previewArea.reduced (12);
         drawKnob (g, previewKnobBounds.toFloat(), style.previewValue, false);
+        if (hasImportedKnob())
+        {
+            const auto pivot = juce::Point<float> ((float) previewKnobBounds.getX() + (float) previewKnobBounds.getWidth() * juce::jlimit (0.0f, 1.0f, style.pivotX),
+                                                   (float) previewKnobBounds.getY() + (float) previewKnobBounds.getHeight() * juce::jlimit (0.0f, 1.0f, style.pivotY));
+            const auto maskCentre = juce::Point<float> (
+                pivot.x + (float) previewKnobBounds.getWidth() * juce::jlimit (-0.5f, 0.5f, style.maskOffsetX),
+                pivot.y + (float) previewKnobBounds.getHeight() * juce::jlimit (-0.5f, 0.5f, style.maskOffsetY));
+            const float maskRadius = (float) juce::jmin (previewKnobBounds.getWidth(), previewKnobBounds.getHeight())
+                                   * juce::jlimit (0.02f, 1.0f, style.maskRadius);
+            if (style.maskEnabled)
+            {
+                g.setColour ((style.positiveMask ? juce::Colours::limegreen : juce::Colours::orangered).withAlpha (0.34f));
+                if (style.maskShape == 4)
+                    g.drawRect (juce::Rectangle<float> (maskCentre.x - maskRadius, maskCentre.y - maskRadius,
+                                                        maskRadius * 2.0f, maskRadius * 2.0f), 1.4f);
+                else if (style.maskShape == 5)
+                {
+                    juce::Path diamond;
+                    diamond.startNewSubPath (maskCentre.x, maskCentre.y - maskRadius);
+                    diamond.lineTo (maskCentre.x + maskRadius, maskCentre.y);
+                    diamond.lineTo (maskCentre.x, maskCentre.y + maskRadius);
+                    diamond.lineTo (maskCentre.x - maskRadius, maskCentre.y);
+                    diamond.closeSubPath();
+                    g.strokePath (diamond, juce::PathStrokeType (1.4f));
+                }
+                else
+                {
+                    const float sx = style.maskShape == 2 ? 1.35f : (style.maskShape == 3 ? 0.72f : 1.0f);
+                    const float sy = style.maskShape == 2 ? 0.72f : (style.maskShape == 3 ? 1.35f : 1.0f);
+                    g.drawEllipse (maskCentre.x - maskRadius * sx, maskCentre.y - maskRadius * sy,
+                                   maskRadius * 2.0f * sx, maskRadius * 2.0f * sy, 1.4f);
+                }
+            }
+            g.setColour (PatchCraftLookAndFeel::accent());
+            g.drawLine (pivot.x - 7.0f, pivot.y, pivot.x + 7.0f, pivot.y, 1.5f);
+            g.drawLine (pivot.x, pivot.y - 7.0f, pivot.x, pivot.y + 7.0f, 1.5f);
+        }
 
         auto hint = previewColumn.removeFromTop (34).reduced (10, 2);
         g.setColour (PatchCraftLookAndFeel::bg().withAlpha (0.62f));
@@ -380,7 +510,8 @@ namespace patchcraft
         g.drawRoundedRectangle (hint.toFloat(), 7.0f, 1.0f);
         g.setColour (PatchCraftLookAndFeel::textDim());
         g.setFont (juce::Font (9.5f, juce::Font::bold));
-        g.drawText ("DRAG TO SCRUB  |  TEXT LABELS ARE OPTIONAL EXPORT LAYERS",
+        g.drawText (hasImportedKnob() ? "DRAG TO SCRUB  |  CTRL-CLICK SETS PIVOT  |  NUDGE IMAGE OR MASK AT RIGHT"
+                                      : "DRAG TO SCRUB  |  TEXT LABELS ARE OPTIONAL EXPORT LAYERS",
                     hint.reduced (8, 0), juce::Justification::centred);
 
         auto filmstrip = previewColumn.reduced (10, 2);
@@ -464,7 +595,9 @@ namespace patchcraft
         drawGrid ({
             { "Pulse", "ring breathes across frames", "animPulse", juce::Colour (0xffffa51d) },
             { "Glow", "value-reactive halo", "animGlow", juce::Colour (0xff8a6cff) },
-            { "Spin Layer", "imported art rotates", "animSpin", juce::Colour (0xff54d7ff) }
+            { "Spin Layer", "imported art rotates", "animSpin", juce::Colour (0xff54d7ff) },
+            { "Mask Pointer", "animate only selected art", "maskPointer", juce::Colour (0xff7cf2b2) },
+            { "Locked Face", "base stays still, mask moves", "lockedFace", juce::Colour (0xffd9dde2) }
         });
 
         for (int i = 0; i < SectionCount; ++i)
@@ -532,14 +665,16 @@ namespace patchcraft
                                       && importedBaseToggle.getToggleState()
                                       && importedRole == 1
                                       && isBuildLayerVisible ("Imported Filmstrip Base");
-        auto drawImportedImage = [&] (juce::Rectangle<float> target, float opacity, float rotationDegrees)
+        auto drawImportedImage = [&] (juce::Rectangle<float> target, float opacity, float rotationDegrees, bool activeMaskRegion = true)
         {
             auto importedFrame = getImportedFrame (position);
             if (! importedFrame.isValid())
                 return;
+            importedFrame = processImportedFrame (importedFrame, activeMaskRegion);
 
             const auto scale = juce::jlimit (0.25f, 2.0f, style.imageScale);
             auto imageBounds = target.withSizeKeepingCentre (target.getWidth() * scale, target.getHeight() * scale);
+            imageBounds.translate (style.imageOffsetX, style.imageOffsetY);
             auto placement = juce::RectanglePlacement::centred;
             if (imageFitBox.getSelectedId() == 2)
                 placement = juce::RectanglePlacement::fillDestination;
@@ -547,9 +682,10 @@ namespace patchcraft
                 placement = juce::RectanglePlacement::stretchToFit;
 
             juce::Graphics::ScopedSaveState saved (g);
+            const auto pivot = juce::Point<float> (imageBounds.getX() + imageBounds.getWidth() * juce::jlimit (0.0f, 1.0f, style.pivotX),
+                                                   imageBounds.getY() + imageBounds.getHeight() * juce::jlimit (0.0f, 1.0f, style.pivotY));
             g.addTransform (juce::AffineTransform::rotation (juce::degreesToRadians (rotationDegrees),
-                                                             imageBounds.getCentreX(),
-                                                             imageBounds.getCentreY()));
+                                                             pivot.x, pivot.y));
             g.setOpacity (juce::jlimit (0.0f, 1.0f, opacity));
             g.drawImageWithin (importedFrame,
                                (int) imageBounds.getX(), (int) imageBounds.getY(),
@@ -566,7 +702,16 @@ namespace patchcraft
         if (drawingImportedBase)
         {
             const float spin = animationMode == 5 ? 360.0f * position * animationDepth : 0.0f;
-            drawImportedImage (knob, style.importedBaseOpacity, style.imageRotation + spin);
+            if (style.rotateMaskedRegion && style.maskEnabled)
+            {
+                if (style.lockUnmaskedRegion)
+                    drawImportedImage (knob, style.importedBaseOpacity, style.imageRotation, false);
+                drawImportedImage (knob, style.importedBaseOpacity, style.imageRotation + spin + juce::radiansToDegrees (angle) + 90.0f, true);
+            }
+            else
+            {
+                drawImportedImage (knob, style.importedBaseOpacity, style.imageRotation + spin);
+            }
             g.setOpacity (1.0f);
 
             if (! overlayToggle.getToggleState())
@@ -676,9 +821,18 @@ namespace patchcraft
                                                                cy - faceRadius * 0.42f,
                                                                faceRadius * 0.84f,
                                                                faceRadius * 0.84f);
-            drawImportedImage (indicatorArea,
-                               style.importedBaseOpacity,
-                               style.imageRotation + juce::radiansToDegrees (angle) + 90.0f);
+            if (style.rotateMaskedRegion && style.maskEnabled)
+            {
+                if (style.lockUnmaskedRegion)
+                    drawImportedImage (knob, style.importedBaseOpacity, style.imageRotation, false);
+                drawImportedImage (knob, style.importedBaseOpacity, style.imageRotation + juce::radiansToDegrees (angle) + 90.0f, true);
+            }
+            else
+            {
+                drawImportedImage (indicatorArea,
+                                   style.importedBaseOpacity,
+                                   style.imageRotation + juce::radiansToDegrees (angle) + 90.0f);
+            }
             g.setOpacity (1.0f);
         }
         else if (indicatorBox.getSelectedId() != 4 && isBuildLayerVisible ("Indicator"))
@@ -826,6 +980,28 @@ namespace patchcraft
             imageRoleBox.setSelectedId (3, juce::dontSendNotification);
             style.animationDepth = 0.70f; style.frames = juce::jmax (128, style.frames);
         }
+        else if (actionId == "maskPointer")
+        {
+            imageRoleBox.setSelectedId (3, juce::dontSendNotification);
+            maskShapeBox.setSelectedId (style.maskShape <= 0 ? 1 : style.maskShape, juce::dontSendNotification);
+            style.maskEnabled = true;
+            style.positiveMask = true;
+            style.rotateMaskedRegion = true;
+            style.lockUnmaskedRegion = false;
+            style.maskRadius = juce::jlimit (0.02f, 1.0f, juce::jmin (style.maskRadius, 0.26f));
+            style.frames = juce::jmax (96, style.frames);
+        }
+        else if (actionId == "lockedFace")
+        {
+            imageRoleBox.setSelectedId (1, juce::dontSendNotification);
+            style.maskEnabled = true;
+            style.positiveMask = true;
+            style.rotateMaskedRegion = true;
+            style.lockUnmaskedRegion = true;
+            style.importedBaseOpacity = 1.0f;
+            style.overlayOpacity = juce::jmin (style.overlayOpacity, 0.65f);
+            style.frames = juce::jmax (96, style.frames);
+        }
 
         syncControlsFromStyle();
         owner.getProject().markDirty();
@@ -837,7 +1013,13 @@ namespace patchcraft
         juce::Component* editableControls[] {
             &nameEdit, &styleBox, &proDemoBtn, &importBtn, &clearImportBtn,
             &importedBaseToggle, &overlayToggle, &importedBaseOpacitySlider, &overlayOpacitySlider,
-            &imageRoleBox, &imageFitBox, &imageScaleSlider, &imageRotationSlider,
+            &imageRoleBox, &imageFitBox, &imageScaleSlider, &imageOffsetXSlider,
+            &imageOffsetYSlider, &imageRotationSlider, &maskShapeBox,
+            &removeBackgroundToggle, &maskToggle, &positiveMaskToggle, &rotateMaskedToggle,
+            &lockUnmaskedToggle, &backgroundToleranceSlider, &maskRadiusSlider, &maskFeatherSlider,
+            &maskOffsetXSlider, &maskOffsetYSlider, &pivotXSlider, &pivotYSlider,
+            &imageNudgeLeftBtn, &imageNudgeRightBtn, &imageNudgeUpBtn, &imageNudgeDownBtn,
+            &maskNudgeLeftBtn, &maskNudgeRightBtn, &maskNudgeUpBtn, &maskNudgeDownBtn,
             &sizeSlider, &valueSlider, &startSlider, &endSlider, &ringWidthSlider,
             &pointerWidthSlider, &indicatorBox, &indicatorColourBtn, &ringColourBtn,
             &backgroundColourBtn, &borderColourBtn, &tickColourBtn, &bevelSlider, &glowSlider,
@@ -919,7 +1101,46 @@ namespace patchcraft
             putRow (imageRoleBox);
             putRow (imageFitBox);
             putSliderRow ("Image Scale", imageScaleSlider);
+            putSliderRow ("Image X", imageOffsetXSlider);
+            putSliderRow ("Image Y", imageOffsetYSlider);
             putSliderRow ("Image Rotate", imageRotationSlider);
+            auto imageNudges = right.removeFromTop (30);
+            for (auto* button : { &imageNudgeLeftBtn, &imageNudgeRightBtn, &imageNudgeUpBtn, &imageNudgeDownBtn })
+                button->setVisible (isRowVisible (imageNudges));
+            const int imageNudgeW = juce::jmax (46, imageNudges.getWidth() / 4);
+            imageNudgeLeftBtn.setBounds  (imageNudges.removeFromLeft (imageNudgeW).reduced (2));
+            imageNudgeRightBtn.setBounds (imageNudges.removeFromLeft (imageNudgeW).reduced (2));
+            imageNudgeUpBtn.setBounds    (imageNudges.removeFromLeft (imageNudgeW).reduced (2));
+            imageNudgeDownBtn.setBounds  (imageNudges.reduced (2));
+            right.removeFromTop (4);
+            putRow (maskShapeBox);
+            auto maskToggles = right.removeFromTop (86);
+            for (auto* toggle : { &removeBackgroundToggle, &maskToggle, &positiveMaskToggle, &rotateMaskedToggle, &lockUnmaskedToggle })
+                toggle->setVisible (isRowVisible (maskToggles));
+            auto maskRowA = maskToggles.removeFromTop (28);
+            removeBackgroundToggle.setBounds (maskRowA.removeFromLeft (maskRowA.getWidth() / 2).reduced (2));
+            maskToggle.setBounds (maskRowA.reduced (2));
+            auto maskRowB = maskToggles.removeFromTop (28);
+            positiveMaskToggle.setBounds (maskRowB.removeFromLeft (maskRowB.getWidth() / 2).reduced (2));
+            rotateMaskedToggle.setBounds (maskRowB.reduced (2));
+            lockUnmaskedToggle.setBounds (maskToggles.removeFromTop (28).reduced (2));
+            right.removeFromTop (4);
+            putSliderRow ("BG Key", backgroundToleranceSlider);
+            putSliderRow ("Mask Size", maskRadiusSlider);
+            putSliderRow ("Feather", maskFeatherSlider);
+            putSliderRow ("Mask X", maskOffsetXSlider);
+            putSliderRow ("Mask Y", maskOffsetYSlider);
+            auto maskNudges = right.removeFromTop (30);
+            for (auto* button : { &maskNudgeLeftBtn, &maskNudgeRightBtn, &maskNudgeUpBtn, &maskNudgeDownBtn })
+                button->setVisible (isRowVisible (maskNudges));
+            const int maskNudgeW = juce::jmax (46, maskNudges.getWidth() / 4);
+            maskNudgeLeftBtn.setBounds  (maskNudges.removeFromLeft (maskNudgeW).reduced (2));
+            maskNudgeRightBtn.setBounds (maskNudges.removeFromLeft (maskNudgeW).reduced (2));
+            maskNudgeUpBtn.setBounds    (maskNudges.removeFromLeft (maskNudgeW).reduced (2));
+            maskNudgeDownBtn.setBounds  (maskNudges.reduced (2));
+            right.removeFromTop (4);
+            putSliderRow ("Pivot X", pivotXSlider);
+            putSliderRow ("Pivot Y", pivotYSlider);
             importedBaseToggle.setVisible (isRowVisible (right.withHeight (24)));
             importedBaseToggle.setBounds (right.removeFromTop (24));
             overlayToggle.setVisible (isRowVisible (right.withHeight (24)));
@@ -1066,6 +1287,15 @@ namespace patchcraft
 
         if (previewKnobBounds.contains (e.getPosition()))
         {
+            if (hasImportedKnob() && e.mods.isCtrlDown())
+            {
+                style.pivotX = juce::jlimit (0.0f, 1.0f, (float) (e.x - previewKnobBounds.getX()) / (float) juce::jmax (1, previewKnobBounds.getWidth()));
+                style.pivotY = juce::jlimit (0.0f, 1.0f, (float) (e.y - previewKnobBounds.getY()) / (float) juce::jmax (1, previewKnobBounds.getHeight()));
+                pivotXSlider.setValue (style.pivotX, juce::dontSendNotification);
+                pivotYSlider.setValue (style.pivotY, juce::dontSendNotification);
+                repaint();
+                return;
+            }
             draggingPreviewKnob = true;
             updatePreviewValueFromPoint (e.getPosition());
         }
@@ -1084,13 +1314,27 @@ namespace patchcraft
 
     void KnobBuilderComponent::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
     {
-        if (! rightPanelViewportBounds.contains (e.getPosition()) || rightPanelMaxScroll <= 0)
+        const auto localEvent = e.getEventRelativeTo (this);
+        if (! rightPanelViewportBounds.contains (localEvent.getPosition()) || rightPanelMaxScroll <= 0)
             return;
 
         const int delta = (int) std::round (wheel.deltaY * -120.0f);
-        rightPanelScrollOffset = juce::jlimit (0, rightPanelMaxScroll, rightPanelScrollOffset + delta);
+        scrollRightPanel (delta);
+    }
+
+    bool KnobBuilderComponent::scrollRightPanel (int deltaPixels)
+    {
+        if (rightPanelMaxScroll <= 0 || deltaPixels == 0)
+            return false;
+
+        const int next = juce::jlimit (0, rightPanelMaxScroll, rightPanelScrollOffset + deltaPixels);
+        if (next == rightPanelScrollOffset)
+            return false;
+
+        rightPanelScrollOffset = next;
         resized();
         repaint();
+        return true;
     }
 
     void KnobBuilderComponent::updatePreviewValueFromPoint (juce::Point<int> point)
@@ -1104,6 +1348,31 @@ namespace patchcraft
         const float range = juce::jmax (1.0f, style.endAngle - style.startAngle);
         const float value = juce::jlimit (0.0f, 1.0f, (angleDegrees - style.startAngle) / range);
         valueSlider.setValue (value, juce::sendNotificationSync);
+    }
+
+    void KnobBuilderComponent::nudgeImportedImage (float deltaX, float deltaY)
+    {
+        if (! hasImportedKnob())
+            return;
+
+        style.imageOffsetX = juce::jlimit (-256.0f, 256.0f, style.imageOffsetX + deltaX);
+        style.imageOffsetY = juce::jlimit (-256.0f, 256.0f, style.imageOffsetY + deltaY);
+        imageOffsetXSlider.setValue (style.imageOffsetX, juce::dontSendNotification);
+        imageOffsetYSlider.setValue (style.imageOffsetY, juce::dontSendNotification);
+        repaint();
+    }
+
+    void KnobBuilderComponent::nudgeMask (float deltaX, float deltaY)
+    {
+        if (! hasImportedKnob())
+            return;
+
+        style.maskOffsetX = juce::jlimit (-0.5f, 0.5f, style.maskOffsetX + deltaX);
+        style.maskOffsetY = juce::jlimit (-0.5f, 0.5f, style.maskOffsetY + deltaY);
+        maskOffsetXSlider.setValue (style.maskOffsetX, juce::dontSendNotification);
+        maskOffsetYSlider.setValue (style.maskOffsetY, juce::dontSendNotification);
+        invalidateImportedProcessingCache();
+        repaint();
     }
 
     void KnobBuilderComponent::openSectionForLayer (const juce::String& layerName)
@@ -1162,6 +1431,8 @@ namespace patchcraft
         importedBaseOpacitySlider.setValue (style.importedBaseOpacity, juce::dontSendNotification);
         overlayOpacitySlider.setValue (style.overlayOpacity, juce::dontSendNotification);
         imageScaleSlider.setValue (style.imageScale, juce::dontSendNotification);
+        imageOffsetXSlider.setValue (style.imageOffsetX, juce::dontSendNotification);
+        imageOffsetYSlider.setValue (style.imageOffsetY, juce::dontSendNotification);
         imageRotationSlider.setValue (style.imageRotation, juce::dontSendNotification);
         animationDepthSlider.setValue (style.animationDepth, juce::dontSendNotification);
         surfaceTextureSlider.setValue (style.surfaceTexture, juce::dontSendNotification);
@@ -1169,12 +1440,25 @@ namespace patchcraft
         ringInsetSlider.setValue (style.ringInset, juce::dontSendNotification);
         pointerLengthSlider.setValue (style.pointerLength, juce::dontSendNotification);
         motionCurveSlider.setValue (style.motionCurve, juce::dontSendNotification);
+        backgroundToleranceSlider.setValue (style.backgroundTolerance, juce::dontSendNotification);
+        maskRadiusSlider.setValue (style.maskRadius, juce::dontSendNotification);
+        maskFeatherSlider.setValue (style.maskFeather, juce::dontSendNotification);
+        maskOffsetXSlider.setValue (style.maskOffsetX, juce::dontSendNotification);
+        maskOffsetYSlider.setValue (style.maskOffsetY, juce::dontSendNotification);
+        pivotXSlider.setValue (style.pivotX, juce::dontSendNotification);
+        pivotYSlider.setValue (style.pivotY, juce::dontSendNotification);
+        maskShapeBox.setSelectedId (juce::jlimit (1, 5, style.maskShape), juce::dontSendNotification);
         ringToggle.setToggleState (style.ring, juce::dontSendNotification);
         ticksToggle.setToggleState (style.ticks, juce::dontSendNotification);
         shadowToggle.setToggleState (style.shadow, juce::dontSendNotification);
         labelToggle.setToggleState (style.label, juce::dontSendNotification);
         importedBaseToggle.setToggleState (hasImportedKnob(), juce::dontSendNotification);
         overlayToggle.setToggleState (true, juce::dontSendNotification);
+        removeBackgroundToggle.setToggleState (style.removeBackground, juce::dontSendNotification);
+        maskToggle.setToggleState (style.maskEnabled, juce::dontSendNotification);
+        positiveMaskToggle.setToggleState (style.positiveMask, juce::dontSendNotification);
+        rotateMaskedToggle.setToggleState (style.rotateMaskedRegion, juce::dontSendNotification);
+        lockUnmaskedToggle.setToggleState (style.lockUnmaskedRegion, juce::dontSendNotification);
         importedBaseToggle.setEnabled (hasImportedKnob());
         overlayToggle.setEnabled (hasImportedKnob());
         importedBaseOpacitySlider.setEnabled (hasImportedKnob());
@@ -1182,7 +1466,22 @@ namespace patchcraft
         imageRoleBox.setEnabled (hasImportedKnob());
         imageFitBox.setEnabled (hasImportedKnob());
         imageScaleSlider.setEnabled (hasImportedKnob());
+        imageOffsetXSlider.setEnabled (hasImportedKnob());
+        imageOffsetYSlider.setEnabled (hasImportedKnob());
         imageRotationSlider.setEnabled (hasImportedKnob());
+        maskShapeBox.setEnabled (hasImportedKnob());
+        removeBackgroundToggle.setEnabled (hasImportedKnob());
+        maskToggle.setEnabled (hasImportedKnob());
+        positiveMaskToggle.setEnabled (hasImportedKnob());
+        rotateMaskedToggle.setEnabled (hasImportedKnob());
+        lockUnmaskedToggle.setEnabled (hasImportedKnob());
+        backgroundToleranceSlider.setEnabled (hasImportedKnob());
+        maskRadiusSlider.setEnabled (hasImportedKnob());
+        maskFeatherSlider.setEnabled (hasImportedKnob());
+        maskOffsetXSlider.setEnabled (hasImportedKnob());
+        maskOffsetYSlider.setEnabled (hasImportedKnob());
+        pivotXSlider.setEnabled (hasImportedKnob());
+        pivotYSlider.setEnabled (hasImportedKnob());
         clearImportBtn.setEnabled (hasImportedKnob());
         updateColourButtonText();
         repaint();
@@ -1241,6 +1540,8 @@ namespace patchcraft
             style.importedBaseOpacity = juce::jlimit (0.0f, 1.0f, readFloat ("importedBaseOpacity", style.importedBaseOpacity));
             style.overlayOpacity = juce::jlimit (0.0f, 1.0f, readFloat ("overlayOpacity", style.overlayOpacity));
             style.imageScale = juce::jlimit (0.25f, 2.0f, readFloat ("imageScale", style.imageScale));
+            style.imageOffsetX = juce::jlimit (-256.0f, 256.0f, readFloat ("imageOffsetX", style.imageOffsetX));
+            style.imageOffsetY = juce::jlimit (-256.0f, 256.0f, readFloat ("imageOffsetY", style.imageOffsetY));
             style.imageRotation = juce::jlimit (-180.0f, 180.0f, readFloat ("imageRotation", style.imageRotation));
             style.animationDepth = juce::jlimit (0.0f, 1.0f, readFloat ("animationDepth", style.animationDepth));
             style.surfaceTexture = juce::jlimit (0.0f, 1.0f, readFloat ("surfaceTexture", style.surfaceTexture));
@@ -1248,10 +1549,23 @@ namespace patchcraft
             style.ringInset = juce::jlimit (0.0f, 1.0f, readFloat ("ringInset", style.ringInset));
             style.pointerLength = juce::jlimit (0.20f, 1.25f, readFloat ("pointerLength", style.pointerLength));
             style.motionCurve = juce::jlimit (0.0f, 1.0f, readFloat ("motionCurve", style.motionCurve));
+            style.backgroundTolerance = juce::jlimit (0.0f, 1.0f, readFloat ("backgroundTolerance", style.backgroundTolerance));
+            style.maskRadius = juce::jlimit (0.02f, 1.0f, readFloat ("maskRadius", style.maskRadius));
+            style.maskFeather = juce::jlimit (0.0f, 0.5f, readFloat ("maskFeather", style.maskFeather));
+            style.maskOffsetX = juce::jlimit (-0.5f, 0.5f, readFloat ("maskOffsetX", style.maskOffsetX));
+            style.maskOffsetY = juce::jlimit (-0.5f, 0.5f, readFloat ("maskOffsetY", style.maskOffsetY));
+            style.pivotX = juce::jlimit (0.0f, 1.0f, readFloat ("pivotX", style.pivotX));
+            style.pivotY = juce::jlimit (0.0f, 1.0f, readFloat ("pivotY", style.pivotY));
+            style.maskShape = juce::jlimit (1, 5, readInt ("maskShape", style.maskShape));
             style.ring = readBool ("ring", style.ring);
             style.ticks = readBool ("ticks", style.ticks);
             style.shadow = readBool ("shadow", style.shadow);
             style.label = readBool ("label", style.label);
+            style.removeBackground = readBool ("removeBackground", style.removeBackground);
+            style.maskEnabled = readBool ("maskEnabled", style.maskEnabled);
+            style.positiveMask = readBool ("positiveMask", style.positiveMask);
+            style.rotateMaskedRegion = readBool ("rotateMaskedRegion", style.rotateMaskedRegion);
+            style.lockUnmaskedRegion = readBool ("lockUnmaskedRegion", style.lockUnmaskedRegion);
             style.indicator = readColour ("indicatorColour", style.indicator);
             style.ringColour = readColour ("ringColour", style.ringColour);
             style.backgroundColour = readColour ("backgroundColour", style.backgroundColour);
@@ -1293,7 +1607,7 @@ namespace patchcraft
             {
                 importedStrip = image;
                 importedSourceFile = imported;
-                detectImportedFilmstripLayout();
+                normaliseImportedWorkingImage();
             }
         }
 
@@ -1406,7 +1720,7 @@ namespace patchcraft
 
                 importedStrip = image;
                 importedSourceFile = file;
-                detectImportedFilmstripLayout();
+                normaliseImportedWorkingImage();
 
                 if (hasImportedKnob())
                 {
@@ -1417,13 +1731,38 @@ namespace patchcraft
                     imageRoleBox.setEnabled (true);
                     imageFitBox.setEnabled (true);
                     imageScaleSlider.setEnabled (true);
+                    imageOffsetXSlider.setEnabled (true);
+                    imageOffsetYSlider.setEnabled (true);
                     imageRotationSlider.setEnabled (true);
+                    maskShapeBox.setEnabled (true);
+                    removeBackgroundToggle.setEnabled (true);
+                    maskToggle.setEnabled (true);
+                    positiveMaskToggle.setEnabled (true);
+                    rotateMaskedToggle.setEnabled (true);
+                    lockUnmaskedToggle.setEnabled (true);
+                    backgroundToleranceSlider.setEnabled (true);
+                    maskRadiusSlider.setEnabled (true);
+                    maskFeatherSlider.setEnabled (true);
+                    maskOffsetXSlider.setEnabled (true);
+                    maskOffsetYSlider.setEnabled (true);
+                    pivotXSlider.setEnabled (true);
+                    pivotYSlider.setEnabled (true);
                     clearImportBtn.setEnabled (true);
                     importedBaseToggle.setToggleState (true, juce::dontSendNotification);
                     overlayToggle.setToggleState (true, juce::dontSendNotification);
+                    if (importedFrameCount == 1)
+                    {
+                        maskToggle.setToggleState (true, juce::sendNotificationSync);
+                        positiveMaskToggle.setToggleState (true, juce::sendNotificationSync);
+                        rotateMaskedToggle.setToggleState (true, juce::sendNotificationSync);
+                        lockUnmaskedToggle.setToggleState (true, juce::sendNotificationSync);
+                        imageRoleBox.setSelectedId (3, juce::dontSendNotification);
+                    }
+                    sectionOpen = {{ true, true, true, true, true, true }};
                     outputBox.setSelectedId (importedStripVertical ? 1 : 2, juce::dontSendNotification);
                     sizeSlider.setValue (importedFrameSize, juce::sendNotificationSync);
-                    framesSlider.setValue (importedFrameCount, juce::sendNotificationSync);
+                    framesSlider.setValue (importedFrameCount == 1 ? juce::jmax (96, style.frames) : importedFrameCount,
+                                           juce::sendNotificationSync);
 
                     if (nameEdit.getText().trim().isEmpty() || nameEdit.getText() == "PatchCraft Pro Knob")
                         nameEdit.setText (file.getFileNameWithoutExtension(), true);
@@ -1440,6 +1779,7 @@ namespace patchcraft
         importedFrameCount = 0;
         importedFrameSize = 0;
         importedStripVertical = true;
+        invalidateImportedProcessingCache();
         importedBaseToggle.setToggleState (false, juce::dontSendNotification);
         overlayToggle.setToggleState (true, juce::dontSendNotification);
         importedBaseToggle.setEnabled (false);
@@ -1449,7 +1789,22 @@ namespace patchcraft
         imageRoleBox.setEnabled (false);
         imageFitBox.setEnabled (false);
         imageScaleSlider.setEnabled (false);
+        imageOffsetXSlider.setEnabled (false);
+        imageOffsetYSlider.setEnabled (false);
         imageRotationSlider.setEnabled (false);
+        maskShapeBox.setEnabled (false);
+        removeBackgroundToggle.setEnabled (false);
+        maskToggle.setEnabled (false);
+        positiveMaskToggle.setEnabled (false);
+        rotateMaskedToggle.setEnabled (false);
+        lockUnmaskedToggle.setEnabled (false);
+        backgroundToleranceSlider.setEnabled (false);
+        maskRadiusSlider.setEnabled (false);
+        maskFeatherSlider.setEnabled (false);
+        maskOffsetXSlider.setEnabled (false);
+        maskOffsetYSlider.setEnabled (false);
+        pivotXSlider.setEnabled (false);
+        pivotYSlider.setEnabled (false);
         clearImportBtn.setEnabled (false);
         repaint();
     }
@@ -1469,6 +1824,8 @@ namespace patchcraft
         style.bevel = 0.58f;
         style.glow = 0.48f;
         style.imageScale = 1.0f;
+        style.imageOffsetX = 0.0f;
+        style.imageOffsetY = 0.0f;
         style.imageRotation = 0.0f;
         style.animationDepth = 0.62f;
         style.surfaceTexture = 0.32f;
@@ -1476,6 +1833,10 @@ namespace patchcraft
         style.ringInset = 0.18f;
         style.pointerLength = 0.88f;
         style.motionCurve = 0.58f;
+        style.maskOffsetX = 0.0f;
+        style.maskOffsetY = 0.0f;
+        style.maskShape = 1;
+        style.lockUnmaskedRegion = true;
         style.ring = true;
         style.ticks = true;
         style.shadow = true;
@@ -1539,12 +1900,46 @@ namespace patchcraft
         importedFrameSize = juce::jlimit (16, 4096, importedFrameSize);
     }
 
+    void KnobBuilderComponent::invalidateImportedProcessingCache() const
+    {
+        cachedProcessedActiveFrame = {};
+        cachedProcessedPassiveFrame = {};
+        cachedProcessedActiveKey.clear();
+        cachedProcessedPassiveKey.clear();
+    }
+
+    void KnobBuilderComponent::normaliseImportedWorkingImage()
+    {
+        detectImportedFilmstripLayout();
+
+        if (! importedStrip.isValid() || importedFrameCount != 1)
+            return;
+
+        static constexpr int maxFlatWorkingSide = 512;
+        const int width = importedStrip.getWidth();
+        const int height = importedStrip.getHeight();
+        const int maxSide = juce::jmax (width, height);
+        if (maxSide <= maxFlatWorkingSide)
+            return;
+
+        const float scale = (float) maxFlatWorkingSide / (float) maxSide;
+        const int newWidth = juce::jmax (1, juce::roundToInt ((float) width * scale));
+        const int newHeight = juce::jmax (1, juce::roundToInt ((float) height * scale));
+        juce::Image scaled (juce::Image::ARGB, newWidth, newHeight, true);
+        juce::Graphics g (scaled);
+        g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+        g.drawImage (importedStrip, scaled.getBounds().toFloat());
+        importedStrip = scaled;
+        detectImportedFilmstripLayout();
+        invalidateImportedProcessingCache();
+    }
+
     juce::Image KnobBuilderComponent::getImportedFrame (float position) const
     {
         if (! hasImportedKnob())
             return {};
 
-        const int frameCount = juce::jlimit (1, 256, style.frames);
+        const int frameCount = juce::jlimit (1, 256, importedFrameCount);
         const int frameSize = importedStripVertical
             ? juce::jmax (1, importedStrip.getHeight() / frameCount)
             : juce::jmax (1, importedStrip.getWidth() / frameCount);
@@ -1556,6 +1951,133 @@ namespace patchcraft
             : juce::Rectangle<int> (index * frameSize, 0, frameSize, importedStrip.getHeight());
 
         return importedStrip.getClippedImage (source.getIntersection (importedStrip.getBounds()));
+    }
+
+    juce::Image KnobBuilderComponent::processImportedFrame (const juce::Image& source, bool activeMaskRegion) const
+    {
+        if (! source.isValid())
+            return {};
+
+        const auto cacheKey = juce::String (source.getWidth()) + "x" + juce::String (source.getHeight())
+            + "|bg=" + juce::String ((int) style.removeBackground)
+            + "|tol=" + juce::String (style.backgroundTolerance, 4)
+            + "|mask=" + juce::String ((int) style.maskEnabled)
+            + "|pos=" + juce::String ((int) style.positiveMask)
+            + "|r=" + juce::String (style.maskRadius, 4)
+            + "|f=" + juce::String (style.maskFeather, 4)
+            + "|mx=" + juce::String (style.maskOffsetX, 4)
+            + "|my=" + juce::String (style.maskOffsetY, 4)
+            + "|shape=" + juce::String (style.maskShape)
+            + "|px=" + juce::String (style.pivotX, 4)
+            + "|py=" + juce::String (style.pivotY, 4)
+            + "|active=" + juce::String ((int) activeMaskRegion);
+
+        if (importedFrameCount == 1)
+        {
+            if (activeMaskRegion && cachedProcessedActiveFrame.isValid() && cachedProcessedActiveKey == cacheKey)
+                return cachedProcessedActiveFrame;
+            if (! activeMaskRegion && cachedProcessedPassiveFrame.isValid() && cachedProcessedPassiveKey == cacheKey)
+                return cachedProcessedPassiveFrame;
+        }
+
+        auto out = source.createCopy();
+        const int w = out.getWidth();
+        const int h = out.getHeight();
+        if (w <= 0 || h <= 0)
+            return out;
+
+        const auto corner = [] (const juce::Image& image, int x, int y)
+        {
+            return image.getPixelAt (juce::jlimit (0, image.getWidth() - 1, x),
+                                     juce::jlimit (0, image.getHeight() - 1, y));
+        };
+
+        const auto c0 = corner (source, 0, 0);
+        const auto c1 = corner (source, w - 1, 0);
+        const auto c2 = corner (source, 0, h - 1);
+        const auto c3 = corner (source, w - 1, h - 1);
+        const auto key = juce::Colour::fromRGBA ((juce::uint8) ((c0.getRed()   + c1.getRed()   + c2.getRed()   + c3.getRed())   / 4),
+                                                 (juce::uint8) ((c0.getGreen() + c1.getGreen() + c2.getGreen() + c3.getGreen()) / 4),
+                                                 (juce::uint8) ((c0.getBlue()  + c1.getBlue()  + c2.getBlue()  + c3.getBlue())  / 4),
+                                                 255);
+
+        const float bgTolerance = juce::jlimit (0.0f, 1.0f, style.backgroundTolerance) * 441.6729f;
+        const float bgSoft = juce::jmax (8.0f, bgTolerance * 0.35f);
+        const float pivotX = juce::jlimit (0.0f, 1.0f, style.pivotX) * (float) juce::jmax (1, w - 1);
+        const float pivotY = juce::jlimit (0.0f, 1.0f, style.pivotY) * (float) juce::jmax (1, h - 1);
+        const float maskX = juce::jlimit (0.0f, (float) (w - 1),
+                                          pivotX + juce::jlimit (-0.5f, 0.5f, style.maskOffsetX) * (float) w);
+        const float maskY = juce::jlimit (0.0f, (float) (h - 1),
+                                          pivotY + juce::jlimit (-0.5f, 0.5f, style.maskOffsetY) * (float) h);
+        const float radius = juce::jlimit (0.02f, 1.0f, style.maskRadius) * (float) juce::jmin (w, h);
+        const float feather = juce::jlimit (0.0f, 0.5f, style.maskFeather) * (float) juce::jmin (w, h);
+
+        auto smoothMask = [] (float x)
+        {
+            x = juce::jlimit (0.0f, 1.0f, x);
+            return x * x * (3.0f - 2.0f * x);
+        };
+
+        for (int y = 0; y < h; ++y)
+        {
+            for (int x = 0; x < w; ++x)
+            {
+                auto colour = out.getPixelAt (x, y);
+                float alpha = (float) colour.getAlpha();
+
+                if (style.removeBackground)
+                {
+                    const float dr = (float) colour.getRed()   - (float) key.getRed();
+                    const float dg = (float) colour.getGreen() - (float) key.getGreen();
+                    const float db = (float) colour.getBlue()  - (float) key.getBlue();
+                    const float distance = std::sqrt (dr * dr + dg * dg + db * db);
+                    const float keep = smoothMask ((distance - bgTolerance) / bgSoft);
+                    alpha *= keep;
+                }
+
+                if (style.maskEnabled)
+                {
+                    const float dx = (float) x - maskX;
+                    const float dy = (float) y - maskY;
+                    const int shape = juce::jlimit (1, 5, style.maskShape);
+                    float distance = std::sqrt (dx * dx + dy * dy);
+                    if (shape == 2)
+                        distance = std::sqrt ((dx / 1.35f) * (dx / 1.35f) + (dy / 0.72f) * (dy / 0.72f));
+                    else if (shape == 3)
+                        distance = std::sqrt ((dx / 0.72f) * (dx / 0.72f) + (dy / 1.35f) * (dy / 1.35f));
+                    else if (shape == 4)
+                        distance = juce::jmax (std::abs (dx), std::abs (dy));
+                    else if (shape == 5)
+                        distance = std::abs (dx) + std::abs (dy);
+                    float inside = feather <= 0.001f
+                        ? (distance <= radius ? 1.0f : 0.0f)
+                        : smoothMask ((radius + feather - distance) / (feather * 2.0f));
+                    inside = juce::jlimit (0.0f, 1.0f, inside);
+
+                    const float selected = style.positiveMask ? inside : (1.0f - inside);
+                    alpha *= activeMaskRegion ? selected : (1.0f - selected);
+                }
+
+                colour = colour.withAlpha ((juce::uint8) juce::jlimit (0, 255, juce::roundToInt (alpha)));
+                out.setPixelAt (x, y, colour);
+            }
+        }
+
+        if (importedFrameCount == 1)
+        {
+            if (activeMaskRegion)
+            {
+                cachedProcessedActiveFrame = out;
+                cachedProcessedActiveKey = cacheKey;
+            }
+            else
+            {
+                cachedProcessedPassiveFrame = out;
+                cachedProcessedPassiveKey = cacheKey;
+            }
+        }
+
+        return out;
     }
 
     void KnobBuilderComponent::drawSection (juce::Graphics&, juce::Rectangle<int>, const juce::String&)
@@ -1642,6 +2164,8 @@ namespace patchcraft
         styleObj->setProperty ("importedBaseOpacity", (double) style.importedBaseOpacity);
         styleObj->setProperty ("overlayOpacity", (double) style.overlayOpacity);
         styleObj->setProperty ("imageScale", (double) style.imageScale);
+        styleObj->setProperty ("imageOffsetX", (double) style.imageOffsetX);
+        styleObj->setProperty ("imageOffsetY", (double) style.imageOffsetY);
         styleObj->setProperty ("imageRotation", (double) style.imageRotation);
         styleObj->setProperty ("animationDepth", (double) style.animationDepth);
         styleObj->setProperty ("surfaceTexture", (double) style.surfaceTexture);
@@ -1649,10 +2173,23 @@ namespace patchcraft
         styleObj->setProperty ("ringInset", (double) style.ringInset);
         styleObj->setProperty ("pointerLength", (double) style.pointerLength);
         styleObj->setProperty ("motionCurve", (double) style.motionCurve);
+        styleObj->setProperty ("backgroundTolerance", (double) style.backgroundTolerance);
+        styleObj->setProperty ("maskRadius", (double) style.maskRadius);
+        styleObj->setProperty ("maskFeather", (double) style.maskFeather);
+        styleObj->setProperty ("maskOffsetX", (double) style.maskOffsetX);
+        styleObj->setProperty ("maskOffsetY", (double) style.maskOffsetY);
+        styleObj->setProperty ("pivotX", (double) style.pivotX);
+        styleObj->setProperty ("pivotY", (double) style.pivotY);
+        styleObj->setProperty ("maskShape", style.maskShape);
         styleObj->setProperty ("ring", style.ring);
         styleObj->setProperty ("ticks", style.ticks);
         styleObj->setProperty ("shadow", style.shadow);
         styleObj->setProperty ("label", style.label);
+        styleObj->setProperty ("removeBackground", style.removeBackground);
+        styleObj->setProperty ("maskEnabled", style.maskEnabled);
+        styleObj->setProperty ("positiveMask", style.positiveMask);
+        styleObj->setProperty ("rotateMaskedRegion", style.rotateMaskedRegion);
+        styleObj->setProperty ("lockUnmaskedRegion", style.lockUnmaskedRegion);
         styleObj->setProperty ("indicatorColour", style.indicator.toString());
         styleObj->setProperty ("ringColour", style.ringColour.toString());
         styleObj->setProperty ("backgroundColour", style.backgroundColour.toString());

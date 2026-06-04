@@ -34,11 +34,72 @@ namespace patchcraft
             file.getParentDirectory().createDirectory();
             file.replaceWithText (shouldShow ? "show" : "hidden");
         }
+
+        bool isDescendantOfLayer (const std::vector<LayoutElement>& items,
+                                  const LayoutElement& candidate,
+                                  const juce::String& parentId)
+        {
+            juce::String current = candidate.containerId;
+            if (current.isEmpty())
+                current = candidate.groupId;
+
+            for (int guard = 0; guard < 64 && current.isNotEmpty(); ++guard)
+            {
+                if (current == parentId)
+                    return true;
+
+                juce::String next;
+                for (const auto& possibleParent : items)
+                    if (possibleParent.id == current)
+                    {
+                        next = possibleParent.containerId.isNotEmpty() ? possibleParent.containerId : possibleParent.groupId;
+                        break;
+                    }
+                current = next;
+            }
+
+            return false;
+        }
+
+        bool layerIsContainer (const LayoutElement& layer)
+        {
+            return layer.type == ElementType::Group || layer.type == ElementType::Panel || layer.type == ElementType::TabPanel;
+        }
+
+        void applyLayerVisibility (LayoutModel& model, const juce::String& id, bool visible)
+        {
+            auto& items = model.getAll();
+            bool cascadeChildren = false;
+
+            if (auto* item = model.find (id))
+            {
+                item->visible = visible;
+                cascadeChildren = layerIsContainer (*item);
+            }
+
+            if (cascadeChildren)
+                for (auto& child : items)
+                    if (child.id != id && isDescendantOfLayer (items, child, id))
+                        child.visible = visible;
+        }
     }
 
     LayersPanel::LayersPanel (StudioMainComponent& o) : owner (o)
     {
-        for (auto* button : { &addGroupButton, &groupSelectedButton, &ungroupButton })
+        titleLabel.setFont (juce::Font (13.0f, juce::Font::bold));
+        titleLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+        titleLabel.setJustificationType (juce::Justification::centredLeft);
+        addAndMakeVisible (titleLabel);
+
+        for (auto* label : { &actionsLabel, &stackLabel })
+        {
+            label->setFont (juce::Font (10.0f, juce::Font::bold));
+            label->setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+            label->setJustificationType (juce::Justification::centredLeft);
+            addAndMakeVisible (*label);
+        }
+
+        for (auto* button : { &addGroupButton, &groupSelectedButton, &ungroupButton, &selectAllButton })
         {
             button->getProperties().set ("smallButton", true);
             addAndMakeVisible (*button);
@@ -47,6 +108,8 @@ namespace patchcraft
         addGroupButton.onClick = [this] { createGroupFromSelection(); };
         groupSelectedButton.onClick = [this] { createGroupFromSelection(); };
         ungroupButton.onClick = [this] { ungroupSelection(); };
+        selectAllButton.onClick = [this] { owner.selectAllElements(); };
+        selectAllButton.setTooltip ("Select every layer on the canvas for bulk lock, unlock, delete, group, and visibility actions.");
 
         popOutBtn.setTooltip ("Pop the Layers panel into a free-floating window. Click again to dock.");
         popOutBtn.getProperties().set ("smallButton", true);
@@ -79,23 +142,33 @@ namespace patchcraft
     {
         g.fillAll (PatchCraftLookAndFeel::panel());
         g.setColour (PatchCraftLookAndFeel::border());
-        g.fillRect (0, 34, getWidth(), 1);
+        g.fillRect (0, 30, getWidth(), 1);
+        g.fillRect (0, 92, getWidth(), 1);
+        g.fillRect (0, 128, getWidth(), 1);
     }
 
     void LayersPanel::resized()
     {
         auto r = getLocalBounds().reduced (4);
+        auto header = r.removeFromTop (26);
+        popOutBtn.setBounds (header.removeFromRight (38).reduced (2));
+        header.removeFromRight (4);
+        titleLabel.setBounds (header);
+        r.removeFromTop (6);
+
+        actionsLabel.setBounds (r.removeFromTop (16));
         auto top = r.removeFromTop (30);
-        popOutBtn.setBounds (top.removeFromRight (38).reduced (2));
-        top.removeFromRight (4);
-        addGroupButton.setBounds (top.removeFromLeft (70).reduced (2));
-        groupSelectedButton.setBounds (top.removeFromLeft (82).reduced (2));
-        ungroupButton.setBounds (top.removeFromLeft (74).reduced (2));
+        addGroupButton.setBounds (top.removeFromLeft (58).reduced (2));
+        groupSelectedButton.setBounds (top.removeFromLeft (68).reduced (2));
+        ungroupButton.setBounds (top.removeFromLeft (64).reduced (2));
+        selectAllButton.setBounds (top.removeFromLeft (42).reduced (2));
         r.removeFromTop (4);
         auto search = r.removeFromTop (28);
         clearSearchButton.setBounds (search.removeFromRight (52).reduced (2));
         searchBox.setBounds (search.reduced (2));
-        r.removeFromTop (4);
+        r.removeFromTop (6);
+        stackLabel.setBounds (r.removeFromTop (16));
+        r.removeFromTop (2);
         listBox.setBounds (r);
     }
 
@@ -195,6 +268,20 @@ namespace patchcraft
         return row >= 0 && row < (int) rows.size() ? rows[(size_t) row].layoutIndex : -1;
     }
 
+    juce::StringArray LayersPanel::getBulkTargetIdsFor (const LayoutElement& clicked) const
+    {
+        if (owner.isElementSelected (clicked.id))
+        {
+            auto ids = owner.getSelectedElementIds();
+            if (ids.size() > 1)
+                return ids;
+        }
+
+        juce::StringArray ids;
+        ids.add (clicked.id);
+        return ids;
+    }
+
     int LayersPanel::getNumRows()
     {
         return (int) rows.size();
@@ -260,57 +347,43 @@ namespace patchcraft
         if (idx < 0 || idx >= (int) list.size()) return;
         auto& el = list[(size_t) idx];
 
+        if (e.mods.isPopupMenu())
+        {
+            if (! owner.isElementSelected (el.id))
+                owner.setSelectedElementId (el.id);
+            showContextMenu (row);
+            return;
+        }
+
         const int x = e.x;
         const int indent = rows[(size_t) row].depth * 18;
         if (x >= 4 + indent && x < 26 + indent)
         {
             const bool newVisible = ! el.visible;
-            const bool isGroup = rows[(size_t) row].isGroup;
-            const auto id = el.id;
-            owner.getProject().performLayoutEdit (newVisible ? "Show layer" : "Hide layer",
-                [id, isGroup, newVisible] (LayoutModel& m)
+            const auto targetIds = getBulkTargetIdsFor (el);
+            owner.getProject().performLayoutEdit (newVisible
+                    ? (targetIds.size() > 1 ? "Show selected layers" : "Show layer")
+                    : (targetIds.size() > 1 ? "Hide selected layers" : "Hide layer"),
+                [targetIds, newVisible] (LayoutModel& m)
                 {
-                    auto& items = m.getAll();
-                    auto isDescendantOf = [&items] (const LayoutElement& candidate, const juce::String& parentId)
-                    {
-                        juce::String current = candidate.containerId;
-                        if (current.isEmpty())
-                            current = candidate.groupId;
-                        for (int guard = 0; guard < 64 && current.isNotEmpty(); ++guard)
-                        {
-                            if (current == parentId)
-                                return true;
-                            juce::String next;
-                            for (const auto& possibleParent : items)
-                                if (possibleParent.id == current)
-                                {
-                                    next = possibleParent.containerId.isNotEmpty() ? possibleParent.containerId : possibleParent.groupId;
-                                    break;
-                                }
-                            current = next;
-                        }
-                        return false;
-                    };
-
-                    if (auto* item = m.find (id))
-                        item->visible = newVisible;
-                    if (isGroup)
-                        for (auto& child : items)
-                            if (isDescendantOf (child, id))
-                                child.visible = newVisible;
+                    for (const auto& targetId : targetIds)
+                        applyLayerVisibility (m, targetId, newVisible);
                 });
             refresh();
             return;
         }
         if (x >= 26 + indent && x < 46 + indent)
         {
-            const auto id = el.id;
+            const auto targetIds = getBulkTargetIdsFor (el);
             const bool locked = ! el.locked;
-            owner.getProject().performLayoutEdit (locked ? "Lock layer" : "Unlock layer",
-                [id, locked] (LayoutModel& m)
+            owner.getProject().performLayoutEdit (locked
+                    ? (targetIds.size() > 1 ? "Lock selected layers" : "Lock layer")
+                    : (targetIds.size() > 1 ? "Unlock selected layers" : "Unlock layer"),
+                [targetIds, locked] (LayoutModel& m)
                 {
-                    if (auto* item = m.find (id))
-                        item->locked = locked;
+                    for (const auto& targetId : targetIds)
+                        if (auto* item = m.find (targetId))
+                            item->locked = locked;
                 });
             refresh();
             return;
@@ -324,15 +397,16 @@ namespace patchcraft
         }
         if (x >= listBox.getWidth() - 92 && x <= listBox.getWidth() - 54)
         {
-            const auto id = el.id;
+            const auto targetIds = getBulkTargetIdsFor (el);
             const float opacity = e.mods.isShiftDown()
                 ? juce::jmax (0.0f, el.opacity - 0.1f)
                 : (el.opacity >= 1.0f ? 0.25f : juce::jmin (1.0f, el.opacity + 0.25f));
-            owner.getProject().performLayoutEdit ("Adjust layer opacity",
-                [id, opacity] (LayoutModel& m)
+            owner.getProject().performLayoutEdit (targetIds.size() > 1 ? "Adjust selected layer opacity" : "Adjust layer opacity",
+                [targetIds, opacity] (LayoutModel& m)
                 {
-                    if (auto* item = m.find (id))
-                        item->opacity = opacity;
+                    for (const auto& targetId : targetIds)
+                        if (auto* item = m.find (targetId))
+                            item->opacity = opacity;
                 });
             refresh();
             return;
@@ -527,9 +601,78 @@ namespace patchcraft
         refresh();
     }
 
-    void LayersPanel::backgroundClicked (const juce::MouseEvent&)
+    void LayersPanel::backgroundClicked (const juce::MouseEvent& e)
     {
+        if (e.mods.isPopupMenu())
+        {
+            showContextMenu (-1);
+            return;
+        }
         owner.clearSelection();
+    }
+
+    void LayersPanel::showContextMenu (int row)
+    {
+        const bool hasSelection = ! owner.getSelectedElementIds().isEmpty();
+        bool clickedGroup = false;
+        juce::String clickedId;
+        if (row >= 0 && row < (int) rows.size())
+        {
+            clickedGroup = rows[(size_t) row].isGroup;
+            const int idx = rowToLayoutIndex (row);
+            const auto& elements = owner.getProject().getLayout().getAll();
+            if (idx >= 0 && idx < (int) elements.size())
+                clickedId = elements[(size_t) idx].id;
+        }
+
+        juce::PopupMenu menu;
+        menu.addItem (1, "Select All Layers", ! owner.getProject().getLayout().getAll().empty());
+        menu.addItem (2, "Clear Selection", hasSelection);
+        menu.addSeparator();
+        menu.addItem (3, "Group Selection", hasSelection);
+        menu.addItem (4, "Ungroup Selection", hasSelection);
+        if (clickedGroup)
+            menu.addItem (5, collapsedGroups.contains (clickedId) ? "Expand Group" : "Collapse Group");
+        menu.addSeparator();
+        menu.addItem (6, "Lock Selection", hasSelection);
+        menu.addItem (7, "Unlock Selection", hasSelection);
+        menu.addItem (8, "Show Selection", hasSelection);
+        menu.addItem (9, "Hide Selection", hasSelection);
+        menu.addSeparator();
+        menu.addItem (10, "Duplicate Selection", hasSelection);
+        menu.addItem (11, "Delete Selection", hasSelection);
+        menu.addSeparator();
+        menu.addItem (12, "Rename Layer", row >= 0);
+
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&listBox),
+            [safeThis = juce::Component::SafePointer<LayersPanel> (this), row, clickedId] (int result)
+            {
+                if (auto* panel = safeThis.getComponent())
+                {
+                    switch (result)
+                    {
+                        case 1: panel->owner.selectAllElements(); break;
+                        case 2: panel->owner.clearSelection(); break;
+                        case 3: panel->owner.groupSelectedElements(); break;
+                        case 4: panel->owner.ungroupSelectedElements(); break;
+                        case 5:
+                            if (panel->collapsedGroups.contains (clickedId))
+                                panel->collapsedGroups.removeString (clickedId);
+                            else
+                                panel->collapsedGroups.addIfNotAlreadyThere (clickedId);
+                            panel->refresh();
+                            break;
+                        case 6: panel->owner.setSelectedLocked (true); break;
+                        case 7: panel->owner.setSelectedLocked (false); break;
+                        case 8: panel->owner.setSelectedVisibility (true); break;
+                        case 9: panel->owner.setSelectedVisibility (false); break;
+                        case 10: panel->owner.duplicateSelected(); break;
+                        case 11: panel->owner.deleteSelected(); break;
+                        case 12: panel->renameRow (row); break;
+                        default: break;
+                    }
+                }
+            });
     }
 
     void LayersPanel::renameRow (int row)

@@ -5255,6 +5255,855 @@ namespace patchcraft
         (void) canvasPos;
     }
 
+    void CanvasEditor::addModuleLayout (const juce::String& moduleType, juce::Point<int> pos)
+    {
+        auto& projectObj = owner.getProject();
+        auto& graph = projectObj.getDspGraph();
+        auto& pm = projectObj.getParameters();
+        auto& liveValues = projectObj.getLiveValues();
+        const auto tabGroup = currentTabGroup == "main" ? juce::String() : currentTabGroup;
+
+        if (moduleType.equalsIgnoreCase ("Chorus"))
+        {
+            juce::StringArray paramIds { "chorusRate", "chorusDepth", "chorusFeedback", "chorusMix" };
+            for (const auto& paramId : paramIds)
+            {
+                if (pm.find (paramId) == nullptr)
+                {
+                    ParameterDef def;
+                    if (ParameterModel::getRegistryDefinition (paramId, "fx", def))
+                    {
+                        pm.add (def);
+                        liveValues.getOrAddRaw (def.id, def.defaultValue);
+                    }
+                }
+            }
+
+            bool dspExists = false;
+            for (const auto& b : graph.blocks)
+            {
+                if (b.type.equalsIgnoreCase ("chorus"))
+                {
+                    dspExists = true;
+                    break;
+                }
+            }
+
+            if (! dspExists)
+            {
+                DspBlock chorusBlock;
+                chorusBlock.id = "chorus_module";
+                chorusBlock.section = "fx";
+                chorusBlock.type = "chorus";
+                chorusBlock.name = "Chorus Block";
+                chorusBlock.targetId = "chorusMix";
+                chorusBlock.enabled = true;
+                chorusBlock.values["chorusRate"] = 0.35f;
+                chorusBlock.values["chorusDepth"] = 0.35f;
+                chorusBlock.values["chorusFeedback"] = 0.0f;
+                chorusBlock.values["chorusMix"] = 0.5f;
+                graph.blocks.push_back (std::move (chorusBlock));
+                graph.userConfigured = true;
+            }
+
+            owner.getProject().performLayoutEdit ("Add Chorus Module Layout",
+                [&] (LayoutModel& layout)
+                {
+                    LayoutElement panel;
+                    panel.type = ElementType::Panel;
+                    panel.label = "Chorus Module";
+                    panel.x = pos.x;
+                    panel.y = pos.y;
+                    panel.width = 300;
+                    panel.height = 130;
+                    panel.groupId = tabGroup;
+                    panel.cornerRadius = 12.0f;
+                    panel.strokeWidth = 1.5f;
+                    panel.backgroundColour = juce::Colour (0xee11141e);
+                    panel.borderColour = PatchCraftLookAndFeel::accent();
+                    panel.accentColour = PatchCraftLookAndFeel::accent();
+                    auto& addedPanel = layout.add (panel);
+                    const auto panelId = addedPanel.id;
+
+                    auto addChildKnob = [&] (const juce::String& label, const juce::String& paramId, int xOffset)
+                    {
+                        LayoutElement knob;
+                        knob.type = ElementType::Knob;
+                        knob.label = label;
+                        knob.parameterId = paramId;
+                        knob.x = pos.x + xOffset;
+                        knob.y = pos.y + 35;
+                        knob.width = 65;
+                        knob.height = 65;
+                        knob.containerId = panelId;
+                        knob.groupId = tabGroup;
+                        knob.id = layout.generateUniqueId ("knob_");
+                        knob.accentColour = PatchCraftLookAndFeel::accent();
+                        layout.add (knob);
+                    };
+
+                    addChildKnob ("Rate", "chorusRate", 25);
+                    addChildKnob ("Depth", "chorusDepth", 115);
+                    addChildKnob ("Mix", "chorusMix", 205);
+                });
+        }
+        else if (moduleType.equalsIgnoreCase ("Filter"))
+        {
+            juce::StringArray paramIds { "filterCutoff", "filterResonance" };
+            for (const auto& paramId : paramIds)
+            {
+                if (pm.find (paramId) == nullptr)
+                {
+                    ParameterDef def;
+                    if (ParameterModel::getRegistryDefinition (paramId, "synth", def))
+                    {
+                        pm.add (def);
+                        liveValues.getOrAddRaw (def.id, def.defaultValue);
+                    }
+                }
+            }
+
+            bool dspExists = false;
+            for (const auto& b : graph.blocks)
+            {
+                if (b.type.equalsIgnoreCase ("stateVariable") || b.type.equalsIgnoreCase ("filter"))
+                {
+                    dspExists = true;
+                    break;
+                }
+            }
+
+            if (! dspExists)
+            {
+                DspBlock filterBlock;
+                filterBlock.id = "filter_module";
+                filterBlock.section = "filter";
+                filterBlock.type = "stateVariable";
+                filterBlock.name = "Morph Filter Block";
+                filterBlock.targetId = "filterCutoff";
+                filterBlock.enabled = true;
+                filterBlock.values["cutoff"] = 0.56f;
+                filterBlock.values["resonance"] = 0.18f;
+                graph.blocks.push_back (std::move (filterBlock));
+                graph.userConfigured = true;
+            }
+
+            owner.getProject().performLayoutEdit ("Add Filter Module Layout",
+                [&] (LayoutModel& layout)
+                {
+                    LayoutElement panel;
+                    panel.type = ElementType::Panel;
+                    panel.label = "Filter Module";
+                    panel.x = pos.x;
+                    panel.y = pos.y;
+                    panel.width = 210;
+                    panel.height = 130;
+                    panel.groupId = tabGroup;
+                    panel.cornerRadius = 12.0f;
+                    panel.strokeWidth = 1.5f;
+                    panel.backgroundColour = juce::Colour (0xee11141e);
+                    panel.borderColour = PatchCraftLookAndFeel::accent();
+                    panel.accentColour = PatchCraftLookAndFeel::accent();
+                    auto& addedPanel = layout.add (panel);
+                    const auto panelId = addedPanel.id;
+
+                    auto addChildKnob = [&] (const juce::String& label, const juce::String& paramId, int xOffset)
+                    {
+                        LayoutElement knob;
+                        knob.type = ElementType::Knob;
+                        knob.label = label;
+                        knob.parameterId = paramId;
+                        knob.x = pos.x + xOffset;
+                        knob.y = pos.y + 35;
+                        knob.width = 65;
+                        knob.height = 65;
+                        knob.containerId = panelId;
+                        knob.groupId = tabGroup;
+                        knob.id = layout.generateUniqueId ("knob_");
+                        knob.accentColour = PatchCraftLookAndFeel::accent();
+                        layout.add (knob);
+                    };
+
+                    addChildKnob ("Cutoff", "filterCutoff", 25);
+                    addChildKnob ("Reso", "filterResonance", 115);
+                });
+        }
+        else if (moduleType.equalsIgnoreCase ("ADSR"))
+        {
+            juce::StringArray paramIds { "attack", "decay", "sustain", "release" };
+            for (const auto& paramId : paramIds)
+            {
+                if (pm.find (paramId) == nullptr)
+                {
+                    ParameterDef def;
+                    if (ParameterModel::getRegistryDefinition (paramId, "synth", def))
+                    {
+                        pm.add (def);
+                        liveValues.getOrAddRaw (def.id, def.defaultValue);
+                    }
+                }
+            }
+
+            bool dspExists = false;
+            for (const auto& b : graph.blocks)
+            {
+                if (b.type.equalsIgnoreCase ("adsr") || b.type.equalsIgnoreCase ("envelope"))
+                {
+                    dspExists = true;
+                    break;
+                }
+            }
+
+            if (! dspExists)
+            {
+                DspBlock envBlock;
+                envBlock.id = "amp_env_module";
+                envBlock.section = "amp";
+                envBlock.type = "adsr";
+                envBlock.name = "ADSR Envelope Block";
+                envBlock.targetId = "attack";
+                envBlock.enabled = true;
+                envBlock.values["attack"] = 0.01f;
+                envBlock.values["decay"] = 0.20f;
+                envBlock.values["sustain"] = 0.80f;
+                envBlock.values["release"] = 0.40f;
+                graph.blocks.push_back (std::move (envBlock));
+                graph.userConfigured = true;
+            }
+
+            owner.getProject().performLayoutEdit ("Add ADSR Envelope Module Layout",
+                [&] (LayoutModel& layout)
+                {
+                    LayoutElement panel;
+                    panel.type = ElementType::Panel;
+                    panel.label = "Amp Envelope";
+                    panel.x = pos.x;
+                    panel.y = pos.y;
+                    panel.width = 300;
+                    panel.height = 180;
+                    panel.groupId = tabGroup;
+                    panel.cornerRadius = 12.0f;
+                    panel.strokeWidth = 1.5f;
+                    panel.backgroundColour = juce::Colour (0xee11141e);
+                    panel.borderColour = PatchCraftLookAndFeel::accent();
+                    panel.accentColour = PatchCraftLookAndFeel::accent();
+                    auto& addedPanel = layout.add (panel);
+                    const auto panelId = addedPanel.id;
+
+                    auto addChildSlider = [&] (const juce::String& label, const juce::String& paramId, int xOffset)
+                    {
+                        LayoutElement slider;
+                        slider.type = ElementType::Slider;
+                        slider.label = label;
+                        slider.parameterId = paramId;
+                        slider.x = pos.x + xOffset;
+                        slider.y = pos.y + 30;
+                        slider.width = 40;
+                        slider.height = 120;
+                        slider.containerId = panelId;
+                        slider.groupId = tabGroup;
+                        slider.id = layout.generateUniqueId ("slider_");
+                        slider.accentColour = PatchCraftLookAndFeel::accent();
+                        layout.add (slider);
+                    };
+
+                    addChildSlider ("A", "attack", 25);
+                    addChildSlider ("D", "decay", 90);
+                    addChildSlider ("S", "sustain", 155);
+                    addChildSlider ("R", "release", 220);
+                });
+        }
+        else if (moduleType.equalsIgnoreCase ("Delay"))
+        {
+            juce::StringArray paramIds { "delayTime", "delayFeedback", "delayMix" };
+            for (const auto& paramId : paramIds)
+            {
+                if (pm.find (paramId) == nullptr)
+                {
+                    ParameterDef def;
+                    if (ParameterModel::getRegistryDefinition (paramId, "fx", def))
+                    {
+                        pm.add (def);
+                        liveValues.getOrAddRaw (def.id, def.defaultValue);
+                    }
+                }
+            }
+
+            bool dspExists = false;
+            for (const auto& b : graph.blocks)
+            {
+                if (b.type.equalsIgnoreCase ("delay"))
+                {
+                    dspExists = true;
+                    break;
+                }
+            }
+
+            if (! dspExists)
+            {
+                DspBlock delayBlock;
+                delayBlock.id = "delay_module";
+                delayBlock.section = "fx";
+                delayBlock.type = "delay";
+                delayBlock.name = "Delay Block";
+                delayBlock.targetId = "delayMix";
+                delayBlock.enabled = true;
+                delayBlock.values["delayMix"] = 0.25f;
+                delayBlock.values["delayFeedback"] = 0.35f;
+                delayBlock.values["delayTime"] = 0.25f;
+                graph.blocks.push_back (std::move (delayBlock));
+                graph.userConfigured = true;
+            }
+
+            owner.getProject().performLayoutEdit ("Add Delay Module Layout",
+                [&] (LayoutModel& layout)
+                {
+                    LayoutElement panel;
+                    panel.type = ElementType::Panel;
+                    panel.label = "Delay Module";
+                    panel.x = pos.x;
+                    panel.y = pos.y;
+                    panel.width = 300;
+                    panel.height = 130;
+                    panel.groupId = tabGroup;
+                    panel.cornerRadius = 12.0f;
+                    panel.strokeWidth = 1.5f;
+                    panel.backgroundColour = juce::Colour (0xee11141e);
+                    panel.borderColour = PatchCraftLookAndFeel::accent();
+                    panel.accentColour = PatchCraftLookAndFeel::accent();
+                    auto& addedPanel = layout.add (panel);
+                    const auto panelId = addedPanel.id;
+
+                    auto addChildKnob = [&] (const juce::String& label, const juce::String& paramId, int xOffset)
+                    {
+                        LayoutElement knob;
+                        knob.type = ElementType::Knob;
+                        knob.label = label;
+                        knob.parameterId = paramId;
+                        knob.x = pos.x + xOffset;
+                        knob.y = pos.y + 35;
+                        knob.width = 65;
+                        knob.height = 65;
+                        knob.containerId = panelId;
+                        knob.groupId = tabGroup;
+                        knob.id = layout.generateUniqueId ("knob_");
+                        knob.accentColour = PatchCraftLookAndFeel::accent();
+                        layout.add (knob);
+                    };
+
+                    addChildKnob ("Time", "delayTime", 25);
+                    addChildKnob ("Feedback", "delayFeedback", 115);
+                    addChildKnob ("Mix", "delayMix", 205);
+                });
+        }
+        else if (moduleType.equalsIgnoreCase ("Reverb"))
+        {
+            juce::StringArray paramIds { "reverbMix" };
+            for (const auto& paramId : paramIds)
+            {
+                if (pm.find (paramId) == nullptr)
+                {
+                    ParameterDef def;
+                    if (ParameterModel::getRegistryDefinition (paramId, "fx", def))
+                    {
+                        pm.add (def);
+                        liveValues.getOrAddRaw (def.id, def.defaultValue);
+                    }
+                }
+            }
+
+            bool dspExists = false;
+            for (const auto& b : graph.blocks)
+            {
+                if (b.type.equalsIgnoreCase ("reverb"))
+                {
+                    dspExists = true;
+                    break;
+                }
+            }
+
+            if (! dspExists)
+            {
+                DspBlock reverbBlock;
+                reverbBlock.id = "reverb_module";
+                reverbBlock.section = "fx";
+                reverbBlock.type = "reverb";
+                reverbBlock.name = "Reverb Block";
+                reverbBlock.targetId = "reverbMix";
+                reverbBlock.enabled = true;
+                reverbBlock.values["reverbMix"] = 0.35f;
+                graph.blocks.push_back (std::move (reverbBlock));
+                graph.userConfigured = true;
+            }
+
+            owner.getProject().performLayoutEdit ("Add Reverb Module Layout",
+                [&] (LayoutModel& layout)
+                {
+                    LayoutElement panel;
+                    panel.type = ElementType::Panel;
+                    panel.label = "Reverb Module";
+                    panel.x = pos.x;
+                    panel.y = pos.y;
+                    panel.width = 120;
+                    panel.height = 130;
+                    panel.groupId = tabGroup;
+                    panel.cornerRadius = 12.0f;
+                    panel.strokeWidth = 1.5f;
+                    panel.backgroundColour = juce::Colour (0xee11141e);
+                    panel.borderColour = PatchCraftLookAndFeel::accent();
+                    panel.accentColour = PatchCraftLookAndFeel::accent();
+                    auto& addedPanel = layout.add (panel);
+                    const auto panelId = addedPanel.id;
+
+                    auto addChildKnob = [&] (const juce::String& label, const juce::String& paramId, int xOffset)
+                    {
+                        LayoutElement knob;
+                        knob.type = ElementType::Knob;
+                        knob.label = label;
+                        knob.parameterId = paramId;
+                        knob.x = pos.x + xOffset;
+                        knob.y = pos.y + 35;
+                        knob.width = 65;
+                        knob.height = 65;
+                        knob.containerId = panelId;
+                        knob.groupId = tabGroup;
+                        knob.id = layout.generateUniqueId ("knob_");
+                        knob.accentColour = PatchCraftLookAndFeel::accent();
+                        layout.add (knob);
+                    };
+
+                    addChildKnob ("Mix", "reverbMix", 25);
+                });
+        }
+        else if (moduleType.equalsIgnoreCase ("Phaser"))
+        {
+            juce::StringArray paramIds { "phaserRate", "phaserDepth", "phaserFeedback", "phaserMix" };
+            for (const auto& paramId : paramIds)
+            {
+                if (pm.find (paramId) == nullptr)
+                {
+                    ParameterDef def;
+                    if (ParameterModel::getRegistryDefinition (paramId, "fx", def))
+                    {
+                        pm.add (def);
+                        liveValues.getOrAddRaw (def.id, def.defaultValue);
+                    }
+                }
+            }
+
+            bool dspExists = false;
+            for (const auto& b : graph.blocks)
+            {
+                if (b.type.equalsIgnoreCase ("phaser"))
+                {
+                    dspExists = true;
+                    break;
+                }
+            }
+
+            if (! dspExists)
+            {
+                DspBlock phaserBlock;
+                phaserBlock.id = "phaser_module";
+                phaserBlock.section = "fx";
+                phaserBlock.type = "phaser";
+                phaserBlock.name = "Phaser Block";
+                phaserBlock.targetId = "phaserMix";
+                phaserBlock.enabled = true;
+                phaserBlock.values["phaserRate"] = 0.25f;
+                phaserBlock.values["phaserDepth"] = 0.45f;
+                phaserBlock.values["phaserFeedback"] = 0.0f;
+                phaserBlock.values["phaserMix"] = 0.5f;
+                graph.blocks.push_back (std::move (phaserBlock));
+                graph.userConfigured = true;
+            }
+
+            owner.getProject().performLayoutEdit ("Add Phaser Module Layout",
+                [&] (LayoutModel& layout)
+                {
+                    LayoutElement panel;
+                    panel.type = ElementType::Panel;
+                    panel.label = "Phaser Module";
+                    panel.x = pos.x;
+                    panel.y = pos.y;
+                    panel.width = 390;
+                    panel.height = 130;
+                    panel.groupId = tabGroup;
+                    panel.cornerRadius = 12.0f;
+                    panel.strokeWidth = 1.5f;
+                    panel.backgroundColour = juce::Colour (0xee11141e);
+                    panel.borderColour = PatchCraftLookAndFeel::accent();
+                    panel.accentColour = PatchCraftLookAndFeel::accent();
+                    auto& addedPanel = layout.add (panel);
+                    const auto panelId = addedPanel.id;
+
+                    auto addChildKnob = [&] (const juce::String& label, const juce::String& paramId, int xOffset)
+                    {
+                        LayoutElement knob;
+                        knob.type = ElementType::Knob;
+                        knob.label = label;
+                        knob.parameterId = paramId;
+                        knob.x = pos.x + xOffset;
+                        knob.y = pos.y + 35;
+                        knob.width = 65;
+                        knob.height = 65;
+                        knob.containerId = panelId;
+                        knob.groupId = tabGroup;
+                        knob.id = layout.generateUniqueId ("knob_");
+                        knob.accentColour = PatchCraftLookAndFeel::accent();
+                        layout.add (knob);
+                    };
+
+                    addChildKnob ("Rate", "phaserRate", 25);
+                    addChildKnob ("Depth", "phaserDepth", 115);
+                    addChildKnob ("Feedback", "phaserFeedback", 205);
+                    addChildKnob ("Mix", "phaserMix", 295);
+                });
+        }
+        else if (moduleType.equalsIgnoreCase ("Tape"))
+        {
+            juce::StringArray paramIds { "tapeDrive", "tapeTone", "tapeFlutter", "tapeMix" };
+            for (const auto& paramId : paramIds)
+            {
+                if (pm.find (paramId) == nullptr)
+                {
+                    ParameterDef def;
+                    if (ParameterModel::getRegistryDefinition (paramId, "fx", def))
+                    {
+                        pm.add (def);
+                        liveValues.getOrAddRaw (def.id, def.defaultValue);
+                    }
+                }
+            }
+
+            bool dspExists = false;
+            for (const auto& b : graph.blocks)
+            {
+                if (b.type.equalsIgnoreCase ("tape"))
+                {
+                    dspExists = true;
+                    break;
+                }
+            }
+
+            if (! dspExists)
+            {
+                DspBlock tapeBlock;
+                tapeBlock.id = "tape_module";
+                tapeBlock.section = "fx";
+                tapeBlock.type = "tape";
+                tapeBlock.name = "Tape Block";
+                tapeBlock.targetId = "tapeMix";
+                tapeBlock.enabled = true;
+                tapeBlock.values["tapeDrive"] = 0.25f;
+                tapeBlock.values["tapeTone"] = 0.55f;
+                tapeBlock.values["tapeFlutter"] = 0.12f;
+                tapeBlock.values["tapeMix"] = 0.5f;
+                graph.blocks.push_back (std::move (tapeBlock));
+                graph.userConfigured = true;
+            }
+
+            owner.getProject().performLayoutEdit ("Add Tape Module Layout",
+                [&] (LayoutModel& layout)
+                {
+                    LayoutElement panel;
+                    panel.type = ElementType::Panel;
+                    panel.label = "Tape Module";
+                    panel.x = pos.x;
+                    panel.y = pos.y;
+                    panel.width = 390;
+                    panel.height = 130;
+                    panel.groupId = tabGroup;
+                    panel.cornerRadius = 12.0f;
+                    panel.strokeWidth = 1.5f;
+                    panel.backgroundColour = juce::Colour (0xee11141e);
+                    panel.borderColour = PatchCraftLookAndFeel::accent();
+                    panel.accentColour = PatchCraftLookAndFeel::accent();
+                    auto& addedPanel = layout.add (panel);
+                    const auto panelId = addedPanel.id;
+
+                    auto addChildKnob = [&] (const juce::String& label, const juce::String& paramId, int xOffset)
+                    {
+                        LayoutElement knob;
+                        knob.type = ElementType::Knob;
+                        knob.label = label;
+                        knob.parameterId = paramId;
+                        knob.x = pos.x + xOffset;
+                        knob.y = pos.y + 35;
+                        knob.width = 65;
+                        knob.height = 65;
+                        knob.containerId = panelId;
+                        knob.groupId = tabGroup;
+                        knob.id = layout.generateUniqueId ("knob_");
+                        knob.accentColour = PatchCraftLookAndFeel::accent();
+                        layout.add (knob);
+                    };
+
+                    addChildKnob ("Drive", "tapeDrive", 25);
+                    addChildKnob ("Tone", "tapeTone", 115);
+                    addChildKnob ("Flutter", "tapeFlutter", 205);
+                    addChildKnob ("Mix", "tapeMix", 295);
+                });
+        }
+        else if (moduleType.equalsIgnoreCase ("LoFi"))
+        {
+            juce::StringArray paramIds { "lofiBits", "lofiRate", "lofiMix" };
+            for (const auto& paramId : paramIds)
+            {
+                if (pm.find (paramId) == nullptr)
+                {
+                    ParameterDef def;
+                    if (ParameterModel::getRegistryDefinition (paramId, "fx", def))
+                    {
+                        pm.add (def);
+                        liveValues.getOrAddRaw (def.id, def.defaultValue);
+                    }
+                }
+            }
+
+            bool dspExists = false;
+            for (const auto& b : graph.blocks)
+            {
+                if (b.type.equalsIgnoreCase ("lofi"))
+                {
+                    dspExists = true;
+                    break;
+                }
+            }
+
+            if (! dspExists)
+            {
+                DspBlock lofiBlock;
+                lofiBlock.id = "lofi_module";
+                lofiBlock.section = "fx";
+                lofiBlock.type = "lofi";
+                lofiBlock.name = "Lo-Fi Block";
+                lofiBlock.targetId = "lofiMix";
+                lofiBlock.enabled = true;
+                lofiBlock.values["lofiBits"] = 12.0f;
+                lofiBlock.values["lofiRate"] = 0.20f;
+                lofiBlock.values["lofiMix"] = 0.5f;
+                graph.blocks.push_back (std::move (lofiBlock));
+                graph.userConfigured = true;
+            }
+
+            owner.getProject().performLayoutEdit ("Add Lo-Fi Module Layout",
+                [&] (LayoutModel& layout)
+                {
+                    LayoutElement panel;
+                    panel.type = ElementType::Panel;
+                    panel.label = "Lo-Fi Module";
+                    panel.x = pos.x;
+                    panel.y = pos.y;
+                    panel.width = 300;
+                    panel.height = 130;
+                    panel.groupId = tabGroup;
+                    panel.cornerRadius = 12.0f;
+                    panel.strokeWidth = 1.5f;
+                    panel.backgroundColour = juce::Colour (0xee11141e);
+                    panel.borderColour = PatchCraftLookAndFeel::accent();
+                    panel.accentColour = PatchCraftLookAndFeel::accent();
+                    auto& addedPanel = layout.add (panel);
+                    const auto panelId = addedPanel.id;
+
+                    auto addChildKnob = [&] (const juce::String& label, const juce::String& paramId, int xOffset)
+                    {
+                        LayoutElement knob;
+                        knob.type = ElementType::Knob;
+                        knob.label = label;
+                        knob.parameterId = paramId;
+                        knob.x = pos.x + xOffset;
+                        knob.y = pos.y + 35;
+                        knob.width = 65;
+                        knob.height = 65;
+                        knob.containerId = panelId;
+                        knob.groupId = tabGroup;
+                        knob.id = layout.generateUniqueId ("knob_");
+                        knob.accentColour = PatchCraftLookAndFeel::accent();
+                        layout.add (knob);
+                    };
+
+                    addChildKnob ("Bits", "lofiBits", 25);
+                    addChildKnob ("Rate", "lofiRate", 115);
+                    addChildKnob ("Mix", "lofiMix", 205);
+                });
+        }
+        else if (moduleType.equalsIgnoreCase ("Dynamics"))
+        {
+            juce::StringArray paramIds { "dynThresholdDb", "dynRatio", "dynAttackMs", "dynReleaseMs", "dynMakeupDb", "dynMix" };
+            for (const auto& paramId : paramIds)
+            {
+                if (pm.find (paramId) == nullptr)
+                {
+                    ParameterDef def;
+                    if (ParameterModel::getRegistryDefinition (paramId, "fx", def))
+                    {
+                        pm.add (def);
+                        liveValues.getOrAddRaw (def.id, def.defaultValue);
+                    }
+                }
+            }
+
+            bool dspExists = false;
+            for (const auto& b : graph.blocks)
+            {
+                if (b.type.equalsIgnoreCase ("dynamics"))
+                {
+                    dspExists = true;
+                    break;
+                }
+            }
+
+            if (! dspExists)
+            {
+                DspBlock dynBlock;
+                dynBlock.id = "dynamics_module";
+                dynBlock.section = "fx";
+                dynBlock.type = "dynamics";
+                dynBlock.name = "Dynamics Block";
+                dynBlock.targetId = "dynMix";
+                dynBlock.enabled = true;
+                dynBlock.values["dynThresholdDb"] = -18.0f;
+                dynBlock.values["dynRatio"] = 2.0f;
+                dynBlock.values["dynAttackMs"] = 10.0f;
+                dynBlock.values["dynReleaseMs"] = 120.0f;
+                dynBlock.values["dynMakeupDb"] = 0.0f;
+                dynBlock.values["dynMix"] = 0.5f;
+                graph.blocks.push_back (std::move (dynBlock));
+                graph.userConfigured = true;
+            }
+
+            owner.getProject().performLayoutEdit ("Add Dynamics Module Layout",
+                [&] (LayoutModel& layout)
+                {
+                    LayoutElement panel;
+                    panel.type = ElementType::Panel;
+                    panel.label = "Dynamics Module";
+                    panel.x = pos.x;
+                    panel.y = pos.y;
+                    panel.width = 300;
+                    panel.height = 200;
+                    panel.groupId = tabGroup;
+                    panel.cornerRadius = 12.0f;
+                    panel.strokeWidth = 1.5f;
+                    panel.backgroundColour = juce::Colour (0xee11141e);
+                    panel.borderColour = PatchCraftLookAndFeel::accent();
+                    panel.accentColour = PatchCraftLookAndFeel::accent();
+                    auto& addedPanel = layout.add (panel);
+                    const auto panelId = addedPanel.id;
+
+                    auto addChildKnob = [&] (const juce::String& label, const juce::String& paramId, int xOffset, int yOffset)
+                    {
+                        LayoutElement knob;
+                        knob.type = ElementType::Knob;
+                        knob.label = label;
+                        knob.parameterId = paramId;
+                        knob.x = pos.x + xOffset;
+                        knob.y = pos.y + yOffset;
+                        knob.width = 65;
+                        knob.height = 65;
+                        knob.containerId = panelId;
+                        knob.groupId = tabGroup;
+                        knob.id = layout.generateUniqueId ("knob_");
+                        knob.accentColour = PatchCraftLookAndFeel::accent();
+                        layout.add (knob);
+                    };
+
+                    addChildKnob ("Thresh", "dynThresholdDb", 25, 35);
+                    addChildKnob ("Ratio", "dynRatio", 115, 35);
+                    addChildKnob ("Mix", "dynMix", 205, 35);
+
+                    addChildKnob ("Attack", "dynAttackMs", 25, 115);
+                    addChildKnob ("Release", "dynReleaseMs", 115, 115);
+                    addChildKnob ("Makeup", "dynMakeupDb", 205, 115);
+                });
+        }
+        else if (moduleType.equalsIgnoreCase ("Stereo"))
+        {
+            juce::StringArray paramIds { "stereoWidth", "monoMaker" };
+            for (const auto& paramId : paramIds)
+            {
+                if (pm.find (paramId) == nullptr)
+                {
+                    ParameterDef def;
+                    if (ParameterModel::getRegistryDefinition (paramId, "fx", def))
+                    {
+                        pm.add (def);
+                        liveValues.getOrAddRaw (def.id, def.defaultValue);
+                    }
+                }
+            }
+
+            bool dspExists = false;
+            for (const auto& b : graph.blocks)
+            {
+                if (b.type.equalsIgnoreCase ("utility"))
+                {
+                    dspExists = true;
+                    break;
+                }
+            }
+
+            if (! dspExists)
+            {
+                DspBlock utilityBlock;
+                utilityBlock.id = "stereo_module";
+                utilityBlock.section = "out";
+                utilityBlock.type = "utility";
+                utilityBlock.name = "Stereo Utility Block";
+                utilityBlock.targetId = "stereoWidth";
+                utilityBlock.enabled = true;
+                utilityBlock.values["stereoWidth"] = 1.0f;
+                utilityBlock.values["monoMaker"] = 0.0f;
+                graph.blocks.push_back (std::move (utilityBlock));
+                graph.userConfigured = true;
+            }
+
+            owner.getProject().performLayoutEdit ("Add Stereo Module Layout",
+                [&] (LayoutModel& layout)
+                {
+                    LayoutElement panel;
+                    panel.type = ElementType::Panel;
+                    panel.label = "Stereo Module";
+                    panel.x = pos.x;
+                    panel.y = pos.y;
+                    panel.width = 210;
+                    panel.height = 130;
+                    panel.groupId = tabGroup;
+                    panel.cornerRadius = 12.0f;
+                    panel.strokeWidth = 1.5f;
+                    panel.backgroundColour = juce::Colour (0xee11141e);
+                    panel.borderColour = PatchCraftLookAndFeel::accent();
+                    panel.accentColour = PatchCraftLookAndFeel::accent();
+                    auto& addedPanel = layout.add (panel);
+                    const auto panelId = addedPanel.id;
+
+                    auto addChildKnob = [&] (const juce::String& label, const juce::String& paramId, int xOffset)
+                    {
+                        LayoutElement knob;
+                        knob.type = ElementType::Knob;
+                        knob.label = label;
+                        knob.parameterId = paramId;
+                        knob.x = pos.x + xOffset;
+                        knob.y = pos.y + 35;
+                        knob.width = 65;
+                        knob.height = 65;
+                        knob.containerId = panelId;
+                        knob.groupId = tabGroup;
+                        knob.id = layout.generateUniqueId ("knob_");
+                        knob.accentColour = PatchCraftLookAndFeel::accent();
+                        layout.add (knob);
+                    };
+
+                    addChildKnob ("Width", "stereoWidth", 25);
+                    addChildKnob ("Mono", "monoMaker", 115);
+                });
+        }
+
+        owner.getProject().notifyChanged();
+        repaint();
+    }
+
     void CanvasEditor::copySelectedArpLanePattern()
     {
         copiedArpLanePattern.clear();

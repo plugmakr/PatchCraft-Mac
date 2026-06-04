@@ -18,7 +18,9 @@ namespace patchcraft
     class MidiPlaygroundPage;
     class OneShotMakerPage;
     class WorkflowPage;
+    class ProjectBrowserPage;
     class LaunchCenterPage;
+    class ExpansionsPage;
     class AnimationLabPage;
     class IInstrumentEngine;
     class TestPage;
@@ -39,7 +41,7 @@ namespace patchcraft
     class BottomPanel : public juce::Component
     {
     public:
-        enum class Page { Dashboard = 0, Design = 1, Samples = 2, OneShotMaker = 3, MidiPlayground = 4, ArpStudio = 5, Test = 6, DSP = 7, Widgets = 8, Animation = 9, Branding = 10, Export = 11 };
+        enum class Page { Dashboard = 0, ProjectBrowser = 1, Design = 2, Samples = 3, OneShotMaker = 4, MidiPlayground = 5, ArpStudio = 6, Test = 7, DSP = 8, Widgets = 9, Animation = 10, Branding = 11, Export = 12, Expansions = 13 };
 
         explicit BottomPanel (StudioMainComponent& owner);
         ~BottomPanel() override;
@@ -70,6 +72,7 @@ namespace patchcraft
 
         // ---- Workflow page -------------------------------------------------
         std::unique_ptr<WorkflowPage> workflowPage;
+        std::unique_ptr<ProjectBrowserPage> projectBrowserPage;
 
         // ---- Design page ---------------------------------------------------
         juce::Label                          designDspHeader;
@@ -82,6 +85,7 @@ namespace patchcraft
         juce::TextButton btnMapperMain    { "Sample Mapper" };
         juce::TextButton btnMapperKeyzones { "Keyzones" };
         juce::TextButton btnMapperVelocity { "Velocity" };
+        juce::TextButton btnMapperFull { "Full" };
         std::unique_ptr<SampleMapEditor> sampleMapper;
         std::unique_ptr<KeyzonesComponent>     keyzones;
         std::unique_ptr<VelocityMapViewer>     velocityMap;
@@ -109,6 +113,9 @@ namespace patchcraft
 
         // ---- Launch Center ------------------------------------------------
         std::unique_ptr<LaunchCenterPage> launchCenter;
+
+        // ---- Store / Expansion add-ons ------------------------------------
+        std::unique_ptr<ExpansionsPage> expansionsPage;
 
         void rebuildPageVisibility();
 

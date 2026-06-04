@@ -18,6 +18,7 @@
 #include "PresetsComponent.h"
 #include "SampleMap.h"
 #include "VstExportModule.h"
+#include "ScriptEditorComponent.h"
 
 #include <algorithm>
 #include <cmath>
@@ -657,6 +658,7 @@ namespace patchcraft
         assetLibraryPanel = std::make_unique<BuiltAssetLibraryComponent> (*this);
         expansionLibraryPanel = std::make_unique<ExpansionLibraryPanel> (*this);
         layersPanel     = std::make_unique<LayersPanel> (*this);
+        scriptEditor    = std::make_unique<ScriptEditorComponent> (project);
         canvasEditor    = std::make_unique<CanvasEditor> (*this);
         canvasToolbar   = std::make_unique<CanvasToolbar> (*this, *canvasEditor);
         inspectorPanel  = std::make_unique<InspectorPanel> (*this);
@@ -675,6 +677,7 @@ namespace patchcraft
         addChildComponent (*assetLibraryPanel);
         addChildComponent (*expansionLibraryPanel);
         addChildComponent (*layersPanel);
+        addChildComponent (*scriptEditor);
         addAndMakeVisible (*canvasToolbar);
         addAndMakeVisible (*canvasEditor);
         addAndMakeVisible (*inspectorViewport);
@@ -685,6 +688,7 @@ namespace patchcraft
         leftTabs.addTab ("Elements",   PatchCraftLookAndFeel::panel(), -1);
         leftTabs.addTab ("Layers",     PatchCraftLookAndFeel::panel(), -1);
         leftTabs.addTab ("Library",    PatchCraftLookAndFeel::panel(), -1);
+        leftTabs.addTab ("pScript",    PatchCraftLookAndFeel::panel(), -1);
         leftTabs.setCurrentTabIndex (0, juce::dontSendNotification);
         addAndMakeVisible (leftTabs);
         leftCollapseButton.getProperties().set ("smallButton", true);
@@ -707,6 +711,8 @@ namespace patchcraft
                 togglePanelFloat (assetLibraryPanel.get(), "Library");
             else if (showLayersInsteadOfElements)
                 togglePanelFloat (layersPanel.get(), "Layers");
+            else if (showScriptEditorInsteadOfElements)
+                togglePanelFloat (scriptEditor.get(), "pScript");
             else
                 togglePanelFloat (elementPalette.get(), "Elements");
         };
@@ -761,11 +767,19 @@ namespace patchcraft
                 leftTabs.setCurrentTabIndex (i);
                 showLayersInsteadOfElements      = (i == 1);
                 showLibraryInsteadOfElements     = (i == 2);
+                showScriptEditorInsteadOfElements = (i == 3);
                 const bool showElements = ! showLibraryInsteadOfElements
-                                       && ! showLayersInsteadOfElements;
+                                       && ! showLayersInsteadOfElements
+                                       && ! showScriptEditorInsteadOfElements;
                 elementPalette->setVisible (showElements);
                 layersPanel->setVisible (showLayersInsteadOfElements);
                 assetLibraryPanel->setVisible (showLibraryInsteadOfElements);
+                if (scriptEditor != nullptr)
+                {
+                    scriptEditor->setVisible (showScriptEditorInsteadOfElements);
+                    if (showScriptEditorInsteadOfElements)
+                        scriptEditor->refresh();
+                }
                 if (showLayersInsteadOfElements)
                     layersPanel->refresh();
                 resized();
@@ -889,6 +903,15 @@ namespace patchcraft
         const auto& canvas = project.getCanvasSize();
         canvasEditor->addDrumMachineControlLayout ({ juce::jmax (24, canvas.width / 2 - 540),
                                                      juce::jmax (24, canvas.height / 2 - 210) });
+    }
+
+    void StudioMainComponent::addModuleToCanvas (const juce::String& moduleType)
+    {
+        if (canvasEditor == nullptr)
+            return;
+
+        const auto& canvas = project.getCanvasSize();
+        canvasEditor->addModuleLayout (moduleType, { canvas.width / 2 - 140, canvas.height / 2 - 60 });
     }
 
     void StudioMainComponent::addLibraryAssetToCanvas (const juce::String& category, const juce::File& file,
@@ -1318,6 +1341,7 @@ namespace patchcraft
         const bool brandLibraryDocked = brandLabTab && ! libraryFloating;
         const bool sampleLibraryDocked = sampleMapperTab && sampleLibraryDrawerOpen && ! libraryFloating;
         const bool leftLayersDocked = designTab && ! leftPanelCollapsed && showLayersInsteadOfElements;
+        const bool leftScriptEditorDocked = designTab && ! leftPanelCollapsed && showScriptEditorInsteadOfElements;
 
         // Visibility: only Design shows sidebar / canvas / inspector.
         leftCollapseButton.setVisible (designTab);
@@ -1329,9 +1353,14 @@ namespace patchcraft
         leftCollapseButton.setVisible (designTab);
         leftPopButton.setVisible  (designTab && ! leftPanelCollapsed);
 
-        elementPalette->setVisible (elementsFloating || (designTab && ! leftPanelCollapsed && ! showLibraryInsteadOfElements && ! showLayersInsteadOfElements));
+        elementPalette->setVisible (elementsFloating || (designTab && ! leftPanelCollapsed && ! showLibraryInsteadOfElements && ! showLayersInsteadOfElements && ! showScriptEditorInsteadOfElements));
         assetLibraryPanel->setVisible (libraryFloating || brandLibraryDocked || sampleLibraryDocked || (designTab && ! leftPanelCollapsed && showLibraryInsteadOfElements));
         expansionLibraryPanel->setVisible (packsFloating);
+        if (scriptEditor != nullptr)
+        {
+            const bool scriptEditorFloating = isPanelFloating (scriptEditor.get());
+            scriptEditor->setVisible (scriptEditorFloating || leftScriptEditorDocked);
+        }
 
         // Right column (Inspector / Layers / Presets).
         const bool rightVisible = designTab && ! rightPanelCollapsed;
@@ -1372,6 +1401,8 @@ namespace patchcraft
                     expansionLibraryPanel->setBounds (leftCol);
                 if (! layersFloating)
                     layersPanel->setBounds (leftCol);
+                if (scriptEditor != nullptr && ! isPanelFloating (scriptEditor.get()))
+                    scriptEditor->setBounds (leftCol);
                 leftResizeHandle = r.removeFromLeft (5);
             }
 

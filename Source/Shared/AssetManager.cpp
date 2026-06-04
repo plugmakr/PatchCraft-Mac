@@ -16,9 +16,61 @@ namespace patchcraft
         return img;
     }
 
+    juce::Image AssetManager::loadControlFilmstrip (const juce::File& path, int frames, bool vertical, int maxFrameSize)
+    {
+        if (! path.existsAsFile())
+            return {};
+
+        const int safeMaxFrame = juce::jlimit (48, 512, maxFrameSize);
+        auto key = path.getFullPathName() + "|control|"
+                 + juce::String (frames) + "|" + (vertical ? "v" : "h")
+                 + "|" + juce::String (safeMaxFrame);
+
+        if (controlFilmstripCache.contains (key))
+            return controlFilmstripCache[key];
+
+        auto img = juce::ImageFileFormat::loadFrom (path);
+        if (! img.isValid())
+            return {};
+
+        int safeFrames = juce::jmax (1, frames);
+        if (frames <= 1)
+        {
+            const int w = juce::jmax (1, img.getWidth());
+            const int h = juce::jmax (1, img.getHeight());
+            const int inferred = vertical ? juce::roundToInt ((double) h / (double) w)
+                                          : juce::roundToInt ((double) w / (double) h);
+            if (inferred > safeFrames)
+                safeFrames = inferred;
+        }
+
+        const int frameW = vertical ? img.getWidth()
+                                    : juce::jmax (1, img.getWidth() / safeFrames);
+        const int frameH = vertical ? juce::jmax (1, img.getHeight() / safeFrames)
+                                    : img.getHeight();
+
+        const int largestFrameEdge = juce::jmax (frameW, frameH);
+        if (largestFrameEdge <= safeMaxFrame)
+        {
+            controlFilmstripCache.set (key, img);
+            return img;
+        }
+
+        const double scale = (double) safeMaxFrame / (double) largestFrameEdge;
+        const int targetFrameW = juce::jmax (1, juce::roundToInt ((double) frameW * scale));
+        const int targetFrameH = juce::jmax (1, juce::roundToInt ((double) frameH * scale));
+        const int targetW = vertical ? targetFrameW : targetFrameW * safeFrames;
+        const int targetH = vertical ? targetFrameH * safeFrames : targetFrameH;
+
+        auto resized = img.rescaled (targetW, targetH, juce::Graphics::highResamplingQuality);
+        controlFilmstripCache.set (key, resized);
+        return resized;
+    }
+
     void AssetManager::clear()
     {
         imageCache.clear();
+        controlFilmstripCache.clear();
     }
 
     juce::Image AssetManager::renderDefaultHeroImage (int width, int height)

@@ -66,6 +66,7 @@ namespace patchcraft
         void scanBackgrounds();
         void scanTemplates();
         void scanBuiltAssets();
+        void scanBrandingAssets();
         void scanSounds();
         void addFolderEntriesForRoot (const juce::File& root, const juce::String& category, bool skipPatchcraftTemplates);
         void selectEntryForFile (const juce::File& file);
@@ -118,6 +119,6 @@ namespace patchcraft
         bool previewCallbackActive = false;
         int selectedRow = -1;
         int dropTargetRow = -1;
-        juce::File activeSoundFolder;
+        juce::File activeFolder;
     };
 }

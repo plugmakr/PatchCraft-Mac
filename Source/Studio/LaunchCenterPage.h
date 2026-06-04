@@ -34,6 +34,7 @@ namespace patchcraft
         };
 
         class CheckRow;
+        class DemoTile;
 
         StudioMainComponent& owner;
 
@@ -53,6 +54,23 @@ namespace patchcraft
         juce::TextButton publishButton { "Publish Draft" };
         juce::Label outputFolderLabel;
 
+        juce::Label creatorTitle;
+        juce::Label creatorBody;
+        juce::TextEditor recipePrompt;
+        juce::ComboBox recipeTypeBox;
+        juce::TextButton createFromPromptButton { "Create Plugin" };
+        juce::TextButton blankProjectButton { "Blank Canvas" };
+        juce::TextButton synthStarterButton { "Synth" };
+        juce::TextButton sampleStarterButton { "Sampler" };
+        juce::TextButton drumStarterButton { "Drums" };
+        juce::TextButton fxStarterButton { "FX" };
+
+        juce::Label demoTitle;
+        juce::Label demoBody;
+        juce::Viewport demoViewport;
+        juce::Component demoContent;
+        std::vector<std::unique_ptr<DemoTile>> demoTiles;
+
         juce::Viewport checksViewport;
         juce::Component checksContent;
         std::vector<std::unique_ptr<CheckRow>> checkRows;
@@ -66,6 +84,15 @@ namespace patchcraft
 
         std::vector<CheckItem> buildChecks();
         void rebuildRows();
+        void rebuildDemoTiles();
+        void createSimplePluginFromPrompt (juce::String forcedType = {});
+        void createStarterPlugin (const juce::String& engineId,
+                                  const juce::String& productName,
+                                  const juce::String& description);
+        juce::String inferEngineFromPrompt (const juce::String& prompt,
+                                            const juce::String& forcedType) const;
+        juce::String productNameFromPrompt (const juce::String& prompt,
+                                            const juce::String& engineId) const;
         void chooseOutputFolder();
         void createLaunchBundle();
         void showCustomerPackageWizard();

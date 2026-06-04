@@ -36,6 +36,7 @@ namespace patchcraft
         ~PlayerGuiRenderer() override;
 
         std::function<void (const juce::String& report)> onRuntimeImportReport;
+        std::function<void()> onPresetBrowserRequested;
 
         void rebuild();
 
@@ -148,6 +149,7 @@ namespace patchcraft
                             int& lane, int& step, float& velocity) const;
         juce::Rectangle<int> arpLaneMidiDragHandleBounds (juce::Rectangle<int>) const;
         juce::Rectangle<int> arpLanePlayButtonBounds (juce::Rectangle<int>) const;
+        juce::Rectangle<int> arpLaneBypassButtonBounds (juce::Rectangle<int>) const;
         bool startArpLaneMidiDrag (const LayoutElement&);
         bool handleMixerGesture (const juce::MouseEvent&, bool drag);
         int  padNoteAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>) const;
@@ -159,6 +161,8 @@ namespace patchcraft
         bool multiLayerDockCollapsed = true;
         bool mixerDragActive = false;
         bool arpLaneDragActive = false;
+        int lastArpLane = -1;
+        int lastArpStep = -1;
         double lastGranularAdvanceSeconds = 0.0;
         int mixerDragChannel = -1;
         juce::String mixerDragElementId;

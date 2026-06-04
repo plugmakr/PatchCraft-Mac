@@ -155,6 +155,8 @@ namespace patchcraft
         const auto preservedActiveBankNoteCounts = activeBankNoteCounts;
         const auto preservedActiveBankVelocities = activeBankVelocities;
         const auto preservedBankGateOpen = bankGateOpen;
+        const auto preservedBankPhases = bankPhases;
+        const auto preservedCurrentBankSteps = currentBankSteps;
         const auto preservedCurrentBankRatchetSlots = currentBankRatchetSlots;
         const bool hasActiveDrums = std::any_of (activeDrumNotes.begin(), activeDrumNotes.end(),
                                                  [] (int note) { return note >= 0; });
@@ -182,6 +184,11 @@ namespace patchcraft
         settings.bankHasData.fill (0.0f);
         settings.bankMuted.fill (0.0f);
         settings.bankSolo.fill (0.0f);
+        settings.bankStepCounts.fill (8.0f);
+        settings.bankRates.fill (1.0f);
+        settings.bankSampleControl.fill (0.0f);
+        settings.bankSampleSliceCounts.fill (1.0f);
+        settings.bankRetrigger.fill (1.0f);
         settings.bankNotes.fill (0.0f);
         settings.bankVelocities.fill (1.0f);
         settings.bankGates.fill (0.55f);
@@ -299,6 +306,7 @@ namespace patchcraft
             settings.echoDelay = juce::jlimit (0.01f, 0.95f, valueForKey (block, "mpEchoDelay", 0.18f));
             settings.echoDecay = juce::jlimit (0.05f, 1.0f, valueForKey (block, "mpEchoDecay", 0.55f));
             settings.patternMorph = juce::jlimit (0.0f, 1.0f, valueForKey (block, "mpPatternMorph", 0.0f));
+            settings.retrigger = valueForKey (block, "retrigger", valueForKey (block, "mpRetrigger", 1.0f)) >= 0.5f;
             settings.euclideanPulses = juce::jlimit (0, kMaxSteps, juce::roundToInt (valueForKey (block, "mpEuclideanPulses", 0.0f)));
             settings.euclideanRotate = positiveMod (juce::roundToInt (valueForKey (block, "mpEuclideanRotate", 0.0f)), kMaxSteps);
             settings.keySwitchEnabled = valueForKey (block, "mpKeySwitchEnabled", 0.0f) >= 0.5f;
@@ -315,6 +323,11 @@ namespace patchcraft
             settings.sampleLength = juce::jlimit (0.01f, 1.0f, valueForKey (block, "sampleLength", valueForKey (block, "mpSampleLength", 1.0f)));
             settings.samplePitch = juce::jlimit (-48.0f, 48.0f, valueForKey (block, "samplePitch", valueForKey (block, "mpSamplePitch", 0.0f)));
             settings.seed = (uint32_t) juce::roundToInt (valueForKey (block, "mpSeed", 12001.0f));
+            settings.bankStepCounts.fill ((float) settings.steps);
+            settings.bankRates.fill (settings.rate);
+            settings.bankSampleControl.fill (settings.sampleControl ? 1.0f : 0.0f);
+            settings.bankSampleSliceCounts.fill ((float) settings.sampleSliceCount);
+            settings.bankRetrigger.fill (settings.retrigger ? 1.0f : 0.0f);
 
             for (int step = 0; step < kMaxSteps; ++step)
             {
@@ -351,6 +364,16 @@ namespace patchcraft
                     bank == settings.activeBank ? valueForKey (block, "mpLaneMute", 0.0f) : 0.0f) >= 0.5f ? 1.0f : 0.0f;
                 settings.bankSolo[(size_t) bank] = valueForKey (block, prefix + "mpLaneSolo",
                     bank == settings.activeBank ? valueForKey (block, "mpLaneSolo", 0.0f) : 0.0f) >= 0.5f ? 1.0f : 0.0f;
+                settings.bankStepCounts[(size_t) bank] = (float) juce::jlimit (1, kMaxSteps, juce::roundToInt (
+                    valueForKey (block, prefix + "arpSteps", (float) settings.steps)));
+                settings.bankRates[(size_t) bank] = juce::jlimit (0.0625f, 16.0f,
+                    valueForKey (block, prefix + "rate", settings.rate));
+                settings.bankSampleControl[(size_t) bank] = valueForKey (block, prefix + "mpSampleControl",
+                    settings.sampleControl ? 1.0f : 0.0f) >= 0.5f ? 1.0f : 0.0f;
+                settings.bankSampleSliceCounts[(size_t) bank] = (float) juce::jlimit (1, 64, juce::roundToInt (
+                    valueForKey (block, prefix + "mpSampleSliceCount", (float) settings.sampleSliceCount)));
+                settings.bankRetrigger[(size_t) bank] = valueForKey (block, prefix + "mpLaneRetrigger",
+                    settings.retrigger ? 1.0f : 0.0f) >= 0.5f ? 1.0f : 0.0f;
                 settings.bankAutoFxTargets[(size_t) bank] = (float) juce::jlimit (0, 7, juce::roundToInt (
                     valueForKey (block, prefix + "mpLaneFxTarget",
                         valueForKey (block, prefix + "mpAutoFxTarget",
@@ -423,6 +446,8 @@ namespace patchcraft
             activeBankNoteCounts = preservedActiveBankNoteCounts;
             activeBankVelocities = preservedActiveBankVelocities;
             bankGateOpen = preservedBankGateOpen;
+            bankPhases = preservedBankPhases;
+            currentBankSteps = preservedCurrentBankSteps;
             currentBankRatchetSlots = preservedCurrentBankRatchetSlots;
         }
     }
@@ -434,6 +459,10 @@ namespace patchcraft
             return;
 
         settings.activeBank = bank;
+        settings.steps = juce::jlimit (1, kMaxSteps, juce::roundToInt (settings.bankStepCounts[(size_t) bank]));
+        settings.rate = juce::jlimit (0.0625f, 16.0f, settings.bankRates[(size_t) bank]);
+        settings.sampleControl = settings.bankSampleControl[(size_t) bank] >= 0.5f;
+        settings.sampleSliceCount = juce::jlimit (1, 64, juce::roundToInt (settings.bankSampleSliceCounts[(size_t) bank]));
         for (int step = 0; step < kMaxSteps; ++step)
         {
             const auto index = (size_t) bankStepIndex (bank, step);
@@ -494,6 +523,8 @@ namespace patchcraft
         activeBankNoteCounts.fill (0);
         activeBankVelocities.fill (0.0f);
         bankGateOpen.fill (false);
+        bankPhases.fill (0.0);
+        currentBankSteps.fill (-1);
         currentBankRatchetSlots.fill (-1);
     }
 
@@ -552,6 +583,23 @@ namespace patchcraft
             phase = 0.0;
             currentStep = -1;
             gateOpen = false;
+            cycleCounter = 0;
+        }
+
+        if (settings.multiLane && settings.retrigger)
+        {
+            stopActiveBanks (engine);
+            for (int bank = 0; bank < kMaxPhraseBanks; ++bank)
+                if (settings.bankRetrigger[(size_t) bank] >= 0.5f)
+                {
+                    bankPhases[(size_t) bank] = 0.0;
+                    currentBankSteps[(size_t) bank] = -1;
+                    currentBankRatchetSlots[(size_t) bank] = -1;
+                    bankGateOpen[(size_t) bank] = false;
+                }
+            phase = bankPhases[(size_t) juce::jlimit (0, kMaxPhraseBanks - 1, settings.activeBank)];
+            currentStep = currentBankSteps[(size_t) juce::jlimit (0, kMaxPhraseBanks - 1, settings.activeBank)];
+            currentRatchetSlot = currentBankRatchetSlots[(size_t) juce::jlimit (0, kMaxPhraseBanks - 1, settings.activeBank)];
             cycleCounter = 0;
         }
 
@@ -843,6 +891,10 @@ namespace patchcraft
         const auto preservedStepChordSizes = settings.stepChordSizes;
         const auto preservedStepTies = settings.stepTies;
         const int preservedActiveBank = settings.activeBank;
+        const int preservedSteps = settings.steps;
+        const float preservedRate = settings.rate;
+        const bool preservedSampleControl = settings.sampleControl;
+        const int preservedSampleSliceCount = settings.sampleSliceCount;
 
         loadRuntimeBank (bank);
         const float velocity = velocityForStep (step);
@@ -860,6 +912,10 @@ namespace patchcraft
         settings.stepChordSizes = preservedStepChordSizes;
         settings.stepTies = preservedStepTies;
         settings.activeBank = preservedActiveBank;
+        settings.steps = preservedSteps;
+        settings.rate = preservedRate;
+        settings.sampleControl = preservedSampleControl;
+        settings.sampleSliceCount = preservedSampleSliceCount;
         return velocity;
     }
 
@@ -1063,6 +1119,10 @@ namespace patchcraft
         const auto preservedStepChordSizes = settings.stepChordSizes;
         const auto preservedStepTies = settings.stepTies;
         const int preservedActiveBank = settings.activeBank;
+        const int preservedSteps = settings.steps;
+        const float preservedRate = settings.rate;
+        const bool preservedSampleControl = settings.sampleControl;
+        const int preservedSampleSliceCount = settings.sampleSliceCount;
         const bool preservedLaneMuted = settings.laneMuted;
 
         loadRuntimeBank (bank);
@@ -1082,6 +1142,10 @@ namespace patchcraft
         settings.stepChordSizes = preservedStepChordSizes;
         settings.stepTies = preservedStepTies;
         settings.activeBank = preservedActiveBank;
+        settings.steps = preservedSteps;
+        settings.rate = preservedRate;
+        settings.sampleControl = preservedSampleControl;
+        settings.sampleSliceCount = preservedSampleSliceCount;
         settings.laneMuted = preservedLaneMuted;
     }
 
@@ -1099,6 +1163,27 @@ namespace patchcraft
             if (settings.bankHasData[(size_t) nextBank] >= 0.5f)
                 storedSlice = settings.bankSampleSlices[(size_t) bankStepIndex (nextBank, step)];
         }
+        const int slice = storedSlice >= 0.0f
+            ? juce::jlimit (0, sliceCount - 1, juce::roundToInt (storedSlice))
+            : (step % sliceCount);
+
+        engine.setParameter ("sampleSliceCount", (float) sliceCount);
+        engine.setParameter ("sampleSlice", (float) slice);
+        engine.setParameter ("sampleStart", settings.sampleStart);
+        engine.setParameter ("sampleLength", settings.sampleLength);
+        engine.setParameter ("samplePitch", settings.samplePitch);
+    }
+
+    void MidiPlaygroundRuntime::applyBankSampleControl (IInstrumentEngine& engine, int bank, int step) const
+    {
+        bank = juce::jlimit (0, kMaxPhraseBanks - 1, bank);
+        if (settings.bankSampleControl[(size_t) bank] < 0.5f)
+            return;
+
+        step = juce::jlimit (0, kMaxSteps - 1, step);
+        const int sliceCount = juce::jlimit (1, 64,
+            juce::roundToInt (settings.bankSampleSliceCounts[(size_t) bank]));
+        const auto storedSlice = settings.bankSampleSlices[(size_t) bankStepIndex (bank, step)];
         const int slice = storedSlice >= 0.0f
             ? juce::jlimit (0, sliceCount - 1, juce::roundToInt (storedSlice))
             : (step % sliceCount);
@@ -1131,7 +1216,17 @@ namespace patchcraft
         pendingStep = -1;
     }
 
-    void MidiPlaygroundRuntime::stopActiveBank (IInstrumentEngine& engine, int bank)
+    IInstrumentEngine& MidiPlaygroundRuntime::engineForBank (IInstrumentEngine& engine,
+                                                             IInstrumentEngine* sampleEngine,
+                                                             int bank) const
+    {
+        bank = juce::jlimit (0, kMaxPhraseBanks - 1, bank);
+        return sampleEngine != nullptr && settings.bankSampleControl[(size_t) bank] >= 0.5f
+            ? *sampleEngine
+            : engine;
+    }
+
+    void MidiPlaygroundRuntime::stopActiveBank (IInstrumentEngine& engine, int bank, IInstrumentEngine* sampleEngine)
     {
         bank = juce::jlimit (0, kMaxPhraseBanks - 1, bank);
         auto& notes = activeBankNotes[(size_t) bank];
@@ -1140,7 +1235,11 @@ namespace patchcraft
         {
             const int note = notes[(size_t) i];
             if (note >= 0)
+            {
                 engine.noteOff (note);
+                if (sampleEngine != nullptr)
+                    sampleEngine->noteOff (note);
+            }
         }
 
         notes.fill (-1);
@@ -1150,10 +1249,10 @@ namespace patchcraft
         currentBankRatchetSlots[(size_t) bank] = -1;
     }
 
-    void MidiPlaygroundRuntime::stopActiveBanks (IInstrumentEngine& engine)
+    void MidiPlaygroundRuntime::stopActiveBanks (IInstrumentEngine& engine, IInstrumentEngine* sampleEngine)
     {
         for (int bank = 0; bank < kMaxPhraseBanks; ++bank)
-            stopActiveBank (engine, bank);
+            stopActiveBank (engine, bank, sampleEngine);
     }
 
     void MidiPlaygroundRuntime::stopActiveDrums (IInstrumentEngine& engine)
@@ -1506,7 +1605,7 @@ namespace patchcraft
         }
     }
 
-    void MidiPlaygroundRuntime::startBankStep (IInstrumentEngine& engine, int bank, int step)
+    void MidiPlaygroundRuntime::startBankStep (IInstrumentEngine& engine, int bank, int step, IInstrumentEngine* sampleEngine)
     {
         std::array<int, kMaxChordNotes> notes {};
         int count = 0;
@@ -1514,10 +1613,12 @@ namespace patchcraft
         if (count <= 0)
             return;
 
-        stopActiveBank (engine, bank);
+        auto& targetEngine = engineForBank (engine, sampleEngine, bank);
+        stopActiveBank (engine, bank, sampleEngine);
         const float velocity = velocityForBankStep (bank, step);
         activeBankVelocities[(size_t) bank] = velocity;
-        applyBankStepFx (engine, bank, step, velocity);
+        applyBankSampleControl (targetEngine, bank, step);
+        applyBankStepFx (targetEngine, bank, step, velocity);
 
         auto& bankNotes = activeBankNotes[(size_t) bank];
         auto& bankNoteCount = activeBankNoteCounts[(size_t) bank];
@@ -1525,48 +1626,51 @@ namespace patchcraft
         for (int i = 0; i < bankNoteCount; ++i)
         {
             bankNotes[(size_t) i] = notes[(size_t) i];
-            engine.noteOn (notes[(size_t) i], velocity);
+            targetEngine.noteOn (notes[(size_t) i], velocity);
         }
 
         bankGateOpen[(size_t) bank] = true;
     }
 
-    void MidiPlaygroundRuntime::processMultiLane (IInstrumentEngine& engine, const RenderContext& context)
+    void MidiPlaygroundRuntime::processMultiLane (IInstrumentEngine& engine,
+                                                  const RenderContext& context,
+                                                  IInstrumentEngine* sampleEngine)
     {
         if (heldNotes.empty())
         {
-            stopActiveBanks (engine);
+            stopActiveBanks (engine, sampleEngine);
             currentStep = -1;
             currentRatchetSlot = -1;
             phase = 0.0;
+            bankPhases.fill (0.0);
+            currentBankSteps.fill (-1);
+            currentBankRatchetSlots.fill (-1);
             return;
         }
 
-        const int steps = activeStepCount();
-        const double phase01 = phase - std::floor (phase);
-        const double scaled = phase01 * (double) steps;
-        const int step = juce::jlimit (0, steps - 1, (int) std::floor (scaled));
-        const double stepPhase = scaled - std::floor (scaled);
-        const bool changedStep = step != currentStep;
-
-        if (currentStep >= 0 && step < currentStep)
-            ++cycleCounter;
-
-        if (changedStep)
-        {
-            currentStep = step;
-            currentRatchetSlot = -1;
-            for (int bank = 0; bank < kMaxPhraseBanks; ++bank)
-                stopActiveBank (engine, bank);
-        }
-
+        const double bpm = RenderContext::sanitiseBpm (context.bpm);
+        const double seconds = context.secondsPerBlock();
         for (int bank = 0; bank < kMaxPhraseBanks; ++bank)
         {
             if (! bankIsAudible (bank))
             {
                 if (activeBankNoteCounts[(size_t) bank] > 0)
-                    stopActiveBank (engine, bank);
+                    stopActiveBank (engine, bank, sampleEngine);
                 continue;
+            }
+
+            const int steps = juce::jlimit (1, kMaxSteps,
+                juce::roundToInt (settings.bankStepCounts[(size_t) bank]));
+            const double phase01 = bankPhases[(size_t) bank] - std::floor (bankPhases[(size_t) bank]);
+            const double scaled = phase01 * (double) steps;
+            const int step = juce::jlimit (0, steps - 1, (int) std::floor (scaled));
+            const double stepPhase = scaled - std::floor (scaled);
+
+            if (step != currentBankSteps[(size_t) bank])
+            {
+                stopActiveBank (engine, bank, sampleEngine);
+                currentBankSteps[(size_t) bank] = step;
+                currentBankRatchetSlots[(size_t) bank] = -1;
             }
 
             const auto index = (size_t) bankStepIndex (bank, step);
@@ -1585,23 +1689,39 @@ namespace patchcraft
             if (shouldGateOpen && (! bankGateOpen[(size_t) bank]
                                    || ratchetSlot != currentBankRatchetSlots[(size_t) bank]))
             {
-                startBankStep (engine, bank, step);
+                startBankStep (engine, bank, step, sampleEngine);
                 currentBankRatchetSlots[(size_t) bank] = ratchetSlot;
             }
             else if (! shouldGateOpen && bankGateOpen[(size_t) bank])
             {
-                stopActiveBank (engine, bank);
+                stopActiveBank (engine, bank, sampleEngine);
             }
+
+            const double before = phase01;
+            const float bankRate = juce::jlimit (0.0625f, 16.0f, settings.bankRates[(size_t) bank]);
+            const double cyclesPerSecond = settings.sync
+                ? (bpm / 240.0) * (double) bankRate
+                : (double) bankRate;
+            bankPhases[(size_t) bank] += cyclesPerSecond * seconds;
+            bankPhases[(size_t) bank] -= std::floor (bankPhases[(size_t) bank]);
+            if (bank == settings.activeBank && bankPhases[(size_t) bank] < before)
+                ++cycleCounter;
         }
 
-        const double cyclesPerSecond = settings.sync
-            ? (RenderContext::sanitiseBpm (context.bpm) / 240.0) * (double) settings.rate
-            : (double) settings.rate;
-        phase += cyclesPerSecond * context.secondsPerBlock();
-        phase -= std::floor (phase);
+        const int activeBank = juce::jlimit (0, kMaxPhraseBanks - 1, settings.activeBank);
+        phase = bankPhases[(size_t) activeBank];
+        currentStep = currentBankSteps[(size_t) activeBank];
+        currentRatchetSlot = currentBankRatchetSlots[(size_t) activeBank];
     }
 
     void MidiPlaygroundRuntime::process (IInstrumentEngine& engine, const RenderContext& context)
+    {
+        process (engine, context, nullptr);
+    }
+
+    void MidiPlaygroundRuntime::process (IInstrumentEngine& engine,
+                                         const RenderContext& context,
+                                         IInstrumentEngine* sampleEngine)
     {
         if (! enabled)
             return;
@@ -1614,7 +1734,7 @@ namespace patchcraft
 
         if (settings.multiLane)
         {
-            processMultiLane (engine, context);
+            processMultiLane (engine, context, sampleEngine);
             return;
         }
 

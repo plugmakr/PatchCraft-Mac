@@ -4,6 +4,8 @@
 #include "BottomPanel.h"
 #include "PatchCraftLookAndFeel.h"
 
+#include <cmath>
+
 namespace patchcraft
 {
     AnimationLabPage::AnimationLabPage (StudioMainComponent& o) : owner (o)
@@ -18,28 +20,51 @@ namespace patchcraft
         styleLabel (workflowBody, "Add visuals here, place and bind them in Design, then prove motion, audio reaction, low-power fallback, and layout in Brand Lab before shipping.", 12.0f, false, PatchCraftLookAndFeel::textDim());
         styleLabel (stepsHeader, "HOW TO USE ANIMATION LAB", 12.0f, true, PatchCraftLookAndFeel::accent());
         styleLabel (stepsBody,
-                    "1. Add a complete visual kit for a fast starting point, or add only the element you need.\n"
-                    "2. Reactive Image is for logos, backgrounds, masks, or hero art that pulses from audio, MIDI, BPM, or macro values.\n"
-                    "3. Sprite Animator is for frame strips: meters, characters, turntables, LEDs, waveform loops, or note-triggered motion.\n"
-                    "4. Visual FX Layer is native JUCE motion: particles, rings, pulses, spectrum strips, glow, and low-CPU fallbacks.\n"
-                    "5. Pro AI Visual Brief stores the art direction; Generate AI Asset creates source artwork that still becomes normal project art.\n"
-                    "6. Open Design to place, size, layer, bind, and theme the visual elements. Open Brand Lab to prove runtime motion.",
+                    "1. Choose a driver and a visual behavior.\n"
+                    "2. Add the bound visual to the canvas.\n"
+                    "3. Move or resize it in Design.\n"
+                    "4. Test runtime motion in Brand Lab before export.",
                     11.0f, false, PatchCraftLookAndFeel::text());
         styleLabel (proofHeader, "SHIP CHECK", 12.0f, true, juce::Colour (0xffc9a4ff));
         styleLabel (proofBody,
                     "Before export: confirm every visual has a fallback, motion is not distracting while playing, CPU stays reasonable, resized plugin windows keep the artwork framed, and the Player still works with no network or AI service available.",
                     11.0f, false, PatchCraftLookAndFeel::textDim());
+        styleLabel (bindHeader, "ADD ANIMATION", 12.0f, true, PatchCraftLookAndFeel::accent());
+        styleLabel (bindBody, "Build a visual layer that is already connected to audio, BPM, MIDI, or a parameter. The element lands on the Design canvas with the binding saved.", 12.0f, false, PatchCraftLookAndFeel::text());
+        styleLabel (targetLabel, "DRIVER", 11.0f, true, PatchCraftLookAndFeel::textDim());
+        styleLabel (sourceLabel, "SOURCE", 11.0f, true, PatchCraftLookAndFeel::textDim());
+        styleLabel (actionLabel, "MOTION", 11.0f, true, PatchCraftLookAndFeel::textDim());
+        styleLabel (previewLabel, "PREVIEW", 11.0f, true, PatchCraftLookAndFeel::textDim());
 
         for (auto* label : { &title, &subtitle, &nonProHeader, &nonProBody, &proHeader, &proBody,
-                              &workflowHeader, &workflowBody, &stepsHeader, &stepsBody, &proofHeader, &proofBody })
+                              &workflowHeader, &workflowBody, &stepsHeader, &stepsBody, &proofHeader, &proofBody,
+                              &bindHeader, &bindBody, &targetLabel, &sourceLabel, &actionLabel, &previewLabel })
             addAndMakeVisible (*label);
 
         for (auto* button : { &addVisualKitButton, &addReactiveButton, &addSpriteButton, &addFxButton,
-                              &addAiPromptButton, &generateAiAssetButton, &openDesignButton, &openBrandButton })
+                              &addBoundVisualButton, &previewMotionButton, &addAiPromptButton, &generateAiAssetButton,
+                              &openDesignButton, &openBrandButton })
         {
-            styleButton (*button, button == &addVisualKitButton || button == &generateAiAssetButton);
+            styleButton (*button, button == &addVisualKitButton || button == &addBoundVisualButton || button == &generateAiAssetButton);
             addAndMakeVisible (*button);
         }
+
+        sourceBox.addItem ("Audio Level", 1);
+        sourceBox.addItem ("BPM", 2);
+        sourceBox.addItem ("MIDI Notes", 3);
+        sourceBox.addItem ("Selected Parameter", 4);
+        sourceBox.setSelectedId (1, juce::dontSendNotification);
+        addAndMakeVisible (sourceBox);
+
+        actionBox.addItem ("Pulse Glow", 1);
+        actionBox.addItem ("Scale", 2);
+        actionBox.addItem ("Orbit", 3);
+        actionBox.addItem ("Sweep", 4);
+        actionBox.addItem ("Sprite Frame", 5);
+        actionBox.setSelectedId (1, juce::dontSendNotification);
+        addAndMakeVisible (actionBox);
+        addAndMakeVisible (targetBox);
+        refreshParameterChoices();
 
         addVisualKitButton.onClick = [this]
         {
@@ -50,6 +75,14 @@ namespace patchcraft
         addReactiveButton.onClick = [this] { addCanvasElement ((int) ElementType::ReactiveImage); };
         addSpriteButton.onClick = [this] { addCanvasElement ((int) ElementType::SpriteAnimator); };
         addFxButton.onClick = [this] { addCanvasElement ((int) ElementType::VisualFxLayer); };
+        addBoundVisualButton.onClick = [this] { addBoundVisualToCanvas(); };
+        previewMotionButton.onClick = [this]
+        {
+            previewActive = ! previewActive;
+            previewMotionButton.setButtonText (previewActive ? "Stop Preview" : "Preview Motion");
+            if (previewActive) startTimerHz (30); else stopTimer();
+            repaint();
+        };
         addAiPromptButton.onClick = [this] { addCanvasElement ((int) ElementType::AiVisualPrompt); };
         generateAiAssetButton.onClick = [this] { owner.generateAiImageAsset(); };
         openDesignButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Design); };
@@ -78,8 +111,78 @@ namespace patchcraft
         owner.addElementToCanvas ((ElementType) elementTypeIndex);
     }
 
+    void AnimationLabPage::refreshParameterChoices()
+    {
+        const auto currentId = targetBox.getSelectedId();
+        targetBox.clear (juce::dontSendNotification);
+        int id = 1;
+        for (const auto& param : owner.getProject().getParameters().getAll())
+        {
+            if (! param.visible)
+                continue;
+            targetBox.addItem (param.name.isNotEmpty() ? param.name + "  (" + param.id + ")" : param.id, id++);
+            targetBox.getProperties().set ("param_" + juce::String (id - 1), param.id);
+        }
+        if (targetBox.getNumItems() > 0)
+            targetBox.setSelectedId (currentId > 0 ? juce::jmin (currentId, targetBox.getNumItems()) : 1,
+                                     juce::dontSendNotification);
+    }
+
+    void AnimationLabPage::addBoundVisualToCanvas()
+    {
+        auto source = sourceBox.getText().trim();
+        auto action = actionBox.getText().trim();
+        auto parameterId = targetBox.getProperties()["param_" + juce::String (targetBox.getSelectedId())].toString();
+        if (parameterId.isEmpty())
+            parameterId = "macro1";
+
+        owner.getProject().performLayoutEdit ("Add bound animation visual", [&] (LayoutModel& layout)
+        {
+            const auto& canvas = owner.getProject().getCanvasSize();
+            LayoutElement visual;
+            visual.id = "visual_bind_" + juce::String (juce::Time::getMillisecondCounter());
+            visual.type = action.equalsIgnoreCase ("Sprite Frame") ? ElementType::SpriteAnimator : ElementType::VisualFxLayer;
+            visual.label = action;
+            visual.parameterId = parameterId;
+            visual.x = juce::jmax (40, canvas.width / 2 - 180);
+            visual.y = juce::jmax (40, canvas.height / 2 - 130);
+            visual.width = 360;
+            visual.height = 220;
+            visual.audioReactive = source.equalsIgnoreCase ("Audio Level");
+            visual.audioReactiveMode = "level";
+            visual.audioReactiveAmount = source.equalsIgnoreCase ("Audio Level") ? 0.65f : 0.25f;
+            visual.animationMode = source.equalsIgnoreCase ("BPM") ? "bpmPulse" : "parameter";
+            visual.animationRate = source.equalsIgnoreCase ("BPM") ? 1.0f : 0.5f;
+            visual.visualSource = source.equalsIgnoreCase ("Selected Parameter") ? parameterId
+                                : source.equalsIgnoreCase ("MIDI Notes") ? "midiNotes"
+                                : source.equalsIgnoreCase ("BPM") ? "bpm"
+                                : "audioLevel";
+            visual.visualAction = action.removeCharacters (" ").toLowerCase();
+            visual.visualPreset = action.equalsIgnoreCase ("Orbit") ? "orbitAura"
+                                : action.equalsIgnoreCase ("Sweep") ? "spectrumSweep"
+                                : "pulseGlow";
+            visual.visualLowPowerFallback = true;
+            visual.opacity = 0.85f;
+            visual.cornerRadius = 12.0f;
+            visual.accentColour = PatchCraftLookAndFeel::accent();
+            layout.add (visual);
+        });
+
+        owner.getProject().notifyChanged();
+        owner.setBottomTab (BottomPanel::Page::Design);
+    }
+
     void AnimationLabPage::refresh()
     {
+        refreshParameterChoices();
+        repaint();
+    }
+
+    void AnimationLabPage::timerCallback()
+    {
+        previewPhase += 0.035f;
+        if (previewPhase > 1.0f)
+            previewPhase -= 1.0f;
         repaint();
     }
 
@@ -101,6 +204,21 @@ namespace patchcraft
         drawCard (r.removeFromLeft (r.getWidth() / 2 - 6), PatchCraftLookAndFeel::accent());
         r.removeFromLeft (12);
         drawCard (r, juce::Colour (0xffb98cff));
+
+        auto preview = getLocalBounds().reduced (40);
+        preview.removeFromTop (178);
+        preview = preview.removeFromRight (preview.getWidth() / 2 - 24).removeFromTop (162);
+        const float pulse = previewActive ? (0.35f + 0.65f * std::sin (previewPhase * juce::MathConstants<float>::twoPi) * 0.5f + 0.35f) : 0.45f;
+        auto p = preview.toFloat();
+        g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.12f + 0.24f * pulse));
+        g.fillRoundedRectangle (p, 12.0f);
+        g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.6f + 0.3f * pulse));
+        g.drawRoundedRectangle (p.reduced (1.0f), 12.0f, 1.4f + 2.2f * pulse);
+        auto centre = p.getCentre();
+        const float radius = 34.0f + 26.0f * pulse;
+        g.drawEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f, 2.0f);
+        g.setFont (juce::Font (12.0f, juce::Font::bold));
+        g.drawFittedText (sourceBox.getText() + " -> " + actionBox.getText(), preview.reduced (14).removeFromBottom (24), juce::Justification::centred, 1);
     }
 
     void AnimationLabPage::resized()
@@ -116,15 +234,31 @@ namespace patchcraft
         auto right = r.reduced (16);
 
         nonProHeader.setBounds (left.removeFromTop (24));
-        nonProBody.setBounds (left.removeFromTop (86));
+        nonProBody.setBounds (left.removeFromTop (54));
         left.removeFromTop (10);
         addVisualKitButton.setBounds (left.removeFromTop (34));
         left.removeFromTop (8);
-        addReactiveButton.setBounds (left.removeFromTop (32));
+        bindHeader.setBounds (left.removeFromTop (24));
+        bindBody.setBounds (left.removeFromTop (48));
+        auto row = left.removeFromTop (54);
+        auto third = row.getWidth() / 3;
+        auto targetArea = row.removeFromLeft (third).reduced (0, 0);
+        auto sourceArea = row.removeFromLeft (third).reduced (8, 0);
+        auto actionArea = row.reduced (8, 0);
+        targetLabel.setBounds (targetArea.removeFromTop (18));
+        targetBox.setBounds (targetArea);
+        sourceLabel.setBounds (sourceArea.removeFromTop (18));
+        sourceBox.setBounds (sourceArea);
+        actionLabel.setBounds (actionArea.removeFromTop (18));
+        actionBox.setBounds (actionArea);
+        left.removeFromTop (8);
+        addBoundVisualButton.setBounds (left.removeFromTop (34));
+        left.removeFromTop (8);
+        addReactiveButton.setBounds (left.removeFromTop (30));
         left.removeFromTop (6);
-        addSpriteButton.setBounds (left.removeFromTop (32));
+        addSpriteButton.setBounds (left.removeFromTop (30));
         left.removeFromTop (6);
-        addFxButton.setBounds (left.removeFromTop (32));
+        addFxButton.setBounds (left.removeFromTop (30));
         left.removeFromTop (14);
         workflowHeader.setBounds (left.removeFromTop (24));
         workflowBody.setBounds (left.removeFromTop (58));
@@ -137,8 +271,11 @@ namespace patchcraft
         stepsBody.setBounds (left);
 
         proHeader.setBounds (right.removeFromTop (24));
-        proBody.setBounds (right.removeFromTop (116));
+        proBody.setBounds (right.removeFromTop (86));
         right.removeFromTop (10);
+        previewLabel.setBounds (right.removeFromTop (20));
+        previewMotionButton.setBounds (right.removeFromTop (34));
+        right.removeFromTop (178);
         addAiPromptButton.setBounds (right.removeFromTop (34));
         right.removeFromTop (8);
         generateAiAssetButton.setBounds (right.removeFromTop (34));

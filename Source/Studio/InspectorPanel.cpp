@@ -34,6 +34,36 @@ namespace patchcraft
         return juce::Colour ((juce::uint32) text.getHexValue64());
     }
 
+    static juce::String normalisedLookupText (juce::String text)
+    {
+        return text.toLowerCase().retainCharacters ("abcdefghijklmnopqrstuvwxyz0123456789");
+    }
+
+    static bool tokenLooksNumeric (juce::String token)
+    {
+        token = token.trim();
+        if (token.isEmpty())
+            return false;
+
+        bool hasDigit = false;
+        for (int i = 0; i < token.length(); ++i)
+        {
+            const auto c = token[i];
+            if (c >= '0' && c <= '9')
+            {
+                hasDigit = true;
+                continue;
+            }
+
+            if (c == '.' || c == '-' || c == '+')
+                continue;
+
+            return false;
+        }
+
+        return hasDigit;
+    }
+
     static bool isContainerElement (ElementType type)
     {
         return type == ElementType::Panel || type == ElementType::Group || type == ElementType::TabPanel;
@@ -274,6 +304,7 @@ namespace patchcraft
         styleLabel (lblAccentColour,  "Accent");
         styleLabel (lblMin,         "Min");
         styleLabel (lblMax,         "Max");
+        styleLabel (lblDropZoneLink, "Drop Zone");
         styleLabel (lblDefault,     "Default");
         styleLabel (lblStep,        "Step");
         styleLabel (lblValType,     "Value Type");
@@ -342,7 +373,7 @@ namespace patchcraft
         styleLabel (lblGranularPan,     "Pan");
         styleLabel (lblGranularTexture, "Texture");
 
-        for (auto* l : { &lblType, &lblId, &lblPos, &lblSize, &lblParam, &lblLabel, &lblAction,
+        for (auto* l : { &lblType, &lblId, &lblPos, &lblSize, &lblParam, &lblDropZoneLink, &lblLabel, &lblAction,
                          &lblValFmt, &lblStyle, &lblKnobStyle, &lblMin, &lblMax,
                          &lblLayoutSection, &lblParameterSection, &lblStyleSection, &lblSpecialSection,
                          &lblOpacity, &lblState, &lblShapeKind, &lblCorner, &lblStroke,
@@ -386,7 +417,8 @@ namespace patchcraft
                                 "Separator", "Drum Pad", "Pad Grid", "Drum Grid",
                                 "Arp Lane", "Mixer", "Macro Control", "Mod Matrix",
                                 "EQ Curve", "Spectrum Analyzer", "Reactive Image",
-                                "Sprite Animator", "Visual FX Layer", "AI Visual Prompt" };
+                                "Sprite Animator", "Visual FX Layer", "AI Visual Prompt",
+                                "Sample Drop Zone" };
         int id = 1;
         for (auto* t : types) typeBox.addItem (t, id++);
         addAndMakeVisible (typeBox);
@@ -401,6 +433,9 @@ namespace patchcraft
             e->setIndents (6, 4);
 
         addAndMakeVisible (parameterBox);
+        addAndMakeVisible (dropZoneLinkBox);
+        dropZoneLinkBox.setTooltip ("Connect this control to a specific Sample Drop Zone. Dropping a sample on that zone creates sample-map zones and grouped controls with this same link.");
+        dropZoneLinkBox.onChange = [this] { writeFromUi(); };
         midiLearnButton.getProperties().set ("smallButton", true);
         midiLearnButton.setTooltip ("Start MIDI Learn for the selected parameter. Switch to Test and move a hardware control.");
         midiLearnButton.onClick = [this]
@@ -950,8 +985,8 @@ namespace patchcraft
         arpLaneModeBox.addItem ("Phrase bank", 1);
         arpLaneModeBox.addItem ("Velocity lane", 2);
         arpLaneModeBox.addItem ("Trigger lane", 3);
-        arpLaneModeBox.addItem ("Orbit multi-ring", 4);
-        arpLaneModeBox.setTooltip ("Phrase bank selects/edit MIDI Playground banks. Orbit multi-ring edits the first five lanes as concentric rings.");
+        arpLaneModeBox.addItem ("CircleSEQ multi-ring", 4);
+        arpLaneModeBox.setTooltip ("Phrase bank selects/edit MIDI Playground banks. CircleSEQ multi-ring edits the first five lanes as concentric rings.");
         addAndMakeVisible (arpLaneModeBox);
 
         arpLaneTargetBox.addItem ("Notes / synth", 1);
@@ -1295,9 +1330,11 @@ namespace patchcraft
         auto* el = owner.getProject().getLayout().find (owner.getSelectedElementId());
         const auto type = el != nullptr ? el->type : ElementType::Knob;
         const bool hasParam = (type == ElementType::Knob || type == ElementType::Slider
-                               || type == ElementType::Meter || type == ElementType::Toggle
+                               || type == ElementType::Meter || type == ElementType::Button
+                               || type == ElementType::Toggle || type == ElementType::Dropdown
                                || type == ElementType::ValueDisplay
-                               || type == ElementType::MacroControl);
+                               || type == ElementType::MacroControl
+                               || type == ElementType::SampleDropZone);
         const bool isImage  = (type == ElementType::Image || type == ElementType::ReactiveImage
                                || type == ElementType::SpriteAnimator);
         const bool isLabel  = (type == ElementType::Label);
@@ -1309,14 +1346,24 @@ namespace patchcraft
         const bool isModMatrix = (type == ElementType::ModMatrix);
         const bool isGranularField = (type == ElementType::GranularField);
         const bool isTabPanel = (type == ElementType::TabPanel);
+        const bool isFramedVisual = type == ElementType::SpectrumAnalyzer
+                                 || type == ElementType::EqCurve
+                                 || type == ElementType::VisualFxLayer
+                                 || type == ElementType::ReactiveImage
+                                 || type == ElementType::SpriteAnimator
+                                 || type == ElementType::GranularField
+                                 || type == ElementType::SampleDropZone;
         const bool canAnimate = (type != ElementType::Group && type != ElementType::Separator);
         const bool hasStyle = (type == ElementType::Knob || type == ElementType::Slider
                                || type == ElementType::Meter || type == ElementType::Button
                                || type == ElementType::Panel || type == ElementType::Shape
+                               || type == ElementType::EqCurve
+                               || type == ElementType::SpectrumAnalyzer
                                || type == ElementType::ReactiveImage
                                || type == ElementType::SpriteAnimator
                                || type == ElementType::VisualFxLayer
-                               || type == ElementType::AiVisualPrompt);
+                               || type == ElementType::AiVisualPrompt
+                               || type == ElementType::SampleDropZone);
         const bool isKnob   = (type == ElementType::Knob);
         const bool showContainerManager = (el != nullptr && isContainerElement (type));
         const bool showFilmstrip = (type == ElementType::Knob
@@ -1325,7 +1372,11 @@ namespace patchcraft
         const bool showLabelLayout = (el != nullptr && (type == ElementType::Knob || type == ElementType::Slider
                                                         || type == ElementType::Button || type == ElementType::Toggle
                                                         || type == ElementType::Dropdown || type == ElementType::ValueDisplay
-                                                        || type == ElementType::MacroControl));
+                                                        || type == ElementType::MacroControl
+                                                        || type == ElementType::SampleDropZone
+                                                        || type == ElementType::SpectrumAnalyzer
+                                                        || type == ElementType::EqCurve
+                                                        || type == ElementType::VisualFxLayer));
         const bool showColour = (type == ElementType::Panel || type == ElementType::Group
                                  || type == ElementType::Shape || type == ElementType::Button
                                  || type == ElementType::Toggle || type == ElementType::Dropdown
@@ -1334,6 +1385,9 @@ namespace patchcraft
                                   || type == ElementType::PadGrid || type == ElementType::Mixer
                                   || type == ElementType::MacroControl || type == ElementType::ModMatrix
                                   || type == ElementType::GranularField
+                                  || type == ElementType::EqCurve
+                                  || type == ElementType::SpectrumAnalyzer
+                                  || type == ElementType::SampleDropZone
                                   || type == ElementType::ReactiveImage
                                   || type == ElementType::SpriteAnimator
                                   || type == ElementType::VisualFxLayer
@@ -1410,8 +1464,10 @@ namespace patchcraft
         // Parameter binding section
         const bool showParam = hasParam;
         const bool showParamControls = showParam && isSectionOpen (InspectorSection::Parameter);
+        const bool showDropZoneLink = showParamControls && type != ElementType::SampleDropZone;
         lblParameterSection.setVisible (showParam);
         parameterBox.setVisible (showParamControls);
+        dropZoneLinkBox.setVisible (showDropZoneLink);
         midiLearnButton.setVisible (showParamControls);
         valueFormatBox.setVisible (showParamControls);
         minEdit.setVisible (showParamControls);
@@ -1421,6 +1477,7 @@ namespace patchcraft
         valueTypeBox.setVisible (showParamControls);
         smoothingSlider.setVisible (showParamControls);
         lblParam.setVisible (showParamControls);
+        lblDropZoneLink.setVisible (showDropZoneLink);
         lblValFmt.setVisible (showParamControls);
         lblMin.setVisible (showParamControls);
         lblMax.setVisible (showParamControls);
@@ -1440,6 +1497,8 @@ namespace patchcraft
                     midiLearnButton.setBounds (bounds.removeFromRight (58).reduced (2));
                     parameterBox.setBounds (bounds.reduced (0, 0));
                 }
+                if (showDropZoneLink)
+                    layoutRow (r, lblDropZoneLink, &dropZoneLinkBox);
                 layoutRow (r, lblValFmt, &valueFormatBox);
                 // Min / Max share a row
                 {
@@ -1495,18 +1554,18 @@ namespace patchcraft
         }
 
         shapeKindBox.setVisible (isShape && showVisualControls);
-        cornerSlider.setVisible (isShape && showVisualControls);
-        strokeSlider.setVisible (isShape && showVisualControls);
-        shadowSlider.setVisible (isShape && showVisualControls);
-        glowSlider.setVisible (isShape && showVisualControls);
-        blurSlider.setVisible (isShape && showVisualControls);
+        cornerSlider.setVisible ((isShape || isFramedVisual) && showVisualControls);
+        strokeSlider.setVisible ((isShape || isFramedVisual) && showVisualControls);
+        shadowSlider.setVisible ((isShape || isFramedVisual) && showVisualControls);
+        glowSlider.setVisible ((isShape || isFramedVisual) && showVisualControls);
+        blurSlider.setVisible ((isShape || isFramedVisual) && showVisualControls);
         lblShapeKind.setVisible (isShape && showVisualControls);
-        lblCorner.setVisible (isShape && showVisualControls);
-        lblStroke.setVisible (isShape && showVisualControls);
-        lblShadow.setVisible (isShape && showVisualControls);
-        lblGlow.setVisible (isShape && showVisualControls);
-        lblBlur.setVisible (isShape && showVisualControls);
-        if (isShape && showVisualControls)
+        lblCorner.setVisible ((isShape || isFramedVisual) && showVisualControls);
+        lblStroke.setVisible ((isShape || isFramedVisual) && showVisualControls);
+        lblShadow.setVisible ((isShape || isFramedVisual) && showVisualControls);
+        lblGlow.setVisible ((isShape || isFramedVisual) && showVisualControls);
+        lblBlur.setVisible ((isShape || isFramedVisual) && showVisualControls);
+        if ((isShape || isFramedVisual) && showVisualControls)
         {
             if (type == ElementType::Shape)
                 layoutRow (r, lblShapeKind, &shapeKindBox);
@@ -1951,6 +2010,17 @@ namespace patchcraft
             parameterBox.addItem (p.name + "  [" + p.section + "]  (" + p.id + ")", pid++);
         }
 
+        dropZoneLinkBox.clear (juce::dontSendNotification);
+        dropZoneLinkBox.addItem ("(none)", 1);
+        int dropZoneItemId = 2;
+        for (const auto& candidate : owner.getProject().getLayout().getAll())
+        {
+            if (candidate.type != ElementType::SampleDropZone)
+                continue;
+            const auto label = candidate.label.isNotEmpty() ? candidate.label : "Sample Drop Zone";
+            dropZoneLinkBox.addItem (label + "  (" + candidate.id + ")", dropZoneItemId++);
+        }
+
         containerBox.clear (juce::dontSendNotification);
         containerBox.addItem ("(none)", 1);
         containerChildrenBox.clear (juce::dontSendNotification);
@@ -1979,6 +2049,7 @@ namespace patchcraft
             static_cast<juce::Component*> (&wEdit),
             static_cast<juce::Component*> (&hEdit),
             static_cast<juce::Component*> (&parameterBox),
+            static_cast<juce::Component*> (&dropZoneLinkBox),
             static_cast<juce::Component*> (&midiLearnButton),
             static_cast<juce::Component*> (&labelEdit),
             static_cast<juce::Component*> (&actionEdit),
@@ -2242,6 +2313,19 @@ namespace patchcraft
         }
         parameterBox.setSelectedId (matchId, juce::dontSendNotification);
 
+        int linkedDropZoneId = 1;
+        if (el->semanticRole.startsWith ("sampleDropZone:"))
+        {
+            const auto linkedId = el->semanticRole.fromFirstOccurrenceOf (":", false, false);
+            for (int item = 0; item < dropZoneLinkBox.getNumItems(); ++item)
+                if (dropZoneLinkBox.getItemText (item).contains ("(" + linkedId + ")"))
+                {
+                    linkedDropZoneId = dropZoneLinkBox.getItemId (item);
+                    break;
+                }
+        }
+        dropZoneLinkBox.setSelectedId (linkedDropZoneId, juce::dontSendNotification);
+
         // Style
         for (int i = 1; i <= styleBox.getNumItems(); ++i)
             if (styleBox.getItemText (i - 1) == el->style)
@@ -2402,6 +2486,13 @@ namespace patchcraft
         else
             el->parameterId.clear();
 
+        if (el->type == ElementType::SampleDropZone)
+            el->semanticRole = "sampleDropZone:" + el->id;
+        else if (dropZoneLinkBox.getSelectedId() >= 2)
+            el->semanticRole = "sampleDropZone:" + extractIdFromComboText (dropZoneLinkBox.getText());
+        else if (el->semanticRole.startsWith ("sampleDropZone:"))
+            el->semanticRole.clear();
+
         if (styleBox.getSelectedId() > 0)
             el->style = styleBox.getText();
         if (knobStyleBox.getSelectedId() > 0)
@@ -2477,7 +2568,7 @@ namespace patchcraft
         }
 
         owner.propagateLinkedElementChange (el->id);
-        owner.getProject().notifyChanged();
+        owner.getProject().notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
     }
 
     void InspectorPanel::refreshMacroControls()
@@ -2528,6 +2619,41 @@ namespace patchcraft
             return false;
         };
 
+        auto resolveTargetId = [this, &graph] (const juce::String& candidate) -> juce::String
+        {
+            const auto wanted = normalisedLookupText (candidate);
+            if (wanted.isEmpty())
+                return {};
+
+            for (const auto& p : owner.getProject().getParameters().getAll())
+            {
+                if (p.id == candidate || p.id.equalsIgnoreCase (candidate)
+                    || normalisedLookupText (p.id) == wanted
+                    || normalisedLookupText (p.name) == wanted)
+                    return p.id;
+            }
+
+            for (const auto& item : owner.getProject().getLayout().getAll())
+            {
+                if (item.parameterId.isEmpty())
+                    continue;
+
+                if (normalisedLookupText (item.label) == wanted
+                    || normalisedLookupText (item.id) == wanted)
+                    return item.parameterId;
+            }
+
+            for (const auto& block : graph.blocks)
+            {
+                if (block.id == candidate || block.id.equalsIgnoreCase (candidate)
+                    || normalisedLookupText (block.id) == wanted
+                    || normalisedLookupText (block.name) == wanted)
+                    return block.id;
+            }
+
+            return {};
+        };
+
         if (owner.getProject().getParameters().find (macroId) == nullptr && ! blockExists (macroId))
         {
             DspBlock block;
@@ -2562,7 +2688,27 @@ namespace patchcraft
             if (tokens.isEmpty())
                 continue;
 
-            const auto targetId = tokens[0].trim();
+            int firstValueToken = tokens.size();
+            for (int i = 0; i < tokens.size(); ++i)
+            {
+                if (tokenLooksNumeric (tokens[i]))
+                {
+                    firstValueToken = i;
+                    break;
+                }
+            }
+
+            juce::StringArray targetWords;
+            for (int i = 0; i < firstValueToken; ++i)
+                targetWords.add (tokens[i]);
+
+            juce::String targetId = resolveTargetId (targetWords.joinIntoString (" "));
+            if (targetId.isEmpty())
+            {
+                targetId = resolveTargetId (tokens[0]);
+                firstValueToken = 1;
+            }
+
             const auto* targetParam = owner.getProject().getParameters().find (targetId);
             const bool targetBlockExists = blockExists (targetId);
             if (targetParam == nullptr && ! targetBlockExists)
@@ -2576,9 +2722,9 @@ namespace patchcraft
             macro.sourceMax = 1.0f;
             const float fallbackMin = targetParam != nullptr ? targetParam->min : 0.0f;
             const float fallbackMax = targetParam != nullptr ? targetParam->max : 1.0f;
-            macro.targetMin = tokens.size() > 1 ? tokens[1].getFloatValue() : fallbackMin;
-            macro.targetMax = tokens.size() > 2 ? tokens[2].getFloatValue() : fallbackMax;
-            macro.curve = tokens.size() > 3 ? juce::jmax (0.05f, tokens[3].getFloatValue()) : 1.0f;
+            macro.targetMin = tokens.size() > firstValueToken ? tokens[firstValueToken].getFloatValue() : fallbackMin;
+            macro.targetMax = tokens.size() > firstValueToken + 1 ? tokens[firstValueToken + 1].getFloatValue() : fallbackMax;
+            macro.curve = tokens.size() > firstValueToken + 2 ? juce::jmax (0.05f, tokens[firstValueToken + 2].getFloatValue()) : 1.0f;
             graph.macros.push_back (std::move (macro));
         }
 

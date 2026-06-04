@@ -6,6 +6,8 @@
 #include "AssetManager.h"
 #include "LibraryBrowser.h"
 
+#include <set>
+
 namespace patchcraft
 {
     class PlayerPerformancePanel;
@@ -72,6 +74,9 @@ namespace patchcraft
         bool controlCenterVisible = false;
         bool userImportVisible = false;
         bool performanceFloating = false;
+        std::set<std::string> favoritePresetNames;
+        bool presetAuditionOnSelect = true;
+        bool presetCloseAfterLoad = false;
 
         void showLoadDialog();
         void showPackMenu();

@@ -26,6 +26,13 @@ namespace patchcraft
         engineBox.onChange = [this] { applySelectedEngine(); };
         addAndMakeVisible (engineBox);
 
+        createBtn.getProperties().set ("primaryAction", true);
+        createBtn.getProperties().set ("fontSize", 12.0);
+        createBtn.getProperties().set ("bold", true);
+        createBtn.setTooltip ("Create a playable starter instrument or effect from the Design page.");
+        createBtn.onClick = [this] { showQuickCreateMenu(); };
+        addAndMakeVisible (createBtn);
+
         // Section tab strip - styled as flat toggle buttons. Each tab maps
         // explicitly to its BottomPanel::Page so removing/reordering tabs
         // doesn't break the wiring.
@@ -184,10 +191,15 @@ namespace patchcraft
     {
         auto r = getLocalBounds().toFloat().reduced (1.0f);
         const auto enabled = isEnabled();
+        const auto base = enabled ? PatchCraftLookAndFeel::panel() : PatchCraftLookAndFeel::panel().darker (0.12f);
+        g.setColour (enabled && (down || over) ? PatchCraftLookAndFeel::raised().brighter (0.1f) : base);
+        g.fillRoundedRectangle (r, 4.0f);
+        g.setColour ((enabled && over ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::border()).withAlpha (0.90f));
+        g.drawRoundedRectangle (r, 4.0f, 1.0f);
         if (enabled && (down || over))
         {
-            g.setColour (PatchCraftLookAndFeel::raised().brighter (0.1f));
-            g.fillRoundedRectangle (r, 4.0f);
+            g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.12f));
+            g.fillRoundedRectangle (r.reduced (1.0f), 3.0f);
         }
         g.setColour (enabled ? (over ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::text())
                               : PatchCraftLookAndFeel::textDim());
@@ -276,6 +288,7 @@ namespace patchcraft
             orderBtn->setVisible (designActive);
             orderBtn->setEnabled (selectionCount >= 1);
         }
+        createBtn.setVisible (designActive);
         resized();
         repaint();
     }
@@ -485,6 +498,207 @@ namespace patchcraft
         window.release();
     }
 
+    juce::String CanvasToolbar::inferEngineFromPrompt (juce::String prompt) const
+    {
+        auto text = prompt.toLowerCase();
+        if (text.contains ("drum") || text.contains ("beat") || text.contains ("808") || text.contains ("kick") || text.contains ("snare"))
+            return "drum";
+        if (text.contains ("effect") || text.contains ("fx") || text.contains ("delay") || text.contains ("reverb") || text.contains ("distortion") || text.contains ("eq"))
+            return "fx";
+        if (text.contains ("sample") || text.contains ("sampler") || text.contains ("vocal") || text.contains ("granular") || text.contains ("one shot") || text.contains ("keys"))
+            return "sample";
+        return "synth";
+    }
+
+    juce::String CanvasToolbar::productNameFromPrompt (juce::String prompt,
+                                                       const juce::String& engineId) const
+    {
+        prompt = prompt.trim()
+                       .upToFirstOccurrenceOf (".", false, false)
+                       .upToFirstOccurrenceOf (",", false, false)
+                       .upToFirstOccurrenceOf (" with ", false, true)
+                       .trim();
+
+        if (prompt.length() > 4)
+        {
+            juce::StringArray words;
+            words.addTokens (prompt, " \t\r\n-_", "\"'");
+            words.trim();
+            words.removeEmptyStrings();
+            while (words.size() > 4)
+                words.remove (words.size() - 1);
+            for (auto& word : words)
+                word = word.substring (0, 1).toUpperCase() + word.substring (1).toLowerCase();
+            return words.joinIntoString (" ");
+        }
+
+        if (engineId == "drum") return "New Drum Machine";
+        if (engineId == "sample") return "New Sample Instrument";
+        if (engineId == "fx") return "New Effect Plugin";
+        return "New Synth Instrument";
+    }
+
+    void CanvasToolbar::createStarterPlugin (juce::String engineId,
+                                             juce::String productName,
+                                             juce::String description)
+    {
+        auto& project = owner.getProject();
+        project.setEngineType (engineId);
+
+        auto& manifest = project.getManifest();
+        manifest.instrumentName = productName;
+        manifest.playerDisplayName = productName;
+        manifest.description = description.trim().isNotEmpty()
+            ? description.trim()
+            : ("A playable PatchCraft " + engineId + " starter with mapped controls and a Player-ready layout.");
+        manifest.category = engineId == "fx" ? "Effect Plugin"
+                          : engineId == "drum" ? "Drum Machine"
+                          : engineId == "sample" ? "Sample Instrument"
+                          : "Synth Instrument";
+        manifest.tags.clear();
+        manifest.tags.add ("starter");
+        manifest.tags.add (engineId);
+        manifest.tags.add ("playable");
+
+        project.performLayoutEdit ("Create playable starter", [&] (LayoutModel& layout)
+        {
+            const auto& canvasSize = project.getCanvasSize();
+            auto addIfMissing = [&layout] (LayoutElement element)
+            {
+                if (layout.find (element.id) == nullptr)
+                    layout.add (element);
+            };
+
+            LayoutElement title;
+            title.id = "design_start_title";
+            title.type = ElementType::Label;
+            title.label = productName;
+            title.semanticRole = "productTitle";
+            title.x = 76;
+            title.y = 58;
+            title.width = 460;
+            title.height = 42;
+            title.labelSize = 24.0f;
+            title.textColour = PatchCraftLookAndFeel::textBright();
+            addIfMissing (title);
+
+            LayoutElement visual;
+            visual.id = "design_start_visual";
+            visual.type = ElementType::VisualFxLayer;
+            visual.label = "Motion";
+            visual.x = juce::jmax (52, canvasSize.width / 2 - 220);
+            visual.y = 112;
+            visual.width = 440;
+            visual.height = 220;
+            visual.audioReactive = true;
+            visual.audioReactiveMode = "level";
+            visual.audioReactiveAmount = 0.5f;
+            visual.animationMode = "bpmPulse";
+            visual.visualSource = "audioLevel";
+            visual.visualAction = "pulseGlow";
+            visual.visualPreset = "orbitAura";
+            visual.visualLowPowerFallback = true;
+            visual.opacity = 0.8f;
+            visual.accentColour = PatchCraftLookAndFeel::accent();
+            addIfMissing (visual);
+
+            if (engineId == "sample" || engineId == "drum")
+            {
+                LayoutElement drop;
+                drop.id = "design_start_sample_drop";
+                drop.type = ElementType::SampleDropZone;
+                drop.label = engineId == "drum" ? "Drop Drum Samples" : "Drop Samples";
+                drop.parameterId = "sampleStart";
+                drop.semanticRole = "sampleDrop";
+                drop.x = 76;
+                drop.y = 344;
+                drop.width = 260;
+                drop.height = 104;
+                drop.cornerRadius = 10.0f;
+                drop.backgroundColour = juce::Colour (0xff101923).withAlpha (0.72f);
+                drop.borderColour = PatchCraftLookAndFeel::accent();
+                addIfMissing (drop);
+            }
+        });
+
+        for (auto& preset : project.getPresets())
+        {
+            preset.tags.addIfNotAlreadyThere ("starter");
+            preset.tags.addIfNotAlreadyThere (engineId);
+            if (preset.description.trim().isEmpty())
+                preset.description = "Playable starter preset for " + productName + ".";
+        }
+
+        owner.setBottomTab (BottomPanel::Page::Design);
+        project.notifyChanged();
+        refresh();
+    }
+
+    void CanvasToolbar::showPromptCreator()
+    {
+        auto window = std::make_unique<juce::AlertWindow> ("Create Plugin",
+                                                           "Describe the instrument or effect you want to start with.",
+                                                           juce::AlertWindow::NoIcon);
+        auto* raw = window.get();
+        raw->addTextEditor ("prompt",
+                            "warm melodic synth with filter, delay, reverb, macros, and motion",
+                            "Prompt");
+        juce::StringArray types { "Auto", "Synth", "Sampler", "Drums", "FX" };
+        raw->addComboBox ("type", types, "Type");
+        if (auto* box = raw->getComboBoxComponent ("type"))
+            box->setSelectedItemIndex (0, juce::dontSendNotification);
+        raw->addButton ("Create", 1, juce::KeyPress (juce::KeyPress::returnKey));
+        raw->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+        raw->enterModalState (true,
+            juce::ModalCallbackFunction::create ([this, raw] (int result)
+            {
+                std::unique_ptr<juce::AlertWindow> cleanup (raw);
+                if (result != 1)
+                    return;
+
+                auto prompt = cleanup->getTextEditorContents ("prompt").trim();
+                juce::String engine = inferEngineFromPrompt (prompt);
+                if (auto* box = cleanup->getComboBoxComponent ("type"))
+                {
+                    const auto type = box->getText().toLowerCase();
+                    if (type == "synth") engine = "synth";
+                    else if (type == "sampler") engine = "sample";
+                    else if (type == "drums") engine = "drum";
+                    else if (type == "fx") engine = "fx";
+                }
+
+                createStarterPlugin (engine, productNameFromPrompt (prompt, engine), prompt);
+            }),
+            false);
+        raw->setVisible (true);
+        window.release();
+    }
+
+    void CanvasToolbar::showQuickCreateMenu()
+    {
+        juce::PopupMenu menu;
+        menu.addItem (1, "Describe A Plugin...");
+        menu.addSeparator();
+        menu.addItem (2, "Playable Synth");
+        menu.addItem (3, "Sample Instrument");
+        menu.addItem (4, "Drum Machine");
+        menu.addItem (5, "Effect Plugin");
+        menu.addSeparator();
+        menu.addItem (6, "Browse Factory Demos");
+
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&createBtn),
+            [this] (int result)
+            {
+                if (result == 1) showPromptCreator();
+                else if (result == 2) createStarterPlugin ("synth", "New Synth Instrument", "Playable synth starter with mapped controls, presets, and motion.");
+                else if (result == 3) createStarterPlugin ("sample", "New Sample Instrument", "Sample instrument starter with a drop zone, mapped controls, presets, and motion.");
+                else if (result == 4) createStarterPlugin ("drum", "New Drum Machine", "Drum machine starter with pads, mapped controls, presets, and motion.");
+                else if (result == 5) createStarterPlugin ("fx", "New Effect Plugin", "Effect plugin starter with mapped controls, presets, and motion.");
+                else if (result == 6) owner.setBottomTab (BottomPanel::Page::ProjectBrowser);
+            });
+    }
+
     void CanvasToolbar::paint (juce::Graphics& g)
     {
         g.fillAll (PatchCraftLookAndFeel::panelAlt());
@@ -501,6 +715,8 @@ namespace patchcraft
         r.removeFromLeft (8);
         engineLabel.setBounds (r.removeFromLeft (42));
         engineBox.setBounds   (r.removeFromLeft (88));
+        r.removeFromLeft (8);
+        createBtn.setBounds   (r.removeFromLeft (82));
         r.removeFromLeft (12);
 
         // Section tabs (left of right cluster)
@@ -537,12 +753,13 @@ namespace patchcraft
         if (alignmentVisible && ! alignButtons.empty())
         {
             r.removeFromLeft (8);
-            const int btnW = 26;
             for (size_t i = 0; i < alignButtons.size(); ++i)
             {
                 // Group separator after the first 6 align buttons.
-                if (i == 6) r.removeFromLeft (4);
-                alignButtons[i]->setBounds (r.removeFromLeft (btnW).reduced (0, 1));
+                if (i == 6) r.removeFromLeft (6);
+                const int btnW = i >= 6 ? 38 : 30;
+                alignButtons[i]->setBounds (r.removeFromLeft (btnW).reduced (1, 1));
+                r.removeFromLeft (3);
             }
             alignSeparator.setBounds (r.removeFromLeft (10));
             if (orderBtn != nullptr)

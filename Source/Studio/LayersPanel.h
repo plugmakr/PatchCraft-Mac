@@ -46,9 +46,13 @@ namespace patchcraft
         std::vector<RowInfo> rows;
         juce::StringArray collapsedGroups;
         juce::ListBox listBox { "layers", this };
+        juce::Label titleLabel { "LayerPanelTitle", "LAYERS" };
+        juce::Label actionsLabel { "LayerActionsLabel", "ACTIONS" };
+        juce::Label stackLabel { "LayerStackLabel", "LAYER STACK" };
         juce::TextButton addGroupButton { "+ Group" };
         juce::TextButton groupSelectedButton { "Group Sel" };
         juce::TextButton ungroupButton { "Ungroup" };
+        juce::TextButton selectAllButton { "All" };
         juce::TextButton popOutBtn      { "Pop" };
         juce::TextEditor searchBox;
         juce::TextButton clearSearchButton { "Clear" };
@@ -60,7 +64,9 @@ namespace patchcraft
         void createGroupFromSelection();
         void showGroupNameModal (const juce::String& groupId);
         void ungroupSelection();
+        void showContextMenu (int row);
         int rowToLayoutIndex (int row) const;
+        juce::StringArray getBulkTargetIdsFor (const LayoutElement& clicked) const;
     };
 
 } // namespace patchcraft

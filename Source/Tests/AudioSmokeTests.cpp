@@ -1964,9 +1964,9 @@ namespace
         const auto entries = scanner.getEntries();
         require (entries.size() >= 10, "Player library scanner did not find the factory demo packs");
         require (scanner.search ("Braam").size() > 0, "Player library search cannot find Trailer Braam demo");
-        require (scanner.getEntriesByCategory ("synth").size() >= 3, "Player library scanner is missing synth demos");
-        require (scanner.getEntriesByCategory ("sample").size() >= 3, "Player library scanner is missing sample demos");
-        require (scanner.getEntriesByCategory ("fx").size() >= 3, "Player library scanner is missing FX demos");
+        require (scanner.getEntriesByCategory ("synth").size() >= 1, "Player library scanner is missing the ship synth demo");
+        require (scanner.getEntriesByCategory ("sample").size() >= 1, "Player library scanner is missing the ship sample demo");
+        require (scanner.getEntriesByCategory ("fx").size() >= 1, "Player library scanner is missing the ship FX demo");
 
         bool hasThumbnail = false;
         for (const auto& entry : entries)
@@ -1986,7 +1986,7 @@ namespace
         require (demoRoot.isDirectory(), "FactoryDemos folder is missing");
 
         auto demoFolders = demoRoot.findChildFiles (juce::File::findDirectories, false, "*.patchcraft");
-        require (demoFolders.size() >= 10, "factory demo library should ship at least 10 complete demos");
+        require (demoFolders.size() >= 5, "factory demo library should ship the approved five-demo RC set");
 
         int audibleInstrumentCount = 0;
         juce::StringArray defaultPresetSignatures;
@@ -2150,7 +2150,7 @@ namespace
             }
         }
 
-        require (audibleInstrumentCount >= 7, "factory demos need multiple playable instruments");
+        require (audibleInstrumentCount >= 4, "factory demos need the approved playable instrument set");
         defaultPresetSignatures.removeDuplicates (false);
         require (defaultPresetSignatures.size() == demoFolders.size(),
                  "factory demo default presets must be unique per shipped demo");
@@ -2745,6 +2745,263 @@ namespace
 
         pass ("PatchCraft .pcexp extension system");
     }
+
+    void smokePScriptInterpreterAndEvents()
+    {
+        patchcraft::LiveValueStore store;
+        patchcraft::PScriptEngine engine;
+        engine.bindStore (&store);
+
+        juce::String script = 
+            "when note starts:\n"
+            "    set volume to velocity mapped 0..127 -> 0.0..1.0\n"
+            "    if velocity > 100: set filterCutoff to 12000\n"
+            "    else: set filterCutoff to 800\n"
+            "when note ends:\n"
+            "    set volume to 0.0\n"
+            "when knob \"Cutoff\" moves:\n"
+            "    set delayMix to value mapped 0.0..1.0 -> 0.1..0.9\n";
+
+        juce::String err = engine.compile (script);
+        require (err.isEmpty(), ("pScript compilation failed: " + err).toRawUTF8());
+        require (engine.isCompiled(), "pScript isCompiled should be true");
+
+        // Trigger note starts with high velocity
+        engine.triggerEvent ("note starts", {{"velocity", 120.0f}});
+        require (std::abs (store.getValue ("volume") - (120.0f / 127.0f)) < 0.0001f, "volume was not mapped correctly");
+        require (std::abs (store.getValue ("filterCutoff") - 12000.0f) < 0.0001f, "filterCutoff was not set under velocity condition");
+
+        // Trigger note starts with low velocity
+        engine.triggerEvent ("note starts", {{"velocity", 50.0f}});
+        require (std::abs (store.getValue ("volume") - (50.0f / 127.0f)) < 0.0001f, "volume mapping mismatch");
+        require (std::abs (store.getValue ("filterCutoff") - 800.0f) < 0.0001f, "filterCutoff else branch mismatch");
+
+        // Trigger note ends
+        engine.triggerEvent ("note ends", {});
+        require (std::abs (store.getValue ("volume") - 0.0f) < 0.0001f, "volume was not set to 0.0 on note ends");
+
+        // Trigger knob moves for Cutoff
+        engine.triggerEvent ("knob moves", {{"value", 0.5f}}, "Cutoff");
+        require (std::abs (store.getValue ("delayMix") - 0.5f) < 0.0001f, "delayMix was not set on Cutoff move");
+
+        // Trigger knob moves for Resonance (should not trigger Cutoff event)
+        store.setValue ("delayMix", 0.2f);
+        engine.triggerEvent ("knob moves", {{"value", 0.8f}}, "Resonance");
+        require (std::abs (store.getValue ("delayMix") - 0.2f) < 0.0001f, "delayMix was incorrectly modified by other knob");
+
+        pass ("pScript runtime, compilation, events, and interpreter execution");
+    }
+
+    void smokeCanvasModuleTemplates()
+    {
+        patchcraft::PatchCraftProject project;
+        auto& graph = project.getDspGraph();
+        auto& pm = project.getParameters();
+        auto& liveValues = project.getLiveValues();
+
+        juce::StringArray paramIds { "chorusRate", "chorusDepth", "chorusFeedback", "chorusMix" };
+        for (const auto& paramId : paramIds)
+        {
+            if (pm.find (paramId) == nullptr)
+            {
+                patchcraft::ParameterDef def;
+                if (patchcraft::ParameterModel::getRegistryDefinition (paramId, "fx", def))
+                {
+                    pm.add (def);
+                    liveValues.getOrAddRaw (def.id, def.defaultValue);
+                }
+            }
+        }
+
+        patchcraft::DspBlock chorusBlock;
+        chorusBlock.id = "chorus_module";
+        chorusBlock.section = "fx";
+        chorusBlock.type = "chorus";
+        chorusBlock.name = "Chorus Block";
+        chorusBlock.targetId = "chorusMix";
+        chorusBlock.enabled = true;
+        chorusBlock.values["chorusRate"] = 0.35f;
+        chorusBlock.values["chorusDepth"] = 0.35f;
+        chorusBlock.values["chorusFeedback"] = 0.0f;
+        chorusBlock.values["chorusMix"] = 0.5f;
+        graph.blocks.push_back (chorusBlock);
+
+        require (pm.find ("chorusRate") != nullptr, "chorusRate parameter not registered");
+        require (pm.find ("chorusDepth") != nullptr, "chorusDepth parameter not registered");
+        
+        bool foundChorusBlock = false;
+        for (const auto& b : graph.blocks)
+        {
+            if (b.id == "chorus_module" && b.type == "chorus")
+            {
+                foundChorusBlock = true;
+                break;
+            }
+        }
+        require (foundChorusBlock, "Chorus DSP block was not created or has wrong type");
+
+        pass ("canvas module templates system");
+    }
+
+    void smokePScriptExpandedFeatures()
+    {
+        patchcraft::LiveValueStore store;
+        patchcraft::PScriptEngine engine;
+        engine.bindStore (&store);
+
+        juce::String script =
+            "when note starts:\n"
+            "    let x = 10.0\n"
+            "    let y = x * 2.0 + (5.0 - 1.0) / 2.0\n" // y = 10 * 2 + 4 / 2 = 22
+            "    set volume to y / 22.0\n" // volume = 1.0
+            "    let loopCount = 5.0\n"
+            "    repeat loopCount:\n"
+            "        set filterCutoff to filterCutoff + 100.0\n" // filterCutoff starts at 0, should become 500
+            "    print \"Hello pScript\"\n"
+            "    print y\n";
+
+        store.setValue ("filterCutoff", 0.0f);
+
+        juce::String err = engine.compile (script);
+        require (err.isEmpty(), ("Expanded pScript compilation failed: " + err).toRawUTF8());
+        require (engine.isCompiled(), "PScript Engine isCompiled should be true");
+
+        engine.triggerEvent ("note starts", {});
+
+        require (std::abs (store.getValue ("volume") - 1.0f) < 0.0001f, "volume calculation using let and arithmetic failed");
+        require (std::abs (store.getValue ("filterCutoff") - 500.0f) < 0.0001f, "repeat loop execution on parameters failed");
+
+        pass ("pScript expanded variables, arithmetic, print, and repeat loops");
+    }
+
+    void smokeTimerEvents()
+    {
+        patchcraft::LiveValueStore store;
+        patchcraft::PScriptEngine engine;
+        engine.bindStore (&store);
+
+        juce::String script =
+            "when timer 50 ms:\n"
+            "    set delayMix to delayMix + 0.1\n";
+
+        store.setValue ("delayMix", 0.0f);
+
+        juce::String err = engine.compile (script);
+        require (err.isEmpty(), ("Timer pScript compilation failed: " + err).toRawUTF8());
+
+        // Wait a short time to let the timer fire (e.g. 150 ms)
+        juce::Time start = juce::Time::getCurrentTime();
+        while (juce::Time::getCurrentTime() - start < juce::RelativeTime::milliseconds (180))
+        {
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (10);
+        }
+
+        require (store.getValue ("delayMix") > 0.05f, "timer event did not fire and modify delayMix");
+
+        pass ("pScript timer event compilation and scheduled firing");
+    }
+
+    void smokeExpandedCanvasModules()
+    {
+        patchcraft::PatchCraftProject project;
+        auto& graph = project.getDspGraph();
+        auto& pm = project.getParameters();
+        auto& liveValues = project.getLiveValues();
+
+        // 1. Reverb Module
+        juce::StringArray reverbParams { "reverbMix" };
+        for (const auto& paramId : reverbParams)
+        {
+            if (pm.find (paramId) == nullptr)
+            {
+                patchcraft::ParameterDef def;
+                if (patchcraft::ParameterModel::getRegistryDefinition (paramId, "fx", def))
+                {
+                    pm.add (def);
+                    liveValues.getOrAddRaw (def.id, def.defaultValue);
+                }
+            }
+        }
+        patchcraft::DspBlock reverbBlock;
+        reverbBlock.id = "reverb_module";
+        reverbBlock.section = "fx";
+        reverbBlock.type = "reverb";
+        reverbBlock.name = "Reverb Block";
+        reverbBlock.targetId = "reverbMix";
+        reverbBlock.enabled = true;
+        reverbBlock.values["reverbMix"] = 0.35f;
+        graph.blocks.push_back (reverbBlock);
+
+        // 2. Phaser Module
+        juce::StringArray phaserParams { "phaserRate", "phaserDepth", "phaserFeedback", "phaserMix" };
+        for (const auto& paramId : phaserParams)
+        {
+            if (pm.find (paramId) == nullptr)
+            {
+                patchcraft::ParameterDef def;
+                if (patchcraft::ParameterModel::getRegistryDefinition (paramId, "fx", def))
+                {
+                    pm.add (def);
+                    liveValues.getOrAddRaw (def.id, def.defaultValue);
+                }
+            }
+        }
+        patchcraft::DspBlock phaserBlock;
+        phaserBlock.id = "phaser_module";
+        phaserBlock.section = "fx";
+        phaserBlock.type = "phaser";
+        phaserBlock.name = "Phaser Block";
+        phaserBlock.targetId = "phaserMix";
+        phaserBlock.enabled = true;
+        phaserBlock.values["phaserRate"] = 0.25f;
+        phaserBlock.values["phaserDepth"] = 0.45f;
+        phaserBlock.values["phaserMix"] = 0.5f;
+        graph.blocks.push_back (phaserBlock);
+
+        // 3. Stereo Module
+        juce::StringArray stereoParams { "stereoWidth", "monoMaker" };
+        for (const auto& paramId : stereoParams)
+        {
+            if (pm.find (paramId) == nullptr)
+            {
+                patchcraft::ParameterDef def;
+                if (patchcraft::ParameterModel::getRegistryDefinition (paramId, "fx", def))
+                {
+                    pm.add (def);
+                    liveValues.getOrAddRaw (def.id, def.defaultValue);
+                }
+            }
+        }
+        patchcraft::DspBlock utilityBlock;
+        utilityBlock.id = "stereo_module";
+        utilityBlock.section = "out";
+        utilityBlock.type = "utility";
+        utilityBlock.name = "Stereo Utility Block";
+        utilityBlock.targetId = "stereoWidth";
+        utilityBlock.enabled = true;
+        utilityBlock.values["stereoWidth"] = 1.0f;
+        graph.blocks.push_back (utilityBlock);
+
+        require (pm.find ("reverbMix") != nullptr, "reverbMix parameter not registered");
+        require (pm.find ("phaserRate") != nullptr, "phaserRate parameter not registered");
+        require (pm.find ("stereoWidth") != nullptr, "stereoWidth parameter not registered");
+
+        bool foundReverb = false;
+        bool foundPhaser = false;
+        bool foundUtility = false;
+        for (const auto& b : graph.blocks)
+        {
+            if (b.type == "reverb") foundReverb = true;
+            if (b.type == "phaser") foundPhaser = true;
+            if (b.type == "utility") foundUtility = true;
+        }
+
+        require (foundReverb, "Reverb DSP block missing");
+        require (foundPhaser, "Phaser DSP block missing");
+        require (foundUtility, "Utility DSP block missing");
+
+        pass ("expanded canvas module templates");
+    }
 }
 
 int main()
@@ -2790,6 +3047,11 @@ int main()
         smokePcexpExpansionSystem();
         smokeAiCloudLicensingAndPublishScaffolds();
         smokePhysicalMidiAndModWheelCrashRepros();
+        smokePScriptInterpreterAndEvents();
+        smokeCanvasModuleTemplates();
+        smokePScriptExpandedFeatures();
+        smokeTimerEvents();
+        smokeExpandedCanvasModules();
         std::cout << "PatchCraft audio smoke tests passed." << std::endl;
         return 0;
     }

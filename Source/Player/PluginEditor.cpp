@@ -10,10 +10,21 @@ namespace patchcraft
 {
     namespace
     {
-        static constexpr int kPlayerMenuBarHeight = 46;
-        static constexpr int kPlayerTitleBarArtworkSize = 30;
-        static constexpr int kPlayerTitleBannerSourceWidth = 640;
-        static constexpr int kPlayerTitleBannerSourceHeight = 120;
+        static constexpr int kPlayerMenuBarHeight = 108;
+        static constexpr int kPlayerTitleAreaHeight = 66;
+        static constexpr int kPlayerTitleBarArtworkSize = 46;
+
+        static juce::Rectangle<int> playerChromeBoundsFor (juce::Rectangle<int> topBar,
+                                                           const PatchCraftPack* pack)
+        {
+            int width = topBar.getWidth();
+            if (pack != nullptr && pack->canvasSize.width > 0)
+                width = juce::jlimit (juce::jmin (topBar.getWidth(), 640),
+                                      topBar.getWidth(),
+                                      pack->canvasSize.width);
+
+            return juce::Rectangle<int> (width, topBar.getHeight()).withCentre (topBar.getCentre());
+        }
 
         static juce::String playerInstrumentName (const PatchCraftPack* pack)
         {
@@ -23,6 +34,46 @@ namespace patchcraft
             return pack->manifest.playerDisplayName.isNotEmpty()
                 ? pack->manifest.playerDisplayName
                 : pack->manifest.instrumentName;
+        }
+
+        static int playerTitleBrandWidth (const juce::String& theme, int barWidth)
+        {
+            const bool compact = barWidth < 980;
+            if (theme == "no-chrome")
+                return compact ? 0 : 12;
+            if (theme == "custom")
+                return compact ? 240 : 390;
+            if (theme == "wide-banner")
+                return compact ? 240 : 390;
+            if (theme == "artist-card")
+                return compact ? 226 : 340;
+            if (theme == "banner")
+                return compact ? 206 : 300;
+            if (theme == "split-brand")
+                return compact ? 192 : 280;
+            if (theme == "logo-rail")
+                return compact ? 90 : 126;
+            if (theme == "minimal")
+                return compact ? 118 : 170;
+            if (theme == "compact-daw")
+                return 146;
+            return compact ? 146 : 218;
+        }
+
+        static bool titleThemeUsesBannerArtwork (const juce::String& theme)
+        {
+            return theme == "banner"
+                || theme == "custom"
+                || theme == "wide-banner"
+                || theme == "artist-card";
+        }
+
+        static juce::Font playerChromeFont (const juce::String& family, float size, bool bold)
+        {
+            juce::Font font (size, bold ? juce::Font::bold : juce::Font::plain);
+            if (family.isNotEmpty() && family != "Default")
+                font.setTypefaceName (family);
+            return font;
         }
 
         static juce::String cleanedSectionName (juce::String section)
@@ -1840,6 +1891,40 @@ namespace patchcraft
             applyMidiButton.onClick = [this] { applySelectedMidi(); };
             addAndMakeVisible (applyMidiButton);
 
+            dragMidiButton.setButtonText ("Drag MIDI Out");
+            dragMidiButton.setTooltip ("Drag the selected MIDI loop preset out to a DAW or folder.");
+            dragMidiButton.onClick = [this] { dragSelectedMidiOut(); };
+            addAndMakeVisible (dragMidiButton);
+
+            tuneLabel.setText ("Sample tune", juce::dontSendNotification);
+            tuneLabel.setJustificationType (juce::Justification::centredLeft);
+            tuneLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+            addAndMakeVisible (tuneLabel);
+
+            tuneSlider.setRange (-12.0, 12.0, 1.0);
+            tuneSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 48, 20);
+            tuneSlider.setDoubleClickReturnValue (true, 0.0);
+            tuneSlider.setTooltip ("Tune the selected imported sample by up to one octave of semitones.");
+            tuneSlider.onValueChange = [this]
+            {
+                if (updatingTuneSlider)
+                    return;
+
+                const auto selected = getSelectedItem();
+                if (selected.kind != "sample")
+                    return;
+
+                const int tune = juce::roundToInt (tuneSlider.getValue());
+                if (processor.setUserContentTuneSemitones (selected.id, tune))
+                {
+                    lastReport = "Sample tuned " + juce::String (tune > 0 ? "+" : "") + juce::String (tune) + " semitones.";
+                    refresh();
+                    if (onContentChanged)
+                        onContentChanged();
+                }
+            };
+            addAndMakeVisible (tuneSlider);
+
             clearButton.setButtonText ("Clear Imports");
             clearButton.setTooltip ("Remove this Player instance's user sample/MIDI overlay. Original files in the protected pack are untouched.");
             clearButton.onClick = [this] { clearImports(); };
@@ -1941,6 +2026,7 @@ namespace patchcraft
             if (contentList.getSelectedRow() >= (int) items.size())
                 contentList.deselectAllRows();
             updateButtonState();
+            updateTuneFromSelection();
             updateStatus();
             repaint();
         }
@@ -2053,9 +2139,16 @@ namespace patchcraft
             actions.removeFromLeft (8);
             applyMidiButton.setBounds (actions.removeFromLeft (92));
             actions.removeFromLeft (8);
+            dragMidiButton.setBounds (actions.removeFromLeft (112));
+            actions.removeFromLeft (8);
             clearButton.setBounds (actions.removeFromLeft (102));
 
-            panel.removeFromTop (12);
+            panel.removeFromTop (8);
+            auto tools = panel.removeFromTop (28);
+            tuneLabel.setBounds (tools.removeFromLeft (88));
+            tuneSlider.setBounds (tools.removeFromLeft (170));
+
+            panel.removeFromTop (8);
             status.setBounds (panel.removeFromTop (22));
             panel.removeFromTop (8);
 
@@ -2186,13 +2279,17 @@ namespace patchcraft
 
             graphics.setColour (PatchCraftLookAndFeel::textDim());
             graphics.setFont (juce::FontOptions (11.0f));
-            graphics.drawText (item.summary.isNotEmpty() ? item.summary : juce::File (item.filePath).getFileName(),
+            auto summary = item.summary.isNotEmpty() ? item.summary : juce::File (item.filePath).getFileName();
+            if (item.kind == "sample" && item.tuneSemitones != 0 && ! summary.containsIgnoreCase ("tune"))
+                summary += " / tune " + juce::String (item.tuneSemitones > 0 ? "+" : "") + juce::String (item.tuneSemitones) + " st";
+            graphics.drawText (summary,
                                text, juce::Justification::centredLeft, true);
         }
 
         void selectedRowsChanged (int) override
         {
             updateButtonState();
+            updateTuneFromSelection();
         }
 
         PlayerProcessor::UserContentItem getSelectedItem() const
@@ -2208,6 +2305,9 @@ namespace patchcraft
             const auto selected = getSelectedItem();
             auditionButton.setEnabled (selected.kind == "sample");
             applyMidiButton.setEnabled (selected.kind == "midi");
+            dragMidiButton.setEnabled (selected.kind == "midi");
+            tuneLabel.setEnabled (selected.kind == "sample");
+            tuneSlider.setEnabled (selected.kind == "sample");
             clearButton.setEnabled (! items.empty());
         }
 
@@ -2218,6 +2318,7 @@ namespace patchcraft
 
             contentList.selectRow ((int) items.size() - 1);
             updateButtonState();
+            updateTuneFromSelection();
         }
 
         void updateStatus()
@@ -2305,6 +2406,28 @@ namespace patchcraft
                 onContentChanged();
         }
 
+        void dragSelectedMidiOut()
+        {
+            const auto selected = getSelectedItem();
+            if (selected.kind != "midi")
+                return;
+
+            const juce::File file (selected.filePath);
+            if (! file.existsAsFile())
+            {
+                lastReport = "MIDI loop file is missing on disk.";
+                updateStatus();
+                return;
+            }
+
+            juce::StringArray files;
+            files.add (file.getFullPathName());
+            const bool started = juce::DragAndDropContainer::performExternalDragDropOfFiles (files, false, this);
+            lastReport = started ? "Drag the MIDI loop into your DAW."
+                                 : "This host did not accept external MIDI drag.";
+            updateStatus();
+        }
+
         void clearImports()
         {
             stopAudition();
@@ -2337,6 +2460,9 @@ namespace patchcraft
         juce::TextButton importMidiButton { "Import MIDI" };
         juce::TextButton auditionButton { "Audition" };
         juce::TextButton applyMidiButton { "Apply MIDI" };
+        juce::TextButton dragMidiButton { "Drag MIDI Out" };
+        juce::Label tuneLabel;
+        juce::Slider tuneSlider;
         juce::TextButton clearButton { "Clear Imports" };
         juce::ListBox contentList { "Runtime imports", this };
         MiniKeyboard keyboard;
@@ -2347,6 +2473,15 @@ namespace patchcraft
         juce::String lastReport;
         int auditionNote = -1;
         bool dragActive = false;
+        bool updatingTuneSlider = false;
+
+        void updateTuneFromSelection()
+        {
+            const auto selected = getSelectedItem();
+            const juce::ScopedValueSetter<bool> guard (updatingTuneSlider, true);
+            tuneSlider.setValue (selected.kind == "sample" ? selected.tuneSemitones : 0,
+                                 juce::dontSendNotification);
+        }
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PlayerUserImportPanel)
     };
@@ -2360,6 +2495,10 @@ namespace patchcraft
         // setSize triggers resized() synchronously, and resized() dereferences
         // renderer->setBounds(...). If we set size first, that's a null deref.
         renderer = std::make_unique<PlayerGuiRenderer> (proc, assets);
+        renderer->onPresetBrowserRequested = [this]
+        {
+            showPresetMenu();
+        };
         renderer->onRuntimeImportReport = [this] (const juce::String& report)
         {
             userImportVisible = true;
@@ -2639,34 +2778,127 @@ namespace patchcraft
         else
             g.fillAll (PatchCraftLookAndFeel::bg());
 
-        auto bar = getLocalBounds().removeFromTop (kPlayerMenuBarHeight);
-        juce::ColourGradient gradient (juce::Colour (0xff0b0d11).brighter (0.06f),
-                                       (float) bar.getX(), (float) bar.getY(),
-                                       juce::Colour (0xff07090c),
-                                       (float) bar.getRight(), (float) bar.getBottom(),
+        const auto* pack = proc.getPack();
+        auto fullTopBar = getLocalBounds().removeFromTop (kPlayerMenuBarHeight);
+        auto bar = playerChromeBoundsFor (fullTopBar, pack);
+        auto titleArea = bar.removeFromTop (kPlayerTitleAreaHeight);
+        auto toolbarArea = bar;
+        const auto titleTheme = pack != nullptr ? pack->manifest.playerTitleBarTheme : juce::String ("classic");
+        const auto titlePlacement = pack != nullptr ? pack->manifest.playerTitleTextPlacement : juce::String ("left");
+        const auto titleFontFamily = pack != nullptr ? pack->manifest.playerTitleFontFamily : juce::String ("Default");
+        const auto accent = pack != nullptr ? pack->manifest.playerAccentColour : PatchCraftLookAndFeel::accent();
+        const auto panel = pack != nullptr ? pack->manifest.playerPanelColour : juce::Colour (0xff0b0d11);
+        const auto bg = pack != nullptr ? pack->manifest.playerBackgroundColour : juce::Colour (0xff07090c);
+
+        auto themeTitleTop = titleTheme == "clean-pro" ? panel.brighter (0.22f)
+                           : titleTheme == "dark-utility" ? panel.darker (0.25f)
+                           : titleTheme == "glass" ? panel.withAlpha (0.65f)
+                           : panel.brighter (0.06f);
+        auto themeTitleBottom = titleTheme == "aurora" ? accent.interpolatedWith (bg, 0.62f)
+                              : titleTheme == "minimal" ? bg.darker (0.15f)
+                              : titleTheme == "compact-daw" ? panel.darker (0.12f)
+                              : bg.darker (0.08f);
+        juce::ColourGradient gradient (themeTitleTop,
+                                       (float) titleArea.getX(), (float) titleArea.getY(),
+                                       themeTitleBottom,
+                                       (float) titleArea.getRight(), (float) titleArea.getBottom(),
                                        false);
         g.setGradientFill (gradient);
-        g.fillRect (bar);
+        g.fillRect (titleArea);
+        g.setColour (panel.withAlpha (0.94f));
+        g.fillRect (toolbarArea);
+        const bool useFullTitleBackground = pack != nullptr
+                                         && pack->manifest.playerTitleBannerImage.isNotEmpty()
+                                         && titleThemeUsesBannerArtwork (titleTheme);
+        if (useFullTitleBackground)
+        {
+            const auto bannerFile = juce::File::isAbsolutePath (pack->manifest.playerTitleBannerImage)
+                ? juce::File (pack->manifest.playerTitleBannerImage)
+                : pack->rootFolder.getChildFile (pack->manifest.playerTitleBannerImage);
+            if (auto banner = assets.loadImage (bannerFile); banner.isValid())
+            {
+                g.drawImage (banner, titleArea.toFloat(), juce::RectanglePlacement::fillDestination);
+                g.setColour (juce::Colour (0x8805070a));
+                g.fillRect (titleArea);
+            }
+        }
+        if ((titleTheme == "minimal" || titleTheme == "no-chrome") && ! useFullTitleBackground)
+        {
+            g.setColour (bg);
+            g.fillRect (titleArea);
+        }
+        if (titleTheme == "glass" && ! useFullTitleBackground)
+        {
+            g.setColour (accent.withAlpha (0.08f));
+            g.fillRect (titleArea.reduced (12, 8));
+        }
+        if (titleTheme == "dark-utility")
+        {
+            g.setColour (panel.darker (0.42f));
+            g.fillRect (titleArea);
+            g.setColour (accent.withAlpha (0.38f));
+            g.fillRect (titleArea.withBottom (titleArea.getBottom()).withHeight (2));
+        }
+        if (titleTheme == "compact-daw")
+        {
+            g.setColour (panel.brighter (0.05f));
+            g.fillRect (titleArea.reduced (0, 8));
+        }
+        if (titleTheme == "neon-strip" || titleTheme == "aurora")
+        {
+            g.setColour (accent.withAlpha (0.82f));
+            g.fillRoundedRectangle (titleArea.withHeight (3).toFloat(), 2.0f);
+        }
+        if (titleTheme == "split-brand")
+        {
+            g.setColour (accent.withAlpha (0.88f));
+            g.fillRect (titleArea.withWidth (5));
+        }
+        if (titleTheme == "logo-rail")
+        {
+            g.setColour (accent.withAlpha (0.14f));
+            g.fillRect (titleArea.withWidth (96));
+            g.setColour (accent.withAlpha (0.72f));
+            g.drawVerticalLine (96, 4.0f, (float) titleArea.getBottom() - 5.0f);
+        }
 
-        g.setColour (PatchCraftLookAndFeel::borderSoft());
-        g.drawHorizontalLine (bar.getBottom() - 1, (float) bar.getX(), (float) bar.getRight());
+        if (titleTheme != "no-chrome")
+        {
+            g.setColour (PatchCraftLookAndFeel::borderSoft().withAlpha (0.82f));
+            g.fillRect (toolbarArea.withHeight (1));
+            g.setColour (bg.withAlpha (0.42f));
+            g.fillRect (toolbarArea.withTrimmedTop (1));
+            auto toolWell = toolbarArea.reduced (10, 5);
+            const auto corner = titleTheme == "compact-daw" || titleTheme == "dark-utility" ? 2.0f
+                              : 6.0f;
+            g.setColour ((titleTheme == "glass" ? panel.withAlpha (0.58f)
+                                                : panel.withAlpha (0.96f)));
+            if (titleTheme == "minimal")
+                g.fillRect (toolWell.withHeight (1));
+            else
+                g.fillRoundedRectangle (toolWell.toFloat(), corner);
+            g.setColour ((titleTheme == "neon-strip" ? accent : PatchCraftLookAndFeel::borderSoft()).withAlpha (0.72f));
+            if (titleTheme != "minimal")
+                g.drawRoundedRectangle (toolWell.toFloat().reduced (0.5f), corner, 1.0f);
+        }
 
-        const bool compactTitle = bar.getWidth() < 980;
-        const int bannerWidth = compactTitle ? 146 : 218;
-        const auto brandFrame = juce::Rectangle<int> (bar.getX() + 10,
-                                                      bar.getY() + 6,
+        const int bannerWidth = playerTitleBrandWidth (titleTheme, titleArea.getWidth());
+        const auto brandFrame = juce::Rectangle<int> (titleArea.getX() + 10,
+                                                      titleArea.getY() + 10,
                                                       bannerWidth,
-                                                      bar.getHeight() - 12);
+                                                      52);
         const auto artworkBounds = brandFrame.withWidth (kPlayerTitleBarArtworkSize)
                                              .withHeight (kPlayerTitleBarArtworkSize)
-                                             .withY (bar.getY() + (bar.getHeight() - kPlayerTitleBarArtworkSize) / 2);
-        auto brand = brandFrame.withTrimmedLeft (kPlayerTitleBarArtworkSize + 8)
-                               .reduced (0, 1);
+                                             .withY (titleArea.getY() + (titleArea.getHeight() - kPlayerTitleBarArtworkSize) / 2);
+        auto brand = (titleTheme == "logo-rail" || titleTheme == "no-chrome")
+            ? brandFrame.reduced (0, 1)
+            : brandFrame.withTrimmedLeft (kPlayerTitleBarArtworkSize + 8).reduced (0, 1);
         bool drewLogo = false;
         bool drewTitleBanner = false;
-        if (const auto* pack = proc.getPack())
+        if (pack != nullptr && bannerWidth > 0)
         {
-            if (pack->manifest.playerTitleBannerImage.isNotEmpty())
+            if (pack->manifest.playerTitleBannerImage.isNotEmpty()
+                && ! useFullTitleBackground)
             {
                 const auto bannerFile = juce::File::isAbsolutePath (pack->manifest.playerTitleBannerImage)
                     ? juce::File (pack->manifest.playerTitleBannerImage)
@@ -2692,7 +2924,7 @@ namespace patchcraft
             if (artworkPath.isEmpty())
                 artworkPath = pack->manifest.libraryThumbnail;
 
-            if (! drewTitleBanner && artworkPath.isNotEmpty())
+            if (! drewTitleBanner && artworkPath.isNotEmpty() && titleTheme != "no-chrome")
             {
                 const auto logoFile = juce::File::isAbsolutePath (artworkPath)
                     ? juce::File (artworkPath)
@@ -2711,24 +2943,44 @@ namespace patchcraft
                 }
             }
         }
-        if (! drewTitleBanner && ! drewLogo)
-            PatchCraftLookAndFeel::drawHexLogo (g, artworkBounds.toFloat().reduced (1.0f));
+        if (! drewTitleBanner && ! drewLogo && bannerWidth > 0 && titleTheme != "no-chrome")
+        {
+            const auto fallbackName = pack != nullptr ? playerInstrumentName (pack) : juce::String ("PatchCraft");
+            const auto initial = fallbackName.isNotEmpty() ? fallbackName.substring (0, 1).toUpperCase() : juce::String ("P");
+            g.setColour ((pack != nullptr ? pack->manifest.playerAccentColour : PatchCraftLookAndFeel::accent()).withAlpha (0.22f));
+            g.fillRoundedRectangle (artworkBounds.toFloat().reduced (1.0f), 5.0f);
+            g.setColour (pack != nullptr ? pack->manifest.playerAccentColour : PatchCraftLookAndFeel::accent());
+            g.setFont (playerChromeFont (titleFontFamily, (float) artworkBounds.getHeight() * 0.52f, true));
+            g.drawText (initial, artworkBounds, juce::Justification::centred, true);
+        }
 
-        const auto* pack = proc.getPack();
         const auto brandName = pack != nullptr
             ? playerInstrumentName (pack)
             : juce::String ("PATCHCRAFT");
         const auto tagline = pack != nullptr && pack->manifest.playerTagline.isNotEmpty()
             ? pack->manifest.playerTagline
-            : juce::String ("Title banner ")
-                + juce::String (kPlayerTitleBannerSourceWidth) + "x"
-                + juce::String (kPlayerTitleBannerSourceHeight);
-        g.setColour (PatchCraftLookAndFeel::textBright());
-        g.setFont (juce::FontOptions (15.0f).withStyle ("bold"));
-        g.drawText (brandName, brand.removeFromTop (drewTitleBanner ? 17 : 19), juce::Justification::centredLeft, true);
-        g.setColour (PatchCraftLookAndFeel::textDim());
-        g.setFont (juce::FontOptions (10.0f).withStyle ("bold"));
-        g.drawText (tagline.toUpperCase(), brand, juce::Justification::centredLeft, true);
+            : juce::String();
+        if (titlePlacement != "hidden")
+        {
+            const auto justify = titlePlacement == "center" ? juce::Justification::centred
+                               : titlePlacement == "right"  ? juce::Justification::centredRight
+                                                            : juce::Justification::centredLeft;
+            if (titlePlacement == "center")
+                brand = juce::Rectangle<int> (titleArea.getX() + titleArea.getWidth() / 2 - 190,
+                                              brand.getY(), 380, brand.getHeight());
+            else if (titlePlacement == "right")
+                brand = juce::Rectangle<int> (titleArea.getRight() - 390, brand.getY(), 240, brand.getHeight());
+
+            g.setColour (PatchCraftLookAndFeel::textBright());
+            g.setFont (playerChromeFont (titleFontFamily, titleTheme == "artist-card" ? 16.5f : 15.0f, true));
+            g.drawText (brandName, brand.removeFromTop (drewTitleBanner ? 17 : 19), justify, true);
+            if (tagline.isNotEmpty())
+            {
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (playerChromeFont (titleFontFamily, 10.0f, true));
+                g.drawText (tagline.toUpperCase(), brand, justify, true);
+            }
+        }
     }
 
     void PlayerEditor::resized()
@@ -2741,6 +2993,24 @@ namespace patchcraft
         const auto* pack = proc.getPack();
         const bool showPackMenu = pack == nullptr || pack->manifest.playerShowPackMenu;
         const bool showLibrary = pack == nullptr || pack->manifest.playerShowLibraryBrowser;
+        const auto titleButtonStyle = pack != nullptr && pack->manifest.playerTitleButtonStyle.isNotEmpty()
+            ? pack->manifest.playerTitleButtonStyle
+            : juce::String ("outlined");
+        for (auto* button : { &menuBtn, &libraryBtn, &viewBtn, &toolsBtn, &performanceBtn,
+                              &rackBtn, &controlBtn, &snapshotBtn, &dnaBtn, &importBtn,
+                              &transportBtn, &randomizeBtn, &abBtn, &prevPresetBtn,
+                              &presetBtn, &nextPresetBtn })
+        {
+            button->getProperties().set ("corner", titleButtonStyle == "square" ? 2.0 : (titleButtonStyle == "pill" ? 12.0 : 5.0));
+            if (pack != nullptr)
+            {
+                button->setColour (juce::TextButton::buttonColourId,
+                                   titleButtonStyle == "minimal" ? juce::Colours::transparentBlack
+                                   : titleButtonStyle == "filled" ? pack->manifest.playerAccentColour.withAlpha (0.28f)
+                                                                  : pack->manifest.playerPanelColour.brighter (0.04f));
+                button->setColour (juce::TextButton::textColourOffId, pack->manifest.playerTextColour);
+            }
+        }
 
         if (libraryVisible)
         {
@@ -2792,13 +3062,17 @@ namespace patchcraft
             }
         }
 
-        const int buttonY = topBar.getY() + 8;
-        const int buttonH = topBar.getHeight() - 16;
+        const auto chromeBar = playerChromeBoundsFor (topBar, pack);
+        auto toolbarArea = chromeBar.withTop (chromeBar.getY() + kPlayerTitleAreaHeight);
+        auto toolWell = toolbarArea.reduced (10, 5);
+        const int buttonH = juce::jlimit (26, 32, toolWell.getHeight() - 2);
+        const int buttonY = toolWell.getY() + (toolWell.getHeight() - buttonH) / 2;
         const int gap = 6;
         const bool runtimeVisible = pack != nullptr && ! libraryVisible;
-        const bool compact = topBar.getWidth() < 980;
-        const bool tight = topBar.getWidth() < 820;
-        int leftX = topBar.getX() + (compact ? 168 : 238);
+        const bool compact = chromeBar.getWidth() < 980;
+        const bool tight = chromeBar.getWidth() < 820;
+        const auto titleTheme = pack != nullptr ? pack->manifest.playerTitleBarTheme : juce::String ("classic");
+        int leftX = toolWell.getX() + 88;
 
         auto placeLeft = [&] (juce::TextButton& button, bool visible, int width)
         {
@@ -2819,7 +3093,7 @@ namespace patchcraft
         placeLeft (viewBtn, true, compact ? 48 : 54);
         placeLeft (toolsBtn, runtimeVisible && ! tight, compact ? 48 : 54);
 
-        int rightX = topBar.getRight() - 10;
+        int rightX = toolWell.getRight() - 4;
         auto placeRight = [&] (juce::TextButton& button, bool visible, int width)
         {
             button.setVisible (visible);
@@ -2838,12 +3112,12 @@ namespace patchcraft
         placeRight (controlBtn, runtimeVisible, compact ? 50 : 56);
         placeRight (rackBtn, runtimeVisible, compact ? 50 : 54);
         placeRight (performanceBtn, runtimeVisible, compact ? 50 : 54);
-        placeRight (dnaBtn, runtimeVisible && topBar.getWidth() >= 980, compact ? 44 : 50);
-        placeRight (snapshotBtn, runtimeVisible && topBar.getWidth() >= 1040, compact ? 50 : 58);
+        placeRight (dnaBtn, runtimeVisible && chromeBar.getWidth() >= 980, compact ? 44 : 50);
+        placeRight (snapshotBtn, runtimeVisible && chromeBar.getWidth() >= 1040, compact ? 50 : 58);
         placeRight (importBtn, runtimeVisible && ! tight, compact ? 48 : 54);
         placeRight (transportBtn, runtimeVisible && ! tight, compact ? 50 : 56);
-        placeRight (randomizeBtn, runtimeVisible && topBar.getWidth() >= 1120, 50);
-        placeRight (abBtn, runtimeVisible && topBar.getWidth() >= 1080, 42);
+        placeRight (randomizeBtn, runtimeVisible && chromeBar.getWidth() >= 1120, 50);
+        placeRight (abBtn, runtimeVisible && chromeBar.getWidth() >= 1080, 42);
 
         const bool hasPresets = pack != nullptr && proc.getPresetCount() > 0;
         const int presetAreaWidth = juce::jmax (0, rightX - leftX - 12);
@@ -3353,36 +3627,346 @@ namespace patchcraft
 
     void PlayerEditor::showPresetMenu()
     {
-        const auto names = proc.getPresetNames();
-        if (names.isEmpty())
+        const auto* pack = proc.getPack();
+        if (pack == nullptr || pack->presets.empty())
             return;
 
-        juce::PopupMenu menu;
-        const int current = proc.getCurrentPresetIndex();
-        for (int index = 0; index < names.size(); ++index)
-            menu.addItem (index + 1, names[index], true, index == current);
-
-        menu.showMenuAsync (juce::PopupMenu::Options()
-                                .withTargetComponent (&presetBtn)
-                                .withMinimumWidth (240),
-            [this, names] (int result)
+        struct PresetBrowser final : public juce::Component,
+                                     private juce::ListBoxModel
+        {
+            PresetBrowser (PlayerProcessor& processorIn,
+                           std::set<std::string>& favoritesIn,
+                           bool auditionIn,
+                           bool closeAfterLoadIn,
+                           std::function<void (int)> applyIn,
+                           std::function<void (bool, bool)> savePrefsIn)
+                : processor (processorIn),
+                  favorites (favoritesIn),
+                  applyPreset (std::move (applyIn)),
+                  savePrefs (std::move (savePrefsIn))
             {
-                if (result <= 0)
-                    return;
+                setSize (760, 520);
 
-                const int presetIndex = result - 1;
-                if (! juce::isPositiveAndBelow (presetIndex, names.size()))
-                    return;
+                search.setTextToShowWhenEmpty ("Search presets", PatchCraftLookAndFeel::textDim());
+                addAndMakeVisible (search);
+                search.onTextChange = [this] { rebuildRows(); };
 
-                showPresetLoading (names[presetIndex]);
-                if (proc.applyPresetByIndex (presetIndex))
+                tagBox.addItem ("All Tags", 1);
+                tagBox.addItem ("Favorites", 2);
+                addAndMakeVisible (tagBox);
+                tagBox.onChange = [this] { rebuildRows(); };
+
+                auditionToggle.setButtonText ("Audition on select");
+                auditionToggle.setToggleState (auditionIn, juce::dontSendNotification);
+                addAndMakeVisible (auditionToggle);
+
+                closeAfterLoadToggle.setButtonText ("Close after load");
+                closeAfterLoadToggle.setToggleState (closeAfterLoadIn, juce::dontSendNotification);
+                addAndMakeVisible (closeAfterLoadToggle);
+
+                favButton.setButtonText ("Favorite");
+                favButton.onClick = [this] { toggleFavorite(); };
+                addAndMakeVisible (favButton);
+
+                loadButton.setButtonText ("Load");
+                loadButton.getProperties().set ("accent", true);
+                loadButton.onClick = [this] { loadSelected (true); };
+                addAndMakeVisible (loadButton);
+
+                closeButton.setButtonText ("Close");
+                closeButton.onClick = [this]
                 {
-                    refreshPresetControls();
-                    if (performancePanel != nullptr)
-                        performancePanel->rebuild();
-                    renderer->repaint();
+                    savePrefs (auditionToggle.getToggleState(), closeAfterLoadToggle.getToggleState());
+                    if (auto* window = findParentComponentOfClass<juce::DialogWindow>())
+                        window->exitModalState (0);
+                };
+                addAndMakeVisible (closeButton);
+
+                list.setModel (this);
+                list.setRowHeight (54);
+                list.setColour (juce::ListBox::backgroundColourId, juce::Colour (0x00000000));
+                addAndMakeVisible (list);
+
+                const auto* pack = processor.getPack();
+                if (pack != nullptr)
+                {
+                    for (const auto& preset : pack->presets)
+                    {
+                        for (const auto& tag : preset.tags)
+                            if (tag.trim().isNotEmpty())
+                                allTags.addIfNotAlreadyThere (tag.trim());
+                        if (preset.theme.trim().isNotEmpty())
+                            allTags.addIfNotAlreadyThere (preset.theme.trim());
+                    }
                 }
-            });
+                allTags.sort (true);
+                int id = 10;
+                for (const auto& tag : allTags)
+                    tagBox.addItem (tag, id++);
+
+                rebuildRows();
+                const int current = processor.getCurrentPresetIndex();
+                if (juce::isPositiveAndBelow (current, rows.size()))
+                    list.selectRow (rows.indexOf (current), juce::dontSendNotification);
+                updateDetails();
+            }
+
+            ~PresetBrowser() override
+            {
+                savePrefs (auditionToggle.getToggleState(), closeAfterLoadToggle.getToggleState());
+            }
+
+            int getNumRows() override { return rows.size(); }
+
+            void paintListBoxItem (int row, juce::Graphics& graphics, int width, int height, bool selected) override
+            {
+                if (! juce::isPositiveAndBelow (row, rows.size()))
+                    return;
+                const auto* pack = processor.getPack();
+                if (pack == nullptr)
+                    return;
+
+                const int presetIndex = rows[row];
+                if (! juce::isPositiveAndBelow (presetIndex, (int) pack->presets.size()))
+                    return;
+                const auto& preset = pack->presets[(size_t) presetIndex];
+
+                auto bounds = juce::Rectangle<int> (0, 0, width, height).reduced (6, 4);
+                const bool current = presetIndex == processor.getCurrentPresetIndex();
+                graphics.setColour (selected ? PatchCraftLookAndFeel::accent().withAlpha (0.22f)
+                                             : PatchCraftLookAndFeel::panel().withAlpha (0.76f));
+                graphics.fillRoundedRectangle (bounds.toFloat(), 8.0f);
+                graphics.setColour (current ? PatchCraftLookAndFeel::accent()
+                                            : PatchCraftLookAndFeel::borderSoft());
+                graphics.drawRoundedRectangle (bounds.toFloat().reduced (0.5f), 8.0f, current ? 1.6f : 1.0f);
+
+                auto text = bounds.reduced (12, 5);
+                const bool fav = favorites.count (preset.name.toStdString()) != 0;
+                graphics.setColour (fav ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::textBright());
+                graphics.setFont (juce::FontOptions (13.0f).withStyle ("bold"));
+                graphics.drawText ((fav ? "* " : "") + preset.name,
+                                   text.removeFromTop (18),
+                                   juce::Justification::centredLeft, true);
+
+                juce::String tagLine = preset.theme;
+                for (const auto& tag : preset.tags)
+                    if (tagLine.length() < 72 && ! tagLine.containsIgnoreCase (tag))
+                        tagLine << (tagLine.isNotEmpty() ? "  /  " : "") << tag;
+                graphics.setColour (PatchCraftLookAndFeel::textDim());
+                graphics.setFont (juce::FontOptions (10.5f));
+                graphics.drawText (tagLine, text, juce::Justification::centredLeft, true);
+            }
+
+            void selectedRowsChanged (int) override
+            {
+                updateDetails();
+                if (auditionToggle.getToggleState())
+                    loadSelected (false);
+            }
+
+            void listBoxItemDoubleClicked (int, const juce::MouseEvent&) override
+            {
+                loadSelected (true);
+            }
+
+            void paint (juce::Graphics& graphics) override
+            {
+                graphics.fillAll (PatchCraftLookAndFeel::bg());
+                auto area = getLocalBounds().reduced (18);
+
+                graphics.setColour (PatchCraftLookAndFeel::panel());
+                graphics.fillRoundedRectangle (area.toFloat(), 14.0f);
+                graphics.setColour (PatchCraftLookAndFeel::border());
+                graphics.drawRoundedRectangle (area.toFloat().reduced (0.5f), 14.0f, 1.2f);
+
+                auto body = area.reduced (18);
+                graphics.setColour (PatchCraftLookAndFeel::accent());
+                graphics.setFont (juce::FontOptions (20.0f).withStyle ("bold"));
+                graphics.drawText ("Preset Browser", body.removeFromTop (28), juce::Justification::centredLeft, true);
+
+                if (selectedDescription.isNotEmpty())
+                {
+                    auto detail = getLocalBounds().reduced (36).removeFromBottom (88);
+                    detail.removeFromRight (196);
+                    graphics.setColour (PatchCraftLookAndFeel::panel().darker (0.35f).withAlpha (0.90f));
+                    graphics.fillRoundedRectangle (detail.toFloat(), 10.0f);
+                    graphics.setColour (PatchCraftLookAndFeel::text());
+                    graphics.setFont (juce::FontOptions (12.0f));
+                    graphics.drawFittedText (selectedDescription, detail.reduced (12, 8), juce::Justification::topLeft, 3);
+                }
+            }
+
+            void resized() override
+            {
+                auto area = getLocalBounds().reduced (36);
+                area.removeFromTop (38);
+                auto filters = area.removeFromTop (32);
+                search.setBounds (filters.removeFromLeft (260));
+                filters.removeFromLeft (10);
+                tagBox.setBounds (filters.removeFromLeft (170));
+                filters.removeFromLeft (14);
+                auditionToggle.setBounds (filters.removeFromLeft (150));
+                closeAfterLoadToggle.setBounds (filters.removeFromLeft (138));
+
+                area.removeFromTop (12);
+                auto bottom = area.removeFromBottom (94);
+                auto buttons = bottom.removeFromRight (184);
+                favButton.setBounds (buttons.removeFromTop (28));
+                buttons.removeFromTop (8);
+                loadButton.setBounds (buttons.removeFromTop (28));
+                buttons.removeFromTop (8);
+                closeButton.setBounds (buttons.removeFromTop (28));
+                list.setBounds (area);
+            }
+
+            void rebuildRows()
+            {
+                rows.clear();
+                const auto* pack = processor.getPack();
+                if (pack == nullptr)
+                {
+                    list.updateContent();
+                    return;
+                }
+
+                const auto query = search.getText().trim().toLowerCase();
+                const bool favoritesOnly = tagBox.getSelectedId() == 2;
+                const juce::String tagFilter = tagBox.getSelectedId() >= 10
+                    ? tagBox.getText().trim()
+                    : juce::String();
+
+                for (int index = 0; index < (int) pack->presets.size(); ++index)
+                {
+                    const auto& preset = pack->presets[(size_t) index];
+                    const bool fav = favorites.count (preset.name.toStdString()) != 0;
+                    if (favoritesOnly && ! fav)
+                        continue;
+
+                    if (tagFilter.isNotEmpty())
+                    {
+                        bool hasTag = preset.theme.equalsIgnoreCase (tagFilter);
+                        for (const auto& tag : preset.tags)
+                            hasTag = hasTag || tag.equalsIgnoreCase (tagFilter);
+                        if (! hasTag)
+                            continue;
+                    }
+
+                    if (query.isNotEmpty())
+                    {
+                        juce::String haystack = preset.name + " " + preset.description + " " + preset.theme + " " + preset.tags.joinIntoString (" ");
+                        if (! haystack.toLowerCase().contains (query))
+                            continue;
+                    }
+
+                    rows.add (index);
+                }
+
+                list.updateContent();
+                if (! rows.isEmpty() && list.getSelectedRow() < 0)
+                    list.selectRow (0, juce::dontSendNotification);
+                repaint();
+            }
+
+            void updateDetails()
+            {
+                selectedDescription.clear();
+                const auto* pack = processor.getPack();
+                const int row = list.getSelectedRow();
+                if (pack != nullptr && juce::isPositiveAndBelow (row, rows.size()))
+                {
+                    const int presetIndex = rows[row];
+                    if (juce::isPositiveAndBelow (presetIndex, (int) pack->presets.size()))
+                    {
+                        const auto& preset = pack->presets[(size_t) presetIndex];
+                        selectedDescription = preset.description;
+                        favButton.setButtonText (favorites.count (preset.name.toStdString()) != 0 ? "Unfavorite" : "Favorite");
+                    }
+                }
+                repaint();
+            }
+
+            void toggleFavorite()
+            {
+                const auto* pack = processor.getPack();
+                const int row = list.getSelectedRow();
+                if (pack == nullptr || ! juce::isPositiveAndBelow (row, rows.size()))
+                    return;
+                const int presetIndex = rows[row];
+                if (! juce::isPositiveAndBelow (presetIndex, (int) pack->presets.size()))
+                    return;
+                const auto key = pack->presets[(size_t) presetIndex].name.toStdString();
+                if (favorites.count (key) != 0)
+                    favorites.erase (key);
+                else
+                    favorites.insert (key);
+                updateDetails();
+                list.repaint();
+            }
+
+            void loadSelected (bool explicitLoad)
+            {
+                const int row = list.getSelectedRow();
+                if (! juce::isPositiveAndBelow (row, rows.size()))
+                    return;
+                const int presetIndex = rows[row];
+                applyPreset (presetIndex);
+                if ((explicitLoad || closeAfterLoadToggle.getToggleState()) && closeAfterLoadToggle.getToggleState())
+                    if (auto* window = findParentComponentOfClass<juce::DialogWindow>())
+                        window->exitModalState (1);
+            }
+
+            PlayerProcessor& processor;
+            std::set<std::string>& favorites;
+            std::function<void (int)> applyPreset;
+            std::function<void (bool, bool)> savePrefs;
+            juce::TextEditor search;
+            juce::ComboBox tagBox;
+            juce::ToggleButton auditionToggle;
+            juce::ToggleButton closeAfterLoadToggle;
+            juce::TextButton favButton { "Favorite" };
+            juce::TextButton loadButton { "Load" };
+            juce::TextButton closeButton { "Close" };
+            juce::ListBox list { "PresetList", this };
+            juce::Array<int> rows;
+            juce::StringArray allTags;
+            juce::String selectedDescription;
+        };
+
+        auto applyPreset = [this] (int presetIndex)
+        {
+            const auto name = proc.getPresetName (presetIndex);
+            showPresetLoading (name);
+            if (proc.applyPresetByIndex (presetIndex))
+            {
+                refreshPresetControls();
+                if (performancePanel != nullptr)
+                    performancePanel->rebuild();
+                if (controlCenter != nullptr)
+                    controlCenter->rebuild();
+                if (renderer != nullptr)
+                    renderer->repaint();
+            }
+        };
+
+        auto savePrefs = [this] (bool audition, bool closeAfterLoad)
+        {
+            presetAuditionOnSelect = audition;
+            presetCloseAfterLoad = closeAfterLoad;
+        };
+
+        juce::DialogWindow::LaunchOptions options;
+        options.dialogTitle = "Preset Browser";
+        options.dialogBackgroundColour = PatchCraftLookAndFeel::bg();
+        options.escapeKeyTriggersCloseButton = true;
+        options.useNativeTitleBar = true;
+        options.resizable = true;
+        options.componentToCentreAround = this;
+        options.content.setOwned (new PresetBrowser (proc, favoritePresetNames,
+                                                     presetAuditionOnSelect,
+                                                     presetCloseAfterLoad,
+                                                     applyPreset,
+                                                     savePrefs));
+        options.launchAsync();
     }
 
     void PlayerEditor::showPresetLoading (const juce::String& presetName)

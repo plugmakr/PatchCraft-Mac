@@ -4556,6 +4556,19 @@ namespace patchcraft
             }
         }
 
+        owner.getProject().getLiveValues().setValue ("arpLaneControlBank", (float) lane);
+        if (! toggleStep && step < 16)
+        {
+            const int sliderRole = band == 0 ? 7 : band == 1 ? 0 : band == 2 ? 1 : 2;
+            float sliderValue = value;
+            if (band == 0)
+                sliderValue = juce::jlimit (0.0f, 1.0f, (block->values["arpNote" + suffix] + 24.0f) / 48.0f);
+
+            owner.getProject().getLiveValues().setValue ("arpLaneSliderRole", (float) sliderRole);
+            owner.getProject().getLiveValues().setValue ("arpLaneStep" + juce::String (step + 1),
+                                                         juce::jlimit (0.0f, 1.0f, sliderValue));
+        }
+
         MidiPlaygroundPattern::storeActiveBank (*block, lane);
         arpStudioEditingLane = lane;
         arpStudioEditingStep = step;
@@ -4658,6 +4671,11 @@ namespace patchcraft
         meterArea.removeFromRight (84);
         const int gap = drawSteps > 32 ? 1 : 2;
         const int cellW = juce::jmax (2, (meterArea.getWidth() - gap * juce::jmax (0, drawSteps - 1)) / drawSteps);
+        const int playbackStep = patternPreviewActive && arpStudioPreviewStartMs > 0.0
+            ? juce::jlimit (0, drawSteps - 1,
+                            (int) std::floor (std::fmod ((juce::Time::getMillisecondCounterHiRes() - arpStudioPreviewStartMs) * 0.008,
+                                                         (double) drawSteps)))
+            : -1;
         for (int step = 0; step < drawSteps; ++step)
         {
             const juce::String suffix (step);
@@ -4677,6 +4695,18 @@ namespace patchcraft
                 g.setColour (accent.withAlpha (selected ? 0.82f : 0.46f));
                 g.fillRect (fill);
             }
+            if (step == playbackStep)
+            {
+                g.setColour (juce::Colours::white.withAlpha (0.88f));
+                g.drawRect (cell.expanded (1), 1);
+            }
+        }
+
+        if (playbackStep >= 0)
+        {
+            const int x = meterArea.getX() + playbackStep * (cellW + gap) + cellW / 2;
+            g.setColour (juce::Colours::white.withAlpha (0.92f));
+            g.fillEllipse ((float) x - 3.0f, (float) meterArea.getY() - 7.0f, 6.0f, 6.0f);
         }
     }
 
@@ -5044,6 +5074,11 @@ namespace patchcraft
                 g.fillEllipse (c.x - d * 0.5f, c.y - d * 0.5f, d, d);
                 g.setColour (accent.withAlpha (lane == selectedLane ? 0.95f : 0.35f));
                 g.drawEllipse (c.x - d * 0.5f, c.y - d * 0.5f, d, d, lane == selectedLane ? 2.0f : 1.0f);
+                const int previewStep = patternPreviewActive && arpStudioPreviewStartMs > 0.0
+                    ? juce::jlimit (0, 15,
+                                    (int) std::floor (std::fmod ((juce::Time::getMillisecondCounterHiRes() - arpStudioPreviewStartMs) * 0.008,
+                                                                 16.0)))
+                    : -1;
                 for (int step = 0; step < 16; ++step)
                 {
                     const bool active = block == nullptr || arpBankValue (*block, lane, "mpStep" + juce::String (step) + "On", step % 2 == 0 ? 1.0f : 0.0f) >= 0.5f;
@@ -5055,6 +5090,14 @@ namespace patchcraft
                     const auto p = c + juce::Point<float> (std::cos (angle) * radius, std::sin (angle) * radius);
                     g.setColour (accent.withAlpha (0.76f));
                     g.fillEllipse (p.x - 2.0f, p.y - 2.0f, 4.0f, 4.0f);
+                }
+                if (previewStep >= 0)
+                {
+                    const float angle = -juce::MathConstants<float>::halfPi + juce::MathConstants<float>::twoPi * (float) previewStep / 16.0f;
+                    const auto p = c + juce::Point<float> (std::cos (angle) * d * 0.47f,
+                                                           std::sin (angle) * d * 0.47f);
+                    g.setColour (juce::Colours::white.withAlpha (lane == selectedLane ? 0.95f : 0.52f));
+                    g.fillEllipse (p.x - 3.2f, p.y - 3.2f, 6.4f, 6.4f);
                 }
                 g.setColour (PatchCraftLookAndFeel::textDim());
                 g.setFont (juce::Font (8.5f, juce::Font::bold));

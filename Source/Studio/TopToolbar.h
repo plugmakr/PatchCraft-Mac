@@ -40,7 +40,7 @@ namespace patchcraft
         };
 
         std::unique_ptr<IconLabelButton> btnNew, btnOpen, btnSave;
-        std::unique_ptr<IconLabelButton> btnImportSamples, btnImportBg, btnPacks, btnDashboard, btnAiAssist;
+        std::unique_ptr<IconLabelButton> btnImportSamples, btnImportBg, btnPacks, btnDashboard, btnProjects, btnAiAssist;
         std::unique_ptr<IconLabelButton> btnPreview, btnExport;
 
         juce::Label projectNameLabel;

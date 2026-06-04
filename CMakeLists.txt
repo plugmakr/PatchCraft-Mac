@@ -29,6 +29,9 @@ else()
     set(PATCHCRAFT_ENABLE_AI_STUDIO_VALUE 0)
 endif()
 
+# Enable modal loops so tests can pump messages and run timers synchronously
+add_compile_definitions(JUCE_MODAL_LOOPS_PERMITTED=1)
+
 # ---------------------------------------------------------------------------
 # Locate JUCE
 # ---------------------------------------------------------------------------
@@ -82,6 +85,7 @@ add_library(PatchCraftCore STATIC
     Source/Shared/SfzImporter.cpp
     Source/Shared/LicenseValidator.cpp
     Source/Shared/PluginClubPublisher.cpp
+    Source/Shared/PScriptEngine.cpp
 )
 
 target_include_directories(PatchCraftCore PUBLIC Source/Shared)

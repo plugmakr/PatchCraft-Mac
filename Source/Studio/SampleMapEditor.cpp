@@ -174,7 +174,13 @@ namespace patchcraft
         addAndMakeVisible (importBtn);
         addAndMakeVisible (libraryDrawerBtn);
         addAndMakeVisible (recordVoiceBtn);
+        addAndMakeVisible (recordNowBtn);
         addAndMakeVisible (stopVoiceRecordBtn);
+        addAndMakeVisible (cancelVoiceRecordBtn);
+        addAndMakeVisible (previewRecordingBtn);
+        addAndMakeVisible (placeRecordingBtn);
+        addAndMakeVisible (deleteRecordingBtn);
+        addAndMakeVisible (recordingTakesBox);
         addAndMakeVisible (removeBtn);
         addAndMakeVisible (selectAllBtn);
         addAndMakeVisible (clearAllBtn);
@@ -297,8 +303,22 @@ namespace patchcraft
         listViewBtn.setTooltip ("Show imported zones as an editable list.");
         importBtn.setTooltip ("Import WAV, AIFF, FLAC, or folders of samples.");
         libraryDrawerBtn.setTooltip ("Open the right-side Sound Library drawer so you can drag samples directly into this mapper.");
-        recordVoiceBtn.setTooltip ("Record from the selected audio input directly into the Sound Library and import the take as a mapped sample.");
+        recordVoiceBtn.setTooltip ("Start a voice recording after the selected count-in.");
+        recordNowBtn.setTooltip ("Start recording from the selected audio input immediately.");
         stopVoiceRecordBtn.setTooltip ("Stop the active voice recording, write it as a WAV file, and add it to the Sample Mapper.");
+        cancelVoiceRecordBtn.setTooltip ("Cancel the active count-in or recording without importing a take.");
+        previewRecordingBtn.setTooltip ("Preview the selected recorded take through the Sample Mapper audition engine.");
+        placeRecordingBtn.setTooltip ("Map the selected recorded take to the Place Key value.");
+        deleteRecordingBtn.setTooltip ("Remove the selected recorded take from the sample map and move its WAV file to the trash when safe.");
+        recordingTakesBox.setTextWhenNothingSelected ("Recorded takes...");
+        recordingTakesBox.setTooltip ("Choose a recorded take to preview, place on a key, or delete.");
+        for (auto* button : { &recordVoiceBtn, &recordNowBtn, &stopVoiceRecordBtn,
+                              &cancelVoiceRecordBtn, &previewRecordingBtn,
+                              &placeRecordingBtn, &deleteRecordingBtn })
+        {
+            button->getProperties().set ("smallButton", true);
+        }
+        recordVoiceBtn.getProperties().set ("primaryAction", true);
         removeBtn.setTooltip ("Delete the selected sample zones from the map.");
         selectAllBtn.getProperties().set ("smallButton", true);
         selectAllBtn.setTooltip ("Select every sample zone. Use before Auto Trim when you want to trim all imported samples explicitly.");
@@ -363,8 +383,21 @@ namespace patchcraft
         };
         importBtn.onClick = [this] { addSample(); };
         libraryDrawerBtn.onClick = [this] { this->owner.toggleSampleLibraryDrawerForSamples(); };
-        recordVoiceBtn.onClick = [this] { startVoiceRecording(); };
+        recordVoiceBtn.onClick = [this] { startVoiceRecordingWithCountIn(); };
+        recordNowBtn.onClick = [this] { beginVoiceRecordingNow(); };
         stopVoiceRecordBtn.onClick = [this] { stopVoiceRecordingAndImport(); };
+        cancelVoiceRecordBtn.onClick = [this] { cancelVoiceRecording(); };
+        previewRecordingBtn.onClick = [this] { previewSelectedRecording(); };
+        placeRecordingBtn.onClick = [this] { placeSelectedRecordingOnKey(); };
+        deleteRecordingBtn.onClick = [this] { deleteSelectedRecordingTake(); };
+        recordingTakesBox.onChange = [this]
+        {
+            const auto take = selectedRecordingTakeFile();
+            const int zoneIndex = findZoneForRecordingFile (take);
+            if (zoneIndex >= 0)
+                selectZone (zoneIndex);
+            refreshRecordingControls();
+        };
         removeBtn.onClick = [this] { removeSample(); };
         selectAllBtn.onClick = [this] { selectAllZones(); };
         clearAllBtn.onClick = [this] { clearAllSamples(); };
@@ -487,6 +520,8 @@ namespace patchcraft
         sourceMode.setTooltip ("Choose the sampler playback source mode for selected zones.");
         importLowVelocityStepper.setTooltip ("Default low velocity for imported or selected samples.");
         importHighVelocityStepper.setTooltip ("Default high velocity for imported or selected samples.");
+        recordingKeyStepper.setTooltip ("MIDI key that the selected recording will be placed on.");
+        recordCountInStepper.setTooltip ("Count-in length in seconds before recording starts.");
         rrGroupStepper.setTooltip ("Round-robin group. Zones with the same group rotate on repeated notes.");
         rrIndexStepper.setTooltip ("Round-robin index for this zone inside its group. One Shot Maker writes this automatically.");
         rootStepper.setTooltip ("Root MIDI note used for pitch playback.");
@@ -545,8 +580,12 @@ namespace patchcraft
         hiVelStepper.minValue = 1; hiVelStepper.maxValue = 127;
         importLowVelocityStepper.minValue = 1; importLowVelocityStepper.maxValue = 127;
         importHighVelocityStepper.minValue = 1; importHighVelocityStepper.maxValue = 127;
+        recordingKeyStepper.minValue = 0; recordingKeyStepper.maxValue = 127;
+        recordCountInStepper.minValue = 0; recordCountInStepper.maxValue = 8;
         importLowVelocityStepper.setValue (1, false);
         importHighVelocityStepper.setValue (127, false);
+        recordingKeyStepper.setValue (60, false);
+        recordCountInStepper.setValue (2, false);
         gainStepper.minValue = -48; gainStepper.maxValue = 24;
         loopStartStepper.minValue = 0; loopStartStepper.maxValue = 2000000;
         loopEndStepper.minValue = 0; loopEndStepper.maxValue = 2000000;
@@ -562,6 +601,8 @@ namespace patchcraft
         addAndMakeVisible (hiVelStepper);
         addAndMakeVisible (importLowVelocityStepper);
         addAndMakeVisible (importHighVelocityStepper);
+        addAndMakeVisible (recordingKeyStepper);
+        addAndMakeVisible (recordCountInStepper);
         addAndMakeVisible (applyImportVelocitySelectedBtn);
         addAndMakeVisible (applyImportVelocityAllBtn);
         addAndMakeVisible (gainStepper);
@@ -583,6 +624,8 @@ namespace patchcraft
 
     SampleMapEditor::~SampleMapEditor()
     {
+        stopTimer();
+        recordingState = RecordingState::idle;
         voiceRecordingActive = false;
         setPlayModeEnabled (false);
         setMidiZoneSelectEnabled (false);
@@ -629,6 +672,9 @@ namespace patchcraft
 
         if (! easyGuideBounds.isEmpty())
             paintEasyGuide (g, easyGuideBounds);
+
+        if (! recorderBounds.isEmpty())
+            paintRecorderPanel (g, recorderBounds);
 
         if (! healthBounds.isEmpty())
             paintHealthPanel (g, healthBounds);
@@ -725,6 +771,79 @@ namespace patchcraft
         drawMetric (metric, "Export", exportText, status.exportReady ? good : bad);
     }
 
+    void SampleMapEditor::paintRecorderPanel (juce::Graphics& g, juce::Rectangle<int> bounds)
+    {
+        auto panel = bounds.reduced (0, 2);
+        g.setColour (juce::Colour (0xff0b1318));
+        g.fillRoundedRectangle (panel.toFloat(), 8.0f);
+        g.setColour (recordingState == RecordingState::recording ? juce::Colour (0xffe6504a)
+                                                                  : PatchCraftLookAndFeel::border().brighter (0.25f));
+        g.drawRoundedRectangle (panel.toFloat(), 8.0f, 1.1f);
+
+        auto r = panel.reduced (10, 8);
+        auto title = r.removeFromLeft (142);
+        g.setFont (juce::Font (12.0f, juce::Font::bold));
+        g.setColour (PatchCraftLookAndFeel::accent());
+        g.drawText ("VOICE RECORDER", title.removeFromTop (18), juce::Justification::centredLeft);
+
+        juce::String status = "Ready";
+        if (recordingState == RecordingState::countIn)
+        {
+            const int countMs = recordCountInStepper.value * 1000;
+            const int elapsed = (int) (juce::Time::getMillisecondCounter() - voiceRecordCountInStartMs);
+            const int remain = juce::jmax (0, countMs - elapsed);
+            status = "Count-in: " + juce::String ((remain + 999) / 1000);
+        }
+        else if (recordingState == RecordingState::recording)
+        {
+            int samples = 0;
+            {
+                const juce::ScopedLock lock (voiceRecordLock);
+                samples = voiceRecordSamples;
+            }
+            const double seconds = voiceRecordSampleRate > 0.0 ? (double) samples / voiceRecordSampleRate : 0.0;
+            status = "Recording  " + juce::String (seconds, 1) + "s";
+        }
+        else if (lastRecordingFile.existsAsFile())
+        {
+            status = "Last take: " + lastRecordingFile.getFileName();
+        }
+
+        g.setFont (juce::FontOptions (10.5f));
+        g.setColour (recordingState == RecordingState::recording ? juce::Colour (0xffffb3ad)
+                                                                  : PatchCraftLookAndFeel::textDim());
+        g.drawFittedText (status, title, juce::Justification::centredLeft, 2);
+
+        auto meterArea = r.removeFromLeft (150).reduced (0, 11);
+        g.setColour (juce::Colour (0xff05090c));
+        g.fillRoundedRectangle (meterArea.toFloat(), 4.0f);
+        g.setColour (PatchCraftLookAndFeel::border());
+        g.drawRoundedRectangle (meterArea.toFloat(), 4.0f, 1.0f);
+        auto fill = meterArea.reduced (3);
+        fill.setWidth (juce::roundToInt (fill.getWidth() * juce::jlimit (0.0f, 1.0f, voiceRecordInputLevel)));
+        g.setColour (recordingState == RecordingState::recording ? juce::Colour (0xffe6504a)
+                                                                  : PatchCraftLookAndFeel::accent());
+        g.fillRoundedRectangle (fill.toFloat(), 3.0f);
+        g.setFont (juce::FontOptions (9.5f));
+        g.setColour (PatchCraftLookAndFeel::textDim());
+        g.drawText ("INPUT", meterArea.reduced (6, 0), juce::Justification::centredLeft);
+
+        r.removeFromLeft (8);
+        auto info = r.removeFromLeft (190);
+        g.setFont (juce::Font (10.5f, juce::Font::bold));
+        g.setColour (PatchCraftLookAndFeel::textBright());
+        g.drawText ("Target key: " + noteToString (recordingKeyStepper.value),
+                    info.removeFromTop (18),
+                    juce::Justification::centredLeft);
+        g.setFont (juce::FontOptions (10.0f));
+        g.setColour (PatchCraftLookAndFeel::textDim());
+        const auto take = selectedRecordingTakeFile();
+        g.drawFittedText (take.existsAsFile() ? take.getFileName() : "No recorded take selected",
+                          info,
+                          juce::Justification::centredLeft,
+                          2);
+    }
+
     void SampleMapEditor::paintEditCard (juce::Graphics& g, juce::Rectangle<int> bounds, const juce::String& title)
     {
         auto card = bounds.toFloat();
@@ -817,39 +936,6 @@ namespace patchcraft
         titleRow.removeFromRight (196);
         g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.9f));
         g.fillRect (titleRow.withY (titleRow.getBottom() + 4).withHeight (2).reduced (0, 0));
-
-        auto actionGuide = r.removeFromBottom (18);
-        g.setFont (juce::FontOptions (10.5f));
-        g.setColour (PatchCraftLookAndFeel::textDim());
-        g.drawText ("Default velocity applies to new imports. Select All + Auto Trim edits every zone. Play Mapper triggers pads, keyboard, or hardware MIDI.",
-                    actionGuide, juce::Justification::centredLeft);
-
-        auto cards = r.removeFromBottom (44);
-        const juce::StringArray titles { "DROP AUDIO", "MAP", "EDIT", "PLAY / EXPORT" };
-        const juce::StringArray bodies {
-            "WAV / AIFF / FLAC anywhere on this page",
-            "Keyboard, Drum Kit, Slice Kit, or Remix Kit",
-            "Trim, fades, velocity, RR, loops, pads",
-            "Audition here, then Test Player / export"
-        };
-        const int gap = 8;
-        const int cardW = juce::jmax (120, (cards.getWidth() - gap * 3) / 4);
-        for (int i = 0; i < 4; ++i)
-        {
-            auto card = cards.removeFromLeft (cardW);
-            cards.removeFromLeft (gap);
-            g.setColour (juce::Colour (0xff111820));
-            g.fillRoundedRectangle (card.toFloat(), 7.0f);
-            g.setColour (i == 0 ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::border().brighter (0.25f));
-            g.drawRoundedRectangle (card.toFloat(), 7.0f, 1.0f);
-            auto text = card.reduced (8, 5);
-            g.setFont (juce::Font (10.0f, juce::Font::bold));
-            g.setColour (PatchCraftLookAndFeel::accent());
-            g.drawText (juce::String (i + 1) + "  " + titles[i], text.removeFromTop (15), juce::Justification::centredLeft, true);
-            g.setFont (juce::FontOptions (9.5f));
-            g.setColour (PatchCraftLookAndFeel::textDim());
-            g.drawFittedText (bodies[i], text, juce::Justification::centredLeft, 1);
-        }
     }
 
     void SampleMapEditor::setEasyMode (bool shouldUseEasyMode)
@@ -890,6 +976,7 @@ namespace patchcraft
         {
             component->setVisible (easyMode);
         }
+        easyHelpLabel.setVisible (false);
         easyDrumKitBtn.setVisible (false);
         easyGlitchKitBtn.setVisible (false);
         easyRemixKitBtn.setVisible (false);
@@ -953,19 +1040,64 @@ namespace patchcraft
             component->setVisible (showAdvanced);
         }
 
-        importLowVelocityStepper.setVisible (true);
-        importHighVelocityStepper.setVisible (true);
-        applyImportVelocityAllBtn.setVisible (true);
+        importLowVelocityStepper.setVisible (showAdvanced);
+        importHighVelocityStepper.setVisible (showAdvanced);
+        applyImportVelocityAllBtn.setVisible (showAdvanced);
         smartTrimBtn.setVisible (true);
         spanOnDropToggle.setVisible (true);
         selectAllBtn.setVisible (true);
         libraryDrawerBtn.setVisible (true);
-        recordVoiceBtn.setVisible (true);
-        stopVoiceRecordBtn.setVisible (voiceRecordingActive);
+        for (auto* component : { static_cast<juce::Component*> (&healthFixEngineBtn),
+                                 static_cast<juce::Component*> (&healthAutoMapBtn),
+                                 static_cast<juce::Component*> (&healthFindMissingBtn),
+                                 static_cast<juce::Component*> (&healthGoTestBtn) })
+            component->setVisible (false);
+        for (auto* component : { static_cast<juce::Component*> (&recordVoiceBtn),
+                                 static_cast<juce::Component*> (&recordNowBtn),
+                                 static_cast<juce::Component*> (&stopVoiceRecordBtn),
+                                 static_cast<juce::Component*> (&cancelVoiceRecordBtn),
+                                 static_cast<juce::Component*> (&previewRecordingBtn),
+                                 static_cast<juce::Component*> (&placeRecordingBtn),
+                                 static_cast<juce::Component*> (&deleteRecordingBtn),
+                                 static_cast<juce::Component*> (&recordingTakesBox),
+                                 static_cast<juce::Component*> (&recordingKeyStepper),
+                                 static_cast<juce::Component*> (&recordCountInStepper) })
+            component->setVisible (true);
+        refreshRecordingControls();
         playModeBtn.setToggleState (playModeEnabled, juce::dontSendNotification);
         easyPlayModeBtn.setToggleState (playModeEnabled, juce::dontSendNotification);
         samplesHeader.setVisible (! easyMode && listViewMode);
         samplesList.setVisible (! easyMode && listViewMode);
+    }
+
+    void SampleMapEditor::timerCallback()
+    {
+        if (recordingState == RecordingState::countIn)
+        {
+            const int countMs = recordCountInStepper.value * 1000;
+            if ((int) (juce::Time::getMillisecondCounter() - voiceRecordCountInStartMs) >= countMs)
+            {
+                beginVoiceRecordingNow();
+                return;
+            }
+
+            repaint (recorderBounds);
+            return;
+        }
+
+        if (recordingState == RecordingState::recording)
+        {
+            if (! voiceRecordingActive)
+            {
+                stopVoiceRecordingAndImport();
+                return;
+            }
+
+            repaint (recorderBounds);
+            return;
+        }
+
+        stopTimer();
     }
 
     bool SampleMapEditor::ensureAuditionEngineForMap (juce::String& error)
@@ -1112,6 +1244,9 @@ namespace patchcraft
 
     int SampleMapEditor::zoneIndexForPad (int padIndex) const
     {
+        if (padIndex < 0)
+            return -1;
+
         const auto& zones = owner.getProject().getSampleMap().getZones();
         for (int i = 0; i < (int) zones.size(); ++i)
             if (zones[(size_t) i].padIndex == padIndex)
@@ -1126,9 +1261,10 @@ namespace patchcraft
 
         auto r = drumPadBounds.reduced (10);
         r.removeFromTop (24);
-        const int columns = 8;
-        const int rows = 2;
-        const int gap = 6;
+        const bool sideBank = r.getHeight() > r.getWidth();
+        const int columns = sideBank ? 4 : 8;
+        const int rows = sideBank ? 4 : 2;
+        const int gap = sideBank ? 8 : 6;
         const int padW = (r.getWidth() - gap * (columns - 1)) / columns;
         const int padH = (r.getHeight() - gap * (rows - 1)) / rows;
         if (padW <= 0 || padH <= 0)
@@ -1161,16 +1297,13 @@ namespace patchcraft
         auto title = r.removeFromTop (22);
         g.setFont (juce::Font (12.0f, juce::Font::bold));
         g.setColour (PatchCraftLookAndFeel::accent());
-        g.drawText ("DRUM PADS / PERFORMANCE", title.removeFromLeft (180), juce::Justification::centredLeft);
-        g.setFont (juce::FontOptions (10.5f));
-        g.setColour (PatchCraftLookAndFeel::textDim());
-        g.drawText ("Pad Map turns imported samples into one-shot pads. Glitch Kit slices one sample across pads.",
-                    title, juce::Justification::centredLeft);
+        g.drawText ("PADS", title.removeFromLeft (60), juce::Justification::centredLeft);
 
         const auto& zones = owner.getProject().getSampleMap().getZones();
-        const int columns = 8;
-        const int rows = 2;
-        const int gap = 6;
+        const bool sideBank = r.getHeight() > r.getWidth();
+        const int columns = sideBank ? 4 : 8;
+        const int rows = sideBank ? 4 : 2;
+        const int gap = sideBank ? 8 : 6;
         const int padW = (r.getWidth() - gap * (columns - 1)) / columns;
         const int padH = (r.getHeight() - gap * (rows - 1)) / rows;
 
@@ -1195,8 +1328,8 @@ namespace patchcraft
                                                 : PatchCraftLookAndFeel::border().withAlpha (0.7f));
                 g.drawRoundedRectangle (area, 7.0f, selected ? 2.0f : 1.0f);
 
-                auto text = area.toNearestInt().reduced (8, 5);
-                g.setFont (juce::Font (11.0f, juce::Font::bold));
+                auto text = area.toNearestInt().reduced (8, sideBank ? 8 : 5);
+                g.setFont (juce::Font (sideBank ? 13.0f : 11.0f, juce::Font::bold));
                 g.setColour (hasZone ? PatchCraftLookAndFeel::textBright() : PatchCraftLookAndFeel::textDim());
                 const auto note = noteToString (36 + padIndex);
                 const auto label = hasZone
@@ -1204,17 +1337,17 @@ namespace patchcraft
                         ? zones[(size_t) zoneIndex].padLabel
                         : juce::File (zones[(size_t) zoneIndex].samplePath).getFileNameWithoutExtension())
                     : "Empty";
-                g.drawText ("Pad " + juce::String (padIndex + 1) + "  " + note,
-                            text.removeFromTop (16), juce::Justification::centredLeft);
-                g.setFont (juce::FontOptions (10.0f));
+                g.drawText ("Pad " + juce::String (padIndex + 1),
+                            text.removeFromTop (sideBank ? 20 : 16), juce::Justification::centredLeft);
+                g.setFont (juce::FontOptions (sideBank ? 10.5f : 10.0f));
                 g.setColour (hasZone ? PatchCraftLookAndFeel::text() : PatchCraftLookAndFeel::textDim());
-                g.drawFittedText (label, text.removeFromTop (16), juce::Justification::centredLeft, 1);
+                g.drawFittedText (label, text.removeFromTop (sideBank ? 30 : 16), juce::Justification::centredLeft, sideBank ? 2 : 1);
                 if (hasZone)
                 {
                     const auto& zone = zones[(size_t) zoneIndex];
-                    g.setFont (juce::FontOptions (9.0f));
+                    g.setFont (juce::FontOptions (sideBank ? 10.0f : 9.0f));
                     g.setColour (PatchCraftLookAndFeel::textDim());
-                    juce::String flags = zone.oneShot ? "One-shot" : "Gate";
+                    juce::String flags = note + (zone.oneShot ? "  One-shot" : "  Gate");
                     if (zone.chokeGroup > 0)
                         flags << "  Choke " << zone.chokeGroup;
                     if (zone.triggerProbability < 100)
@@ -1507,10 +1640,56 @@ namespace patchcraft
     void SampleMapEditor::resized()
     {
         auto r = getLocalBounds().reduced (4);
+        auto layoutRecorder = [this] (juce::Rectangle<int> bounds)
+        {
+            if (bounds.isEmpty())
+            {
+                for (auto* component : { static_cast<juce::Component*> (&recordVoiceBtn),
+                                         static_cast<juce::Component*> (&recordNowBtn),
+                                         static_cast<juce::Component*> (&stopVoiceRecordBtn),
+                                         static_cast<juce::Component*> (&cancelVoiceRecordBtn),
+                                         static_cast<juce::Component*> (&previewRecordingBtn),
+                                         static_cast<juce::Component*> (&placeRecordingBtn),
+                                         static_cast<juce::Component*> (&deleteRecordingBtn),
+                                         static_cast<juce::Component*> (&recordingTakesBox),
+                                         static_cast<juce::Component*> (&recordingKeyStepper),
+                                         static_cast<juce::Component*> (&recordCountInStepper) })
+                    component->setBounds ({});
+                return;
+            }
+
+            auto controls = bounds.reduced (10, 8);
+            controls.removeFromLeft (juce::jmin (500, juce::jmax (330, controls.getWidth() / 3)));
+            controls.removeFromLeft (10);
+            auto top = controls.removeFromTop (30);
+            auto placeButton = [] (juce::Rectangle<int>& row, juce::TextButton& button, int width)
+            {
+                button.setBounds (row.removeFromLeft (juce::jmin (width, row.getWidth())).reduced (2, 3));
+                row.removeFromLeft (4);
+            };
+
+            placeButton (top, recordVoiceBtn, 108);
+            placeButton (top, recordNowBtn, 104);
+            placeButton (top, stopVoiceRecordBtn, 84);
+            placeButton (top, cancelVoiceRecordBtn, 74);
+            controls.removeFromTop (4);
+            auto bottom = controls.removeFromTop (42);
+            recordingTakesBox.setBounds (bottom.removeFromLeft (juce::jmin (220, bottom.getWidth())).reduced (2, 6));
+            bottom.removeFromLeft (4);
+            previewRecordingBtn.setBounds (bottom.removeFromLeft (94).reduced (2, 6));
+            bottom.removeFromLeft (4);
+            placeRecordingBtn.setBounds (bottom.removeFromLeft (98).reduced (2, 6));
+            bottom.removeFromLeft (4);
+            deleteRecordingBtn.setBounds (bottom.removeFromLeft (86).reduced (2, 6));
+            bottom.removeFromLeft (8);
+            recordingKeyStepper.setBounds (bottom.removeFromLeft (114).reduced (2, 0));
+            bottom.removeFromLeft (6);
+            recordCountInStepper.setBounds (bottom.removeFromLeft (108).reduced (2, 0));
+        };
 
         if (easyMode)
         {
-            easyGuideBounds = r.removeFromTop (258);
+            easyGuideBounds = r.removeFromTop (96);
             auto guide = easyGuideBounds.reduced (12, 10);
             auto titleRow = guide.removeFromTop (28);
             auto modeArea = titleRow.removeFromRight (190);
@@ -1520,10 +1699,10 @@ namespace patchcraft
             easyTitleLabel.setBounds (titleRow.removeFromLeft (260));
             easySummaryLabel.setBounds (titleRow);
 
-            easyHelpLabel.setBounds (guide.removeFromTop (32));
-            guide.removeFromTop (6);
-            guide.removeFromBottom (70);
-
+            easyHelpLabel.setBounds ({});
+            recorderBounds = {};
+            layoutRecorder ({});
+            guide.removeFromTop (8);
             auto actionRow = guide.removeFromTop (36);
 
             auto placeEasyButton = [] (juce::Rectangle<int>& row, juce::TextButton& button, int width)
@@ -1533,33 +1712,23 @@ namespace patchcraft
                 row.removeFromLeft (4);
             };
 
-            placeEasyButton (actionRow, easyImportBtn, 142);
-            placeEasyButton (actionRow, libraryDrawerBtn, 92);
-            placeEasyButton (actionRow, recordVoiceBtn, 118);
-            if (voiceRecordingActive)
-                placeEasyButton (actionRow, stopVoiceRecordBtn, 84);
-            spanOnDropToggle.setBounds (actionRow.removeFromLeft (118).reduced (2, 5));
-            easyMapTypeBox.setBounds (actionRow.removeFromLeft (220).reduced (2, 4));
+            placeEasyButton (actionRow, easyImportBtn, 128);
+            placeEasyButton (actionRow, libraryDrawerBtn, 84);
+            easyMapTypeBox.setBounds (actionRow.removeFromLeft (juce::jmin (190, actionRow.getWidth())).reduced (2, 4));
             actionRow.removeFromLeft (4);
-            placeEasyButton (actionRow, easyKeyboardMapBtn, 128);
+            placeEasyButton (actionRow, easyKeyboardMapBtn, 116);
+            placeEasyButton (actionRow, selectAllBtn, 78);
+            placeEasyButton (actionRow, smartTrimBtn, 88);
+            placeEasyButton (actionRow, easyPlayModeBtn, 100);
+            placeEasyButton (actionRow, easyAuditionBtn, 94);
+            placeEasyButton (actionRow, easyStopBtn, 52);
+            placeEasyButton (actionRow, easyTestBtn, 94);
+            placeEasyButton (actionRow, easyClearBtn, 64);
 
-            guide.removeFromTop (6);
-            auto playbackRow = guide.removeFromTop (36);
-            placeEasyButton (playbackRow, smartTrimBtn, 96);
-            placeEasyButton (playbackRow, selectAllBtn, 88);
-            placeEasyButton (playbackRow, easyPlayModeBtn, 106);
-            placeEasyButton (playbackRow, easyAuditionBtn, 116);
-            placeEasyButton (playbackRow, easyStopBtn, 56);
-            placeEasyButton (playbackRow, easyTestBtn, 114);
-            placeEasyButton (playbackRow, easyClearBtn, 72);
-
-            guide.removeFromTop (10);
-            auto velocityArea = guide.removeFromTop (58);
-            importLowVelocityStepper.setBounds (velocityArea.removeFromLeft (160).reduced (3, 1));
-            velocityArea.removeFromLeft (16);
-            importHighVelocityStepper.setBounds (velocityArea.removeFromLeft (160).reduced (3, 1));
-            velocityArea.removeFromLeft (16);
-            applyImportVelocityAllBtn.setBounds (velocityArea.removeFromLeft (94).reduced (3, 12));
+            spanOnDropToggle.setBounds ({});
+            importLowVelocityStepper.setBounds ({});
+            importHighVelocityStepper.setBounds ({});
+            applyImportVelocityAllBtn.setBounds ({});
         }
         else
         {
@@ -1588,10 +1757,6 @@ namespace patchcraft
             toolbar.removeFromLeft (4);
             libraryDrawerBtn.setBounds (toolbar.removeFromLeft (70));
             toolbar.removeFromLeft (4);
-            recordVoiceBtn.setBounds (toolbar.removeFromLeft (98));
-            toolbar.removeFromLeft (4);
-            stopVoiceRecordBtn.setBounds (toolbar.removeFromLeft (74));
-            toolbar.removeFromLeft (4);
             spanOnDropToggle.setBounds (toolbar.removeFromLeft (112).reduced (2, 4));
             toolbar.removeFromLeft (4);
             removeBtn.setBounds (toolbar.removeFromLeft (74));
@@ -1606,11 +1771,15 @@ namespace patchcraft
             toolbar.removeFromLeft (2);
             zoomInBtn.setBounds (toolbar.removeFromLeft (28));
             toolbar.removeFromLeft (10);
-        auditionBtn.setBounds (toolbar.removeFromLeft (74));
-        toolbar.removeFromLeft (4);
-        stopAuditionBtn.setBounds (toolbar.removeFromLeft (54));
-        toolbar.removeFromLeft (4);
-        playModeBtn.setBounds (toolbar.removeFromLeft (82));
+            auditionBtn.setBounds (toolbar.removeFromLeft (74));
+            toolbar.removeFromLeft (4);
+            stopAuditionBtn.setBounds (toolbar.removeFromLeft (54));
+            toolbar.removeFromLeft (4);
+            playModeBtn.setBounds (toolbar.removeFromLeft (82));
+
+            r.removeFromTop (6);
+            recorderBounds = r.removeFromTop (86);
+            layoutRecorder (recorderBounds);
         }
 
         // Info bar
@@ -1624,35 +1793,35 @@ namespace patchcraft
         infoBar.removeFromLeft (16);
         sampleNameLabel.setBounds (infoBar);
 
-        r.removeFromTop (4);
-        healthBounds = r.removeFromTop (62);
-        auto healthActions = healthBounds.reduced (10, 8).removeFromRight (316);
-        const int buttonW = 76;
-        healthFixEngineBtn.setBounds (healthActions.removeFromLeft (buttonW));
-        healthActions.removeFromLeft (4);
-        healthAutoMapBtn.setBounds (healthActions.removeFromLeft (buttonW));
-        healthActions.removeFromLeft (4);
-        healthFindMissingBtn.setBounds (healthActions.removeFromLeft (buttonW + 16));
-        healthActions.removeFromLeft (4);
-        healthGoTestBtn.setBounds (healthActions.removeFromLeft (buttonW));
-        r.removeFromTop (4);
-        drumPadBounds = r.removeFromTop (112).reduced (0, 2);
-        r.removeFromTop (4);
-
+        healthBounds = {};
+        healthFixEngineBtn.setBounds ({});
+        healthAutoMapBtn.setBounds ({});
+        healthFindMissingBtn.setBounds ({});
+        healthGoTestBtn.setBounds ({});
         if (easyMode)
         {
             editPanelBounds = {};
-            auto waveformArea = r.removeFromBottom (136).reduced (0, 4);
+            auto workspace = r;
+
+            auto waveformArea = workspace.removeFromBottom (124).reduced (0, 4);
             waveformStatus.setBounds (waveformArea.removeFromTop (20));
             if (waveformViewer != nullptr)
                 waveformViewer->setBounds (waveformArea);
-            r.removeFromBottom (4);
-            gridBounds = r;
+            workspace.removeFromBottom (4);
+
+            drumPadBounds = workspace.removeFromLeft (juce::jlimit (220, 300, workspace.getWidth() / 4)).reduced (0, 2);
+            workspace.removeFromLeft (8);
+
+            gridBounds = workspace;
             samplesHeader.setVisible (false);
             samplesList.setVisible (false);
             updateModeVisibility();
             return;
         }
+
+        r.removeFromTop (4);
+        drumPadBounds = r.removeFromTop (112).reduced (0, 2);
+        r.removeFromTop (4);
 
         // Bottom editor: waveform plus professional zone/playback cards.
         const int lowerAreaHeight = r.getHeight();
@@ -1788,6 +1957,7 @@ namespace patchcraft
         samplesList.repaint();
         updateSteppersFromZone();
         updateHealthButtons();
+        refreshRecordingTakes();
         easySummaryLabel.setText (buildEasySummary(), juce::dontSendNotification);
         updateModeVisibility();
         repaint();
@@ -2572,8 +2742,18 @@ namespace patchcraft
             auditionEngine->process (output, 0, numSamples);
         }
 
-        if (voiceRecordingActive && numInputChannels > 0 && inputChannelData != nullptr && inputChannelData[0] != nullptr)
+        if (voiceRecordingActive
+            && recordingState == RecordingState::recording
+            && numInputChannels > 0
+            && inputChannelData != nullptr
+            && inputChannelData[0] != nullptr)
         {
+            float peak = 0.0f;
+            for (int i = 0; i < numSamples; ++i)
+                peak = juce::jmax (peak, std::abs (inputChannelData[0][i]));
+            voiceRecordInputLevel = juce::jlimit (0.0f, 1.0f, voiceRecordInputLevel * 0.78f + peak * 0.22f);
+
+            bool hitMaxLength = false;
             const juce::ScopedLock recordLock (voiceRecordLock);
             const int writable = juce::jmin (numSamples, voiceRecordMaxSamples - voiceRecordSamples);
             if (writable > 0)
@@ -2582,7 +2762,20 @@ namespace patchcraft
                 voiceRecordSamples += writable;
             }
             if (voiceRecordSamples >= voiceRecordMaxSamples)
+            {
                 voiceRecordingActive = false;
+                hitMaxLength = true;
+            }
+
+            if (hitMaxLength)
+            {
+                juce::Component::SafePointer<SampleMapEditor> safeThis (this);
+                juce::MessageManager::callAsync ([safeThis]
+                {
+                    if (safeThis != nullptr)
+                        safeThis->stopVoiceRecordingAndImport();
+                });
+            }
         }
     }
 
@@ -2762,6 +2955,41 @@ namespace patchcraft
 
     void SampleMapEditor::startVoiceRecording()
     {
+        beginVoiceRecordingNow();
+    }
+
+    void SampleMapEditor::startVoiceRecordingWithCountIn()
+    {
+        if (recordingState == RecordingState::recording || recordingState == RecordingState::countIn)
+            return;
+
+        if (recordCountInStepper.value <= 0)
+        {
+            beginVoiceRecordingNow();
+            return;
+        }
+
+        juce::String error;
+        if (! owner.getAudio().ensureOpen (error, 1, 2))
+        {
+            waveformStatus.setText ("Voice recording unavailable: " + error, juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        recordingState = RecordingState::countIn;
+        voiceRecordCountInStartMs = juce::Time::getMillisecondCounter();
+        voiceRecordInputLevel = 0.0f;
+        waveformStatus.setText ("Voice recorder count-in running. Recording will start automatically.",
+                                juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+        startTimerHz (30);
+        refreshRecordingControls();
+        repaint();
+    }
+
+    void SampleMapEditor::beginVoiceRecordingNow()
+    {
         if (voiceRecordingActive)
             return;
 
@@ -2782,6 +3010,9 @@ namespace patchcraft
             voiceRecordBuffer.clear();
             voiceRecordSamples = 0;
             voiceRecordingActive = true;
+            voiceRecordInputLevel = 0.0f;
+            voiceRecordStartMs = juce::Time::getMillisecondCounter();
+            recordingState = RecordingState::recording;
         }
 
         if (! auditionCallbackActive)
@@ -2795,15 +3026,22 @@ namespace patchcraft
             voiceRecordCallbackOwned = false;
         }
 
-        waveformStatus.setText ("Recording voice input... speak or sing, then click Stop Rec. Max length: 2 minutes.",
+        waveformStatus.setText ("Recording voice input. Watch the input meter, then Stop Rec to save and map the take.",
                                 juce::dontSendNotification);
         waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+        startTimerHz (30);
         updateModeVisibility();
         resized();
     }
 
     void SampleMapEditor::stopVoiceRecordingAndImport()
     {
+        if (recordingState == RecordingState::countIn)
+        {
+            cancelVoiceRecording();
+            return;
+        }
+
         if (! voiceRecordingActive && voiceRecordSamples <= 0)
             return;
 
@@ -2812,6 +3050,7 @@ namespace patchcraft
         {
             const juce::ScopedLock lock (voiceRecordLock);
             voiceRecordingActive = false;
+            recordingState = RecordingState::recorded;
             capturedSamples = voiceRecordSamples;
             if (capturedSamples > 0)
             {
@@ -2820,6 +3059,7 @@ namespace patchcraft
             }
             voiceRecordBuffer.setSize (0, 0);
             voiceRecordSamples = 0;
+            voiceRecordInputLevel = 0.0f;
         }
 
         if (voiceRecordCallbackOwned)
@@ -2834,8 +3074,11 @@ namespace patchcraft
 
         if (capturedSamples <= 64)
         {
+            recordingState = RecordingState::idle;
+            stopTimer();
             waveformStatus.setText ("Voice recording discarded: take was too short.", juce::dontSendNotification);
             waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            refreshRecordingControls();
             return;
         }
 
@@ -2874,9 +3117,254 @@ namespace patchcraft
         juce::Array<juce::File> files;
         files.add (file);
         importSampleFiles (files, false);
-        waveformStatus.setText ("Recorded and imported voice sample: " + file.getFileName(),
+
+        lastRecordingFile = file;
+        recordingTakePaths.addIfNotAlreadyThere (file.getFullPathName());
+        refreshRecordingTakes();
+
+        const int zoneIndex = findZoneForRecordingFile (file);
+        if (zoneIndex >= 0)
+        {
+            auto& zones = owner.getProject().getSampleMap().getZones();
+            auto before = zones;
+            auto& zone = zones[(size_t) zoneIndex];
+            const int target = juce::jlimit (0, 127, recordingKeyStepper.value);
+            zone.rootNote = target;
+            zone.lowNote = target;
+            zone.highNote = target;
+            zone.lowVelocity = 1;
+            zone.highVelocity = 127;
+            zone.oneShot = false;
+            zone.loopEnabled = false;
+            commitSampleMapEdit ("Place recorded take on key", std::move (before));
+            selectZone (zoneIndex);
+        }
+
+        waveformStatus.setText ("Recorded voice take, mapped it to " + noteToString (recordingKeyStepper.value)
+                                + ": " + file.getFileName(),
                                 juce::dontSendNotification);
         waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+        refreshRecordingControls();
+        stopTimer();
+        repaint();
+    }
+
+    void SampleMapEditor::cancelVoiceRecording()
+    {
+        const bool wasActive = recordingState == RecordingState::recording || recordingState == RecordingState::countIn || voiceRecordingActive;
+        {
+            const juce::ScopedLock lock (voiceRecordLock);
+            voiceRecordingActive = false;
+            voiceRecordBuffer.setSize (0, 0);
+            voiceRecordSamples = 0;
+            voiceRecordInputLevel = 0.0f;
+        }
+
+        if (voiceRecordCallbackOwned)
+        {
+            owner.getAudio().getDeviceManager().removeAudioCallback (this);
+            auditionCallbackActive = false;
+            voiceRecordCallbackOwned = false;
+        }
+
+        recordingState = RecordingState::idle;
+        stopTimer();
+        refreshRecordingControls();
+        updateModeVisibility();
+        resized();
+        repaint();
+
+        if (wasActive)
+        {
+            waveformStatus.setText ("Voice recording cancelled. No take was imported.",
+                                    juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+        }
+    }
+
+    juce::File SampleMapEditor::selectedRecordingTakeFile() const
+    {
+        const int selectedId = recordingTakesBox.getSelectedId();
+        if (selectedId > 0)
+        {
+            const int index = selectedId - 1;
+            if (index >= 0 && index < recordingTakePaths.size())
+                return juce::File (recordingTakePaths[index]);
+        }
+
+        if (lastRecordingFile.existsAsFile())
+            return lastRecordingFile;
+
+        if (! recordingTakePaths.isEmpty())
+            return juce::File (recordingTakePaths[recordingTakePaths.size() - 1]);
+
+        return juce::File();
+    }
+
+    int SampleMapEditor::findZoneForRecordingFile (const juce::File& file) const
+    {
+        if (! file.existsAsFile())
+            return -1;
+
+        const auto target = file.getFullPathName();
+        const auto& zones = owner.getProject().getSampleMap().getZones();
+        for (int i = 0; i < (int) zones.size(); ++i)
+        {
+            const juce::File zoneFile (zones[(size_t) i].samplePath);
+            if (zoneFile.getFullPathName() == target)
+                return i;
+        }
+        return -1;
+    }
+
+    void SampleMapEditor::refreshRecordingTakes()
+    {
+        const auto previous = selectedRecordingTakeFile().getFullPathName();
+        for (const auto& zone : owner.getProject().getSampleMap().getZones())
+        {
+            const juce::File file (zone.samplePath);
+            if (file.existsAsFile()
+                && file.getParentDirectory().getFileName().equalsIgnoreCase ("Voice Captures"))
+                recordingTakePaths.addIfNotAlreadyThere (file.getFullPathName());
+        }
+
+        for (int i = recordingTakePaths.size() - 1; i >= 0; --i)
+        {
+            if (! juce::File (recordingTakePaths[i]).existsAsFile())
+                recordingTakePaths.remove (i);
+        }
+
+        recordingTakesBox.clear (juce::dontSendNotification);
+        for (int i = 0; i < recordingTakePaths.size(); ++i)
+            recordingTakesBox.addItem (juce::File (recordingTakePaths[i]).getFileName(), i + 1);
+
+        int selected = 0;
+        if (previous.isNotEmpty())
+            selected = recordingTakePaths.indexOf (previous) + 1;
+        if (selected <= 0 && lastRecordingFile.existsAsFile())
+            selected = recordingTakePaths.indexOf (lastRecordingFile.getFullPathName()) + 1;
+        if (selected <= 0 && ! recordingTakePaths.isEmpty())
+            selected = recordingTakePaths.size();
+        recordingTakesBox.setSelectedId (selected, juce::dontSendNotification);
+        refreshRecordingControls();
+    }
+
+    void SampleMapEditor::refreshRecordingControls()
+    {
+        const bool countIn = recordingState == RecordingState::countIn;
+        const bool recording = recordingState == RecordingState::recording;
+        const auto take = selectedRecordingTakeFile();
+        const bool hasTake = take.existsAsFile();
+
+        recordVoiceBtn.setEnabled (! countIn && ! recording);
+        recordNowBtn.setEnabled (! countIn && ! recording);
+        stopVoiceRecordBtn.setEnabled (recording);
+        cancelVoiceRecordBtn.setEnabled (countIn || recording);
+        previewRecordingBtn.setEnabled (hasTake && ! recording);
+        placeRecordingBtn.setEnabled (hasTake && ! recording);
+        deleteRecordingBtn.setEnabled (hasTake && ! recording);
+        recordingTakesBox.setEnabled (! recording && ! recordingTakePaths.isEmpty());
+        recordingKeyStepper.setEnabled (! recording);
+        recordCountInStepper.setEnabled (! recording && ! countIn);
+    }
+
+    void SampleMapEditor::previewSelectedRecording()
+    {
+        const auto take = selectedRecordingTakeFile();
+        if (! take.existsAsFile())
+        {
+            waveformStatus.setText ("No recorded take selected to preview.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        int zoneIndex = findZoneForRecordingFile (take);
+        if (zoneIndex < 0)
+        {
+            juce::Array<juce::File> files;
+            files.add (take);
+            importSampleFiles (files, false);
+            zoneIndex = findZoneForRecordingFile (take);
+        }
+
+        if (zoneIndex >= 0)
+        {
+            selectZone (zoneIndex);
+            auditionSelectedZone();
+            waveformStatus.setText ("Previewing recorded take: " + take.getFileName(),
+                                    juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+        }
+    }
+
+    void SampleMapEditor::placeSelectedRecordingOnKey()
+    {
+        const auto take = selectedRecordingTakeFile();
+        int zoneIndex = findZoneForRecordingFile (take);
+        if (zoneIndex < 0)
+        {
+            waveformStatus.setText ("Select a recorded take before placing it on a key.",
+                                    juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        auto before = zones;
+        const int target = juce::jlimit (0, 127, recordingKeyStepper.value);
+        auto& zone = zones[(size_t) zoneIndex];
+        zone.rootNote = target;
+        zone.lowNote = target;
+        zone.highNote = target;
+        zone.lowVelocity = 1;
+        zone.highVelocity = 127;
+        commitSampleMapEdit ("Place recorded take on key", std::move (before));
+        selectZone (zoneIndex);
+        refresh();
+        waveformStatus.setText ("Placed " + take.getFileName() + " on " + noteToString (target) + ".",
+                                juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+    }
+
+    void SampleMapEditor::deleteSelectedRecordingTake()
+    {
+        const auto take = selectedRecordingTakeFile();
+        if (! take.existsAsFile())
+            return;
+
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        auto before = zones;
+        int removed = 0;
+        for (int i = (int) zones.size() - 1; i >= 0; --i)
+        {
+            if (juce::File (zones[(size_t) i].samplePath).getFullPathName() == take.getFullPathName())
+            {
+                owner.getProject().getSampleMap().removeAt (i);
+                ++removed;
+            }
+        }
+
+        if (removed > 0)
+            commitSampleMapEdit ("Delete recorded take", std::move (before));
+
+        const auto voiceFolder = BuiltAssetLibraryComponent::getCategoryFolder ("sounds").getChildFile ("Voice Captures");
+        if (take.existsAsFile() && take.getParentDirectory() == voiceFolder)
+        {
+            auto trashFile = take;
+            trashFile.moveToTrash();
+        }
+
+        recordingTakePaths.removeString (take.getFullPathName(), true);
+        if (lastRecordingFile.getFullPathName() == take.getFullPathName())
+            lastRecordingFile = juce::File();
+
+        selectedZone = -1;
+        selectedZoneIndexes.clear();
+        refreshRecordingTakes();
+        refresh();
+        waveformStatus.setText ("Deleted recorded take: " + take.getFileName(),
+                                juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
     }
 
     bool SampleMapEditor::isInterestedInFileDrag (const juce::StringArray& files)
@@ -3040,14 +3528,25 @@ namespace patchcraft
             zone.oneShot = drumPadDrop;
             zone.loopEnabled = false;
             if (drumPadDrop)
+            {
+                zone.padIndex = juce::jlimit (0, 15, padIndex + i);
                 zone.padLabel = zone.padLabel.isNotEmpty()
                     ? zone.padLabel
                     : juce::File (zone.samplePath).getFileNameWithoutExtension();
+                zone.group = "Drum Pads";
+                zone.triggerProbability = juce::jlimit (1, 100, zone.triggerProbability);
+            }
             mappedIndexes.add (zoneIndex);
         }
 
         commitSampleMapEdit (drumPadDrop ? "Map samples to pads" : "Map dropped samples", std::move (beforeTargetMap));
         setSelectedZones (mappedIndexes, true);
+        if (drumPadDrop && playModeEnabled)
+        {
+            stopPreviewNotesOnly();
+            juce::String error;
+            ensureAuditionEngineForMap (error);
+        }
         refresh();
 
         waveformStatus.setText ((drumPadDrop ? "Mapped " : "Dropped ")
@@ -3177,6 +3676,17 @@ namespace patchcraft
                     if (owner.getProject().getEngineType() != "sample")
                         owner.getProject().setEngineType ("sample");
                     refresh();
+                    if (playModeEnabled)
+                    {
+                        stopPreviewNotesOnly();
+                        juce::String error;
+                        if (! ensureAuditionEngineForMap (error))
+                        {
+                            waveformStatus.setText (error, juce::dontSendNotification);
+                            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+                            return;
+                        }
+                    }
 
                     juce::String status = "Imported " + juce::String (imported) + " sample"
                         + (imported == 1 ? "." : "s.")

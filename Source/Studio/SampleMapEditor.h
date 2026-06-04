@@ -25,7 +25,8 @@ namespace patchcraft
                             public juce::MidiInputCallback,
                             public juce::ListBoxModel,
                             public juce::FileDragAndDropTarget,
-                            public juce::DragAndDropTarget
+                            public juce::DragAndDropTarget,
+                            private juce::Timer
     {
     public:
         SampleMapEditor (StudioMainComponent& owner);
@@ -65,8 +66,14 @@ namespace patchcraft
         juce::TextButton listViewBtn{ "List View" };
         juce::TextButton importBtn{ "Import" };
         juce::TextButton libraryDrawerBtn{ "Library" };
-        juce::TextButton recordVoiceBtn{ "Record Voice" };
+        juce::TextButton recordVoiceBtn{ "Count In Rec" };
+        juce::TextButton recordNowBtn{ "Record Now" };
         juce::TextButton stopVoiceRecordBtn{ "Stop Rec" };
+        juce::TextButton cancelVoiceRecordBtn{ "Cancel" };
+        juce::TextButton previewRecordingBtn{ "Preview Take" };
+        juce::TextButton placeRecordingBtn{ "Place On Key" };
+        juce::TextButton deleteRecordingBtn{ "Delete Take" };
+        juce::ComboBox recordingTakesBox;
         juce::TextButton removeBtn{ "Delete Sel" };
         juce::TextButton selectAllBtn{ "Select All" };
         juce::TextButton clearAllBtn{ "Clear All" };
@@ -129,6 +136,7 @@ namespace patchcraft
         juce::Rectangle<int> gridBounds;
         juce::Rectangle<int> drumPadBounds;
         juce::Rectangle<int> healthBounds;
+        juce::Rectangle<int> recorderBounds;
         float zoomLevel = 1.0f;
         int scrollOffset = 0; // in semitones from C-2
 
@@ -174,6 +182,8 @@ namespace patchcraft
         StepperControl hiVelStepper{ "High Vel" };
         StepperControl importLowVelocityStepper{ "Import Low" };
         StepperControl importHighVelocityStepper{ "Import High" };
+        StepperControl recordingKeyStepper{ "Place Key" };
+        StepperControl recordCountInStepper{ "Count In" };
         juce::TextButton applyImportVelocitySelectedBtn{ "Apply Sel" };
         juce::TextButton applyImportVelocityAllBtn{ "Apply All" };
         StepperControl gainStepper{ "Gain dB" };
@@ -265,11 +275,13 @@ namespace patchcraft
         void paintKeyboard (juce::Graphics& g, juce::Rectangle<int> bounds);
         void paintDrumPadGrid (juce::Graphics& g, juce::Rectangle<int> bounds);
         void paintHealthPanel (juce::Graphics& g, juce::Rectangle<int> bounds);
+        void paintRecorderPanel (juce::Graphics& g, juce::Rectangle<int> bounds);
         void paintEditPanel (juce::Graphics& g, juce::Rectangle<int> bounds);
         void paintEditCard (juce::Graphics& g, juce::Rectangle<int> bounds, const juce::String& title);
         void paintEasyGuide (juce::Graphics& g, juce::Rectangle<int> bounds);
         void setEasyMode (bool shouldUseEasyMode);
         void updateModeVisibility();
+        void timerCallback() override;
         juce::String buildEasySummary();
         bool ensureAuditionEngineForMap (juce::String& error);
         void setPlayModeEnabled (bool enabled);
@@ -284,7 +296,17 @@ namespace patchcraft
         // Actions
         void addSample();
         void startVoiceRecording();
+        void startVoiceRecordingWithCountIn();
+        void beginVoiceRecordingNow();
         void stopVoiceRecordingAndImport();
+        void cancelVoiceRecording();
+        void previewSelectedRecording();
+        void placeSelectedRecordingOnKey();
+        void deleteSelectedRecordingTake();
+        void refreshRecordingTakes();
+        void refreshRecordingControls();
+        juce::File selectedRecordingTakeFile() const;
+        int findZoneForRecordingFile (const juce::File& file) const;
         void importSampleFiles (const juce::Array<juce::File>& files, bool spanMappedRoots = true);
         void importDroppedSampleFiles (const juce::Array<juce::File>& files,
                                        juce::Point<int> localPosition);
@@ -344,6 +366,8 @@ namespace patchcraft
         int auditionChannels = 2;
         bool auditionCallbackActive = false;
         int auditionNote = -1;
+        enum class RecordingState { idle, countIn, recording, recorded };
+        RecordingState recordingState = RecordingState::idle;
         bool voiceRecordingActive = false;
         bool voiceRecordCallbackOwned = false;
         juce::CriticalSection voiceRecordLock;
@@ -351,6 +375,11 @@ namespace patchcraft
         int voiceRecordSamples = 0;
         double voiceRecordSampleRate = 44100.0;
         int voiceRecordMaxSamples = 0;
+        float voiceRecordInputLevel = 0.0f;
+        juce::uint32 voiceRecordStartMs = 0;
+        juce::uint32 voiceRecordCountInStartMs = 0;
+        juce::StringArray recordingTakePaths;
+        juce::File lastRecordingFile;
         bool playModeEnabled = false;
         int mousePreviewNote = -1;
         SampleZoneDef zoneClipboard;

@@ -216,7 +216,9 @@ namespace patchcraft
         }
         else
         {
-            auto thumbPath = entry.folder.getChildFile (entry.libraryThumbnail);
+            auto thumbPath = juce::File::isAbsolutePath (entry.libraryThumbnail)
+                ? juce::File (entry.libraryThumbnail)
+                : entry.folder.getChildFile (entry.libraryThumbnail);
             if (thumbPath.existsAsFile())
             {
                 juce::PNGImageFormat png;

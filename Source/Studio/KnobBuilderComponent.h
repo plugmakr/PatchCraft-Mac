@@ -43,6 +43,8 @@ namespace patchcraft
             float importedBaseOpacity = 1.0f;
             float overlayOpacity = 1.0f;
             float imageScale = 1.0f;
+            float imageOffsetX = 0.0f;
+            float imageOffsetY = 0.0f;
             float imageRotation = 0.0f;
             float animationDepth = 0.35f;
             float surfaceTexture = 0.16f;
@@ -50,10 +52,23 @@ namespace patchcraft
             float ringInset = 0.0f;
             float pointerLength = 0.82f;
             float motionCurve = 0.50f;
+            float backgroundTolerance = 0.18f;
+            float maskRadius = 0.32f;
+            float maskFeather = 0.08f;
+            float maskOffsetX = 0.0f;
+            float maskOffsetY = 0.0f;
+            float pivotX = 0.50f;
+            float pivotY = 0.50f;
+            int   maskShape = 1;
             bool  ring = true;
             bool  ticks = true;
             bool  shadow = true;
             bool  label = false;
+            bool  removeBackground = false;
+            bool  maskEnabled = false;
+            bool  positiveMask = true;
+            bool  rotateMaskedRegion = false;
+            bool  lockUnmaskedRegion = true;
             juce::Colour indicator { 0xfff5a623 };
             juce::Colour ringColour { 0xfff5a623 };
             juce::Colour backgroundColour { 0xff1a1c20 };
@@ -72,16 +87,32 @@ namespace patchcraft
         juce::Slider sizeSlider, valueSlider, startSlider, endSlider, ringWidthSlider,
                      pointerWidthSlider, bevelSlider, glowSlider, framesSlider,
                      importedBaseOpacitySlider, overlayOpacitySlider,
-                     imageScaleSlider, imageRotationSlider, animationDepthSlider,
+                     imageScaleSlider, imageOffsetXSlider, imageOffsetYSlider,
+                     imageRotationSlider, animationDepthSlider,
                      surfaceTextureSlider, lightAngleSlider, ringInsetSlider,
-                     pointerLengthSlider, motionCurveSlider;
+                     pointerLengthSlider, motionCurveSlider, backgroundToleranceSlider,
+                     maskRadiusSlider, maskFeatherSlider, maskOffsetXSlider,
+                     maskOffsetYSlider, pivotXSlider, pivotYSlider;
         juce::ToggleButton ringToggle { "Ring" };
         juce::ToggleButton ticksToggle { "Tick Marks" };
         juce::ToggleButton shadowToggle { "Shadow" };
         juce::ToggleButton labelToggle { "Text Label" };
         juce::ToggleButton importedBaseToggle { "Use Imported Base" };
         juce::ToggleButton overlayToggle { "Overlay Edits" };
-        juce::ComboBox styleBox, indicatorBox, outputBox, imageRoleBox, imageFitBox, animationBox;
+        juce::ToggleButton removeBackgroundToggle { "Remove BG" };
+        juce::ToggleButton maskToggle { "Mask" };
+        juce::ToggleButton positiveMaskToggle { "Positive" };
+        juce::ToggleButton rotateMaskedToggle { "Animate Mask" };
+        juce::ToggleButton lockUnmaskedToggle { "Lock Rest" };
+        juce::ComboBox styleBox, indicatorBox, outputBox, imageRoleBox, imageFitBox, animationBox, maskShapeBox;
+        juce::TextButton imageNudgeLeftBtn { "Img <" };
+        juce::TextButton imageNudgeRightBtn { "Img >" };
+        juce::TextButton imageNudgeUpBtn { "Img ^" };
+        juce::TextButton imageNudgeDownBtn { "Img v" };
+        juce::TextButton maskNudgeLeftBtn { "Mask <" };
+        juce::TextButton maskNudgeRightBtn { "Mask >" };
+        juce::TextButton maskNudgeUpBtn { "Mask ^" };
+        juce::TextButton maskNudgeDownBtn { "Mask v" };
         juce::TextButton importBtn { "Import Knob..." };
         juce::TextButton clearImportBtn { "Clear Import" };
         juce::TextButton proDemoBtn { "Load Pro Demo" };
@@ -102,6 +133,10 @@ namespace patchcraft
         bool importedStripVertical = true;
         int importedFrameCount = 0;
         int importedFrameSize = 0;
+        mutable juce::Image cachedProcessedActiveFrame;
+        mutable juce::Image cachedProcessedPassiveFrame;
+        mutable juce::String cachedProcessedActiveKey;
+        mutable juce::String cachedProcessedPassiveKey;
         std::vector<BuildLayer> buildLayers;
         std::vector<juce::Rectangle<int>> buildLayerRows;
         std::vector<int> buildLayerRowIndices;
@@ -117,7 +152,7 @@ namespace patchcraft
         bool draggingPreviewKnob = false;
 
         enum SectionIndex { AssetSection = 0, ImportSection, GeometrySection, PaintSection, BehaviorSection, OutputSection, SectionCount };
-        std::array<bool, SectionCount> sectionOpen {{ true, true, false, false, false, true }};
+        std::array<bool, SectionCount> sectionOpen {{ true, true, true, true, true, true }};
         std::array<juce::Rectangle<int>, SectionCount> sectionHeaderBounds {};
         juce::Rectangle<int> rightPanelViewportBounds;
         int rightPanelScrollOffset = 0;
@@ -139,8 +174,14 @@ namespace patchcraft
         void detectImportedFilmstripLayout();
         bool hasImportedKnob() const noexcept;
         juce::Image getImportedFrame (float position) const;
+        juce::Image processImportedFrame (const juce::Image& source, bool activeMaskRegion) const;
+        void invalidateImportedProcessingCache() const;
+        void normaliseImportedWorkingImage();
+        bool scrollRightPanel (int deltaPixels);
         void updateStyleFromControls();
         void updatePreviewValueFromPoint (juce::Point<int> point);
+        void nudgeImportedImage (float deltaX, float deltaY);
+        void nudgeMask (float deltaX, float deltaY);
         void openSectionForLayer (const juce::String& layerName);
         bool isBuildLayerVisible (const juce::String& layerName) const;
         void applyWorkbenchAction (const juce::String& actionId);

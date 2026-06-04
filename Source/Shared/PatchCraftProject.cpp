@@ -74,10 +74,73 @@ namespace patchcraft
             addIfMissing ("bpmSync", "BPM Sync", 1.0f);
             addIfMissing ("retrigger", "Retrigger", 1.0f);
         }
+
+        static float sanitisePresetPlaybackValue (const juce::String& id, float value)
+        {
+            if (id == "noiseBlend")
+                return 0.0f;
+
+            if (id == "oscType" || id == "osc2Type")
+            {
+                if (juce::roundToInt (value) >= 4)
+                    return 1.0f;
+                return juce::jlimit (0.0f, 3.0f, value);
+            }
+
+            if (id == "oscBlend")
+                return juce::jlimit (0.0f, 0.35f, value);
+
+            return value;
+        }
+
+        static float sanitiseGraphPlaybackValue (const juce::String& id, float value)
+        {
+            if (id == "noiseBlend")
+                return 0.0f;
+
+            if (id == "oscType" || id == "osc2Type")
+            {
+                if (value >= 1.0f)
+                    return id == "osc2Type" ? 0.75f : 0.25f;
+
+                return juce::jlimit (0.0f, 0.75f, value);
+            }
+
+            if (id == "oscBlend")
+                return juce::jlimit (0.0f, 0.35f, value);
+
+            if (id == "detune" || id == "osc2Detune")
+            {
+                if (value < 0.0f || value > 1.0f)
+                    return juce::jmap (juce::jlimit (-50.0f, 50.0f, value), -50.0f, 50.0f, 0.0f, 1.0f);
+
+                return value;
+            }
+
+            return value;
+        }
+
+        static void sanitisePlaybackGraph (DspGraph& graph)
+        {
+            for (auto& block : graph.blocks)
+            {
+                for (auto& value : block.values)
+                    value.second = sanitiseGraphPlaybackValue (value.first, value.second);
+
+                if (block.targetId == "noiseBlend" || block.type.containsIgnoreCase ("noise"))
+                {
+                    block.values["noiseBlend"] = 0.0f;
+                    block.values["amount"] = 0.0f;
+                    block.values["value"] = 0.0f;
+                    block.enabled = false;
+                }
+            }
+        }
     }
 
     PatchCraftProject::PatchCraftProject()
     {
+        scriptEngine.bindStore (&liveValues);
         resetToDefaultInstrument();
     }
 
@@ -116,6 +179,14 @@ namespace patchcraft
         if (! presets.empty())
             presets.front().isDefault = true;
         dirty = false;
+    }
+
+    void PatchCraftProject::resetCanvasToBlank()
+    {
+        layout.clear();
+        backgroundImageRelative.clear();
+        manifest.backgroundImage.clear();
+        notifyChanged();
     }
 
     // -------------------------------------------------------------------------
@@ -185,6 +256,7 @@ namespace patchcraft
         expansions = pack.expansions;
         midiMappings = pack.midiMappings;
         dspGraph = pack.dspGraph;
+        sanitisePlaybackGraph (dspGraph);
         backgroundImageRelative = pack.backgroundImageRelative;
 
         ensurePerformanceParameters (parameters, liveValues);
@@ -201,7 +273,7 @@ namespace patchcraft
         if (presetToApply != presets.end())
         {
             for (const auto& value : presetToApply->values)
-                liveValues.setValue (value.first, value.second);
+                liveValues.setValue (value.first, sanitisePresetPlaybackValue (value.first, value.second));
             manifest.defaultPreset = presetToApply->name;
             for (auto& preset : presets)
                 preset.isDefault = preset.name == presetToApply->name;
@@ -307,7 +379,10 @@ namespace patchcraft
             || ! patch.dspGraph.automation.empty()
             || patch.dspGraph.userConfigured;
         if (hasGraphState)
+        {
             dspGraph = patch.dspGraph;
+            sanitisePlaybackGraph (dspGraph);
+        }
         else if (dspGraph.blocks.empty())
             dspGraph.resetForEngine (manifest.engine);
 
@@ -322,7 +397,7 @@ namespace patchcraft
 
         resetLiveValuesToDefaults();
         for (const auto& value : patch.parameterValues)
-            liveValues.setValue (value.first, value.second);
+            liveValues.setValue (value.first, sanitisePresetPlaybackValue (value.first, value.second));
 
         for (auto& existing : patches)
             existing.isDefault = (existing.id.isNotEmpty() && existing.id == patch.id)
@@ -359,7 +434,7 @@ namespace patchcraft
             // the default factory patch.
             applyPatch (*patchToApply);
             for (const auto& value : preset.values)
-                liveValues.setValue (value.first, value.second);
+                liveValues.setValue (value.first, sanitisePresetPlaybackValue (value.first, value.second));
             if (preset.name.isNotEmpty())
                 manifest.defaultPreset = preset.name;
             for (auto& existing : presets)
@@ -372,7 +447,7 @@ namespace patchcraft
             manifest.defaultPreset = preset.name;
         resetLiveValuesToDefaults();
         for (const auto& value : preset.values)
-            liveValues.setValue (value.first, value.second);
+            liveValues.setValue (value.first, sanitisePresetPlaybackValue (value.first, value.second));
 
         for (auto& existing : presets)
             existing.isDefault = existing.name == preset.name;
@@ -919,6 +994,7 @@ namespace patchcraft
             error = "Failed to write project.json";
             return false;
         }
+        folder.getChildFile ("pscript.txt").replaceWithText (pscriptSource);
         markClean();
         return true;
     }
@@ -1035,6 +1111,18 @@ namespace patchcraft
                 ? manifest.defaultPreset : manifest.instrumentName + " Patch");
             patch.isDefault = true;
             patches.push_back (std::move (patch));
+        }
+
+        auto scriptFile = folder.getChildFile ("pscript.txt");
+        if (scriptFile.existsAsFile())
+        {
+            pscriptSource = scriptFile.loadFileAsString();
+            scriptEngine.compile (pscriptSource);
+        }
+        else
+        {
+            pscriptSource = "";
+            scriptEngine.compile ("");
         }
         markClean();
         return true;

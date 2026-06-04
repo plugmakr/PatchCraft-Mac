@@ -61,6 +61,7 @@ namespace patchcraft
         Section proVisualSection { "Pro / AI Visuals" };
         Section performanceSection { "MIDI + Performance" };
         Section containerSection { "Containers + Layout" };
+        Section modulesSection { "Modules" };
 
         juce::TextButton trashBtn  { "Del" };
         juce::TextButton copyBtn   { "Dup" };

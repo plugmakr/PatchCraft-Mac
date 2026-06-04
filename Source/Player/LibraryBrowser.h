@@ -28,6 +28,25 @@ namespace patchcraft
         bool isHovered = false;
     };
 
+    class LibraryFolderComponent : public juce::Component,
+                                   public juce::SettableTooltipClient
+    {
+    public:
+        LibraryFolderComponent (juce::File folderToUse, int itemCountToUse);
+
+        void paint (juce::Graphics&) override;
+        void mouseDoubleClick (const juce::MouseEvent&) override;
+        void mouseEnter (const juce::MouseEvent&) override;
+        void mouseExit (const juce::MouseEvent&) override;
+
+        std::function<void()> onOpenFolder;
+
+    private:
+        juce::File folder;
+        int itemCount = 0;
+        bool isHovered = false;
+    };
+
     /**
         Main library browser component.
         Displays a grid of instruments with search/filter controls.
@@ -68,6 +87,7 @@ namespace patchcraft
         std::unique_ptr<juce::TextEditor> searchBox;
         std::unique_ptr<juce::TextButton> categoryButton;
         std::unique_ptr<juce::TextButton> refreshButton;
+        std::unique_ptr<juce::TextButton> upButton;
         std::unique_ptr<juce::TextButton> closeButton;
         std::unique_ptr<juce::Viewport> viewport;
         std::unique_ptr<juce::Component> gridContainer;
@@ -75,6 +95,7 @@ namespace patchcraft
         // Category filter
         juce::String currentCategory = "All";
         juce::StringArray categories = { "All", "Instruments", "Synth", "Samples", "Drums", "FX", "Factory Demos" };
+        juce::File currentFolder;
         PackFilter packFilter = PackFilter::Any;
 
         void refreshGrid();

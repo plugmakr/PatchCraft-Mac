@@ -11,6 +11,27 @@ namespace patchcraft
             if (parameterId.isEmpty() || parameters.contains (parameterId))
                 return true;
 
+            if (parameterId == "mpActiveBank"
+                || parameterId == "mpMultiLane"
+                || parameterId == "mpRetrigger"
+                || parameterId.startsWith ("mpBank"))
+            {
+                ParameterDef def;
+                def.id = parameterId;
+                def.name = parameterId;
+                def.min = 0.0f;
+                def.max = parameterId.containsIgnoreCase ("Bank") || parameterId.containsIgnoreCase ("Step") ? 128.0f : 1.0f;
+                def.defaultValue = parameterId.endsWithIgnoreCase ("Retrigger") || parameterId == "mpRetrigger" ? 1.0f : 0.0f;
+                def.category = "Arp Lane";
+                def.section = "mod";
+                def.hostAutomatable = false;
+                def.midiLearnable = false;
+                def.modulatable = false;
+                def.visible = false;
+                parameters.add (def);
+                return true;
+            }
+
             if (parameters.addFromRegistry (parameterId, engineId))
                 return true;
 

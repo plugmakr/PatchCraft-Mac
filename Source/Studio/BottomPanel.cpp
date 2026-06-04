@@ -16,7 +16,9 @@
 #include "MidiPlaygroundPage.h"
 #include "OneShotMakerPage.h"
 #include "WorkflowPage.h"
+#include "ProjectBrowserPage.h"
 #include "LaunchCenterPage.h"
+#include "ExpansionsPage.h"
 #include "AnimationLabPage.h"
 
 namespace patchcraft
@@ -36,6 +38,9 @@ namespace patchcraft
         workflowPage = std::make_unique<WorkflowPage> (owner);
         addAndMakeVisible (*workflowPage);
 
+        projectBrowserPage = std::make_unique<ProjectBrowserPage> (owner);
+        addChildComponent (*projectBrowserPage);
+
         // Design page -------------------------------------------------------
         designDspHeader.setText ("DSP QUICK EDIT", juce::dontSendNotification);
         designDspHeader.setFont (juce::Font (11.0f, juce::Font::bold));
@@ -53,13 +58,17 @@ namespace patchcraft
         styleSubTab (btnMapperMain,     8810);
         styleSubTab (btnMapperKeyzones, 8810);
         styleSubTab (btnMapperVelocity, 8810);
+        btnMapperFull.getProperties().set ("smallButton", true);
+        btnMapperFull.setTooltip ("Open the Sample Mapper, Keyzones, and Velocity zones in a large floating workspace.");
         btnMapperMain.setToggleState (true, juce::dontSendNotification);
         btnMapperMain.onClick     = [this] { activeMapperSubTab = 0; rebuildMapperSubVisibility(); };
         btnMapperKeyzones.onClick = [this] { activeMapperSubTab = 1; rebuildMapperSubVisibility(); };
         btnMapperVelocity.onClick = [this] { activeMapperSubTab = 2; rebuildMapperSubVisibility(); };
+        btnMapperFull.onClick     = [this] { owner.openSampleMapperZoneManager(); };
         addAndMakeVisible (btnMapperMain);
         addAndMakeVisible (btnMapperKeyzones);
         addAndMakeVisible (btnMapperVelocity);
+        addAndMakeVisible (btnMapperFull);
 
         sampleMapper = std::make_unique<SampleMapEditor> (owner);
         keyzones     = std::make_unique<KeyzonesComponent>     (owner);
@@ -118,6 +127,10 @@ namespace patchcraft
         // Launch Center ------------------------------------------------------
         launchCenter = std::make_unique<LaunchCenterPage> (owner);
         addChildComponent (*launchCenter);
+
+        // Store / Expansions -------------------------------------------------
+        expansionsPage = std::make_unique<ExpansionsPage> (owner);
+        addChildComponent (*expansionsPage);
 
         rebuildPageVisibility();
     }
@@ -192,6 +205,7 @@ namespace patchcraft
     void BottomPanel::refresh()
     {
         if (workflowPage) workflowPage->refresh();
+        if (projectBrowserPage) projectBrowserPage->refresh();
         if (parameters)  parameters->refresh();
         if (sampleMapper) sampleMapper->refresh();
         if (keyzones)    keyzones->refresh();
@@ -206,6 +220,7 @@ namespace patchcraft
         if (dspPage) dspPage->refresh();
         if (animationLab) animationLab->refresh();
         if (launchCenter) launchCenter->refresh();
+        if (expansionsPage) expansionsPage->refresh();
         repaint();
     }
 
@@ -220,6 +235,7 @@ namespace patchcraft
     void BottomPanel::rebuildPageVisibility()
     {
         const bool workflow = currentPage == Page::Dashboard;
+        const bool projectBrowser = currentPage == Page::ProjectBrowser;
         const bool design  = currentPage == Page::Design;
         const bool mapper  = currentPage == Page::Samples;
         const bool oneShot = currentPage == Page::OneShotMaker;
@@ -228,12 +244,14 @@ namespace patchcraft
         const bool build   = currentPage == Page::Widgets;
         const bool animation = currentPage == Page::Animation;
         const bool launch  = currentPage == Page::Export;
+        const bool expansions = currentPage == Page::Expansions;
         // "Test" now routes to the Brand Lab — the developer's live test
         // environment is the same surface as their branding workspace.
         const bool brand   = currentPage == Page::Branding;
         const bool test    = currentPage == Page::Test;
 
         if (workflowPage) workflowPage->setVisible (workflow);
+        if (projectBrowserPage) projectBrowserPage->setVisible (projectBrowser);
         designDspHeader     .setVisible (design);
         if (parameters) parameters->setVisible (false);
         if (designDspPage) designDspPage->setVisible (design);
@@ -241,6 +259,7 @@ namespace patchcraft
         btnMapperMain    .setVisible (mapper);
         btnMapperKeyzones.setVisible (mapper);
         btnMapperVelocity.setVisible (mapper);
+        btnMapperFull    .setVisible (mapper);
         if (mapper) rebuildMapperSubVisibility();
         else
         {
@@ -254,6 +273,7 @@ namespace patchcraft
         if (testPage) testPage->setVisible (test);
         if (dspPage) dspPage->setVisible (dsp);
         if (launchCenter) launchCenter->setVisible (launch);
+        if (expansionsPage) expansionsPage->setVisible (expansions);
 
         if (builder) builder->setVisible (build);
         if (animationLab) animationLab->setVisible (animation);
@@ -296,6 +316,12 @@ namespace patchcraft
                 break;
             }
 
+            case Page::ProjectBrowser:
+            {
+                if (projectBrowserPage) projectBrowserPage->setBounds (r);
+                break;
+            }
+
             case Page::Design:
             {
                 // Presets now live in the right tab panel, so the DSP quick
@@ -314,6 +340,8 @@ namespace patchcraft
                 btnMapperKeyzones.setBounds (top.removeFromLeft (90));
                 top.removeFromLeft (4);
                 btnMapperVelocity.setBounds (top.removeFromLeft (90));
+                top.removeFromLeft (4);
+                btnMapperFull.setBounds (top.removeFromLeft (64));
 
                 auto content = r.reduced (4);
                 if (sampleMapper)        sampleMapper->setBounds (content);
@@ -369,6 +397,12 @@ namespace patchcraft
             case Page::Export:
             {
                 if (launchCenter) launchCenter->setBounds (r);
+                break;
+            }
+
+            case Page::Expansions:
+            {
+                if (expansionsPage) expansionsPage->setBounds (r);
                 break;
             }
         }

@@ -181,25 +181,11 @@ namespace patchcraft
             addAndMakeVisible (*b);
         };
 
-        addBtn (btnNew,           "New",            "new",            [this] { owner.newProject(); });
-        addBtn (btnOpen,          "Open",           "open",           [this] { owner.openProject(); });
-        addBtn (btnSave,          "Save",           "save",
-            [this]
-            {
-                juce::PopupMenu menu;
-                menu.addItem (1, "Save Project");
-                menu.addItem (2, "Save Project As...");
-                menu.showMenuAsync (juce::PopupMenu::Options(),
-                    [this] (int result)
-                    {
-                        if (result == 1) owner.saveProject();
-                        if (result == 2) owner.saveProjectAs();
-                    });
-            });
         addBtn (btnImportSamples, "Import Samples", "importSamples",  [this] { owner.importSamples(); });
         addBtn (btnImportBg,      "Import BG",      "importBg",       [this] { owner.importBackground(); });
         addBtn (btnPacks,         "Packs",          "importSamples",  [this] { owner.togglePacksPanel(); });
         addBtn (btnDashboard,     "Dashboard",      "preview",        [this] { owner.setBottomTab (BottomPanel::Page::Dashboard); });
+        addBtn (btnProjects,      "Projects",       "open",           [this] { owner.setBottomTab (BottomPanel::Page::ProjectBrowser); });
 #if PATCHCRAFT_ENABLE_AI_STUDIO
         addBtn (btnAiAssist,      "AI Assist",      "aiAssist",       [this] { owner.aiAssist(); });
 #endif
@@ -223,7 +209,6 @@ namespace patchcraft
                     });
             }, true);
 
-        btnSave->setTooltip ("Save the project folder, or choose Save Project As to fork/name a new editable instrument.");
         btnExport->setTooltip ("Export a playable .patchcraft pack, or send it into an expansion-pack folder.");
 
         projectNameLabel.setFont (juce::Font (14.0f, juce::Font::bold));
@@ -294,13 +279,14 @@ namespace patchcraft
         g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.07f));
         const float logoW = getWidth() < 1500 ? 248.0f : 280.0f;
         const float menuX = logoW + 12.0f;
+        const float rightClusterX = btnPreview != nullptr ? (float) btnPreview->getX() - 10.0f : r.getWidth() - 520.0f;
         g.fillRoundedRectangle (juce::Rectangle<float> (menuX, 7.0f,
-                                                        juce::jmax (120.0f, r.getWidth() - menuX - 328.0f),
+                                                        juce::jmax (120.0f, rightClusterX - menuX - 8.0f),
                                                         r.getHeight() - 14.0f),
                                 10.0f);
         g.setColour (PatchCraftLookAndFeel::border().withAlpha (0.55f));
         g.drawRoundedRectangle (juce::Rectangle<float> (menuX + 0.5f, 7.5f,
-                                                        juce::jmax (120.0f, r.getWidth() - menuX - 329.0f),
+                                                        juce::jmax (120.0f, rightClusterX - menuX - 9.0f),
                                                         r.getHeight() - 15.0f),
                                 10.0f, 1.0f);
 
@@ -332,10 +318,36 @@ namespace patchcraft
 
         // Subtle separators between button groups
         g.setColour (PatchCraftLookAndFeel::border().withAlpha (0.5f));
-        if (btnSave && btnImportSamples)
+        if (btnImportSamples && btnDashboard)
         {
-            int sep = (btnSave->getRight() + btnImportSamples->getX()) / 2;
+            int sep = btnDashboard->getRight() + 8;
             g.fillRect (sep, 12, 1, getHeight() - 24);
+        }
+
+        if (btnPreview != nullptr && settingsBtn.isVisible())
+        {
+            auto cluster = btnPreview->getBounds()
+                .getUnion (btnExport->getBounds())
+                .getUnion (bpmLabel.getBounds())
+                .getUnion (bpmSlider.getBounds())
+                .getUnion (projectNameLabel.getBounds())
+                .getUnion (projectStatusLabel.getBounds())
+                .getUnion (settingsBtn.getBounds())
+                .expanded (8, 7)
+                .toFloat();
+            g.setColour (PatchCraftLookAndFeel::panelAlt().withAlpha (0.58f));
+            g.fillRoundedRectangle (cluster, 9.0f);
+            g.setColour (PatchCraftLookAndFeel::border().withAlpha (0.7f));
+            g.drawRoundedRectangle (cluster.reduced (0.5f), 9.0f, 1.0f);
+
+            auto drawSep = [&] (int x)
+            {
+                g.setColour (PatchCraftLookAndFeel::border().withAlpha (0.62f));
+                g.fillRect (x, 13, 1, getHeight() - 26);
+            };
+            drawSep ((btnExport->getRight() + bpmLabel.getX()) / 2);
+            drawSep ((bpmSlider.getRight() + projectNameLabel.getX()) / 2);
+            drawSep ((projectNameLabel.getRight() + settingsBtn.getX()) / 2);
         }
     }
 
@@ -371,12 +383,6 @@ namespace patchcraft
         btnPreview->setBounds (btnExport->getX() - previewW - 6, top, previewW, height);
 
         int x = logoW + 16;
-        for (auto* b : { btnNew.get(), btnOpen.get(), btnSave.get() })
-        {
-            b->setBounds (x, top, btnW, height);
-            x += btnW + 4;
-        }
-        x += 12; // separator
 
         auto setMenuButton = [&] (IconLabelButton* b, int width)
         {
@@ -389,6 +395,7 @@ namespace patchcraft
         setMenuButton (btnImportBg.get(),      compact ? 82 : btnW + 16);
         setMenuButton (btnPacks.get(),         compact ? 72 : btnW + 16);
         setMenuButton (btnDashboard.get(),     compact ? 90 : btnW + 16);
+        setMenuButton (btnProjects.get(),      compact ? 78 : btnW + 12);
 #if PATCHCRAFT_ENABLE_AI_STUDIO
         setMenuButton (btnAiAssist.get(),      compact ? 82 : btnW + 16);
 #endif

@@ -17,6 +17,7 @@ namespace patchcraft
     */
     class CanvasEditor : public juce::Component,
                          public juce::DragAndDropTarget,
+                         public juce::FileDragAndDropTarget,
                          private juce::Timer
     {
     public:
@@ -36,6 +37,8 @@ namespace patchcraft
         bool keyPressed (const juce::KeyPress&) override;
         bool isInterestedInDragSource (const SourceDetails&) override;
         void itemDropped (const SourceDetails&) override;
+        bool isInterestedInFileDrag (const juce::StringArray& files) override;
+        void filesDropped (const juce::StringArray& files, int x, int y) override;
 
         void selectionChanged();
 
@@ -69,12 +72,14 @@ namespace patchcraft
         void addElementAt (ElementType type, juce::Point<int> canvasPos, juce::String parameterId = {});
         void addMixerChannelAt (juce::Point<int> canvasPos);
         void addDrumMachineControlLayout (juce::Point<int> canvasPos);
+        void addCircleSeqInstrumentLayout (juce::Point<int> canvasPos);
         void addOrbitInstrumentControlLayout (juce::Point<int> canvasPos);
         void addVisualReactivityControlLayout (juce::Point<int> canvasPos);
         void addCircleSeqBackgroundKit (juce::Point<int> canvasPos);
+        void addModuleLayout (const juce::String& moduleType, juce::Point<int> pos);
 
     private:
-        enum class DragMode { None, Move, ResizeBR, ValueDrag, Marquee, DrumGridEdit, ArpLaneEdit };
+        enum class DragMode { None, Move, ResizeBR, ValueDrag, Marquee, DrumGridEdit, ArpLaneEdit, Pan };
 
         juce::Rectangle<int> canvasScreenRect() const;
         juce::Rectangle<int> elementScreenRect (const LayoutElement&) const;
@@ -100,15 +105,24 @@ namespace patchcraft
                             juce::Point<int> p, int& lane, int& step, float& velocity) const;
         bool editArpLaneStepAt (const LayoutElement&, juce::Rectangle<int> r,
                                 juce::Point<int> p, bool startGesture);
-        void showContextMenu (juce::Point<int> screenPos);
+        const LayoutElement* sampleDropZoneAt (juce::Point<int> localPosition) const;
+        void assignSamplesToDropZone (const juce::String& elementId, const juce::Array<juce::File>& files);
+        void showContextMenu (juce::Point<int> screenPos, bool forceMainMenu = false);
+        void copySelectedArpLanePattern();
+        void pasteArpLanePatternToSelection();
+        void resetSelectedArpLanePattern();
         void explodeSelectedMixers();
         bool selectionContainsMixer() const;
         void captureMoveOriginsForSelection();
         void addMoveOriginWithChildren (const juce::String& id);
+        bool getMultiSelectionScreenBounds (juce::Rectangle<int>& bounds) const;
+        bool multiSelectionResizeHandleContains (juce::Point<int> point) const;
 
         StudioMainComponent& owner;
 
         float zoom = 0.45f;
+        juce::Point<int> canvasPanOffset;
+        juce::Point<int> panDragOrigin;
         bool autoFitCanvas = true;
         int   snapGrid = 8;
         bool  snapEnabled = true;
@@ -130,6 +144,7 @@ namespace patchcraft
         juce::String dragParameterId;
         juce::String dragValueElementId;
         float        dragValueStart = 0.0f;
+        bool         dragValueIsLocalPreview = false;
         juce::String hoverGuidance;
         juce::Rectangle<int> hoverGuidanceBounds;
         juce::String drumGridEditElementId;
@@ -139,6 +154,7 @@ namespace patchcraft
         juce::String arpLaneEditElementId;
         int lastArpLane = -1;
         int lastArpStep = -1;
+        std::map<juce::String, float> copiedArpLanePattern;
 
         // Active tab page. Default is "main" so the seeded macro-knob group
         // shows up out of the box.

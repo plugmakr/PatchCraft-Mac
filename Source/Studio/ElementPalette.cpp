@@ -337,8 +337,9 @@ namespace patchcraft
         scrollContent.addAndMakeVisible (proVisualSection);
         scrollContent.addAndMakeVisible (performanceSection);
         scrollContent.addAndMakeVisible (containerSection);
+        scrollContent.addAndMakeVisible (modulesSection);
 
-        for (auto* section : { &controlSection, &analysisSection, &uiSection, &motionSection, &proVisualSection, &performanceSection, &containerSection })
+        for (auto* section : { &controlSection, &analysisSection, &uiSection, &motionSection, &proVisualSection, &performanceSection, &containerSection, &modulesSection })
             section->onToggle = [this] { resized(); repaint(); };
 
         struct Entry { ElementType t; juce::String label; juce::String icon; };
@@ -430,6 +431,27 @@ namespace patchcraft
             containerSection.addRow (std::make_unique<Row> (e.label, e.icon,
                 [this, type] { addElementOfType (type); }));
         }
+
+        modulesSection.addRow (std::make_unique<Row> ("Chorus Module", "group",
+            [this] { owner.addModuleToCanvas ("Chorus"); }));
+        modulesSection.addRow (std::make_unique<Row> ("Filter Module", "group",
+            [this] { owner.addModuleToCanvas ("Filter"); }));
+        modulesSection.addRow (std::make_unique<Row> ("ADSR Envelope", "group",
+            [this] { owner.addModuleToCanvas ("ADSR"); }));
+        modulesSection.addRow (std::make_unique<Row> ("Delay Module", "group",
+            [this] { owner.addModuleToCanvas ("Delay"); }));
+        modulesSection.addRow (std::make_unique<Row> ("Reverb Module", "group",
+            [this] { owner.addModuleToCanvas ("Reverb"); }));
+        modulesSection.addRow (std::make_unique<Row> ("Phaser Module", "group",
+            [this] { owner.addModuleToCanvas ("Phaser"); }));
+        modulesSection.addRow (std::make_unique<Row> ("Tape Module", "group",
+            [this] { owner.addModuleToCanvas ("Tape"); }));
+        modulesSection.addRow (std::make_unique<Row> ("Lo-Fi Module", "group",
+            [this] { owner.addModuleToCanvas ("LoFi"); }));
+        modulesSection.addRow (std::make_unique<Row> ("Dynamics Module", "group",
+            [this] { owner.addModuleToCanvas ("Dynamics"); }));
+        modulesSection.addRow (std::make_unique<Row> ("Stereo Module", "group",
+            [this] { owner.addModuleToCanvas ("Stereo"); }));
 
         performanceSection.addRow (std::make_unique<Row> ("BPM Sync", "toggle",
             [this] { owner.addElementToCanvas (ElementType::Toggle, "bpmSync"); }));
@@ -541,7 +563,9 @@ namespace patchcraft
         const int perfH = performanceSection.getNeededHeight();
         contentHeight += perfH + 8;
         const int containerH = containerSection.getNeededHeight();
-        contentHeight += containerH + 16;
+        contentHeight += containerH + 8;
+        const int modulesH = modulesSection.getNeededHeight();
+        contentHeight += modulesH + 16;
 
         scrollContent.setBounds (0, 0, contentWidth, juce::jmax (viewport.getHeight(), contentHeight));
 
@@ -559,6 +583,8 @@ namespace patchcraft
         performanceSection.setBounds (r.removeFromTop (perfH));
         r.removeFromTop (8);
         containerSection.setBounds (r.removeFromTop (containerH));
+        r.removeFromTop (8);
+        modulesSection.setBounds (r.removeFromTop (modulesH));
 
         // bottom action icons
         const int iw = bottom.getHeight();

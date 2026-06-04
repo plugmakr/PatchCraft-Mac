@@ -3,6 +3,7 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include <memory>
+#include <set>
 
 namespace patchcraft
 {
@@ -66,6 +67,14 @@ namespace patchcraft
         juce::TextEditor titleBannerImageEdit;
         juce::TextButton browseTitleBannerBtn { "Browse..." };
         juce::TextButton clearTitleBannerBtn  { "Clear" };
+        juce::Label  titleBarThemeLabel;
+        juce::ComboBox titleBarThemeBox;
+        juce::Label  titleTextPlacementLabel;
+        juce::ComboBox titleTextPlacementBox;
+        juce::Label  titleButtonStyleLabel;
+        juce::ComboBox titleButtonStyleBox;
+        juce::Label  titleFontLabel;
+        juce::ComboBox titleFontBox;
         juce::Label  playerBackgroundImageLabel;
         juce::TextEditor playerBackgroundImageEdit;
         juce::TextButton browsePlayerBackgroundBtn { "Browse..." };
@@ -177,8 +186,11 @@ namespace patchcraft
         bool identitySectionOpen = true;
         bool skinSectionOpen = true;
         bool runtimeSectionOpen = true;
-        bool clientSectionOpen = true;
+        bool clientSectionOpen = false;
         bool licensingSectionOpen = true;
+        std::set<std::string> favoritePresetNames;
+        bool presetAuditionOnSelect = true;
+        bool presetCloseAfterLoad = false;
 
         void timerCallback() override;
         void readFromManifest();
@@ -188,6 +200,10 @@ namespace patchcraft
         void chooseLogo();
         void chooseImagePath (juce::TextEditor& targetEditor, const juce::String& title);
         void showPlayerPreviewPanel (const juce::String& title, const juce::String& body);
+        void showPlayerSoundPanel();
+        void showPlayerRackPanel();
+        void showPlayerControlPanel();
+        void showRuntimeRoutingPanel();
         void showPlayerLibraryPanel();
         void showPlayerFileMenu();
         void showPlayerToolsMenu();

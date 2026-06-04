@@ -54,6 +54,7 @@ namespace patchcraft
         std::function<bool(int pattern, int track, int step, bool active,
                            float velocity, float gate, float probability, int divisions)> onSetDrumPatternCell;
         std::function<bool(int lane, int step, float velocity, bool active)> onSetArpLaneStep;
+        std::function<void(const juce::String&)> onRuntimeStatus;
 
     private:
         StudioMainComponent& owner;
@@ -79,8 +80,12 @@ namespace patchcraft
         int lastDrumGridTrack = -1;
         int lastDrumGridStep = -1;
         bool arpLaneDragActive = false;
+        bool arpMidiDragArmed = false;
         int lastArpLane = -1;
         int lastArpStep = -1;
+        juce::Point<int> arpMidiDragStart;
+        juce::String arpMidiDragElementId;
+        juce::String activeMomentaryParameter;
 
         // LiveValueStore::Listener
         void liveValueChanged (const juce::String& parameterId, float newValue) override;
@@ -114,6 +119,7 @@ namespace patchcraft
         bool handleGranularGesture (const juce::MouseEvent&);
         bool handleDrumGridGesture (const juce::MouseEvent&, bool drag);
         bool handleArpLaneGesture (const juce::MouseEvent&, bool drag);
+        bool startArpLaneMidiDrag (const LayoutElement&);
         bool drumCellAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>,
                          int& pattern, int& track, int& step, float& velocity,
                          float& gate, float& probability, bool& active,

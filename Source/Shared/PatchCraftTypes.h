@@ -48,6 +48,10 @@ namespace patchcraft
         juce::String playerTagline;
         juce::String playerLogoImage;
         juce::String playerTitleBannerImage;
+        juce::String playerTitleBarTheme { "classic" };
+        juce::String playerTitleTextPlacement { "left" };
+        juce::String playerTitleButtonStyle { "outlined" };
+        juce::String playerTitleFontFamily { "Default" };
         juce::String playerClientName;
         juce::String playerSupportEmail;
         juce::String playerSupportUrl;
@@ -158,7 +162,8 @@ namespace patchcraft
         ReactiveImage,
         SpriteAnimator,
         VisualFxLayer,
-        AiVisualPrompt
+        AiVisualPrompt,
+        SampleDropZone
     };
 
     juce::String elementTypeToString (ElementType);
@@ -197,6 +202,7 @@ namespace patchcraft
         float labelOffsetY = 0.0f;
         float labelSpacing = 0.0f;
         float labelSize = 0.0f;
+        float controlPreviewValue = 0.5f;
         bool  audioReactive = false;
         juce::String audioReactiveMode { "level" };
         float audioReactiveAmount = 0.0f;

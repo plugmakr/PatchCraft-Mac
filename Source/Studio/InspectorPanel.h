@@ -50,6 +50,7 @@ namespace patchcraft
         juce::TextEditor idEdit;
         juce::TextEditor xEdit, yEdit, wEdit, hEdit;
         juce::ComboBox  parameterBox;
+        juce::ComboBox  dropZoneLinkBox;
         juce::TextButton midiLearnButton { "Learn" };
         juce::TextEditor labelEdit;
         juce::TextEditor actionEdit;
@@ -287,7 +288,7 @@ namespace patchcraft
         void writeGranularControlsFromUi();
 
         // Persistent labels (rebuilt at construction)
-        juce::Label lblType, lblId, lblPos, lblSize, lblParam, lblLabel, lblAction,
+        juce::Label lblType, lblId, lblPos, lblSize, lblParam, lblDropZoneLink, lblLabel, lblAction,
                     lblValFmt, lblStyle, lblKnobStyle, lblMin, lblMax,
                     lblLayoutSection, lblParameterSection, lblStyleSection, lblSpecialSection,
                     lblOpacity, lblState, lblShapeKind, lblCorner, lblStroke,

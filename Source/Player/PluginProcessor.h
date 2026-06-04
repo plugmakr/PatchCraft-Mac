@@ -7,6 +7,7 @@
 #include "DspRoutingEngine.h"
 #include "MidiPlaygroundRuntime.h"
 #include "SampleSynthEngine.h"
+#include "PScriptEngine.h"
 
 #include <array>
 #include <map>
@@ -264,6 +265,8 @@ namespace patchcraft
 
         // Library scanner for instrument browser
         std::unique_ptr<LibraryScanner> libraryScanner;
+        PScriptEngine scriptEngine;
+        LiveValueStore liveValues;
 
         // Generic floats backing parameters (mapped to pack's parameters by id at runtime).
         struct ParamSlot { juce::String id; std::atomic<float>* value = nullptr; };

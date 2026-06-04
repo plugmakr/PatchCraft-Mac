@@ -426,14 +426,114 @@ namespace patchcraft
         juce::TextButton actionButton;
     };
 
+    class LaunchCenterPage::DemoTile final : public juce::Component
+    {
+    public:
+        DemoTile (juce::File folderIn,
+                  juce::String nameIn,
+                  juce::String categoryIn,
+                  juce::String engineIn,
+                  juce::String descriptionIn,
+                  juce::File imageFileIn,
+                  std::function<void (juce::File)> loadActionIn)
+            : folder (std::move (folderIn)),
+              name (std::move (nameIn)),
+              category (std::move (categoryIn)),
+              engine (std::move (engineIn)),
+              description (std::move (descriptionIn)),
+              loadAction (std::move (loadActionIn))
+        {
+            if (imageFileIn.existsAsFile())
+                image = juce::ImageCache::getFromFile (imageFileIn);
+
+            loadButton.setButtonText ("Open");
+            loadButton.getProperties().set ("smallButton", true);
+            loadButton.getProperties().set ("primaryAction", true);
+            loadButton.onClick = [this]
+            {
+                if (loadAction)
+                    loadAction (folder);
+            };
+            addAndMakeVisible (loadButton);
+
+            setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        }
+
+        void mouseUp (const juce::MouseEvent& event) override
+        {
+            if (! loadButton.getBounds().contains (event.getPosition()) && loadAction)
+                loadAction (folder);
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            auto area = getLocalBounds().toFloat().reduced (1.0f);
+            g.setColour (PatchCraftLookAndFeel::panelAlt().withAlpha (0.96f));
+            g.fillRoundedRectangle (area, 9.0f);
+            g.setColour (PatchCraftLookAndFeel::border().withAlpha (0.9f));
+            g.drawRoundedRectangle (area, 9.0f, 1.0f);
+
+            auto imageArea = getLocalBounds().reduced (10).removeFromTop (78).toFloat();
+            if (image.isValid())
+            {
+                juce::Graphics::ScopedSaveState state (g);
+                g.reduceClipRegion (imageArea.toNearestInt());
+                g.drawImageWithin (image,
+                                   (int) imageArea.getX(), (int) imageArea.getY(),
+                                   (int) imageArea.getWidth(), (int) imageArea.getHeight(),
+                                   juce::RectanglePlacement::fillDestination);
+            }
+            else
+            {
+                juce::ColourGradient grad (PatchCraftLookAndFeel::accent().withAlpha (0.22f),
+                                           imageArea.getX(), imageArea.getY(),
+                                           juce::Colour (0xff101923),
+                                           imageArea.getRight(), imageArea.getBottom(),
+                                           false);
+                g.setGradientFill (grad);
+                g.fillRoundedRectangle (imageArea, 6.0f);
+            }
+
+            g.setColour (juce::Colours::black.withAlpha (0.28f));
+            g.fillRoundedRectangle (imageArea, 6.0f);
+            g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.85f));
+            g.drawRoundedRectangle (imageArea, 6.0f, 1.0f);
+
+            auto text = getLocalBounds().reduced (12);
+            text.removeFromTop (86);
+            g.setColour (PatchCraftLookAndFeel::textBright());
+            g.setFont (juce::Font (13.0f, juce::Font::bold));
+            g.drawFittedText (name, text.removeFromTop (20), juce::Justification::centredLeft, 1);
+            g.setColour (PatchCraftLookAndFeel::accent());
+            g.setFont (juce::Font (10.5f, juce::Font::bold));
+            g.drawFittedText ((engine.isNotEmpty() ? engine.toUpperCase() : "DEMO") + "  " + category,
+                              text.removeFromTop (18), juce::Justification::centredLeft, 1);
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (juce::Font (11.0f));
+            g.drawFittedText (description, text.removeFromTop (44), juce::Justification::topLeft, 2);
+        }
+
+        void resized() override
+        {
+            loadButton.setBounds (getLocalBounds().reduced (12).removeFromBottom (28));
+        }
+
+    private:
+        juce::File folder;
+        juce::String name, category, engine, description;
+        juce::Image image;
+        std::function<void (juce::File)> loadAction;
+        juce::TextButton loadButton;
+    };
+
     LaunchCenterPage::LaunchCenterPage (StudioMainComponent& ownerIn) : owner (ownerIn)
     {
-        title.setText ("Launch Center", juce::dontSendNotification);
+        title.setText ("PatchCraft Studio", juce::dontSendNotification);
         title.setFont (juce::Font (28.0f, juce::Font::bold));
         title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
         addAndMakeVisible (title);
 
-        subtitle.setText ("Final product readiness: sound, UI bindings, presets, branding, export, licensing, and Plugin.club publishing.",
+        subtitle.setText ("Create a playable instrument or effect, customize the Player, then export.",
                           juce::dontSendNotification);
         subtitle.setFont (juce::Font (13.0f));
         subtitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
@@ -453,6 +553,42 @@ namespace patchcraft
         outputFolderLabel.setJustificationType (juce::Justification::centredLeft);
         addAndMakeVisible (outputFolderLabel);
 
+        creatorTitle.setText ("Start With A Simple Prompt", juce::dontSendNotification);
+        creatorTitle.setFont (juce::Font (16.0f, juce::Font::bold));
+        creatorTitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
+        addAndMakeVisible (creatorTitle);
+
+        creatorBody.setText ("Describe the plugin. PatchCraft builds a real starting point with DSP, controls, presets, and a Player layout.",
+                             juce::dontSendNotification);
+        creatorBody.setFont (juce::Font (12.0f));
+        creatorBody.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+        addAndMakeVisible (creatorBody);
+
+        recipePrompt.setMultiLine (true);
+        recipePrompt.setReturnKeyStartsNewLine (true);
+        recipePrompt.setTextToShowWhenEmpty ("Example: warm melodic synth with filter, delay, reverb, macros, and a clean neon interface",
+                                             PatchCraftLookAndFeel::textDim().withAlpha (0.65f));
+        addAndMakeVisible (recipePrompt);
+
+        recipeTypeBox.addItem ("Auto", 1);
+        recipeTypeBox.addItem ("Synth", 2);
+        recipeTypeBox.addItem ("Sampler", 3);
+        recipeTypeBox.addItem ("Drums", 4);
+        recipeTypeBox.addItem ("FX", 5);
+        recipeTypeBox.setSelectedId (1, juce::dontSendNotification);
+        addAndMakeVisible (recipeTypeBox);
+
+        demoTitle.setText ("Factory Demos", juce::dontSendNotification);
+        demoTitle.setFont (juce::Font (16.0f, juce::Font::bold));
+        demoTitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
+        addAndMakeVisible (demoTitle);
+
+        demoBody.setText ("Open a finished template, hear it, edit it, or export it.",
+                          juce::dontSendNotification);
+        demoBody.setFont (juce::Font (12.0f));
+        demoBody.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+        addAndMakeVisible (demoBody);
+
         styleActionButton (refreshButton, true);
         styleActionButton (outputFolderButton, false);
         styleActionButton (bundleButton, true);
@@ -462,6 +598,12 @@ namespace patchcraft
         styleActionButton (exportPackButton, false);
         styleActionButton (exportVstButton, false);
         styleActionButton (publishButton, true);
+        styleActionButton (createFromPromptButton, true);
+        styleActionButton (blankProjectButton, false);
+        styleActionButton (synthStarterButton, false);
+        styleActionButton (sampleStarterButton, false);
+        styleActionButton (drumStarterButton, false);
+        styleActionButton (fxStarterButton, false);
 
         refreshButton.onClick = [this] { refresh(); };
         outputFolderButton.onClick = [this] { chooseOutputFolder(); };
@@ -478,6 +620,17 @@ namespace patchcraft
         exportPackButton.onClick = [this] { owner.exportPack(); };
         exportVstButton.onClick = [this] { owner.exportVstPlugin(); };
         publishButton.onClick = [this] { owner.publishToPluginClub(); };
+        createFromPromptButton.onClick = [this] { createSimplePluginFromPrompt(); };
+        blankProjectButton.onClick = [this]
+        {
+            owner.newProject();
+            owner.setBottomTab (BottomPanel::Page::Design);
+            refresh();
+        };
+        synthStarterButton.onClick = [this] { createSimplePluginFromPrompt ("synth"); };
+        sampleStarterButton.onClick = [this] { createSimplePluginFromPrompt ("sample"); };
+        drumStarterButton.onClick = [this] { createSimplePluginFromPrompt ("drum"); };
+        fxStarterButton.onClick = [this] { createSimplePluginFromPrompt ("fx"); };
 
         outputFolderButton.setTooltip ("Choose where Launch bundles and Product Page exports are written.");
         bundleButton.setTooltip ("Create the complete launch folder: pack payload, installer files, sales copy, QA docs, and Plugin.club metadata.");
@@ -485,14 +638,21 @@ namespace patchcraft
         productPageButton.setTooltip ("Open the sales page builder: offer copy, price, CTA, checkout link, demos, HTML export, and Plugin.club metadata.");
 
         for (auto* button : { &refreshButton, &outputFolderButton, &bundleButton, &customerWizardButton, &productPageButton, &testButton,
-                              &exportPackButton, &exportVstButton, &publishButton })
+                              &exportPackButton, &exportVstButton, &publishButton, &createFromPromptButton, &blankProjectButton,
+                              &synthStarterButton, &sampleStarterButton, &drumStarterButton, &fxStarterButton })
             addAndMakeVisible (*button);
+
+        demoViewport.setViewedComponent (&demoContent, false);
+        demoViewport.setScrollBarsShown (false, true);
+        demoViewport.setScrollBarThickness (10);
+        addAndMakeVisible (demoViewport);
 
         checksViewport.setViewedComponent (&checksContent, false);
         checksViewport.setScrollBarsShown (true, false);
         checksViewport.setScrollBarThickness (10);
         addAndMakeVisible (checksViewport);
 
+        rebuildDemoTiles();
         refresh();
         updateOutputFolderLabel();
     }
@@ -508,6 +668,239 @@ namespace patchcraft
             button.getProperties().set ("primaryAction", true);
         else
             button.getProperties().set ("smallButton", true);
+    }
+
+    juce::String LaunchCenterPage::inferEngineFromPrompt (const juce::String& prompt,
+                                                          const juce::String& forcedType) const
+    {
+        auto forced = forcedType.trim().toLowerCase();
+        if (forced == "synth" || forced == "sample" || forced == "drum" || forced == "fx")
+            return forced;
+
+        auto selected = recipeTypeBox.getText().trim().toLowerCase();
+        if (selected == "synth") return "synth";
+        if (selected == "sampler") return "sample";
+        if (selected == "drums") return "drum";
+        if (selected == "fx") return "fx";
+
+        auto text = prompt.toLowerCase();
+        if (text.contains ("drum") || text.contains ("beat") || text.contains ("808") || text.contains ("kick") || text.contains ("snare"))
+            return "drum";
+        if (text.contains ("effect") || text.contains ("fx") || text.contains ("delay") || text.contains ("reverb") || text.contains ("distortion") || text.contains ("eq"))
+            return "fx";
+        if (text.contains ("sample") || text.contains ("sampler") || text.contains ("vocal") || text.contains ("granular") || text.contains ("one shot") || text.contains ("keys"))
+            return "sample";
+
+        return "synth";
+    }
+
+    juce::String LaunchCenterPage::productNameFromPrompt (const juce::String& prompt,
+                                                          const juce::String& engineId) const
+    {
+        auto text = prompt.trim();
+        if (text.isNotEmpty())
+        {
+            text = text.upToFirstOccurrenceOf (".", false, false)
+                       .upToFirstOccurrenceOf (",", false, false)
+                       .upToFirstOccurrenceOf (" with ", false, true)
+                       .trim();
+            if (text.length() > 4)
+            {
+                juce::StringArray words;
+                words.addTokens (text, " \t\r\n-_", "\"'");
+                words.trim();
+                words.removeEmptyStrings();
+                while (words.size() > 4)
+                    words.remove (words.size() - 1);
+                for (auto& word : words)
+                    word = word.substring (0, 1).toUpperCase() + word.substring (1).toLowerCase();
+                return words.joinIntoString (" ");
+            }
+        }
+
+        if (engineId == "drum") return "New Drum Machine";
+        if (engineId == "sample") return "New Sample Instrument";
+        if (engineId == "fx") return "New Effect Plugin";
+        return "New Synth Instrument";
+    }
+
+    void LaunchCenterPage::createStarterPlugin (const juce::String& engineId,
+                                                const juce::String& productName,
+                                                const juce::String& description)
+    {
+        auto& project = owner.getProject();
+        project.setEngineType (engineId);
+
+        auto& manifest = project.getManifest();
+        manifest.instrumentName = productName;
+        manifest.playerDisplayName = productName;
+        manifest.description = description.isNotEmpty()
+            ? description
+            : ("A playable " + engineDisplayName (engineId).toLowerCase() + " created in PatchCraft.");
+        manifest.category = engineDisplayName (engineId);
+        manifest.creator = manifest.creator.trim().isNotEmpty() ? manifest.creator : juce::String ("PatchCraft User");
+        manifest.tags.clear();
+        manifest.tags.add ("starter");
+        manifest.tags.add (engineId);
+        manifest.tags.add ("export-ready");
+
+        project.performLayoutEdit ("Create simple plugin starter", [&] (LayoutModel& layout)
+        {
+            const auto& canvas = project.getCanvasSize();
+            auto addElementIfMissing = [&layout] (LayoutElement element)
+            {
+                if (layout.find (element.id) == nullptr)
+                    layout.add (element);
+            };
+
+            LayoutElement titleLabel;
+            titleLabel.id = "starter_title";
+            titleLabel.type = ElementType::Label;
+            titleLabel.label = productName;
+            titleLabel.x = 74;
+            titleLabel.y = 62;
+            titleLabel.width = 420;
+            titleLabel.height = 40;
+            titleLabel.labelSize = 24.0f;
+            titleLabel.textColour = PatchCraftLookAndFeel::textBright();
+            titleLabel.semanticRole = "productTitle";
+            addElementIfMissing (titleLabel);
+
+            LayoutElement visual;
+            visual.id = "starter_visual_reactor";
+            visual.type = ElementType::VisualFxLayer;
+            visual.label = "Reactive Visual";
+            visual.x = juce::jmax (60, canvas.width / 2 - 220);
+            visual.y = 112;
+            visual.width = 440;
+            visual.height = 220;
+            visual.audioReactive = true;
+            visual.audioReactiveMode = "level";
+            visual.audioReactiveAmount = 0.55f;
+            visual.animationMode = "bpmPulse";
+            visual.animationRate = 1.0f;
+            visual.visualSource = "audioLevel";
+            visual.visualAction = "pulseGlow";
+            visual.visualPreset = "orbitAura";
+            visual.visualLowPowerFallback = true;
+            visual.opacity = 0.82f;
+            visual.accentColour = PatchCraftLookAndFeel::accent();
+            addElementIfMissing (visual);
+
+            if (engineId == "sample" || engineId == "drum")
+            {
+                LayoutElement drop;
+                drop.id = "starter_sample_drop";
+                drop.type = ElementType::SampleDropZone;
+                drop.label = engineId == "drum" ? "Drop Drum Samples" : "Drop Samples";
+                drop.parameterId = "sampleStart";
+                drop.x = 74;
+                drop.y = 344;
+                drop.width = 260;
+                drop.height = 104;
+                drop.cornerRadius = 10.0f;
+                drop.borderColour = PatchCraftLookAndFeel::accent();
+                drop.backgroundColour = juce::Colour (0xff101923).withAlpha (0.72f);
+                drop.semanticRole = "sampleDrop";
+                addElementIfMissing (drop);
+            }
+        });
+
+        for (auto& preset : project.getPresets())
+        {
+            preset.tags.addIfNotAlreadyThere ("starter");
+            preset.tags.addIfNotAlreadyThere (engineId);
+            if (preset.description.trim().isEmpty())
+                preset.description = "Playable starter preset for " + productName + ".";
+        }
+
+        project.notifyChanged();
+        owner.setBottomTab (BottomPanel::Page::Design);
+        refresh();
+        showMessage ("Plugin Created",
+                     productName + " is ready on the Design page. Controls are already bound to real parameters; use Brand Lab to test the Player.",
+                     juce::MessageBoxIconType::InfoIcon);
+    }
+
+    void LaunchCenterPage::createSimplePluginFromPrompt (juce::String forcedType)
+    {
+        const auto prompt = recipePrompt.getText().trim();
+        const auto engineId = inferEngineFromPrompt (prompt, forcedType);
+        const auto name = productNameFromPrompt (prompt, engineId);
+        const auto description = prompt.isNotEmpty()
+            ? prompt
+            : ("A playable " + engineDisplayName (engineId).toLowerCase() + " starter with mapped controls and a Player-ready layout.");
+        createStarterPlugin (engineId, name, description);
+    }
+
+    void LaunchCenterPage::rebuildDemoTiles()
+    {
+        demoTiles.clear();
+        demoContent.removeAllChildren();
+
+        juce::Array<juce::File> roots;
+        roots.add (juce::File::getCurrentWorkingDirectory().getChildFile ("FactoryDemos"));
+        roots.add (runtimeFolder().getChildFile ("FactoryDemos"));
+
+        juce::StringArray seen;
+        for (const auto& root : roots)
+        {
+            if (! root.isDirectory())
+                continue;
+
+            for (auto& entry : juce::RangedDirectoryIterator (root, false, "*.patchcraft", juce::File::findDirectories))
+            {
+                const auto folder = entry.getFile();
+                const auto path = folder.getFullPathName();
+                if (seen.contains (path))
+                    continue;
+                seen.add (path);
+
+                const auto manifestFile = folder.getChildFile ("manifest.json");
+                if (! manifestFile.existsAsFile())
+                    continue;
+
+                auto parsed = juce::JSON::parse (manifestFile);
+                auto* object = parsed.getDynamicObject();
+                if (object == nullptr)
+                    continue;
+
+                const auto name = object->getProperty ("instrumentName").toString();
+                const auto category = object->getProperty ("category").toString();
+                const auto engine = object->getProperty ("engine").toString();
+                auto description = object->getProperty ("description").toString();
+                if (description.length() > 92)
+                    description = description.substring (0, 89).trim() + "...";
+
+                auto imagePath = object->getProperty ("libraryThumbnail").toString();
+                if (imagePath.isEmpty())
+                    imagePath = "assets/thumbnail.png";
+                auto imageFile = juce::File::isAbsolutePath (imagePath)
+                    ? juce::File (imagePath)
+                    : folder.getChildFile (imagePath);
+                if (! imageFile.existsAsFile())
+                    imageFile = folder.getChildFile ("assets").getChildFile ("thumbnail.png");
+                if (! imageFile.existsAsFile())
+                    imageFile = folder.getChildFile ("assets").getChildFile ("library-artwork.png");
+
+                auto tile = std::make_unique<DemoTile> (folder, name, category, engine, description, imageFile,
+                    [this] (juce::File demoFolder)
+                    {
+                        owner.loadFactoryDemo (demoFolder);
+                        refresh();
+                    });
+                demoContent.addAndMakeVisible (*tile);
+                demoTiles.push_back (std::move (tile));
+
+                if (demoTiles.size() >= 18)
+                    break;
+            }
+
+            if (demoTiles.size() >= 18)
+                break;
+        }
+
+        resized();
     }
 
     std::vector<LaunchCenterPage::CheckItem> LaunchCenterPage::buildChecks()
@@ -724,24 +1117,24 @@ namespace patchcraft
             if (! hasMidiPlayground)
             {
                 add (Severity::Error,
-                     "Orbit surface is not connected to a performance engine",
-                     "The Design canvas has Orbit/Arp Lane elements, but no MIDI Playground engine is present. Add the Orbit starter or open Performance Builder.",
-                     "Fix Orbit",
+                     "CircleSEQ surface is not connected to a performance engine",
+                     "The Design canvas has CircleSEQ/Arp Lane elements, but no MIDI Playground engine is present. Add the CircleSEQ surface or open Performance Builder.",
+                     "Fix CircleSEQ",
                      [this] { owner.setBottomTab (BottomPanel::Page::Design); });
             }
             else if (multiRingOrbitElements == 0 || ! hasFillControls || ! hasRoleControl)
             {
                 add (Severity::Warning,
-                     "Orbit workflow is missing performance controls",
-                     "For a Patterning-style instrument, use a multi-ring Orbit element plus Role and Fill controls so players can edit lanes, automation, and fills without returning to Studio.",
-                     "Add Orbit Surface",
+                     "CircleSEQ workflow is missing performance controls",
+                     "For a Patterning-style instrument, use a multi-ring CircleSEQ element plus Role, Fill, and lane controls so players can edit sources, timing, automation, and fills without returning to Studio.",
+                     "Add CircleSEQ Surface",
                      [this] { owner.setBottomTab (BottomPanel::Page::Design); });
             }
             else
             {
                 add (Severity::Pass,
-                     "Orbit performance surface is instrument-ready",
-                     plural (orbitElements, "Orbit/Arp Lane element", "Orbit/Arp Lane elements")
+                     "CircleSEQ performance surface is instrument-ready",
+                     plural (orbitElements, "CircleSEQ/Arp Lane element", "CircleSEQ/Arp Lane elements")
                         + " with multi-ring editing, fill controls, and automation role selection.");
             }
         }
@@ -2893,8 +3286,12 @@ namespace patchcraft
             g.drawHorizontalLine (y, 0.0f, (float) getWidth());
 
         auto bounds = getLocalBounds().reduced (24);
-        auto header = bounds.removeFromTop (144);
+        auto header = bounds.removeFromTop (124);
         auto cards = header.removeFromBottom (52);
+        auto creator = bounds.removeFromTop (172);
+        bounds.removeFromTop (12);
+        auto demos = bounds.removeFromTop (218);
+        bounds.removeFromTop (12);
 
         auto drawHeaderCard = [&] (juce::Rectangle<int> area, juce::Colour colour)
         {
@@ -2913,6 +3310,20 @@ namespace patchcraft
         cards.removeFromLeft (14);
         drawHeaderCard (cards, juce::Colour (0xff58b7ff));
 
+        auto drawSection = [&] (juce::Rectangle<int> area, juce::Colour colour)
+        {
+            auto r = area.toFloat();
+            g.setColour (PatchCraftLookAndFeel::panel().withAlpha (0.9f));
+            g.fillRoundedRectangle (r, 12.0f);
+            g.setColour (PatchCraftLookAndFeel::border().withAlpha (0.9f));
+            g.drawRoundedRectangle (r, 12.0f, 1.0f);
+            g.setColour (colour.withAlpha (0.9f));
+            g.fillRoundedRectangle (r.withHeight (3.0f), 2.0f);
+        };
+
+        drawSection (creator, PatchCraftLookAndFeel::accent());
+        drawSection (demos, juce::Colour (0xff58b7ff));
+
         auto list = bounds.reduced (0, 8).toFloat();
         g.setColour (PatchCraftLookAndFeel::panel().withAlpha (0.88f));
         g.fillRoundedRectangle (list, 12.0f);
@@ -2923,11 +3334,10 @@ namespace patchcraft
     void LaunchCenterPage::resized()
     {
         auto bounds = getLocalBounds().reduced (24);
-        auto header = bounds.removeFromTop (144);
+        auto header = bounds.removeFromTop (124);
         title.setBounds (header.removeFromTop (34));
         subtitle.setBounds (header.removeFromTop (24));
-        outputFolderLabel.setBounds (header.removeFromTop (22));
-        header.removeFromTop (8);
+        header.removeFromTop (6);
 
         auto cards = header.removeFromTop (52);
         auto summaryCard = cards.removeFromLeft (juce::jmax (320, getWidth() / 3)).reduced (14, 6);
@@ -2945,6 +3355,48 @@ namespace patchcraft
             button->setBounds (actions.removeFromLeft (buttonW));
             actions.removeFromLeft (gap);
         }
+
+        bounds.removeFromTop (10);
+        auto creator = bounds.removeFromTop (172).reduced (16, 12);
+        auto creatorLeft = creator.removeFromLeft (juce::jmax (340, creator.getWidth() / 2));
+        creatorLeft.removeFromRight (14);
+        creatorTitle.setBounds (creatorLeft.removeFromTop (24));
+        creatorBody.setBounds (creatorLeft.removeFromTop (38));
+        recipePrompt.setBounds (creatorLeft.removeFromTop (72));
+
+        auto creatorRight = creator;
+        auto top = creatorRight.removeFromTop (32);
+        recipeTypeBox.setBounds (top.removeFromLeft (128));
+        top.removeFromLeft (8);
+        createFromPromptButton.setBounds (top.removeFromLeft (150));
+        top.removeFromLeft (8);
+        blankProjectButton.setBounds (top.removeFromLeft (128));
+        creatorRight.removeFromTop (22);
+        auto quick = creatorRight.removeFromTop (36);
+        for (auto* button : { &synthStarterButton, &sampleStarterButton, &drumStarterButton, &fxStarterButton })
+        {
+            button->setBounds (quick.removeFromLeft (juce::jmax (82, quick.getWidth() / 4 - 8)));
+            quick.removeFromLeft (8);
+        }
+        outputFolderLabel.setBounds (creatorRight.removeFromTop (24));
+
+        bounds.removeFromTop (12);
+        auto demos = bounds.removeFromTop (218).reduced (16, 12);
+        auto demoHeader = demos.removeFromTop (42);
+        demoTitle.setBounds (demoHeader.removeFromTop (22));
+        demoBody.setBounds (demoHeader);
+        demoViewport.setBounds (demos);
+
+        const int tileW = 238;
+        const int tileH = juce::jmax (132, demoViewport.getHeight() - demoViewport.getScrollBarThickness() - 4);
+        const int tileGap = 10;
+        int x = 0;
+        for (auto& tile : demoTiles)
+        {
+            tile->setBounds (x, 0, tileW, tileH);
+            x += tileW + tileGap;
+        }
+        demoContent.setSize (juce::jmax (demoViewport.getWidth(), x + 4), tileH);
 
         bounds.removeFromTop (8);
         checksViewport.setBounds (bounds.reduced (10));

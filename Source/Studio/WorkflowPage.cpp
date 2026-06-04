@@ -179,7 +179,7 @@ namespace patchcraft
         loadFactoryDemoButton.onClick = [this] { showFactoryDemoMenu(); };
         addAndMakeVisible (loadFactoryDemoButton);
 
-        for (auto* button : { &soundButton, &designButton, &presetsButton, &testButton, &exportButton })
+        for (auto* button : { &designButton, &soundButton, &presetsButton, &testButton, &exportButton })
         {
             stylePrimary (*button);
             button->getProperties().set ("workflowStep", true);
@@ -187,14 +187,14 @@ namespace patchcraft
             addAndMakeVisible (*button);
         }
 
-        soundButton.setButtonText ("1  Build Sound\nCreate the real playable source and routing");
-        designButton.setButtonText ("2  Design Player\nDrag controls onto the customer-facing UI");
+        designButton.setButtonText ("1  Design Player\nStart with the customer-facing instrument surface");
+        soundButton.setButtonText ("2  Connect Sound\nCreate or attach the real playable source and routing");
         presetsButton.setButtonText ("3  Save Presets\nCapture full playable patches and packs");
         testButton.setButtonText ("4  Test Player\nVerify the exact exported Player behavior");
         exportButton.setButtonText ("5  Export\nBuild pack, VST3, or Plugin.club draft");
 
-        soundButton.setTooltip ("Start with the actual sound source: DSP graph for synth/FX, Sample Mapper for samples/drums.");
-        designButton.setTooltip ("Build the Player UI and bind knobs/sliders/buttons to real parameters.");
+        designButton.setTooltip ("Start the creation flow on the Player canvas, then bind controls to real sound.");
+        soundButton.setTooltip ("Create or connect the actual sound source: DSP graph for synth/FX, Sample Mapper for samples/drums.");
         presetsButton.setTooltip ("Save playable patches and organize them into sellable expansion packs.");
         testButton.setTooltip ("Open the runtime Player surface and verify sound, UI interactions, MIDI, and presets.");
         exportButton.setTooltip ("Export a .patchcraft pack or a standalone VST3 bundle.");
@@ -294,6 +294,7 @@ namespace patchcraft
         factoryDemoNames.clear();
         factoryDemoBox.clear (juce::dontSendNotification);
         juce::StringArray seenFolders;
+        juce::StringArray seenNames;
 
         for (const auto& root : factoryDemoSearchRoots())
         {
@@ -316,9 +317,13 @@ namespace patchcraft
                         name = display;
                 }
 
+                const auto nameKey = name.trim().toLowerCase();
+                if (seenNames.contains (nameKey))
+                    continue;
                 factoryDemoFolders.add (folder);
                 factoryDemoNames.add (name);
                 seenFolders.add (folderKey);
+                seenNames.add (nameKey);
                 factoryDemoBox.addItem (name, factoryDemoFolders.size());
             }
         }
@@ -450,9 +455,9 @@ namespace patchcraft
                 return "Demo Instrument Walkthrough\n\n"
                        "Goal: create one shippable demo instrument, not a pile of disconnected screens.\n\n"
                        "1. Choose Synth Instrument unless you are building from samples.\n"
-                       "2. Open Build Sound. On Source, add or select an oscillator/wavetable block. Change volume/blend while Preview is on.\n"
-                       "3. Move through Filter, Amp, Mod, FX, and Out. Every block should have a clear target and audible purpose.\n"
-                       "4. Open Design Player. Drag in knobs, sliders, pads, meters, and labels, then bind each control to a real DSP or sample parameter in the Inspector.\n"
+                       "2. Open Design Player. Start with the customer-facing controls, labels, pads, meters, and visual structure.\n"
+                       "3. Open Connect Sound. Add the real source and routing, then bind the UI controls to DSP or sample parameters.\n"
+                       "4. Move through Filter, Amp, Mod, FX, and Out. Every block should have a clear target and audible purpose.\n"
                        "5. Open Presets + Packs. Save the current sound as a full Patch, then add it to an Expansion Pack.\n"
                        "6. Open Test Player. Play hardware MIDI, move every UI control, switch tabs/presets, and confirm it matches Design.\n"
                        "7. Run Health Check. Fix unbound controls, missing samples, graph errors, and preset issues.\n"
@@ -639,7 +644,7 @@ namespace patchcraft
     void WorkflowPage::updateModeVisibility()
     {
         const bool advanced = advancedMode.getToggleState();
-        for (auto* button : { &soundButton, &designButton, &presetsButton, &testButton, &exportButton })
+        for (auto* button : { &designButton, &soundButton, &presetsButton, &testButton, &exportButton })
             button->setVisible (! advanced);
         for (auto* button : { &advDspButton, &advMapperButton, &advOneShotButton,
                               &advBuildButton, &advAnimationButton, &advDesignButton, &advBrandButton })
@@ -672,7 +677,7 @@ namespace patchcraft
             g.drawRoundedRectangle (rail.toFloat().reduced (0.5f, 4.5f), 8.0f, 1.0f);
             g.setColour (PatchCraftLookAndFeel::textDim());
             g.setFont (juce::Font (10.5f, juce::Font::bold));
-            g.drawText ("SOUND  ->  PLAYER UI  ->  PRESETS  ->  PLAYER TEST  ->  EXPORT",
+            g.drawText ("DESIGN PLAYER  ->  CONNECT SOUND  ->  PRESETS  ->  PLAYER TEST  ->  EXPORT",
                         rail.reduced (14, 0), juce::Justification::centredLeft);
         }
 
@@ -740,7 +745,7 @@ namespace patchcraft
                            juce::dontSendNotification);
         pathBody.setText (advancedMode.getToggleState()
             ? "Direct access for power users. Use this when you already know the specific system to edit."
-            : "Follow the path left-to-right. Each module should produce one real, testable instrument deliverable.",
+            : "Follow the path left-to-right. Design the Player first, then connect sound, presets, testing, and export.",
             juce::dontSendNotification);
         pathTitle.setBounds (pathCard.removeFromTop (24));
         pathBody.setBounds (pathCard.removeFromTop (48));
@@ -778,7 +783,7 @@ namespace patchcraft
             placeButtons ({ &advDspButton, &advMapperButton, &advOneShotButton,
                             &advBuildButton, &advAnimationButton, &advDesignButton, &advBrandButton });
         else
-            placeButtons ({ &soundButton, &designButton, &presetsButton, &testButton, &exportButton });
+            placeButtons ({ &designButton, &soundButton, &presetsButton, &testButton, &exportButton });
 
         auto healthCard = healthCardOuter.reduced (22, 16);
         truthTitle.setBounds (healthCard.removeFromTop (24));

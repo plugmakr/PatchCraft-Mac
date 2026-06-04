@@ -2,6 +2,52 @@
 
 namespace patchcraft
 {
+    namespace
+    {
+        juce::Image loadOptimizedFilmstripForControl (const juce::String& path, int frames, bool vertical)
+        {
+            if (path.isEmpty())
+                return {};
+
+            static juce::HashMap<juce::String, juce::Image> cache;
+            const int maxFrameSize = 192;
+            const auto key = path + "|" + juce::String (frames) + "|" + (vertical ? "v" : "h");
+            if (cache.contains (key))
+                return cache[key];
+
+            auto img = juce::ImageFileFormat::loadFrom (juce::File (path));
+            if (! img.isValid())
+                return {};
+
+            int safeFrames = juce::jmax (1, frames);
+            if (frames <= 1)
+            {
+                const int w = juce::jmax (1, img.getWidth());
+                const int h = juce::jmax (1, img.getHeight());
+                const int inferred = vertical ? juce::roundToInt ((double) h / (double) w)
+                                              : juce::roundToInt ((double) w / (double) h);
+                if (inferred > safeFrames)
+                    safeFrames = inferred;
+            }
+
+            const int frameW = vertical ? img.getWidth() : juce::jmax (1, img.getWidth() / safeFrames);
+            const int frameH = vertical ? juce::jmax (1, img.getHeight() / safeFrames) : img.getHeight();
+            const int largestFrameEdge = juce::jmax (frameW, frameH);
+            if (largestFrameEdge > maxFrameSize)
+            {
+                const double scale = (double) maxFrameSize / (double) largestFrameEdge;
+                const int targetFrameW = juce::jmax (1, juce::roundToInt ((double) frameW * scale));
+                const int targetFrameH = juce::jmax (1, juce::roundToInt ((double) frameH * scale));
+                img = img.rescaled (vertical ? targetFrameW : targetFrameW * safeFrames,
+                                    vertical ? targetFrameH * safeFrames : targetFrameH,
+                                    juce::Graphics::highResamplingQuality);
+            }
+
+            cache.set (key, img);
+            return img;
+        }
+    }
+
     PatchCraftLookAndFeel::PatchCraftLookAndFeel()
     {
         setColour (juce::ResizableWindow::backgroundColourId, bg());
@@ -127,16 +173,16 @@ namespace patchcraft
         if (vertical)
         {
             const int fh = strip.getHeight() / totalFrames;
-            auto src = strip.getClippedImage (juce::Rectangle<int> (0, frame * fh,
-                                                                    strip.getWidth(), fh));
-            g.drawImage (src, dest.toFloat(), juce::RectanglePlacement::stretchToFit);
+            g.drawImage (strip,
+                         dest.getX(), dest.getY(), dest.getWidth(), dest.getHeight(),
+                         0, frame * fh, strip.getWidth(), fh);
         }
         else
         {
             const int fw = strip.getWidth() / totalFrames;
-            auto src = strip.getClippedImage (juce::Rectangle<int> (frame * fw, 0,
-                                                                    fw, strip.getHeight()));
-            g.drawImage (src, dest.toFloat(), juce::RectanglePlacement::stretchToFit);
+            g.drawImage (strip,
+                         dest.getX(), dest.getY(), dest.getWidth(), dest.getHeight(),
+                         frame * fw, 0, fw, strip.getHeight());
         }
     }
 
@@ -185,11 +231,11 @@ namespace patchcraft
         const auto stripPath = slider.getProperties().getWithDefault ("filmstripPath", "").toString();
         if (stripPath.isNotEmpty())
         {
-            auto img = juce::ImageCache::getFromFile (juce::File (stripPath));
+            int frames = (int) slider.getProperties().getWithDefault ("filmstripFrames", 0);
+            const bool vertical = (bool) slider.getProperties().getWithDefault ("filmstripVertical", true);
+            auto img = loadOptimizedFilmstripForControl (stripPath, frames, vertical);
             if (img.isValid())
             {
-                int frames = (int) slider.getProperties().getWithDefault ("filmstripFrames", 0);
-                const bool vertical = (bool) slider.getProperties().getWithDefault ("filmstripVertical", true);
                 if (frames <= 0)
                     frames = detectFilmstripFrames (img, vertical);
                 drawFilmstripFrame (g, juce::Rectangle<int> (x, y, w, h),
@@ -252,11 +298,11 @@ namespace patchcraft
         const auto stripPath = slider.getProperties().getWithDefault ("filmstripPath", "").toString();
         if (stripPath.isNotEmpty())
         {
-            auto img = juce::ImageCache::getFromFile (juce::File (stripPath));
+            int frames = (int) slider.getProperties().getWithDefault ("filmstripFrames", 0);
+            const bool vertical = (bool) slider.getProperties().getWithDefault ("filmstripVertical", true);
+            auto img = loadOptimizedFilmstripForControl (stripPath, frames, vertical);
             if (img.isValid())
             {
-                int frames = (int) slider.getProperties().getWithDefault ("filmstripFrames", 0);
-                const bool vertical = (bool) slider.getProperties().getWithDefault ("filmstripVertical", true);
                 if (frames <= 0)
                     frames = detectFilmstripFrames (img, vertical);
 

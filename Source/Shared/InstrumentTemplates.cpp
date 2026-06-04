@@ -33,42 +33,33 @@ namespace patchcraft
                                 const juce::String& groupId,
                                 std::initializer_list<std::pair<juce::String, juce::String>> knobs)
         {
-            LayoutElement panel;
-            panel.type = ElementType::Shape;
-            panel.id = "panel_" + groupId;
-            panel.x = 136; panel.y = 520; panel.width = 936; panel.height = 174;
-            panel.groupId = groupId;
-            panel.shapeKind = "roundedRect";
-            panel.cornerRadius = 14.0f;
-            panel.backgroundColour = juce::Colour (0x33141822);
-            panel.borderColour = juce::Colour (0x8858f0c8);
-            panel.strokeWidth = 1.0f;
-            layout.add (panel);
-
             LayoutElement heading;
             heading.type = ElementType::Label;
             heading.id = "label_" + groupId;
-            heading.x = 160; heading.y = 530; heading.width = 330; heading.height = 22;
+            heading.x = 168; heading.y = 464; heading.width = 330; heading.height = 22;
             heading.groupId = groupId;
             heading.label = groupId.toUpperCase() + " CONTROLS";
             heading.textColour = juce::Colour (0xfff7f7ff);
             layout.add (heading);
 
             const int count = juce::jmin (8, (int) knobs.size());
-            const int knobW = 78;
-            const int knobH = 94;
-            const int innerLeft = panel.x + 34;
-            const int innerRight = panel.x + panel.width - 34;
+            const int knobW = count >= 8 ? 74 : 78;
+            const int knobH = 88;
+            const int panelX = 132;
+            const int panelY = 452;
+            const int panelWidth = 1016;
+            const int innerLeft = panelX + 58;
+            const int innerRight = panelX + 790;
             const int usable = innerRight - innerLeft - knobW;
             const int gap = count > 1 ? usable / (count - 1) : 0;
-            const int y = panel.y + 54;
+            const int y = panelY + 48;
 
             int i = 0;
             for (auto& kv : knobs)
             {
                 if (i >= 8) break;
                 const int x = count <= 1
-                    ? panel.x + (panel.width - knobW) / 2
+                    ? panelX + (panelWidth - knobW) / 2
                     : innerLeft + i * gap;
                 layout.add (makeKnob ("knob_" + groupId + "_" + kv.second,
                                       kv.first, kv.second, x, y, groupId, knobW, knobH));
@@ -85,42 +76,11 @@ namespace patchcraft
               e.x = 0; e.y = 0; e.width = canvas.width; e.height = canvas.height;
               e.locked = true; layout.add (e); }
 
-            // Runtime Player title-bar artwork designation. The title bar is
-            // hard-coded Player chrome above the canvas; this mock strip shows
-            // the wide banner area driven by manifest.playerTitleBannerImage.
-            { LayoutElement e; e.type = ElementType::Shape; e.id = "player_titlebar_mock";
-              e.semanticRole = "playerTitleBar";
-              e.x = 40; e.y = 42; e.width = 1200; e.height = 38;
-              e.shapeKind = "roundedRect";
-              e.cornerRadius = 10.0f;
-              e.backgroundColour = juce::Colour (0xcc07090c);
-              e.borderColour = juce::Colour (0x6658f0c8);
-              e.strokeWidth = 1.0f;
-              e.locked = true;
-              layout.add (e); }
-
-            { LayoutElement e; e.type = ElementType::Image; e.id = "player_titlebar_artwork";
-              e.asset = "assets/player-title-banner.png";
-              e.semanticRole = "playerTitleBarArtwork";
-              e.x = 56; e.y = 46; e.width = 218; e.height = 30;
-              e.cornerRadius = 5.0f;
-              e.locked = true;
-              layout.add (e); }
-
-            { LayoutElement e; e.type = ElementType::Label; e.id = "player_titlebar_spec";
-              e.semanticRole = "playerTitleBarArtworkSpec";
-              e.x = 286; e.y = 47; e.width = 650; e.height = 28;
-              e.label = "Player title banner: 640 x 120 source, displayed as a wide title strip above the instrument canvas";
-              e.textColour = juce::Colour (0xffdce3ea);
-              e.labelSize = 11.0f;
-              e.locked = true;
-              layout.add (e); }
-
             // Hero artwork window. This is a styled well instead of a second
             // image layer so generated templates do not cover the designed
             // background wells or add placeholder "Artwork" text.
             { LayoutElement e; e.type = ElementType::Shape; e.id = "hero_frame";
-              e.x = 40; e.y = 92; e.width = 1200; e.height = 348;
+              e.x = 48; e.y = 96; e.width = 1184; e.height = 292;
               e.shapeKind = "roundedRect";
               e.cornerRadius = 18.0f;
               e.backgroundColour = juce::Colour (0x22141822);
@@ -128,9 +88,8 @@ namespace patchcraft
               e.strokeWidth = 1.0f;
               layout.add (e); }
 
-            // Player library artwork mock: a real 3:2 library-art slot
-            // with companion product-info labels so templates show how the
-            // buyer-facing Library card will read before final art is dropped in.
+            // Player library artwork slot. Keep the surface visual; do not add
+            // authoring-spec text into playable factory templates.
             { LayoutElement e; e.type = ElementType::Image; e.id = "player_artwork";
               e.asset = "assets/library-artwork.png";
               e.semanticRole = "playerLibraryArtwork";
@@ -150,82 +109,9 @@ namespace patchcraft
               e.locked = true;
               layout.add (e); }
 
-            const auto productName = engine == "fx" ? "Modular Motion FX"
-                : engine == "drum" ? "Neon Pulse Drum Machine"
-                : engine == "synth" ? "Cinematic Evolve Pad"
-                : "Organic Tape Sampler";
-            const juce::String productKind = engine == "fx" ? "FX PLUGIN"
-                : engine == "drum" ? "DRUM MACHINE"
-                : engine == "synth" ? "SYNTH INSTRUMENT"
-                : "SAMPLE INSTRUMENT";
-
-            { LayoutElement e; e.type = ElementType::Label; e.id = "player_artwork_badge";
-              e.semanticRole = "playerArtworkInfo";
-              e.x = 510; e.y = 128; e.width = 260; e.height = 22;
-              e.label = "LIBRARY CARD ARTWORK 300 x 200";
-              e.textColour = juce::Colour (0xff58f0c8);
-              e.labelSize = 11.0f;
-              e.locked = true;
-              layout.add (e); }
-
-            { LayoutElement e; e.type = ElementType::Label; e.id = "player_product_name";
-              e.semanticRole = "playerHeaderTitle";
-              e.x = 510; e.y = 158; e.width = 270; e.height = 40;
-              e.label = productName;
-              e.textColour = juce::Colour (0xfff7f7ff);
-              e.labelSize = 24.0f;
-              e.locked = true;
-              layout.add (e); }
-
-            { LayoutElement e; e.type = ElementType::Label; e.id = "player_product_kind";
-              e.semanticRole = "playerHeaderMetadata";
-              e.x = 512; e.y = 206; e.width = 270; e.height = 22;
-              e.label = productKind + "  |  PLAYER LIBRARY PREVIEW";
-              e.textColour = juce::Colour (0xffb8c8d6);
-              e.labelSize = 12.0f;
-              e.locked = true;
-              layout.add (e); }
-
-            { LayoutElement e; e.type = ElementType::Label; e.id = "player_product_description";
-              e.semanticRole = "playerHeaderDescription";
-              e.x = 512; e.y = 238; e.width = 270; e.height = 72;
-              e.label = "Mock product info preview: final library art, title, category, and creator metadata are reviewed here before export.";
-              e.textColour = juce::Colour (0xffdce3ea);
-              e.labelSize = 13.0f;
-              e.locked = true;
-              layout.add (e); }
-
-            { LayoutElement e; e.type = ElementType::Label; e.id = "player_artwork_dimensions";
-              e.semanticRole = "playerArtworkSpec";
-              e.x = 512; e.y = 318; e.width = 270; e.height = 34;
-              e.label = "Library preview: x76 y124  w390 h260  (3:2 mock)";
-              e.textColour = juce::Colour (0xff8fa0ad);
-              e.labelSize = 11.0f;
-              e.locked = true;
-              layout.add (e); }
-
-            { LayoutElement e; e.type = ElementType::Image; e.id = "player_library_modal_mock";
-              e.asset = "assets/player-library-modal.png";
-              e.semanticRole = "playerLibraryModalMock";
-              e.x = 818; e.y = 124; e.width = 382; e.height = 232;
-              e.cornerRadius = 14.0f;
-              e.locked = true;
-              layout.add (e); }
-
-            { LayoutElement e; e.type = ElementType::Shape; e.id = "player_library_modal_frame";
-              e.semanticRole = "playerLibraryModalFrame";
-              e.x = 818; e.y = 124; e.width = 382; e.height = 232;
-              e.shapeKind = "roundedRect";
-              e.cornerRadius = 14.0f;
-              e.backgroundColour = juce::Colour (0x00000000);
-              e.borderColour = juce::Colour (0x8858f0c8);
-              e.strokeWidth = 1.0f;
-              e.locked = true;
-              layout.add (e); }
-
             // Tab strip
             { LayoutElement e; e.type = ElementType::TabPanel; e.id = "tabs";
-              e.x = 370; e.y = 470; e.width = 540; e.height = 34;
+              e.x = 360; e.y = 414; e.width = 560; e.height = 34;
               if (engine == "fx")
                   e.tabs = { "Main", "Filter", "Delay", "Reverb" };
               else if (engine == "drum")
@@ -241,31 +127,31 @@ namespace patchcraft
             if (engine != "fx")
             {
                 LayoutElement vol; vol.type = ElementType::Knob; vol.id = "masterVol";
-                vol.x = 1090; vol.y = 478; vol.width = 72; vol.height = 78;
+                vol.x = 974; vol.y = 500; vol.width = 68; vol.height = 76;
                 vol.label = "Volume"; vol.parameterId = "volume";
                 vol.labelPosition = "bottom"; vol.labelSize = 10.0f; vol.labelSpacing = 2.0f;
                 layout.add (vol);
 
                 LayoutElement pan; pan.type = ElementType::Knob; pan.id = "masterPan";
-                pan.x = 1170; pan.y = 478; pan.width = 72; pan.height = 78;
+                pan.x = 1050; pan.y = 500; pan.width = 68; pan.height = 76;
                 pan.label = "Pan"; pan.parameterId = "pan";
                 pan.labelPosition = "bottom"; pan.labelSize = 10.0f; pan.labelSpacing = 2.0f;
                 layout.add (pan);
             }
 
             { LayoutElement e; e.type = ElementType::Meter; e.id = "outMeter";
-              e.x = 1090; e.y = 568; e.width = 150; e.height = 24;
+              e.x = 974; e.y = 584; e.width = 144; e.height = 22;
               e.label = "Output"; layout.add (e); }
 
             // Performance sliders (left side)
             if (engine != "fx" && engine != "drum")
             {
                 LayoutElement pitch; pitch.type = ElementType::Slider; pitch.id = "pitchwheel";
-                pitch.x = 40; pitch.y = 485; pitch.width = 34; pitch.height = 205;
+                pitch.x = 58; pitch.y = 500; pitch.width = 38; pitch.height = 128;
                 pitch.label = "Pitch"; pitch.parameterId = "pitchWheel"; layout.add (pitch);
 
                 LayoutElement mod; mod.type = ElementType::Slider; mod.id = "modwheel";
-                mod.x = 82; mod.y = 485; mod.width = 34; mod.height = 205;
+                mod.x = 102; mod.y = 500; mod.width = 38; mod.height = 128;
                 mod.label = "Mod"; mod.parameterId = "modWheel"; layout.add (mod);
             }
 
@@ -273,7 +159,7 @@ namespace patchcraft
             if (keyboardVisible)
             {
                 LayoutElement kb; kb.type = ElementType::Keyboard; kb.id = "keyboard";
-                kb.x = 40; kb.y = 718; kb.width = 1200; kb.height = 62;
+                kb.x = 70; kb.y = 690; kb.width = 1140; kb.height = 70;
                 layout.add (kb);
             }
         }

@@ -14,6 +14,7 @@ namespace patchcraft
         AssetManager() = default;
 
         juce::Image loadImage (const juce::File& path);
+        juce::Image loadControlFilmstrip (const juce::File& path, int frames, bool vertical, int maxFrameSize = 192);
         void clear();
 
         // Renders the default cinematic mountain background of any size.
@@ -22,6 +23,7 @@ namespace patchcraft
 
     private:
         juce::HashMap<juce::String, juce::Image> imageCache;
+        juce::HashMap<juce::String, juce::Image> controlFilmstripCache;
     };
 
 } // namespace patchcraft

@@ -102,6 +102,10 @@ namespace patchcraft
         obj->setProperty ("playerTagline",           playerTagline);
         obj->setProperty ("playerLogoImage",         playerLogoImage);
         obj->setProperty ("playerTitleBannerImage",  playerTitleBannerImage);
+        obj->setProperty ("playerTitleBarTheme",     playerTitleBarTheme);
+        obj->setProperty ("playerTitleTextPlacement", playerTitleTextPlacement);
+        obj->setProperty ("playerTitleButtonStyle",  playerTitleButtonStyle);
+        obj->setProperty ("playerTitleFontFamily",   playerTitleFontFamily);
         obj->setProperty ("playerClientName",        playerClientName);
         obj->setProperty ("playerSupportEmail",      playerSupportEmail);
         obj->setProperty ("playerSupportUrl",        playerSupportUrl);
@@ -222,6 +226,14 @@ namespace patchcraft
                 m.playerLogoImage = o->getProperty ("playerLogoImage").toString();
             if (o->hasProperty ("playerTitleBannerImage"))
                 m.playerTitleBannerImage = o->getProperty ("playerTitleBannerImage").toString();
+            if (o->hasProperty ("playerTitleBarTheme"))
+                m.playerTitleBarTheme = o->getProperty ("playerTitleBarTheme").toString();
+            if (o->hasProperty ("playerTitleTextPlacement"))
+                m.playerTitleTextPlacement = o->getProperty ("playerTitleTextPlacement").toString();
+            if (o->hasProperty ("playerTitleButtonStyle"))
+                m.playerTitleButtonStyle = o->getProperty ("playerTitleButtonStyle").toString();
+            if (o->hasProperty ("playerTitleFontFamily"))
+                m.playerTitleFontFamily = o->getProperty ("playerTitleFontFamily").toString();
             if (o->hasProperty ("playerClientName"))
                 m.playerClientName = o->getProperty ("playerClientName").toString();
             if (o->hasProperty ("playerSupportEmail"))
@@ -416,6 +428,7 @@ namespace patchcraft
             case ElementType::SpriteAnimator: return "spriteAnimator";
             case ElementType::VisualFxLayer: return "visualFxLayer";
             case ElementType::AiVisualPrompt: return "aiVisualPrompt";
+            case ElementType::SampleDropZone: return "sampleDropZone";
         }
         return "knob";
     }
@@ -454,6 +467,7 @@ namespace patchcraft
         if (s == "spriteAnimator") return ElementType::SpriteAnimator;
         if (s == "visualFxLayer") return ElementType::VisualFxLayer;
         if (s == "aiVisualPrompt") return ElementType::AiVisualPrompt;
+        if (s == "sampleDropZone") return ElementType::SampleDropZone;
         return ElementType::Knob;
     }
 
@@ -493,6 +507,7 @@ namespace patchcraft
             case ElementType::SpriteAnimator: return "Sprite Animator";
             case ElementType::VisualFxLayer: return "Visual FX Layer";
             case ElementType::AiVisualPrompt: return "AI Visual Prompt";
+            case ElementType::SampleDropZone: return "Sample Drop Zone";
         }
         return "Knob";
     }
@@ -541,7 +556,8 @@ namespace patchcraft
             || type == ElementType::ReactiveImage
             || type == ElementType::SpriteAnimator
             || type == ElementType::VisualFxLayer
-            || type == ElementType::AiVisualPrompt;
+            || type == ElementType::AiVisualPrompt
+            || type == ElementType::SampleDropZone;
     }
 
     // LayoutElement ------------------------------------------------------------
@@ -585,6 +601,7 @@ namespace patchcraft
         obj->setProperty ("labelOffsetY", (double) labelOffsetY);
         obj->setProperty ("labelSpacing", (double) labelSpacing);
         obj->setProperty ("labelSize",    (double) labelSize);
+        obj->setProperty ("controlPreviewValue", (double) controlPreviewValue);
         obj->setProperty ("audioReactive", audioReactive);
         obj->setProperty ("audioReactiveMode", audioReactiveMode);
         obj->setProperty ("audioReactiveAmount", (double) audioReactiveAmount);
@@ -696,6 +713,7 @@ namespace patchcraft
             if (o->hasProperty ("labelOffsetY")) e.labelOffsetY = (float) (double) o->getProperty ("labelOffsetY");
             if (o->hasProperty ("labelSpacing")) e.labelSpacing = (float) (double) o->getProperty ("labelSpacing");
             if (o->hasProperty ("labelSize"))    e.labelSize    = juce::jmax (0.0f, (float) (double) o->getProperty ("labelSize"));
+            if (o->hasProperty ("controlPreviewValue")) e.controlPreviewValue = juce::jlimit (0.0f, 1.0f, (float) (double) o->getProperty ("controlPreviewValue"));
             if (o->hasProperty ("audioReactive")) e.audioReactive = (bool) o->getProperty ("audioReactive");
             e.audioReactiveMode = o->getProperty ("audioReactiveMode").toString();
             if (o->hasProperty ("audioReactiveAmount")) e.audioReactiveAmount = juce::jlimit (0.0f, 1.0f, (float) (double) o->getProperty ("audioReactiveAmount"));
