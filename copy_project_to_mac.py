@@ -71,6 +71,12 @@ def copy_patchcraft_to_mac():
             
             # Create relative path
             rel_path = item.relative_to(source_dir)
+            
+            # Skip excluded files or folders
+            if any(p in exclude_patterns for p in rel_path.parts) or any(p.startswith('.') for p in rel_path.parts if p not in ['.', '..']):
+                skipped_count += 1
+                continue
+            
             dest_path = mac_dir / rel_path
             
             # Create destination directory if needed
