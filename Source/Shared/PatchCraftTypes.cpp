@@ -429,6 +429,8 @@ namespace patchcraft
             case ElementType::VisualFxLayer: return "visualFxLayer";
             case ElementType::AiVisualPrompt: return "aiVisualPrompt";
             case ElementType::SampleDropZone: return "sampleDropZone";
+            case ElementType::PitchWheel: return "pitchWheel";
+            case ElementType::ModWheel: return "modWheel";
         }
         return "knob";
     }
@@ -468,6 +470,8 @@ namespace patchcraft
         if (s == "visualFxLayer") return ElementType::VisualFxLayer;
         if (s == "aiVisualPrompt") return ElementType::AiVisualPrompt;
         if (s == "sampleDropZone") return ElementType::SampleDropZone;
+        if (s == "pitchWheel") return ElementType::PitchWheel;
+        if (s == "modWheel") return ElementType::ModWheel;
         return ElementType::Knob;
     }
 
@@ -508,6 +512,8 @@ namespace patchcraft
             case ElementType::VisualFxLayer: return "Visual FX Layer";
             case ElementType::AiVisualPrompt: return "AI Visual Prompt";
             case ElementType::SampleDropZone: return "Sample Drop Zone";
+            case ElementType::PitchWheel: return "Pitch Wheel";
+            case ElementType::ModWheel: return "Mod Wheel";
         }
         return "Knob";
     }
@@ -520,7 +526,9 @@ namespace patchcraft
             || type == ElementType::Toggle
             || type == ElementType::Dropdown
             || type == ElementType::ValueDisplay
-            || type == ElementType::MacroControl;
+            || type == ElementType::MacroControl
+            || type == ElementType::PitchWheel
+            || type == ElementType::ModWheel;
     }
 
     bool isPlayerRuntimeElementSupported (ElementType type)
@@ -557,7 +565,9 @@ namespace patchcraft
             || type == ElementType::SpriteAnimator
             || type == ElementType::VisualFxLayer
             || type == ElementType::AiVisualPrompt
-            || type == ElementType::SampleDropZone;
+            || type == ElementType::SampleDropZone
+            || type == ElementType::PitchWheel
+            || type == ElementType::ModWheel;
     }
 
     // LayoutElement ------------------------------------------------------------

@@ -116,6 +116,7 @@ namespace patchcraft
         bool setDrumActivePatternFromUi (int pattern);
         bool setMidiPlaygroundActiveBankFromUi (int bank);
         bool setArpLaneStepFromUi (int lane, int step, float velocity, bool active);
+        bool setArpLaneMutedFromUi (int lane, bool muted);
         bool allowsExternalPackLoading() const;
         bool applyPresetByIndex (int presetIndex);
         int getPresetCount() const;
@@ -186,6 +187,7 @@ namespace patchcraft
             int padIndex = -1;
             int noteCount = 0;
             double bpm = 120.0;
+            int tuneSemitones = 0;
         };
         std::vector<UserContentItem> getUserContentSnapshot() const;
         bool importUserContentFiles (const juce::StringArray& files,
@@ -193,6 +195,7 @@ namespace patchcraft
                                      juce::String& report);
         bool clearUserContent();
         bool applyUserMidiToPlayground (const juce::String& contentId);
+        bool setUserContentTuneSemitones (const juce::String& contentId, int semitones);
         juce::File getUserContentRoot() const;
 
     private:

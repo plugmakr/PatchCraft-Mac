@@ -908,6 +908,7 @@ namespace patchcraft
                 object->setProperty ("padIndex", item.padIndex);
                 object->setProperty ("noteCount", item.noteCount);
                 object->setProperty ("bpm", item.bpm);
+                object->setProperty ("tuneSemitones", item.tuneSemitones);
                 items.add (juce::var (object));
             }
         }
@@ -951,6 +952,7 @@ namespace patchcraft
                         item.padIndex = (int) object->getProperty ("padIndex");
                         item.noteCount = juce::jmax (0, (int) object->getProperty ("noteCount"));
                         item.bpm = (double) object->getProperty ("bpm");
+                        item.tuneSemitones = (int) object->getProperty ("tuneSemitones");
                         if (item.id.isNotEmpty() && item.kind.isNotEmpty() && juce::File (item.filePath).existsAsFile())
                             restored.push_back (std::move (item));
                     }
@@ -1186,6 +1188,7 @@ namespace patchcraft
             zone.padLabel = item.name;
             zone.group = "__user_import__";
             zone.bpm = (float) item.bpm;
+            zone.pitchOffset = (float) item.tuneSemitones;
             overlayMap.add (zone);
             pack.sampleMap.add (zone);
             ++padCounter;
@@ -2957,6 +2960,55 @@ namespace patchcraft
             if (row->hasProperty ("transposeSemitones"))
                 multi->setLayerTransposeSemitones (id, (int) row->getProperty ("transposeSemitones"));
         }
+    }
+
+    bool PlayerProcessor::setUserContentTuneSemitones (const juce::String& contentId, int semitones)
+    {
+        bool found = false;
+        {
+            const juce::ScopedLock lock (userContentLock);
+            for (auto& item : userContent)
+            {
+                if (item.id == contentId)
+                {
+                    item.tuneSemitones = semitones;
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        if (! found)
+            return false;
+
+        saveUserContentManifest();
+
+        {
+            const juce::SpinLock::ScopedLockType engineGuard (engineLock);
+            rebuildRuntimeUserContentLocked (true);
+        }
+
+        editorListeners.call ([] (EditorListener& listener) { listener.packChanged(); });
+        return true;
+    }
+
+    bool PlayerProcessor::setArpLaneMutedFromUi (int lane, bool muted)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (! loaded)
+            return false;
+
+        auto* midiBlock = findMidiPlaygroundBlock (pack.dspGraph);
+        if (midiBlock == nullptr)
+            return false;
+
+        lane = juce::jlimit (0, 15, lane);
+        setArpLaneValue (*midiBlock, lane, "mpLaneMute", muted ? 1.0f : 0.0f);
+        
+        arpeggiator.bind (pack.dspGraph);
+        routingEngine.bind (pack.dspGraph, pack.parameters);
+        routingEngine.prepare (makeRenderContext (currentBlockSize));
+        return true;
     }
 
 } // namespace patchcraft

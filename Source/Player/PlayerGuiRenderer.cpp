@@ -418,6 +418,38 @@ namespace patchcraft
             {
                 if (e.parameterId.isEmpty())
                     return "UI button without a parameter assignment. Assign a parameter/action in Studio if it should control sound.";
+            }
+
+            if (e.type == ElementType::Keyboard)
+                return "Software keyboard. Click keys to audition this instrument and imported runtime samples.";
+
+            if (e.type == ElementType::Waveform)
+                return "Playback display. The vertical playhead follows the DAW transport or the Player PLAY audition button.";
+
+            if (e.type == ElementType::EqCurve)
+                return "EQ curve display. Shows the active surgical EQ blocks in this patch so users can see what is shaping the tone.";
+
+            if (e.type == ElementType::SpectrumAnalyzer)
+                return "Spectrum analyzer. Shows live output energy so users can see how the current sound is moving.";
+
+            if (e.type == ElementType::Mixer)
+                return "Runtime mixer. Drag faders/pan areas when mapped, or assign mixer channels in Studio.";
+
+            if (e.type == ElementType::GranularField)
+                return "Granular performance field. Drag inside the field to move sample position and texture controls.";
+
+            if (e.type == ElementType::TabPanel)
+                return "Instrument page tabs. Click a tab to switch the visible controls for this Player UI.";
+
+            if (e.type == ElementType::Dropdown)
+                return e.id == "presets"
+                    ? "Preset selector for this instrument."
+                    : "Parameter menu. Assign or choose a parameter in Studio to make this dropdown functional.";
+
+            if (e.type == ElementType::Button || e.type == ElementType::Toggle)
+            {
+                if (e.parameterId.isEmpty())
+                    return "UI button without a parameter assignment. Assign a parameter/action in Studio if it should control sound.";
                 if (const auto* parameter = parameterForId (e.parameterId))
                     return parameter->name + " (" + parameter->id + ")";
                 return "This button points to missing parameter '" + e.parameterId + "'.";
@@ -425,7 +457,8 @@ namespace patchcraft
 
             if (e.type == ElementType::Knob || e.type == ElementType::Slider
                 || e.type == ElementType::ValueDisplay || e.type == ElementType::XYPad
-                || e.type == ElementType::MacroControl)
+                || e.type == ElementType::MacroControl
+                || e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel)
             {
                 if (const auto* parameter = parameterForId (e.parameterId))
                     return playerControlGuidance (pack->manifest, e, parameter);
@@ -569,7 +602,9 @@ namespace patchcraft
             const auto& element = elementsCopy[(size_t) i];
             const bool isSliderControl = element.type == ElementType::Knob
                                       || element.type == ElementType::Slider
-                                      || element.type == ElementType::MacroControl;
+                                      || element.type == ElementType::MacroControl
+                                      || element.type == ElementType::PitchWheel
+                                      || element.type == ElementType::ModWheel;
             if (! isSliderControl)
                 continue;
 
@@ -762,7 +797,7 @@ namespace patchcraft
                                                              juce::Rectangle<int> r) const
     {
         if (e.labelPosition != "hidden"
-            && (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::MacroControl))
+            && (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::MacroControl || e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel))
             r.removeFromBottom (juce::jmax (20, r.getHeight() / 4));
         return r.reduced (2);
     }
@@ -825,6 +860,29 @@ namespace patchcraft
             return;
         }
 
+        if (e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel)
+        {
+            const float wheelW = juce::jmax (12.0f, (float) r.getWidth() * 0.4f);
+            auto wheel = r.toFloat().withSizeKeepingCentre (wheelW, (float) r.getHeight());
+            g.setColour (juce::Colour (0xff080a0d));
+            g.fillRoundedRectangle (wheel, 6.0f);
+            
+            juce::ColourGradient grad (juce::Colour (0xff2c3038), wheel.getX(), wheel.getY(),
+                                       juce::Colour (0xff12141a), wheel.getX(), wheel.getBottom(), false);
+            grad.addColour (0.5, juce::Colour (0xff3a3e46));
+            g.setGradientFill (grad);
+            g.fillRoundedRectangle (wheel.reduced (2.0f), 4.0f);
+            
+            const float indY = juce::jmap (norm, wheel.getBottom() - 10.0f, wheel.getY() + 10.0f);
+            g.setColour (accent);
+            g.fillRect (wheel.getX() + 4.0f, indY - 2.0f, wheel.getWidth() - 8.0f, 4.0f);
+            
+            g.setColour (juce::Colours::black.withAlpha (0.4f));
+            for (float y = wheel.getY() + 12.0f; y < wheel.getBottom() - 12.0f; y += 8.0f)
+                g.drawHorizontalLine (juce::roundToInt(y), wheel.getX() + 6.0f, wheel.getRight() - 6.0f);
+            return;
+        }
+
         if (e.type == ElementType::MacroControl)
         {
             g.setColour (fill);
@@ -864,8 +922,8 @@ namespace patchcraft
                                                 juce::PathStrokeType::curved,
                                                 juce::PathStrokeType::rounded));
 
-        const auto angle = juce::jmap (norm, start, end);
-        const auto radius = dial.getWidth() * 0.32f;
+        const float angle = juce::jmap (norm, start, end);
+        const float radius = dial.getWidth() * 0.32f;
         const auto centre = dial.getCentre();
         g.drawLine (centre.x, centre.y,
                     centre.x + std::cos (angle) * radius,
@@ -1005,10 +1063,11 @@ namespace patchcraft
         for (auto& e : elementsCopy)
         {
             if (! e.visible) { controls.add (new juce::Component()); continue; }
-            if (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::MacroControl)
+            if (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::MacroControl
+                || e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel)
             {
                 auto slider = std::make_unique<juce::Slider>();
-                slider->setSliderStyle (e.type == ElementType::Slider
+                slider->setSliderStyle ((e.type == ElementType::Slider || e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel)
                     ? juce::Slider::LinearVertical
                     : juce::Slider::RotaryHorizontalVerticalDrag);
                 slider->setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
@@ -1028,7 +1087,7 @@ namespace patchcraft
                 if (parameter != nullptr)
                     slider->setDoubleClickReturnValue (true, parameter->defaultValue);
                 const bool visualOnlyControl = e.parameterId.isEmpty()
-                    && (e.type == ElementType::Knob || e.type == ElementType::Slider);
+                    && (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel);
                 if (it != paramIndex.end() && it->second < kPatchCraftHostParameterSlots)
                 {
                     auto* att = new juce::AudioProcessorValueTreeState::SliderAttachment (
@@ -3527,7 +3586,8 @@ namespace patchcraft
                 : 0.0f;
             g.setOpacity (juce::jlimit (0.0f, 1.0f, e.opacity + reactiveAlpha));
 
-            if (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::MacroControl)
+            if (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::MacroControl
+                || e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel)
             {
                 drawRuntimeControl (g, controlBodyRect (e, r), e);
                 continue;
@@ -3968,7 +4028,8 @@ namespace patchcraft
             g.setOpacity (juce::jlimit (0.0f, 1.0f, e.opacity));
             const auto r = animatedElementRect (e, elementRect (e, m));
 
-            if (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::MacroControl)
+            if (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::MacroControl
+                || e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel)
                 drawControlLabelOverlay (g, e, r);
         }
     }
@@ -3996,7 +4057,8 @@ namespace patchcraft
             if (show)
             {
                 auto bounds = elementRect (e, m);
-                if (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::MacroControl)
+                if (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::MacroControl
+                    || e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel)
                     bounds = controlBodyRect (e, bounds);
                 bounds = animatedElementRect (e, bounds);
                 c->setBounds (bounds);

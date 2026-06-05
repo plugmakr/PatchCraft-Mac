@@ -287,14 +287,27 @@ namespace patchcraft
                 if (it == preset.values.end())
                     continue;
 
-                if (juce::roundToInt (it->second) >= 4)
-                    it->second = id == "osc2Type" ? 3.0f : 1.0f;
-                else
-                    it->second = juce::jlimit (0.0f, 3.0f, it->second);
+                it->second = it->second < 0.5f ? 0.0f : 1.0f;
             }
 
             if (auto blend = preset.values.find ("oscBlend"); blend != preset.values.end())
-                blend->second = juce::jlimit (0.0f, 0.35f, blend->second);
+                blend->second = juce::jlimit (0.0f, 0.24f, blend->second);
+            if (auto detune = preset.values.find ("detune"); detune != preset.values.end())
+                detune->second = juce::jlimit (-8.0f, 8.0f, detune->second);
+            if (auto detune2 = preset.values.find ("osc2Detune"); detune2 != preset.values.end())
+                detune2->second = juce::jlimit (-6.0f, 6.0f, detune2->second);
+            if (auto resonance = preset.values.find ("filterResonance"); resonance != preset.values.end())
+                resonance->second = juce::jlimit (0.0f, 0.32f, resonance->second);
+            if (auto feedback = preset.values.find ("delayFeedback"); feedback != preset.values.end())
+                feedback->second = juce::jlimit (0.0f, 0.45f, feedback->second);
+            if (auto reverb = preset.values.find ("reverbMix"); reverb != preset.values.end())
+                reverb->second = juce::jlimit (0.0f, 0.40f, reverb->second);
+            if (auto wtWarp = preset.values.find ("wtWarp"); wtWarp != preset.values.end())
+                wtWarp->second = juce::jlimit (0.0f, 0.35f, wtWarp->second);
+            if (auto wtFold = preset.values.find ("wtFold"); wtFold != preset.values.end())
+                wtFold->second = juce::jlimit (0.0f, 0.20f, wtFold->second);
+            if (auto wtLevel = preset.values.find ("wtLevel"); wtLevel != preset.values.end())
+                wtLevel->second = juce::jlimit (0.0f, 0.78f, wtLevel->second);
         }
 
         static void applyMotionRecipe (DspGraph&, Preset& preset, int index)
@@ -375,16 +388,16 @@ namespace patchcraft
                     block.targetId = block.type.containsIgnoreCase ("noise") ? "noiseBlend" : "oscBlend";
                     const auto safeOscNorm = [] (float value01)
                     {
-                        return juce::jlimit (0.0f, 0.75f, value01);
+                        return value01 < 0.125f ? 0.0f : 0.25f;
                     };
                     block.values["oscType"] = safeOscNorm (normalised ("oscType", block.values.count ("oscType") ? block.values["oscType"] : 0.25f));
-                    block.values["osc2Type"] = safeOscNorm (normalised ("osc2Type", block.values.count ("osc2Type") ? block.values["osc2Type"] : 0.75f));
-                    block.values["oscBlend"] = juce::jmin (0.35f, normalised ("oscBlend", block.values.count ("oscBlend") ? block.values["oscBlend"] : 0.0f));
-                        block.values["osc2Detune"] = normalised ("osc2Detune", block.values.count ("osc2Detune") ? block.values["osc2Detune"] : 0.50f);
-                        block.values["detune"] = normalised ("detune", block.values.count ("detune") ? block.values["detune"] : 0.50f);
+                    block.values["osc2Type"] = safeOscNorm (normalised ("osc2Type", block.values.count ("osc2Type") ? block.values["osc2Type"] : 0.25f));
+                    block.values["oscBlend"] = juce::jmin (0.24f, normalised ("oscBlend", block.values.count ("oscBlend") ? block.values["oscBlend"] : 0.0f));
+                        block.values["osc2Detune"] = juce::jlimit (0.44f, 0.56f, normalised ("osc2Detune", block.values.count ("osc2Detune") ? block.values["osc2Detune"] : 0.50f));
+                        block.values["detune"] = juce::jlimit (0.42f, 0.58f, normalised ("detune", block.values.count ("detune") ? block.values["detune"] : 0.50f));
                         block.values["octave"] = normalised ("octave", block.values.count ("octave") ? block.values["octave"] : 0.50f);
                         block.values["subBlend"] = normalised ("subBlend", block.values.count ("subBlend") ? block.values["subBlend"] : 0.0f);
-                    block.values["noiseBlend"] = 0.0f;
+                        block.values["noiseBlend"] = 0.0f;
                         block.values["volume"] = juce::jmin (0.72f, normalised ("volume", block.values.count ("volume") ? block.values["volume"] : 0.62f));
                     }
                 }
@@ -392,7 +405,7 @@ namespace patchcraft
                 {
                     block.targetId = "filterCutoff";
                     block.values["cutoff"] = normalised ("filterCutoff", block.values.count ("cutoff") ? block.values["cutoff"] : 0.50f);
-                    block.values["resonance"] = normalised ("filterResonance", block.values.count ("resonance") ? block.values["resonance"] : 0.20f);
+                    block.values["resonance"] = juce::jmin (0.32f, normalised ("filterResonance", block.values.count ("resonance") ? block.values["resonance"] : 0.20f));
                     block.values["lfoAmount"] = normalised ("lfoAmount", block.values.count ("lfoAmount") ? block.values["lfoAmount"] : 0.0f);
                 }
                 else if (block.section == "amp")
@@ -416,14 +429,14 @@ namespace patchcraft
                     {
                         block.targetId = "delayMix";
                         block.values["delayMix"] = normalised ("delayMix", block.values.count ("delayMix") ? block.values["delayMix"] : 0.16f);
-                        block.values["delayFeedback"] = normalised ("delayFeedback", block.values.count ("delayFeedback") ? block.values["delayFeedback"] : 0.32f);
+                        block.values["delayFeedback"] = juce::jmin (0.45f, normalised ("delayFeedback", block.values.count ("delayFeedback") ? block.values["delayFeedback"] : 0.32f));
                         block.values["delayTime"] = normalised ("delayTime", block.values.count ("delayTime") ? block.values["delayTime"] : 0.25f);
                         block.values["sync"] = raw ("bpmSync", 1.0f) >= 0.5f ? 1.0f : 0.0f;
                     }
                     else if (block.type.containsIgnoreCase ("reverb"))
                     {
                         block.targetId = "reverbMix";
-                        block.values["reverbMix"] = normalised ("reverbMix", block.values.count ("reverbMix") ? block.values["reverbMix"] : 0.20f);
+                        block.values["reverbMix"] = juce::jmin (0.40f, normalised ("reverbMix", block.values.count ("reverbMix") ? block.values["reverbMix"] : 0.20f));
                     }
                     else if (block.values.count ("mix") != 0)
                     {

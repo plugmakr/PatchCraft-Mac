@@ -2025,6 +2025,9 @@ namespace patchcraft
 
     void OneShotMakerPage::sendToSampleMapper()
     {
+        stopLivePluginHost (true);
+        closePluginEditor();
+
         juce::String error;
         if (! mapRenderedSamplesToProject (true, error))
         {
@@ -2078,8 +2081,22 @@ namespace patchcraft
 
         project.notifyChanged();
         if (switchToSampleMapper)
+        {
             owner.setBottomTab (BottomPanel::Page::Samples);
-        appendLog ("Mapped " + juce::String ((int) renderedSamples.size()) + " samples into Sample Mapper.");
+            pluginEditorStatusLabel.setText ("Rendered pack is now the active sample source in this project.",
+                                             juce::dontSendNotification);
+            sampleEditorStatusLabel.setText ("Rendered pack is now the active sample source in this project.",
+                                             juce::dontSendNotification);
+            statusLabel.setText ("Rendered pack sent to Sample Mapper and set as the active source.",
+                                 juce::dontSendNotification);
+            appendLog ("Mapped " + juce::String ((int) renderedSamples.size())
+                       + " samples into Sample Mapper. Rendered pack is now the active sample source in this project.");
+        }
+        else
+        {
+            appendLog ("Mapped " + juce::String ((int) renderedSamples.size())
+                       + " samples into Sample Mapper. Create Patch From Pack captured a named sample patch/preset.");
+        }
         return true;
     }
 
@@ -2136,6 +2153,12 @@ namespace patchcraft
         preset.expansionId = expansion.id;
         preset.packId = expansion.id;
         expansion.includedPresetNames.addIfNotAlreadyThere (preset.name);
+        pluginEditorStatusLabel.setText ("Create Patch From Pack captured this as a named sample patch/preset.",
+                                         juce::dontSendNotification);
+        sampleEditorStatusLabel.setText ("Create Patch From Pack captured this as a named sample patch/preset.",
+                                         juce::dontSendNotification);
+        statusLabel.setText ("Current one-shot pack captured as a named sample patch/preset.",
+                             juce::dontSendNotification);
 
         for (auto& existing : project.getPatches())
             existing.isDefault = false;

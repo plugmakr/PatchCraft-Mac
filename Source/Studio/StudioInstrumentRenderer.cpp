@@ -2370,6 +2370,17 @@ namespace patchcraft
                     return;
                 }
             }
+            else if ((el.type == ElementType::Knob || el.type == ElementType::Slider || el.type == ElementType::MacroControl)
+                     && el.parameterId.isNotEmpty())
+            {
+                if (auto* def = project.getParameters().find (el.parameterId))
+                {
+                    activeContinuousParameter = el.parameterId;
+                    continuousDragStart = e.getPosition();
+                    continuousDragStartValue = project.getLiveValues().getValue (el.parameterId, def->defaultValue);
+                    return;
+                }
+            }
             else if (el.type == ElementType::Toggle && el.parameterId.isNotEmpty())
             {
                 if (auto* def = project.getParameters().find (el.parameterId))
@@ -2474,6 +2485,25 @@ namespace patchcraft
         if (handleArpLaneGesture (e, true))
             return;
 
+        if (activeContinuousParameter.isNotEmpty())
+        {
+            if (auto* def = project.getParameters().find (activeContinuousParameter))
+            {
+                const int deltaY = continuousDragStart.y - e.getPosition().y;
+                const int deltaX = e.getPosition().x - continuousDragStart.x;
+                const float drag = (float) deltaY + (float) deltaX * 0.35f;
+                const float sensitivity = def->step >= 1.0f ? 0.08f : 0.0025f;
+                float next = continuousDragStartValue + drag * (def->max - def->min) * sensitivity;
+                next = juce::jlimit (def->min, def->max, next);
+                if (def->step >= 1.0f)
+                    next = std::round ((next - def->min) / juce::jmax (0.0001f, def->step)) * def->step + def->min;
+                project.getLiveValues().setValue (activeContinuousParameter, next);
+                project.notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
+                repaint();
+            }
+            return;
+        }
+
         if (lastPlayedNote < 0) return;
 
         auto m = metrics();
@@ -2541,6 +2571,8 @@ namespace patchcraft
             activeMomentaryParameter.clear();
             repaint();
         }
+
+        activeContinuousParameter.clear();
 
         drumGridDragActive = false;
         lastDrumGridPattern = -1;

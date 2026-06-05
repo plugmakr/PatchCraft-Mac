@@ -8,8 +8,22 @@
 #include <memory>
 #include "LiveValueStore.h"
 
+#include <mutex>
+
 namespace patchcraft
 {
+    struct LogMessage
+    {
+        juce::String text;
+        juce::Time timestamp;
+    };
+
+    struct VariableUpdate
+    {
+        juce::String name;
+        float value;
+    };
+
     /**
         PScriptEngine parses and interprets the PatchCraft pScript language.
         It runs safe, sandboxed event-driven logic mapped to parameters and layers.
@@ -34,6 +48,10 @@ namespace patchcraft
 
         // Access source code.
         juce::String getSource() const { return sourceCode; }
+
+        // --- Telemetry API ---
+        std::vector<LogMessage> getPendingLogs();
+        std::vector<VariableUpdate> getPendingVariableUpdates();
 
     private:
         juce::String sourceCode;
@@ -147,5 +165,9 @@ namespace patchcraft
         };
 
         std::vector<std::unique_ptr<PScriptTimer>> activeTimers;
+
+        std::mutex telemetryMutex;
+        std::vector<LogMessage> pendingLogs;
+        std::vector<VariableUpdate> pendingVariableUpdates;
     };
 }

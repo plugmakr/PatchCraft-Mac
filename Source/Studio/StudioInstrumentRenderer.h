@@ -86,6 +86,9 @@ namespace patchcraft
         juce::Point<int> arpMidiDragStart;
         juce::String arpMidiDragElementId;
         juce::String activeMomentaryParameter;
+        juce::String activeContinuousParameter;
+        juce::Point<int> continuousDragStart;
+        float continuousDragStartValue = 0.0f;
 
         // LiveValueStore::Listener
         void liveValueChanged (const juce::String& parameterId, float newValue) override;

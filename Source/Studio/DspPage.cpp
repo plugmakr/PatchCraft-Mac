@@ -112,6 +112,62 @@ namespace patchcraft
             return juce::jlimit (0, kSourceMatrixBankCount - 1, ordinal / kSourceMatrixBankSize);
         }
 
+        static juce::String fxFamilyForType (const juce::String& type)
+        {
+            if (type.containsIgnoreCase ("delay") || type.containsIgnoreCase ("reverb")
+                || type.containsIgnoreCase ("chorus") || type.containsIgnoreCase ("phaser")
+                || type.containsIgnoreCase ("flanger") || type.containsIgnoreCase ("tape")
+                || type.containsIgnoreCase ("vinyl") || type.containsIgnoreCase ("lofi")
+                || type.containsIgnoreCase ("formant") || type.containsIgnoreCase ("vocal")
+                || type.containsIgnoreCase ("multiTap") || type.containsIgnoreCase ("spectral")
+                || type.containsIgnoreCase ("comb") || type.containsIgnoreCase ("resonator")
+                || type.containsIgnoreCase ("convolution") || type.containsIgnoreCase ("glitch")
+                || type.containsIgnoreCase ("stutter") || type.containsIgnoreCase ("repeat"))
+                return "Creative";
+
+            return "Studio";
+        }
+
+        static juce::String fxRoleForType (const juce::String& type)
+        {
+            if (type.containsIgnoreCase ("eq"))
+                return "Tone";
+            if (type.containsIgnoreCase ("compress") || type.containsIgnoreCase ("dynamics")
+                || type.containsIgnoreCase ("clip") || type.containsIgnoreCase ("limit")
+                || type.containsIgnoreCase ("deess") || type.containsIgnoreCase ("transient"))
+                return "Dynamics";
+            if (type.containsIgnoreCase ("delay") || type.containsIgnoreCase ("reverb")
+                || type.containsIgnoreCase ("multiTap") || type.containsIgnoreCase ("convolution"))
+                return "Space";
+            if (type.containsIgnoreCase ("chorus") || type.containsIgnoreCase ("phaser")
+                || type.containsIgnoreCase ("flanger") || type.containsIgnoreCase ("tape")
+                || type.containsIgnoreCase ("vinyl") || type.containsIgnoreCase ("comb")
+                || type.containsIgnoreCase ("resonator") || type.containsIgnoreCase ("formant")
+                || type.containsIgnoreCase ("spectral"))
+                return "Modulation";
+            if (type.containsIgnoreCase ("dist") || type.containsIgnoreCase ("shape")
+                || type.containsIgnoreCase ("crush") || type.containsIgnoreCase ("lofi")
+                || type.containsIgnoreCase ("glitch") || type.containsIgnoreCase ("stutter")
+                || type.containsIgnoreCase ("repeat"))
+                return "Destruction";
+
+            return "Utility";
+        }
+
+        static juce::String fxIoModeForType (const juce::String& type)
+        {
+            if (type.containsIgnoreCase ("midSide") || type.containsIgnoreCase ("imager"))
+                return "Mid-Side";
+            if (type.containsIgnoreCase ("multiBand") || type.containsIgnoreCase ("multiband"))
+                return "Multiband-Ready";
+            if (type.containsIgnoreCase ("utility") || type.containsIgnoreCase ("deess")
+                || type.containsIgnoreCase ("compress") || type.containsIgnoreCase ("clip")
+                || type.containsIgnoreCase ("limit") || type.containsIgnoreCase ("dist"))
+                return "Mono/Stereo";
+
+            return "Stereo";
+        }
+
         static void normaliseDspGraphSectionBanks (DspGraph& graph, const juce::String& sectionId)
         {
             std::array<int, kSourceMatrixBankCount> bankCounts {};
@@ -4042,7 +4098,7 @@ namespace patchcraft
         setOpaque (true);
         fxFormatManager.registerBasicFormats();
 
-        titleLabel.setText (quickEdit ? "DSP" : "DSP BUILDER", juce::dontSendNotification);
+        titleLabel.setText (quickEdit ? "DSP" : "SOUND AUTHORING", juce::dontSendNotification);
         titleLabel.setFont (juce::Font (13.0f, juce::Font::bold));
         titleLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::text());
         addAndMakeVisible (titleLabel);
@@ -4050,6 +4106,15 @@ namespace patchcraft
         subtitleLabel.setFont (juce::Font (11.5f));
         subtitleLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
         addAndMakeVisible (subtitleLabel);
+
+        soundSourceLabel.setFont (juce::Font (11.5f, juce::Font::bold));
+        soundSourceLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+        addAndMakeVisible (soundSourceLabel);
+
+        stageHelpLabel.setFont (juce::Font (11.0f));
+        stageHelpLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+        stageHelpLabel.setJustificationType (juce::Justification::centredLeft);
+        addAndMakeVisible (stageHelpLabel);
 
         for (auto* b : { &samplerEngineButton, &synthEngineButton, &fxEngineButton })
         {
@@ -4094,6 +4159,14 @@ namespace patchcraft
             };
             addChildComponent (*promptToPlugin);
         }
+
+        tabEngine.setButtonText ("SOURCE");
+        tabTone.setButtonText ("SHAPE");
+        tabAmp.setButtonText ("ENVELOPE");
+        tabMod.setButtonText ("MOTION");
+        tabFx.setButtonText ("FX");
+        tabOut.setButtonText ("OUTPUT");
+        tabAmp.setTooltip ("Shape has two layers here: tone/filter on SHAPE, gain contour on ENVELOPE.");
 
         for (auto* b : { &tabEngine, &tabTone, &tabAmp, &tabMod, &tabFx, &tabOut })
         {
@@ -4927,18 +5000,18 @@ namespace patchcraft
 
         setNorm ("volume", 0.44f, lower.contains ("arp") ? 0.66f : 0.74f);
         setLogHz ("filterCutoff", 380.0f, lower.contains ("string") || lower.contains ("pad") ? 11000.0f : 13500.0f);
-        setRange ("filterResonance", 0.04f, lower.contains ("arp") ? 0.48f : 0.62f);
+        setRange ("filterResonance", 0.04f, lower.contains ("arp") ? 0.38f : 0.45f);
         setRange ("delayMix", lower.contains ("arp") || lower.contains ("motion") ? 0.10f : 0.0f, lower.contains ("arp") ? 0.36f : 0.46f);
-        setRange ("delayFeedback", 0.12f, lower.contains ("arp") ? 0.58f : 0.68f);
+        setRange ("delayFeedback", 0.12f, lower.contains ("arp") ? 0.48f : 0.58f);
         setRange ("delayTime", 0.08f, 0.86f);
         setRange ("reverbMix", lower.contains ("pluck") || lower.contains ("bass") ? 0.02f : 0.10f, lower.contains ("arp") ? 0.34f : 0.58f);
 
         if (project.getEngineType() == "synth")
         {
-            setRaw ("oscType", (float) rng.nextInt (4));
+            setRaw ("oscType", (float) rng.nextInt (2)); // Stick to safer basic shapes (sine, saw) for main
             setRaw ("osc2Type", (float) rng.nextInt (4));
-            setRange ("oscBlend", 0.08f, 0.55f);
-            setRange ("osc2Detune", -18.0f, 18.0f);
+            setRange ("oscBlend", 0.0f, 0.35f);
+            setRange ("osc2Detune", -7.0f, 7.0f);
             setRange ("subBlend", 0.0f, lower.contains ("bass") ? 0.62f : 0.30f);
             setRaw ("noiseBlend", 0.0f);
         }
@@ -5747,9 +5820,12 @@ namespace patchcraft
         synthEngineButton.setToggleState (engine == "synth", juce::dontSendNotification);
         fxEngineButton.setToggleState (engine == "fx", juce::dontSendNotification);
 
-        subtitleLabel.setText ("Engine: " + engine + "    Parameters: "
+        subtitleLabel.setText ("Stage: " + currentStageLabel() + "    Parameters: "
                                   + juce::String ((int) project.getParameters().getAll().size()),
                               juce::dontSendNotification);
+        soundSourceLabel.setText ("Current Sound Source: " + currentSoundSourceLabel(),
+                                  juce::dontSendNotification);
+        stageHelpLabel.setText (currentStageHelpText(), juce::dontSendNotification);
     }
 
     juce::String DspPage::currentSectionId() const
@@ -5759,6 +5835,56 @@ namespace patchcraft
              : currentTab == 2 ? "amp"
              : currentTab == 3 ? "mod"
              : currentTab == 4 ? "fx" : "out";
+    }
+
+    juce::String DspPage::currentStageId() const
+    {
+        if (currentTab == 0) return "source";
+        if (currentTab == 1 || currentTab == 2) return "shape";
+        if (currentTab == 3) return "motion";
+        if (currentTab == 4) return "fx";
+        return "output";
+    }
+
+    juce::String DspPage::currentStageLabel() const
+    {
+        if (currentTab == 0) return "Source";
+        if (currentTab == 1 || currentTab == 2) return "Shape";
+        if (currentTab == 3) return "Motion";
+        if (currentTab == 4) return "FX";
+        return "Output";
+    }
+
+    juce::String DspPage::currentSoundSourceLabel() const
+    {
+        const auto engine = project.getEngineType();
+        const bool hasSamples = ! project.getSampleMap().getZones().empty();
+        const bool hasSourceBlocks = std::any_of (project.getDspGraph().blocks.begin(),
+                                                  project.getDspGraph().blocks.end(),
+                                                  [] (const DspBlock& block) { return block.section == "source" && block.enabled; });
+
+        if (engine == "fx")
+            return "FX Input";
+        if (engine == "sample")
+            return hasSourceBlocks ? "Hybrid" : "Sample Mapper";
+        if (hasSamples && hasSourceBlocks)
+            return "Hybrid";
+        return "DSP Synth";
+    }
+
+    juce::String DspPage::currentStageHelpText() const
+    {
+        if (currentTab == 0)
+            return "Source chooses what generates sound: oscillators, samples, wavetable motion, noise, and layer balance.";
+        if (currentTab == 1)
+            return "Shape controls tone: filter movement, EQ cleanup, and spectral balance before the signal hits space or dynamics.";
+        if (currentTab == 2)
+            return "Shape also controls gain contour here: envelopes, plucks, sustain, and how notes breathe over time.";
+        if (currentTab == 3)
+            return "Motion adds movement: LFOs, macros, step modulation, and performance routing that drive sound-facing parameters.";
+        if (currentTab == 4)
+            return "FX is where you build studio and creative chains: corrective polish, motion, space, and controlled destruction.";
+        return "Output determines what is finally heard: gain staging, pan, width, limiter safety, and final response.";
     }
 
     int DspPage::currentSectionBank() const
@@ -6005,6 +6131,21 @@ namespace patchcraft
             + ", pan " + pct (get ("pan", 0.5f))
             + ", BPM sync " + (get ("bpmSync", 1.0f) >= 0.5f ? "on" : "off")
             + ", retrigger " + (get ("retrigger", 1.0f) >= 0.5f ? "on" : "off") + ".";
+    }
+
+    juce::String DspPage::fxFamilyForBlock (const DspBlock& block) const
+    {
+        return fxFamilyForType (block.type);
+    }
+
+    juce::String DspPage::fxRoleForBlock (const DspBlock& block) const
+    {
+        return fxRoleForType (block.type);
+    }
+
+    juce::String DspPage::fxIoModeForBlock (const DspBlock& block) const
+    {
+        return fxIoModeForType (block.type);
     }
 
     DspPage::Section* DspPage::currentSection()
@@ -6396,6 +6537,14 @@ namespace patchcraft
         sectionPresetBox.addItem ("FX: Triplet Wobble", 103);
         sectionPresetBox.addItem ("FX: Chop Gate Performer", 104);
         sectionPresetBox.addItem ("FX: Dirty Space Throw", 105);
+        sectionPresetBox.addSeparator();
+        sectionPresetBox.addSectionHeading ("FX Studio / Creative Templates");
+        sectionPresetBox.addItem ("Vocal Polish", 111);
+        sectionPresetBox.addItem ("Mix Bus Glue", 112);
+        sectionPresetBox.addItem ("Master Finish", 113);
+        sectionPresetBox.addItem ("Tape Motion", 114);
+        sectionPresetBox.addItem ("Rhythmic Delay Space", 115);
+        sectionPresetBox.addItem ("Destroyed Texture", 116);
         sectionPresetBox.addSeparator();
         sectionPresetBox.addSectionHeading ("FX Lab");
         sectionPresetBox.addItem ("FX Lab: Vinyl Tape Wash", 106);
@@ -6870,7 +7019,67 @@ namespace patchcraft
             graph.automation.erase (std::remove_if (graph.automation.begin(), graph.automation.end(),
                 [this] (const AutomationLane& lane) { return targetAppliesToSection (lane.targetId, "fx"); }), graph.automation.end());
 
-            if (presetId == 101)
+            if (presetId == 111)
+            {
+                addBlock ("vocal_polish_eq", "eq", "Presence Cleanup EQ", "eqBand3GainDb",
+                          { { "eqBand", 3.0f }, { "eqType", 0.0f }, { "eqMode", 0.0f }, { "eqFreq", 3100.0f },
+                            { "eqGainDb", 1.4f }, { "eqQ", 1.2f }, { "eqMix", 1.0f } });
+                addBlock ("vocal_polish_dynamics", "compressor", "Forward Vocal Dynamics", "dynMix",
+                          { { "dynThresholdDb", -18.0f }, { "dynRatio", 2.4f }, { "dynAttackMs", 14.0f },
+                            { "dynReleaseMs", 110.0f }, { "dynMakeupDb", 1.2f }, { "dynMix", 0.72f } });
+                addBlock ("vocal_polish_formant", "vocalFormant", "Body Touch", "vocalMix",
+                          { { "vocalFormant", 0.22f }, { "vocalBody", 0.28f }, { "vocalMix", 0.12f } });
+            }
+            else if (presetId == 112)
+            {
+                addBlock ("mix_glue_eq", "eq", "Low-End Tidy EQ", "eqBand2GainDb",
+                          { { "eqBand", 2.0f }, { "eqType", 0.0f }, { "eqMode", 3.0f }, { "eqFreq", 240.0f },
+                            { "eqGainDb", -1.4f }, { "eqQ", 1.1f }, { "eqMix", 1.0f } });
+                addBlock ("mix_glue_comp", "compressor", "Glue Compressor", "dynMix",
+                          { { "dynThresholdDb", -12.0f }, { "dynRatio", 2.0f }, { "dynAttackMs", 24.0f },
+                            { "dynReleaseMs", 180.0f }, { "dynMakeupDb", 0.6f }, { "dynMix", 0.58f } });
+                addBlock ("mix_glue_width", "utility", "Stereo Utility", "outputGainDb",
+                          { { "inputTrimDb", 0.0f }, { "phaseInvert", 0.0f }, { "stereoWidth", 1.08f },
+                            { "monoMaker", 0.04f }, { "outputGainDb", -0.2f }, { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.7f } });
+            }
+            else if (presetId == 113)
+            {
+                addBlock ("master_finish_eq", "eq", "Master Tilt EQ", "eqBand4GainDb",
+                          { { "eqBand", 4.0f }, { "eqType", 2.0f }, { "eqMode", 0.0f }, { "eqFreq", 10500.0f },
+                            { "eqGainDb", 1.2f }, { "eqQ", 0.7f }, { "eqMix", 1.0f } });
+                addBlock ("master_finish_clip", "clipper", "Safety Clipper", "mix",
+                          { { "drive", 0.12f }, { "mix", 0.22f } });
+                addBlock ("master_finish_limit", "utility", "Limiter Finish", "outputGainDb",
+                          { { "inputTrimDb", 0.0f }, { "phaseInvert", 0.0f }, { "stereoWidth", 1.0f },
+                            { "monoMaker", 0.0f }, { "outputGainDb", 0.0f }, { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f } });
+            }
+            else if (presetId == 114)
+            {
+                addBlock ("tape_motion_tape", "tape", "Tape Drive", "tapeMix",
+                          { { "tapeDrive", 0.34f }, { "tapeTone", 0.54f }, { "tapeFlutter", 0.18f }, { "tapeMix", 0.42f } });
+                addBlock ("tape_motion_chorus", "chorus", "Motion Chorus", "chorusMix",
+                          { { "chorusRate", 0.14f }, { "chorusDepth", 0.24f }, { "chorusFeedback", 0.06f }, { "chorusMix", 0.18f } });
+                const auto lfo = addLfo ("tape_motion_lfo", "Tape Width Motion", "tapeFlutter", 0.22f, 0.16f, true);
+                addRoute ("tape_motion_flutter", lfo, "tapeFlutter", 0.10f);
+            }
+            else if (presetId == 115)
+            {
+                addBlock ("rhythm_delay", "multiTapDelay", "Rhythmic MultiTap", "multiTapMix",
+                          { { "multiTapTime", 0.25f }, { "multiTapFeedback", 0.34f }, { "multiTapSpread", 0.68f }, { "multiTapMix", 0.26f } });
+                addBlock ("rhythm_space", "reverb", "Controlled Space", "reverbMix",
+                          { { "reverbMix", 0.18f }, { "mix", 1.0f } });
+                addAuto ("rhythm_delay_pattern", "multiTapMix", 2.0f, { 0.2f, 0.55f, 0.28f, 0.65f, 0.2f, 0.48f, 0.24f, 0.58f });
+            }
+            else if (presetId == 116)
+            {
+                addBlock ("destroyed_tape", "tape", "Broken Tape", "tapeMix",
+                          { { "tapeDrive", 0.66f }, { "tapeTone", 0.34f }, { "tapeFlutter", 0.24f }, { "tapeMix", 0.56f } });
+                addBlock ("destroyed_lofi", "lofi", "Crushed Converter", "lofiMix",
+                          { { "lofiBits", 7.0f }, { "lofiRate", 0.42f }, { "lofiMix", 0.36f } });
+                addBlock ("destroyed_vinyl", "vinyl", "Warp Bed", "vinylMix",
+                          { { "vinylAge", 0.48f }, { "vinylDust", 0.14f }, { "vinylWarp", 0.24f }, { "vinylMix", 0.14f } });
+            }
+            else if (presetId == 101)
             {
                 addBlock ("dub_delay", "delay", "1/4 Dub Delay", "delayMix",
                           { { "delayMix", 0.42f }, { "delayFeedback", 0.62f }, { "delayTime", 0.25f },
@@ -8804,8 +9013,17 @@ namespace patchcraft
         }
         else
         {
-            editorHint.setText ("Click a block card above or choose an item here. Delete removes the selected graph item.",
-                                juce::dontSendNotification);
+            juce::String hint = "Blocks process top-to-bottom; lower blocks overwrite earlier parameters. ";
+            switch (currentTab)
+            {
+                case 0: hint += "Source generates the raw sound (Synth or Sample)."; break;
+                case 1: hint += "Filter shapes tone by removing frequencies."; break;
+                case 2: hint += "Amp controls volume envelopes (Attack, Decay)."; break;
+                case 3: hint += "Mod moves parameters automatically (LFO, Arp)."; break;
+                case 4: hint += "FX adds Delay, Reverb, Chorus, etc."; break;
+                case 5: hint += "Out handles final mix and clipping."; break;
+            }
+            editorHint.setText (hint, juce::dontSendNotification);
         }
 
         syncGraphControlLabelTooltips();
@@ -9322,7 +9540,7 @@ namespace patchcraft
             putIfMissing ("detune", 0.50f);
             putIfMissing ("osc2Detune", 0.535f);
             putIfMissing ("subBlend", block.type.containsIgnoreCase ("sub") ? 0.35f : 0.0f);
-            putIfMissing ("noiseBlend", block.type.containsIgnoreCase ("noise") ? 0.18f : 0.0f);
+            putIfMissing ("noiseBlend", 0.0f);
             putIfMissing ("octave", 0.50f);
         }
         else if (block.section == "filter")
@@ -9725,7 +9943,12 @@ namespace patchcraft
                 if (bank != currentSectionBank())
                     continue;
 
-                graphCards.add (block.name + "  [" + block.type + "]");
+                auto cardTitle = block.name + "  [" + block.type + "]";
+                if (sectionId == "fx")
+                    cardTitle << "  {" + fxFamilyForBlock (block) + " / "
+                              + fxRoleForBlock (block) + " / "
+                              + fxIoModeForBlock (block) + "}";
+                graphCards.add (cardTitle);
                 graphDescriptions.add (blockImpactDescription (block));
                 graphItemIds.add (1000 + i + 1);
                 graphEnabled.add (block.enabled);
@@ -9734,33 +9957,33 @@ namespace patchcraft
         switch (currentTab)
         {
             case 0:
-                builderPanel.setContent ("Source Builder",
-                    "Create oscillators, sample layers, noise, blends, unison, routing, and source macros.",
+                builderPanel.setContent ("Source Stage",
+                    "Start with what generates sound: oscillators, sample layers, noise, live-input prep, and source macros.",
                     graphCards, graphDescriptions, graphItemIds, graphEnabled);
                 break;
             case 1:
-                builderPanel.setContent ("Filter Builder",
-                    "Build serial/parallel filters, morphing filter types, keytracking, envelope follow, and cutoff macros.",
+                builderPanel.setContent ("Shape Stage",
+                    "Shape tone with filters, surgical EQ, keytracking, envelope follow, and cutoff control.",
                     graphCards, graphDescriptions, graphItemIds, graphEnabled);
                 break;
             case 2:
-                builderPanel.setContent ("Amp Builder",
-                    "Shape gain, envelopes, velocity response, layer amp rules, and dynamic macro behavior.",
+                builderPanel.setContent ("Shape Stage",
+                    "Shape gain contour with envelopes, plucks, sustain, velocity response, and layer amp behavior.",
                     graphCards, graphDescriptions, graphItemIds, graphEnabled);
                 break;
             case 3:
-                builderPanel.setContent ("Modulation Lab",
-                    "Design LFOs, custom shapes, step lanes, random/S&H, MIDI CC routing, and deep modulation matrices.",
+                builderPanel.setContent ("Motion Stage",
+                    "Drive movement with LFOs, step lanes, macros, MIDI/performance hookups, and modulation routing.",
                     graphCards, graphDescriptions, graphItemIds, graphEnabled);
                 break;
             case 4:
-                builderPanel.setContent ("FX Builder",
-                    "Create serial/parallel FX chains with macro-controlled wet/dry, feedback, drive, space, and movement.",
+                builderPanel.setContent ("FX Stage",
+                    "Build Studio and Creative FX chains with conservative gain staging, movement, space, and texture.",
                     graphCards, graphDescriptions, graphItemIds, graphEnabled);
                 break;
             default:
-                builderPanel.setContent ("Output Builder",
-                    "Finalize instrument response with output gain, pan, width, limiter, macro polish, and performance routing.",
+                builderPanel.setContent ("Output Stage",
+                    "Finalize what is heard with output gain, pan, width, limiter safety, and final routing polish.",
                     graphCards, graphDescriptions, graphItemIds, graphEnabled);
                 break;
         }
@@ -9782,9 +10005,11 @@ namespace patchcraft
           : currentTab == 3 ? "Mod Matrix"
           : currentTab == 4 ? "Sample Player"
           : "Deep Editor");
+        builderPanel.openSectionEditorButton.setTooltip ("Open the Deep Editor for the current stage.");
         builderPanel.savePatchButton.setButtonText ("Save Patch");
         builderPanel.savePatchAsButton.setButtonText ("Save Patch As");
         builderPanel.sendExpansionButton.setButtonText ("Add To Pack");
+        syncEngineButtons();
         builderPanel.resized();
         formulaPanel.repaint();
         sourceMatrix.repaint();
@@ -11906,9 +12131,10 @@ namespace patchcraft
     {
         auto r = getLocalBounds().reduced (quickEdit ? 8 : 12);
 
-        auto header = r.removeFromTop (quickEdit ? 24 : 32);
-        titleLabel.setBounds (header.removeFromLeft (quickEdit ? 46 : 128));
-        subtitleLabel.setBounds (header.removeFromLeft (quickEdit ? 210 : 280));
+        auto header = r.removeFromTop (quickEdit ? 24 : 48);
+        titleLabel.setBounds (header.removeFromLeft (quickEdit ? 46 : 140));
+        subtitleLabel.setBounds (header.removeFromLeft (quickEdit ? 210 : 200));
+        soundSourceLabel.setBounds (header.removeFromLeft (quickEdit ? 0 : 220));
         samplerEngineButton.setBounds (header.removeFromLeft (72).reduced (2));
         synthEngineButton.setBounds (header.removeFromLeft (62).reduced (2));
         fxEngineButton.setBounds (header.removeFromLeft (50).reduced (2));
@@ -11918,6 +12144,10 @@ namespace patchcraft
             advancedModeButton.setBounds (header.removeFromRight (96).reduced (2));
             easyModeButton.setBounds (header.removeFromRight (70).reduced (2));
         }
+        if (! quickEdit)
+            stageHelpLabel.setBounds (r.removeFromTop (18));
+        else
+            stageHelpLabel.setBounds ({});
 
         if (quickEdit || ! easyMode)
         {

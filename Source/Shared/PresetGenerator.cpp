@@ -145,15 +145,15 @@ namespace patchcraft
         static const WavetableRecipe& wavetableRecipeFor (int index)
         {
             static const std::array<WavetableRecipe, 10> recipes {{
-                { "wide glass table with slow spectral drift",        1.0f, 0.18f, 0.74f, 0.20f, 0.08f, 5.0f, 18.0f, 0.78f, 0.98f, 0.85f, 1.60f, 0.76f, 3.80f, 6200.0f, 0.18f, 0.35f, 0.24f, 0.18f, 0.36f, 0.46f, 0.08f, 0.02f, 0.04f, 0.08f, 4.6f,  0.0f, 1 },
-                { "hard razor table for pulse bass movement",        4.0f, 0.42f, 0.36f, 0.58f, 0.34f, 2.0f, 10.0f, 0.28f, 1.10f, 0.004f, 0.18f, 0.42f, 0.18f, 1800.0f, 0.48f, 3.00f, 0.38f, 0.08f, 0.22f, 0.10f, 0.36f, 0.04f, 0.02f, 0.00f, 5.0f, -1.0f, 4 },
-                { "bright glass motion patch with tempo-synced sweep", 1.0f, 0.68f, 0.84f, 0.36f, 0.12f, 4.0f, 22.0f, 0.62f, 1.00f, 0.12f, 0.54f, 0.58f, 1.40f, 9800.0f, 0.22f, 0.50f, 0.52f, 0.30f, 0.48f, 0.36f, 0.02f, 0.10f, 0.06f, 0.12f, 5.8f,  0.0f, 5 },
-                { "formant choir pad with vocal-style morphing",     3.0f, 0.57f, 0.92f, 0.18f, 0.06f, 6.0f, 26.0f, 0.86f, 0.92f, 1.40f, 2.20f, 0.82f, 5.60f, 3200.0f, 0.16f, 0.22f, 0.18f, 0.14f, 0.30f, 0.72f, 0.04f, 0.01f, 0.02f, 0.18f, 4.2f,  0.0f, 1 },
-                { "fast PWM pluck with fold bite and short ambience", 2.0f, 0.24f, 0.42f, 0.50f, 0.22f, 1.0f, 0.0f,  0.00f, 1.00f, 0.002f, 0.12f, 0.10f, 0.28f, 5200.0f, 0.34f, 6.00f, 0.14f, 0.14f, 0.24f, 0.18f, 0.10f, 0.05f, 0.00f, 0.00f, 5.0f,  0.0f, 3 },
-                { "aggressive unison reese with controlled fold",    6.0f, 0.48f, 0.64f, 0.42f, 0.48f, 7.0f, 34.0f, 0.92f, 1.18f, 0.03f, 0.62f, 0.68f, 1.20f, 1400.0f, 0.36f, 0.18f, 0.22f, 0.04f, 0.18f, 0.14f, 0.42f, 0.02f, 0.03f, 0.04f, 4.8f, -1.0f, 4 },
+                { "wide glass table with slow spectral drift",        1.0f, 0.18f, 0.74f, 0.20f, 0.08f, 5.0f, 18.0f, 0.78f, 0.98f, 0.85f, 1.60f, 0.76f, 3.80f, 6200.0f, 0.18f, 0.35f, 0.24f, 0.18f, 0.36f, 0.46f, 0.08f, 0.00f, 0.04f, 0.08f, 4.6f,  0.0f, 1 },
+                { "hard razor table for pulse bass movement",        4.0f, 0.42f, 0.36f, 0.58f, 0.34f, 2.0f, 10.0f, 0.28f, 1.10f, 0.004f, 0.18f, 0.42f, 0.18f, 1800.0f, 0.48f, 3.00f, 0.38f, 0.08f, 0.22f, 0.10f, 0.36f, 0.00f, 0.02f, 0.00f, 5.0f, -1.0f, 4 },
+                { "bright glass motion patch with tempo-synced sweep", 1.0f, 0.68f, 0.84f, 0.36f, 0.12f, 4.0f, 22.0f, 0.62f, 1.00f, 0.12f, 0.54f, 0.58f, 1.40f, 9800.0f, 0.22f, 0.50f, 0.52f, 0.30f, 0.48f, 0.36f, 0.02f, 0.00f, 0.06f, 0.12f, 5.8f,  0.0f, 5 },
+                { "formant choir pad with vocal-style morphing",     3.0f, 0.57f, 0.92f, 0.18f, 0.06f, 6.0f, 26.0f, 0.86f, 0.92f, 1.40f, 2.20f, 0.82f, 5.60f, 3200.0f, 0.16f, 0.22f, 0.18f, 0.14f, 0.30f, 0.72f, 0.04f, 0.00f, 0.02f, 0.18f, 4.2f,  0.0f, 1 },
+                { "fast PWM pluck with fold bite and short ambience", 2.0f, 0.24f, 0.42f, 0.50f, 0.22f, 1.0f, 0.0f,  0.00f, 1.00f, 0.002f, 0.12f, 0.10f, 0.28f, 5200.0f, 0.34f, 6.00f, 0.14f, 0.14f, 0.24f, 0.18f, 0.10f, 0.00f, 0.00f, 0.00f, 5.0f,  0.0f, 3 },
+                { "aggressive unison reese with controlled fold",    6.0f, 0.48f, 0.64f, 0.42f, 0.48f, 7.0f, 34.0f, 0.92f, 1.18f, 0.03f, 0.62f, 0.68f, 1.20f, 1400.0f, 0.36f, 0.18f, 0.22f, 0.04f, 0.18f, 0.14f, 0.42f, 0.00f, 0.03f, 0.04f, 4.8f, -1.0f, 4 },
                 { "hybrid bell table with shaped custom harmonics",  7.0f, 0.76f, 0.70f, 0.32f, 0.10f, 3.0f, 16.0f, 0.58f, 0.88f, 0.01f, 1.10f, 0.34f, 2.80f, 12400.0f,0.12f, 1.50f, 0.18f, 0.22f, 0.28f, 0.60f, 0.00f, 0.00f, 0.02f, 0.10f, 6.0f,  1.0f, 5 },
                 { "organ-style additive table with slow bloom",      5.0f, 0.34f, 0.54f, 0.10f, 0.04f, 4.0f, 12.0f, 0.42f, 0.96f, 0.34f, 0.90f, 0.80f, 2.60f, 4400.0f, 0.10f, 0.28f, 0.16f, 0.08f, 0.20f, 0.42f, 0.12f, 0.00f, 0.03f, 0.06f, 4.4f,  0.0f, 1 },
-                { "custom folded table for unstable animated texture",8.0f, 0.52f, 0.86f, 0.72f, 0.38f, 5.0f, 28.0f, 0.80f, 1.05f, 0.22f, 1.40f, 0.50f, 3.40f, 7200.0f, 0.28f, 0.75f, 0.46f, 0.26f, 0.44f, 0.54f, 0.04f, 0.16f, 0.01f, 0.12f, 5.2f,  0.0f, 4 },
+                { "custom folded table for unstable animated texture",8.0f, 0.52f, 0.86f, 0.72f, 0.38f, 5.0f, 28.0f, 0.80f, 1.05f, 0.22f, 1.40f, 0.50f, 3.40f, 7200.0f, 0.28f, 0.75f, 0.46f, 0.26f, 0.44f, 0.54f, 0.04f, 0.00f, 0.01f, 0.12f, 5.2f,  0.0f, 4 },
                 { "deep sub motion table with clean low-end focus",  0.0f, 0.12f, 0.28f, 0.16f, 0.06f, 2.0f, 8.0f,  0.22f, 1.12f, 0.02f, 0.42f, 0.72f, 0.80f, 950.0f,  0.26f, 0.25f, 0.12f, 0.02f, 0.18f, 0.08f, 0.62f, 0.00f, 0.02f, 0.02f, 4.8f, -1.0f, 2 }
             }};
 
@@ -425,28 +425,33 @@ namespace patchcraft
                 float oscLayer = (float) ((index + 2) % 4);
                 if (lower.contains ("pad") || lower.contains ("choir") || lower.contains ("string"))
                 {
-                    oscMain  = (index % 2 == 0) ? 1.0f : 3.0f;   // saw / triangle
-                    oscLayer = (index % 2 == 0) ? 3.0f : 1.0f;
+                    oscMain  = 1.0f;   // saw
+                    oscLayer = 0.0f;   // sine
                 }
                 else if (lower.contains ("bass"))
                 {
-                    oscMain  = (index % 2 == 0) ? 2.0f : 1.0f;   // square / saw
+                    oscMain  = 1.0f;   // saw
                     oscLayer = 0.0f;                             // sine sub
                 }
                 else if (lower.contains ("pluck"))
                 {
-                    oscMain  = (index % 2 == 0) ? 3.0f : 0.0f;   // triangle / sine
+                    oscMain  = 0.0f;   // sine
                     oscLayer = 1.0f;
+                }
+                else
+                {
+                    oscMain  = (index % 2 == 0) ? 1.0f : 0.0f;
+                    oscLayer = (index % 2 == 0) ? 0.0f : 1.0f;
                 }
                 setValue (preset, model, "oscType", oscMain);
                 setValue (preset, model, "osc2Type", oscLayer);
-                setNorm (preset, model, "oscBlend", lower.contains ("bass") ? value01 (rng, 0.16f, 0.10f)
-                                                                            : lower.contains ("string") || lower.contains ("pad") ? value01 (rng, 0.34f, 0.16f)
-                                                                                                                                   : value01 (rng, 0.24f, 0.14f));
+                setNorm (preset, model, "oscBlend", lower.contains ("bass") ? value01 (rng, 0.12f, 0.06f)
+                                                                            : lower.contains ("string") || lower.contains ("pad") ? value01 (rng, 0.20f, 0.08f)
+                                                                                                                                   : value01 (rng, 0.16f, 0.08f));
                 setValue (preset, model, "octave", lower.contains ("string") ? 0.0f : (float) ((index % 3) - 1));
-                setValue (preset, model, "detune", (rng.nextFloat() * 2.0f - 1.0f) * (lower.contains ("string") ? 14.0f : 7.0f));
+                setValue (preset, model, "detune", (rng.nextFloat() * 2.0f - 1.0f) * (lower.contains ("string") ? 6.0f : 4.0f));
                 setValue (preset, model, "osc2Detune", (rng.nextFloat() * 2.0f - 1.0f)
-                    * (lower.contains ("motion") || lower.contains ("lfo") ? 24.0f : 14.0f));
+                    * (lower.contains ("motion") || lower.contains ("lfo") ? 6.0f : 4.0f));
                 setNorm (preset, model, "subBlend", lower.contains ("bass") ? value01 (rng, 0.52f, 0.24f)
                                                                              : lower.contains ("pluck") ? value01 (rng, 0.12f, 0.10f)
                                                                                                          : value01 (rng, 0.20f, 0.18f));

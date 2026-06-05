@@ -163,7 +163,9 @@ namespace patchcraft
         SpriteAnimator,
         VisualFxLayer,
         AiVisualPrompt,
-        SampleDropZone
+        SampleDropZone,
+        PitchWheel,
+        ModWheel
     };
 
     juce::String elementTypeToString (ElementType);

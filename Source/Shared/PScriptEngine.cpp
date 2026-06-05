@@ -814,6 +814,13 @@ namespace patchcraft
         handlers.clear();
         activeTimers.clear();
         variables.clear();
+
+        {
+            std::unique_lock<std::mutex> lock (telemetryMutex);
+            pendingLogs.clear();
+            pendingVariableUpdates.clear();
+        }
+        
         sourceCode = source;
         compiled = false;
 
@@ -999,41 +1006,60 @@ namespace patchcraft
 
         if (stmt.kind == Statement::Kind::Let)
         {
-            variables[stmt.varName] = evaluateExpression (stmt.expr, eventArgs);
+            float val = evaluateExpression (stmt.expr, eventArgs);
+            variables[stmt.varName] = val;
+            
+            std::unique_lock<std::mutex> lock (telemetryMutex, std::try_to_lock);
+            if (lock.owns_lock())
+            {
+                pendingVariableUpdates.push_back (VariableUpdate { stmt.varName, val });
+            }
             return;
         }
 
         if (stmt.kind == Statement::Kind::Print)
         {
+            juce::String logMsg;
             if (stmt.expr.type == Expression::Type::Identifier)
             {
                 auto name = stmt.expr.identifier;
                 auto it = eventArgs.find (name.toLowerCase());
                 if (it != eventArgs.end())
                 {
-                    DBG ("[pScript Print] " + name + " = " + juce::String (it->second));
+                    logMsg = name + " = " + juce::String (it->second);
+                    DBG ("[pScript Print] " + logMsg);
                 }
                 else
                 {
                     auto varIt = variables.find (name);
                     if (varIt != variables.end())
                     {
-                        DBG ("[pScript Print] " + name + " = " + juce::String (varIt->second));
+                        logMsg = name + " = " + juce::String (varIt->second);
+                        DBG ("[pScript Print] " + logMsg);
                     }
                     else if (valueStore != nullptr && valueStore->getRaw (name) != nullptr)
                     {
-                        DBG ("[pScript Print] " + name + " = " + juce::String (valueStore->getValue (name)));
+                        logMsg = name + " = " + juce::String (valueStore->getValue (name));
+                        DBG ("[pScript Print] " + logMsg);
                     }
                     else
                     {
-                        DBG ("[pScript Print] " + name);
+                        logMsg = name;
+                        DBG ("[pScript Print] " + logMsg);
                     }
                 }
             }
             else
             {
                 float val = evaluateExpression (stmt.expr, eventArgs);
-                DBG ("[pScript Print] " + juce::String (val));
+                logMsg = juce::String (val);
+                DBG ("[pScript Print] " + logMsg);
+            }
+            
+            std::unique_lock<std::mutex> lock (telemetryMutex, std::try_to_lock);
+            if (lock.owns_lock())
+            {
+                pendingLogs.push_back (LogMessage { logMsg, juce::Time::getCurrentTime() });
             }
             return;
         }
@@ -1159,5 +1185,21 @@ namespace patchcraft
             }
         }
         return 0.0f;
+    }
+
+    std::vector<LogMessage> PScriptEngine::getPendingLogs()
+    {
+        std::unique_lock<std::mutex> lock (telemetryMutex);
+        std::vector<LogMessage> logsCopy;
+        logsCopy.swap (pendingLogs);
+        return logsCopy;
+    }
+
+    std::vector<VariableUpdate> PScriptEngine::getPendingVariableUpdates()
+    {
+        std::unique_lock<std::mutex> lock (telemetryMutex);
+        std::vector<VariableUpdate> updatesCopy;
+        updatesCopy.swap (pendingVariableUpdates);
+        return updatesCopy;
     }
 }

@@ -325,6 +325,8 @@ namespace patchcraft
 
         juce::Label titleLabel;
         juce::Label subtitleLabel;
+        juce::Label soundSourceLabel;
+        juce::Label stageHelpLabel;
         juce::TextButton samplerEngineButton { "Sampler" };
         juce::TextButton synthEngineButton   { "Synth" };
         juce::TextButton fxEngineButton      { "FX" };
@@ -538,11 +540,18 @@ namespace patchcraft
         void markGraphEdited();
         void bindSections();
         juce::String currentSectionId() const;
+        juce::String currentStageId() const;
+        juce::String currentStageLabel() const;
+        juce::String currentSoundSourceLabel() const;
+        juce::String currentStageHelpText() const;
         int currentSectionBank() const;
         void setCurrentSectionBank (int bank);
         juce::String sectionForTarget (const juce::String& targetId) const;
         bool targetAppliesToSection (const juce::String& targetId, const juce::String& sectionId) const;
         juce::String blockImpactDescription (const DspBlock&) const;
+        juce::String fxFamilyForBlock (const DspBlock&) const;
+        juce::String fxRoleForBlock (const DspBlock&) const;
+        juce::String fxIoModeForBlock (const DspBlock&) const;
         Section* currentSection();
         void ensureQuickEditControls();
         void refreshQuickEditSections();

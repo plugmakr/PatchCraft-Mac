@@ -462,8 +462,14 @@ namespace patchcraft
         auto setNorm = [this] (const juce::String& id, float value01)
         {
             if (auto* target = findParam (id))
+            {
+                auto normalised = value01;
+                if ((value01 < 0.0f || value01 > 1.0f) && std::abs (target->max - target->min) > 0.000001f)
+                    normalised = (value01 - target->min) / (target->max - target->min);
+
                 target->routed = juce::jlimit (target->min, target->max,
-                    juce::jmap (juce::jlimit (0.0f, 1.0f, value01), 0.0f, 1.0f, target->min, target->max));
+                    juce::jmap (juce::jlimit (0.0f, 1.0f, normalised), 0.0f, 1.0f, target->min, target->max));
+            }
         };
         auto setValue = [this] (const juce::String& id, float value)
         {
@@ -474,7 +480,10 @@ namespace patchcraft
         {
             if (auto* target = findParam (id))
             {
-                const auto normalised = valueForKey (block, key, valueForKey (block, "value", 0.5f));
+                auto normalised = valueForKey (block, key, valueForKey (block, "value", 0.5f));
+                if ((normalised < 0.0f || normalised > 1.0f) && std::abs (target->max - target->min) > 0.000001f)
+                    normalised = (normalised - target->min) / (target->max - target->min);
+
                 target->routed = juce::jlimit (target->min, target->max,
                     juce::jmap (juce::jlimit (0.0f, 1.0f, normalised), 0.0f, 1.0f, target->min, target->max));
             }

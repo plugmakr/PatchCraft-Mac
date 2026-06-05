@@ -82,13 +82,35 @@ namespace patchcraft
 
             if (id == "oscType" || id == "osc2Type")
             {
-                if (juce::roundToInt (value) >= 4)
-                    return 1.0f;
-                return juce::jlimit (0.0f, 3.0f, value);
+                return value < 0.5f ? 0.0f : 1.0f;
             }
 
             if (id == "oscBlend")
+                return juce::jlimit (0.0f, 0.24f, value);
+
+            if (id == "filterResonance")
+                return juce::jlimit (0.0f, 0.32f, value);
+
+            if (id == "delayFeedback")
+                return juce::jlimit (0.0f, 0.45f, value);
+
+            if (id == "reverbMix")
+                return juce::jlimit (0.0f, 0.40f, value);
+
+            if (id == "detune")
+                return juce::jlimit (-8.0f, 8.0f, value);
+
+            if (id == "osc2Detune")
+                return juce::jlimit (-6.0f, 6.0f, value);
+
+            if (id == "wtWarp")
                 return juce::jlimit (0.0f, 0.35f, value);
+
+            if (id == "wtFold")
+                return juce::jlimit (0.0f, 0.20f, value);
+
+            if (id == "wtLevel")
+                return juce::jlimit (0.0f, 0.78f, value);
 
             return value;
         }
@@ -100,22 +122,39 @@ namespace patchcraft
 
             if (id == "oscType" || id == "osc2Type")
             {
-                if (value >= 1.0f)
-                    return id == "osc2Type" ? 0.75f : 0.25f;
-
-                return juce::jlimit (0.0f, 0.75f, value);
+                return value < 0.125f ? 0.0f : 0.25f;
             }
 
             if (id == "oscBlend")
-                return juce::jlimit (0.0f, 0.35f, value);
+                return juce::jlimit (0.0f, 0.24f, value);
+
+            if (id == "filterResonance")
+                return juce::jlimit (0.0f, 0.32f, value);
+
+            if (id == "delayFeedback")
+                return juce::jlimit (0.0f, 0.45f, value);
 
             if (id == "detune" || id == "osc2Detune")
             {
+                const float cents = id == "detune"
+                    ? juce::jlimit (-8.0f, 8.0f, value)
+                    : juce::jlimit (-6.0f, 6.0f, value);
                 if (value < 0.0f || value > 1.0f)
-                    return juce::jmap (juce::jlimit (-50.0f, 50.0f, value), -50.0f, 50.0f, 0.0f, 1.0f);
+                    return juce::jmap (cents, -50.0f, 50.0f, 0.0f, 1.0f);
 
-                return value;
+                const float safeMin = id == "detune" ? 0.42f : 0.44f;
+                const float safeMax = id == "detune" ? 0.58f : 0.56f;
+                return juce::jlimit (safeMin, safeMax, value);
             }
+
+            if (id == "wtWarp")
+                return juce::jlimit (0.0f, 0.35f, value);
+
+            if (id == "wtFold")
+                return juce::jlimit (0.0f, 0.20f, value);
+
+            if (id == "wtLevel")
+                return juce::jlimit (0.0f, 0.78f, value);
 
             return value;
         }
@@ -135,6 +174,36 @@ namespace patchcraft
                     block.enabled = false;
                 }
             }
+        }
+
+        static void sanitiseMusicalLiveValues (const ParameterModel& parameters,
+                                               LiveValueStore& liveValues)
+        {
+            for (const auto& def : parameters.getAll())
+            {
+                auto value = liveValues.getValue (def.id, def.defaultValue);
+                value = sanitisePresetPlaybackValue (def.id, value);
+                liveValues.setValue (def.id, value);
+            }
+        }
+
+        static void syncPlaybackGraphFromLiveValues (DspGraph& graph,
+                                                     const ParameterModel& parameters,
+                                                     const LiveValueStore& liveValues)
+        {
+            for (auto& block : graph.blocks)
+            {
+                for (auto& entry : block.values)
+                {
+                    if (entry.first == "bank")
+                        continue;
+                    if (const auto* def = parameters.find (entry.first))
+                        entry.second = sanitiseGraphPlaybackValue (entry.first,
+                            liveValues.getValue (entry.first, def->defaultValue));
+                }
+            }
+
+            sanitisePlaybackGraph (graph);
         }
     }
 
@@ -274,6 +343,8 @@ namespace patchcraft
         {
             for (const auto& value : presetToApply->values)
                 liveValues.setValue (value.first, sanitisePresetPlaybackValue (value.first, value.second));
+            sanitiseMusicalLiveValues (parameters, liveValues);
+            syncPlaybackGraphFromLiveValues (dspGraph, parameters, liveValues);
             manifest.defaultPreset = presetToApply->name;
             for (auto& preset : presets)
                 preset.isDefault = preset.name == presetToApply->name;
@@ -398,6 +469,8 @@ namespace patchcraft
         resetLiveValuesToDefaults();
         for (const auto& value : patch.parameterValues)
             liveValues.setValue (value.first, sanitisePresetPlaybackValue (value.first, value.second));
+        sanitiseMusicalLiveValues (parameters, liveValues);
+        syncPlaybackGraphFromLiveValues (dspGraph, parameters, liveValues);
 
         for (auto& existing : patches)
             existing.isDefault = (existing.id.isNotEmpty() && existing.id == patch.id)
@@ -435,6 +508,8 @@ namespace patchcraft
             applyPatch (*patchToApply);
             for (const auto& value : preset.values)
                 liveValues.setValue (value.first, sanitisePresetPlaybackValue (value.first, value.second));
+            sanitiseMusicalLiveValues (parameters, liveValues);
+            syncPlaybackGraphFromLiveValues (dspGraph, parameters, liveValues);
             if (preset.name.isNotEmpty())
                 manifest.defaultPreset = preset.name;
             for (auto& existing : presets)
@@ -448,6 +523,8 @@ namespace patchcraft
         resetLiveValuesToDefaults();
         for (const auto& value : preset.values)
             liveValues.setValue (value.first, sanitisePresetPlaybackValue (value.first, value.second));
+        sanitiseMusicalLiveValues (parameters, liveValues);
+        syncPlaybackGraphFromLiveValues (dspGraph, parameters, liveValues);
 
         for (auto& existing : presets)
             existing.isDefault = existing.name == preset.name;

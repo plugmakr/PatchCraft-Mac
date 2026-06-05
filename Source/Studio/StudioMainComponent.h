@@ -128,6 +128,12 @@ namespace patchcraft
                                       juce::Point<int> canvasPosition = juce::Point<int> (-1, -1));
         void undo();
         void redo();
+        bool applyBrandingAsset (const juce::String& category, const juce::File& file);
+        void selectAllElements();
+        void openSampleMapperZoneManager();
+        void openProjectFolder (const juce::File& folder);
+        void addRecentProject (const juce::File& folder);
+        juce::StringArray getRecentProjectPaths() const;
 
         // Toggle a docked panel between its docked position and a free
         // floating window. The panel is re-parented in JUCE's component
@@ -170,6 +176,8 @@ namespace patchcraft
         void liveValueChanged (const juce::String&, float) override;
         void publishToPluginClubWithArtifactChoice (int artifactChoice);
         void refreshTooltipWindowState();
+
+        double lastLiveValueUiRepaintMs = 0.0;
 
         PatchCraftProject  project;
         AssetManager       assets;
