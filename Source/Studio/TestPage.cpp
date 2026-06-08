@@ -99,6 +99,7 @@ namespace patchcraft
             block.values["dmSteps"] = 16.0f;
             block.values["dmPattern"] = 0.0f;
             block.values["dmTransport"] = 1.0f;
+            block.values["dmTriggerPadSlots"] = 1.0f;
             block.values["rate"] = 1.0f;
             block.values["sync"] = 1.0f;
             block.values["enabled"] = 1.0f;
@@ -213,7 +214,7 @@ namespace patchcraft
             sound = juce::jlimit (0, 15, sound);
             rootNote = juce::jlimit (0, 127, rootNote);
             if (target == 1)
-                return defaultDrumTrackNote (sound);
+                return juce::jlimit (0, 127, 36 + sound);
             if (target == 2)
                 return juce::jlimit (0, 127, 48 + sound);
             if (target == 4)

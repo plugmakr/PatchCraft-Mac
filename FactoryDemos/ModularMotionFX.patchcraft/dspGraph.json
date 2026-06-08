@@ -1,65 +1,60 @@
 {
   "blocks": [
     {
-      "id": "input_drive",
+      "id": "source",
       "section": "source",
-      "type": "drive",
-      "name": "Input Character",
+      "type": "liveInput",
+      "name": "Modular Motion FX Source",
       "enabled": true,
-      "targetId": "drive",
-      "values": {}
+      "targetId": "volume",
+      "values": {
+        "oscType": 0.0,
+        "osc2Type": 0.0,
+        "oscBlend": 0.0,
+        "subBlend": 0.0,
+        "noiseBlend": 0.0,
+        "sampleStart": 0.0,
+        "sampleLength": 1.0
+      }
     },
     {
-      "id": "filter_eq",
-      "section": "filter",
-      "type": "surgical_eq",
-      "name": "Surgical EQ",
+      "id": "shape",
+      "section": "shape",
+      "type": "filter",
+      "name": "Tone Shape",
       "enabled": true,
-      "targetId": "eqMix",
-      "values": {}
+      "targetId": "filterCutoff",
+      "values": {
+        "filterCutoff": 4200,
+        "filterResonance": 0.08,
+        "attack": 0.01,
+        "decay": 0.22,
+        "sustain": 0.42,
+        "release": 0.45
+      }
     },
     {
-      "id": "mod_motion",
-      "section": "mod",
-      "type": "macro",
-      "name": "Motion Macro",
-      "enabled": true,
-      "targetId": "dynMix",
-      "values": {}
-    },
-    {
-      "id": "fx_delay",
+      "id": "fx",
       "section": "fx",
-      "type": "delay",
-      "name": "Tempo Throw",
+      "type": "fxChain",
+      "name": "Factory FX",
       "enabled": true,
       "targetId": "delayMix",
-      "values": {}
-    },
-    {
-      "id": "fx_reverb",
-      "section": "fx",
-      "type": "reverb",
-      "name": "Space Processor",
-      "enabled": true,
-      "targetId": "reverbMix",
-      "values": {}
-    },
-    {
-      "id": "out_safe",
-      "section": "out",
-      "type": "output",
-      "name": "Safe Output",
-      "enabled": true,
-      "targetId": "outputGainDb",
-      "values": {}
+      "values": {
+        "drive": 0.02,
+        "mix": 0.55,
+        "delayTime": 0.125,
+        "delayFeedback": 0.16,
+        "delayMix": 0.08,
+        "reverbMix": 0.04,
+        "tapeMix": 0.0,
+        "chorusMix": 0.0,
+        "multiTapMix": 0.0
+      }
     }
   ],
   "edges": [],
   "macros": [],
   "modulation": [],
-  "automation": [],
-  "typedNodes": [],
-  "userConfigured": true,
-  "quickEditControls": {}
+  "automation": []
 }

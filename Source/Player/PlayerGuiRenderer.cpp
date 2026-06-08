@@ -99,7 +99,7 @@ namespace patchcraft
     static juce::String arpLaneMidiFileName (juce::String instrumentName, juce::String laneName, int lane)
     {
         if (instrumentName.trim().isEmpty())
-            instrumentName = "PatchCraft";
+            instrumentName = "Instrument";
         if (laneName.trim().isEmpty())
             laneName = "ArpLane" + juce::String (lane + 1);
 
@@ -197,6 +197,33 @@ namespace patchcraft
         return {};
     }
 
+    static int runtimeTargetNoteFromElement (const LayoutElement& element, int fallback)
+    {
+        auto parse = [] (juce::String text) -> int
+        {
+            text = text.trim();
+            if (text.isEmpty())
+                return -1;
+
+            for (const auto& prefix : { juce::String ("sampleNote:"),
+                                        juce::String ("targetNote:"),
+                                        juce::String ("midiNote:"),
+                                        juce::String ("note:") })
+            {
+                if (text.startsWithIgnoreCase (prefix))
+                {
+                    const int note = text.fromFirstOccurrenceOf (":", false, false).trim().getIntValue();
+                    return juce::isPositiveAndBelow (note, 128) ? note : -1;
+                }
+            }
+            return -1;
+        };
+
+        if (const int note = parse (element.semanticRole); note >= 0) return note;
+        if (const int note = parse (element.action); note >= 0)       return note;
+        return juce::jlimit (0, 127, fallback);
+    }
+
     static juce::StringArray collectRuntimeImportFilesForPlayerCanvas (const juce::StringArray& sources,
                                                                        int maxFiles = 512)
     {
@@ -244,7 +271,7 @@ namespace patchcraft
             return {};
 
         if (element.parameterId.isEmpty())
-            return "This control is not connected to a parameter. The instrument developer must assign it in PatchCraft Studio before export.";
+            return "This control is not available in this instrument.";
 
         if (parameter == nullptr)
             return "This control points to missing parameter '" + element.parameterId + "'. The exported layout and parameter registry are out of sync.";
@@ -316,7 +343,7 @@ namespace patchcraft
         return false;
     }
 
-    void PlayerGuiRenderer::filesDropped (const juce::StringArray& files, int, int)
+    void PlayerGuiRenderer::filesDropped (const juce::StringArray& files, int x, int y)
     {
         if (proc.getPack() == nullptr)
             return;
@@ -327,7 +354,8 @@ namespace patchcraft
             return;
 
         juce::String report;
-        proc.importUserContentFiles (runtimeFiles, "pads", report);
+        const auto target = runtimeDropTargetAt ({ x, y });
+        proc.importUserContentFiles (runtimeFiles, target.mappingMode, report, target.note, target.padIndex);
         if (onRuntimeImportReport)
             onRuntimeImportReport (report);
         rebuild();
@@ -375,7 +403,7 @@ namespace patchcraft
                 continue;
 
             if (e.type == ElementType::PadGrid || e.type == ElementType::DrumPad)
-                return "Playable drum pads. Click pads, use hardware pads/keys, or drag WAV/AIFF/FLAC files onto the Player to add runtime samples. Highlight color follows this element's Accent Color in Studio.";
+                return "Playable drum pads. Click pads, use hardware pads/keys, or drag WAV/AIFF/FLAC files here to add session samples.";
 
             if (e.type == ElementType::DrumGrid)
                 return "MIDI drum pattern grid. Click cells to add/remove hits, Ctrl-click cells for x2/x3/x4 divisions, then press DAW Play or the Player PLAY button to audition.";
@@ -383,7 +411,7 @@ namespace patchcraft
             if (e.type == ElementType::ArpLane)
             {
                 if (arpLaneMidiDragHandleBounds (r).contains (pos))
-                    return "Drag this handle to a DAW track to export this Arp Studio lane as a MIDI clip.";
+                    return "Drag this handle to a DAW track to export this lane as a MIDI clip.";
 
                 return "Circular ArpLane performance bank. DSP makes the sound; this lane edits notes, velocity, gates, FX sends, and timing for that DSP patch. Drag dots while playing to hear the change.";
             }
@@ -401,7 +429,7 @@ namespace patchcraft
                 return "Spectrum analyzer. Shows live output energy so users can see how the current sound is moving.";
 
             if (e.type == ElementType::Mixer)
-                return "Runtime mixer. Drag faders/pan areas when mapped, or assign mixer channels in Studio.";
+                return "Runtime mixer. Drag faders and pan areas when this instrument exposes live mix controls.";
 
             if (e.type == ElementType::GranularField)
                 return "Granular performance field. Drag inside the field to move sample position and texture controls.";
@@ -412,16 +440,19 @@ namespace patchcraft
             if (e.type == ElementType::Dropdown)
                 return e.id == "presets"
                     ? "Preset selector for this instrument."
-                    : "Parameter menu. Assign or choose a parameter in Studio to make this dropdown functional.";
+                    : "Parameter menu for this instrument.";
 
             if (e.type == ElementType::Button || e.type == ElementType::Toggle)
             {
                 if (e.parameterId.isEmpty())
-                    return "UI button without a parameter assignment. Assign a parameter/action in Studio if it should control sound.";
+                    return "This button is not available in this instrument.";
             }
 
             if (e.type == ElementType::Keyboard)
                 return "Software keyboard. Click keys to audition this instrument and imported runtime samples.";
+
+            if (e.type == ElementType::RuntimeSampleLibrary)
+                return "Runtime sample/MIDI library. Drop samples or MIDI here, or drop files directly onto pads and sample zones to target playback.";
 
             if (e.type == ElementType::Waveform)
                 return "Playback display. The vertical playhead follows the DAW transport or the Player PLAY audition button.";
@@ -433,7 +464,7 @@ namespace patchcraft
                 return "Spectrum analyzer. Shows live output energy so users can see how the current sound is moving.";
 
             if (e.type == ElementType::Mixer)
-                return "Runtime mixer. Drag faders/pan areas when mapped, or assign mixer channels in Studio.";
+                return "Runtime mixer. Drag faders and pan areas when this instrument exposes live mix controls.";
 
             if (e.type == ElementType::GranularField)
                 return "Granular performance field. Drag inside the field to move sample position and texture controls.";
@@ -444,12 +475,12 @@ namespace patchcraft
             if (e.type == ElementType::Dropdown)
                 return e.id == "presets"
                     ? "Preset selector for this instrument."
-                    : "Parameter menu. Assign or choose a parameter in Studio to make this dropdown functional.";
+                    : "Parameter menu for this instrument.";
 
             if (e.type == ElementType::Button || e.type == ElementType::Toggle)
             {
                 if (e.parameterId.isEmpty())
-                    return "UI button without a parameter assignment. Assign a parameter/action in Studio if it should control sound.";
+                    return "This button is not available in this instrument.";
                 if (const auto* parameter = parameterForId (e.parameterId))
                     return parameter->name + " (" + parameter->id + ")";
                 return "This button points to missing parameter '" + e.parameterId + "'.";
@@ -480,6 +511,7 @@ namespace patchcraft
             return state != manualContainerOpen.end() && state->second;
         }
 
+        bool hasTabPanels = false;
         for (const auto& parent : elementsCopy)
         {
             if ((parent.type == ElementType::Group || parent.type == ElementType::Panel)
@@ -487,6 +519,7 @@ namespace patchcraft
                 return true;
             if (parent.type == ElementType::TabPanel)
             {
+                hasTabPanels = true;
                 for (const auto& tab : parent.tabs)
                 {
                     const auto group = tabTargetGroup (parent, tab);
@@ -501,6 +534,8 @@ namespace patchcraft
                 }
             }
         }
+        if (! hasTabPanels && ! isScopedTabGroupId (e.groupId))
+            return true;
         if (isScopedTabGroupId (e.groupId))
             return false;
         return e.groupId == currentTabGroup;
@@ -939,7 +974,7 @@ namespace patchcraft
                         targets.add (macro.targetId);
 
             if (targets.isEmpty())
-                targets.addArray ({ "No routes", "Open Studio", "Add target", "Apply" });
+                targets.addArray ({ "No routes", "Add target", "Apply" });
 
             for (int i = 0; i < juce::jmin (4, targets.size()); ++i)
             {
@@ -1137,7 +1172,7 @@ namespace patchcraft
                     }
                     else
                     {
-                        slider->setTooltip ("This control is not connected to a PatchCraft parameter. Assign a parameter in Studio before export.");
+                        slider->setTooltip ("This control is not available in this instrument.");
                     }
                 }
                 addAndMakeVisible (*slider);
@@ -2484,6 +2519,87 @@ namespace patchcraft
         }
     }
 
+    void PlayerGuiRenderer::drawRuntimeSampleLibrary (juce::Graphics& g,
+                                                       juce::Rectangle<int> r,
+                                                       const LayoutElement& e) const
+    {
+        const auto bg = e.backgroundColour.isTransparent() ? playerPanel().withAlpha (0.82f) : e.backgroundColour;
+        const auto border = e.borderColour.isTransparent() ? playerBorder() : e.borderColour;
+        const auto accent = e.accentColour.isTransparent() ? playerAccent() : e.accentColour;
+        g.setColour (bg);
+        g.fillRoundedRectangle (r.toFloat(), juce::jmax (5.0f, e.cornerRadius));
+        g.setColour (border);
+        g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (5.0f, e.cornerRadius), 1.0f);
+
+        auto area = r.reduced (10, 8);
+        auto header = area.removeFromTop (28);
+        g.setColour (accent);
+        g.setFont (juce::FontOptions (12.0f).withStyle ("bold"));
+        g.drawFittedText (e.label.isNotEmpty() ? e.label : "Runtime Samples",
+                          header.removeFromLeft (juce::jmax (120, header.getWidth() - 80)),
+                          juce::Justification::centredLeft, 1);
+
+        const auto items = proc.getUserContentSnapshot();
+        int sampleCount = 0;
+        int midiCount = 0;
+        for (const auto& item : items)
+        {
+            if (item.kind == "sample") ++sampleCount;
+            else if (item.kind == "midi") ++midiCount;
+        }
+
+        g.setColour (playerTextDim());
+        g.setFont (juce::FontOptions (10.0f));
+        g.drawText (juce::String (sampleCount) + " S / " + juce::String (midiCount) + " MIDI",
+                    header, juce::Justification::centredRight, true);
+
+        if (items.empty())
+        {
+            g.setColour (accent.withAlpha (0.16f));
+            g.fillRoundedRectangle (area.toFloat(), 7.0f);
+            g.setColour (playerText());
+            g.setFont (juce::FontOptions (12.0f).withStyle ("bold"));
+            g.drawFittedText ("Drop samples or MIDI here",
+                              area.removeFromTop (24), juce::Justification::centred, 1);
+            g.setColour (playerTextDim());
+            g.setFont (juce::FontOptions (9.5f));
+            g.drawFittedText ("Drop onto pads/zones to target playback.",
+                              area, juce::Justification::centred, 2);
+            return;
+        }
+
+        int rowsDrawn = 0;
+        for (const auto& item : items)
+        {
+            if (rowsDrawn >= 5 || area.getHeight() < 22)
+                break;
+
+            auto row = area.removeFromTop (24).reduced (0, 2);
+            g.setColour (item.kind == "midi" ? accent.withAlpha (0.18f)
+                                             : playerBg().withAlpha (0.48f));
+            g.fillRoundedRectangle (row.toFloat(), 5.0f);
+            g.setColour (item.kind == "midi" ? accent : playerText());
+            g.setFont (juce::FontOptions (9.5f).withStyle ("bold"));
+            g.drawText (item.kind == "midi" ? "M" : "S", row.removeFromLeft (20), juce::Justification::centred, true);
+            g.setColour (playerText());
+            g.setFont (juce::FontOptions (10.0f));
+            g.drawFittedText (item.name, row.removeFromLeft (juce::jmax (80, row.getWidth() - 78)),
+                              juce::Justification::centredLeft, 1);
+            g.setColour (playerTextDim());
+            g.setFont (juce::FontOptions (9.0f));
+            g.drawFittedText (item.summary, row, juce::Justification::centredRight, 1);
+            ++rowsDrawn;
+        }
+
+        if ((int) items.size() > rowsDrawn)
+        {
+            g.setColour (playerTextDim());
+            g.setFont (juce::FontOptions (9.0f));
+            g.drawText ("+" + juce::String ((int) items.size() - rowsDrawn) + " more",
+                        area.removeFromTop (18), juce::Justification::centredLeft, true);
+        }
+    }
+
     void PlayerGuiRenderer::drawMultiLayerDock (juce::Graphics& g, juce::Rectangle<int> canvas)
     {
         multiLayerDockBounds = {};
@@ -2687,6 +2803,43 @@ namespace patchcraft
         return juce::jlimit (0, 127, e.padBaseNote + row * cols + col);
     }
 
+    PlayerGuiRenderer::RuntimeDropTarget PlayerGuiRenderer::runtimeDropTargetAt (juce::Point<int> pos) const
+    {
+        const auto m = metrics();
+        for (auto it = elementsCopy.rbegin(); it != elementsCopy.rend(); ++it)
+        {
+            const auto& element = *it;
+            if (! element.visible || ! isElementOnCurrentTab (element))
+                continue;
+
+            const auto bounds = animatedElementRect (element, elementRect (element, m));
+            if (! bounds.contains (pos))
+                continue;
+
+            if (element.type == ElementType::RuntimeSampleLibrary)
+                return { "pads", -1, -1, false };
+
+            if (element.type == ElementType::SampleDropZone)
+                return { "zone", runtimeTargetNoteFromElement (element, 60), -1, true };
+
+            if (element.type == ElementType::Keyboard)
+            {
+                const int note = noteForKeyboardPosition (bounds, pos);
+                if (note >= 0)
+                    return { "keyboard", note, -1, true };
+            }
+
+            if (element.type == ElementType::DrumPad || element.type == ElementType::PadGrid)
+            {
+                const int note = padNoteAt (element, bounds, pos);
+                if (note >= 0)
+                    return { "pads", note, juce::jmax (0, note - element.padBaseNote), true };
+            }
+        }
+
+        return {};
+    }
+
     bool PlayerGuiRenderer::drumCellAt (const LayoutElement& e,
                                         juce::Rectangle<int> r,
                                         juce::Point<int> pos,
@@ -2745,11 +2898,12 @@ namespace patchcraft
         const float localY = juce::jlimit (0.0f, 1.0f, ((float) pos.y - trackTop) / cellH);
         velocity = juce::jlimit (0.15f, 1.0f, 1.0f - localY * 0.85f);
 
-        note = block != nullptr
-            ? juce::jlimit (0, 127, juce::roundToInt (blockValue (*block,
+        const bool triggerPadSlots = block == nullptr || blockValue (*block, "dmTriggerPadSlots", 1.0f) >= 0.5f;
+        note = triggerPadSlots
+            ? juce::jlimit (0, 127, 36 + track)
+            : juce::jlimit (0, 127, juce::roundToInt (blockValue (*block,
                 "dmTrack" + juce::String (track) + "Note",
-                (float) defaultDrumTrackNote (track))))
-            : defaultDrumTrackNote (track);
+                (float) defaultDrumTrackNote (track))));
         return true;
     }
 
@@ -3271,7 +3425,7 @@ namespace patchcraft
         if (block == nullptr)
         {
             if (onRuntimeImportReport)
-                onRuntimeImportReport ("MIDI drag failed: this Player has no Arp Studio or MIDI Playground block.");
+                onRuntimeImportReport ("MIDI drag failed: this instrument has no MIDI pattern block.");
             return false;
         }
 
@@ -3280,7 +3434,7 @@ namespace patchcraft
         MidiPlaygroundPattern::loadBank (exportBlock, lane, false);
 
         auto outputFolder = juce::File::getSpecialLocation (juce::File::tempDirectory)
-            .getChildFile ("PatchCraft")
+            .getChildFile ("Player")
             .getChildFile ("MidiDrag");
         if (! outputFolder.createDirectory())
         {
@@ -3895,6 +4049,9 @@ namespace patchcraft
                                       area, juce::Justification::centred, 2);
                     break;
                 }
+                case ElementType::RuntimeSampleLibrary:
+                    drawRuntimeSampleLibrary (g, r, e);
+                    break;
                 case ElementType::Keyboard: drawKeyboard (g, r); break;
                 case ElementType::TabPanel: drawTabPanel (g, r, e); break;
                 case ElementType::XYPad:    drawXYPad (g, r, e); break;
@@ -4455,11 +4612,6 @@ namespace patchcraft
             if (e.animationMode.isNotEmpty() && e.animationMode != "none")
             {
                 resized();
-                needsRepaint = true;
-                break;
-            }
-            if (e.type == ElementType::ArpLane)
-            {
                 needsRepaint = true;
                 break;
             }

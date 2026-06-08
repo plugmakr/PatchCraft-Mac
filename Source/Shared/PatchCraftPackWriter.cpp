@@ -623,8 +623,12 @@ namespace patchcraft
                 if (! projectFileExists (asset))
                     exportErrors.add ("ERROR: " + patch.name + " - Patch references missing asset: " + asset);
             for (const auto& zone : patch.sampleZones)
+            {
                 if (! projectFileExists (zone.samplePath))
                     exportErrors.add ("ERROR: " + patch.name + " - Patch references missing sample: " + zone.samplePath);
+                if (zone.midiPath.isNotEmpty() && ! projectFileExists (zone.midiPath))
+                    exportErrors.add ("ERROR: " + patch.name + " - Patch references missing zone MIDI file: " + zone.midiPath);
+            }
         }
 
         for (const auto& preset : exportPresets)
@@ -713,6 +717,7 @@ namespace patchcraft
 
         juce::StringArray usedSampleNames;
         std::map<juce::String, juce::String> samplePathRewrites;
+        std::map<juce::String, juce::String> midiPathRewrites;
 
         auto safeFileStem = [] (juce::String text)
         {
@@ -792,6 +797,18 @@ namespace patchcraft
 
             z.samplePath = "samples/" + dst.getFileName();
             samplePathRewrites[originalSamplePath] = z.samplePath;
+
+            if (z.midiPath.isNotEmpty())
+            {
+                const auto originalMidiPath = z.midiPath;
+                if (! copyAssetToPack (z.midiPath, "midi", {}))
+                {
+                    if (error.isEmpty())
+                        error = "Failed to copy zone MIDI file during pack export: " + originalMidiPath;
+                    return false;
+                }
+                midiPathRewrites[originalMidiPath] = z.midiPath;
+            }
             return true;
         };
 
@@ -1037,17 +1054,29 @@ namespace patchcraft
         for (auto& patch : exportPatches)
         {
             for (auto& zone : patch.sampleZones)
+            {
                 if (auto it = samplePathRewrites.find (zone.samplePath); it != samplePathRewrites.end())
                     zone.samplePath = it->second;
+                if (auto it = midiPathRewrites.find (zone.midiPath); it != midiPathRewrites.end())
+                    zone.midiPath = it->second;
+            }
             for (auto& asset : patch.includedAssets)
+            {
                 if (auto it = samplePathRewrites.find (asset); it != samplePathRewrites.end())
                     asset = it->second;
+                if (auto it = midiPathRewrites.find (asset); it != midiPathRewrites.end())
+                    asset = it->second;
+            }
         }
 
         for (auto& expansion : exportExpansions)
             for (auto& asset : expansion.includedAssets)
+            {
                 if (auto it = samplePathRewrites.find (asset); it != samplePathRewrites.end())
                     asset = it->second;
+                if (auto it = midiPathRewrites.find (asset); it != midiPathRewrites.end())
+                    asset = it->second;
+            }
 
         juce::Array<juce::var> patchArr;
         for (const auto& patch : exportPatches)

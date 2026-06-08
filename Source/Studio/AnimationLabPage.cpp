@@ -20,10 +20,11 @@ namespace patchcraft
         styleLabel (workflowBody, "Add visuals here, place and bind them in Design, then prove motion, audio reaction, low-power fallback, and layout in Brand Lab before shipping.", 12.0f, false, PatchCraftLookAndFeel::textDim());
         styleLabel (stepsHeader, "HOW TO USE ANIMATION LAB", 12.0f, true, PatchCraftLookAndFeel::accent());
         styleLabel (stepsBody,
-                    "1. Choose a driver and a visual behavior.\n"
-                    "2. Add the bound visual to the canvas.\n"
-                    "3. Move or resize it in Design.\n"
-                    "4. Test runtime motion in Brand Lab before export.",
+                    "1. Pick what drives the motion: audio, BPM, MIDI, or a parameter.\n"
+                    "2. Pick the visual source and motion type.\n"
+                    "3. Click Add Animation. PatchCraft creates a bound visual on the Design canvas.\n"
+                    "4. In Inspector, fine-tune reactivity amount, animation mode, speed, and fallback.\n"
+                    "5. Test it in Brand Lab before export.",
                     11.0f, false, PatchCraftLookAndFeel::text());
         styleLabel (proofHeader, "SHIP CHECK", 12.0f, true, juce::Colour (0xffc9a4ff));
         styleLabel (proofBody,
@@ -31,8 +32,8 @@ namespace patchcraft
                     11.0f, false, PatchCraftLookAndFeel::textDim());
         styleLabel (bindHeader, "ADD ANIMATION", 12.0f, true, PatchCraftLookAndFeel::accent());
         styleLabel (bindBody, "Build a visual layer that is already connected to audio, BPM, MIDI, or a parameter. The element lands on the Design canvas with the binding saved.", 12.0f, false, PatchCraftLookAndFeel::text());
-        styleLabel (targetLabel, "DRIVER", 11.0f, true, PatchCraftLookAndFeel::textDim());
-        styleLabel (sourceLabel, "SOURCE", 11.0f, true, PatchCraftLookAndFeel::textDim());
+        styleLabel (targetLabel, "PARAMETER", 11.0f, true, PatchCraftLookAndFeel::textDim());
+        styleLabel (sourceLabel, "DRIVER", 11.0f, true, PatchCraftLookAndFeel::textDim());
         styleLabel (actionLabel, "MOTION", 11.0f, true, PatchCraftLookAndFeel::textDim());
         styleLabel (previewLabel, "PREVIEW", 11.0f, true, PatchCraftLookAndFeel::textDim());
 
@@ -239,7 +240,7 @@ namespace patchcraft
         addVisualKitButton.setBounds (left.removeFromTop (34));
         left.removeFromTop (8);
         bindHeader.setBounds (left.removeFromTop (24));
-        bindBody.setBounds (left.removeFromTop (48));
+        bindBody.setBounds (left.removeFromTop (62));
         auto row = left.removeFromTop (54);
         auto third = row.getWidth() / 3;
         auto targetArea = row.removeFromLeft (third).reduced (0, 0);

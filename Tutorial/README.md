@@ -19,6 +19,8 @@ Tutorial/
 ├── 08-presets-expansions.html    Preset banks & expansion packs
 ├── 09-export-distribute.html     Export, ship, distribute
 ├── 10-glossary.html              Term reference
+├── 11-sampler-midi-runtime.html  Sampler, MIDI and runtime drop zones
+├── 12-pscript.html               pScript automation language guide
 ├── assets/
 │   ├── css/main.css              Single stylesheet
 │   ├── js/nav.js                 Sidebar highlight + smooth scroll
@@ -97,6 +99,19 @@ troubleshooting.
 
 Supporting MasterClass screenshots and visual sheets live in
 `assets/img/masterclass/`.
+
+## Sampler MIDI Runtime Guide
+
+`11-sampler-midi-runtime.html` is the visual guide for the new sampler, MIDI,
+Slice mode, runtime sample library, targeted drop, and One Shot Maker handoff
+workflows.
+
+## pScript Automation Guide
+
+`12-pscript.html` documents the current pScript workflow: attaching script
+behavior to mapped knobs, runtime events, supported statements, safe recipes,
+and the current gaps that need polish before pScript can be presented as a
+complete customer-facing language.
 
 ## License
 

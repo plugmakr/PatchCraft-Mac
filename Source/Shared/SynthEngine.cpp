@@ -278,8 +278,8 @@ namespace patchcraft
 
     void SynthEngine::setParameter (const juce::String& id, float v)
     {
-        if      (id == "oscType")         atomics.oscType        = v;
-        else if (id == "osc2Type")        atomics.osc2Type       = v;
+        if      (id == "oscType")         atomics.oscType        = juce::jlimit (0.0f, 3.0f, v);
+        else if (id == "osc2Type")        atomics.osc2Type       = juce::jlimit (0.0f, 3.0f, v);
         else if (id == "oscBlend")        atomics.oscBlend       = v;
         else if (id == "octave")          atomics.octave         = v;
         else if (id == "detune")          atomics.detuneCents    = v;
@@ -433,8 +433,8 @@ namespace patchcraft
             return;
         tempBuffer.clear (0, numSamples);
 
-        const int oscT = juce::jlimit (0, 4, (int) std::round (atomics.oscType.load()));
-        const int osc2T = juce::jlimit (0, 4, (int) std::round (atomics.osc2Type.load()));
+        const int oscT = juce::jlimit (0, 3, (int) std::round (atomics.oscType.load()));
+        const int osc2T = juce::jlimit (0, 3, (int) std::round (atomics.osc2Type.load()));
         const float oscBlend = juce::jlimit (0.0f, 1.0f, atomics.oscBlend.load());
         const float subBlend = juce::jlimit (0.0f, 1.0f, atomics.subBlend.load());
         const float noiseBlend = juce::jlimit (0.0f, 1.0f, atomics.noiseBlend.load());

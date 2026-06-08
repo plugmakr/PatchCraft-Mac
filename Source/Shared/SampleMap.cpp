@@ -173,61 +173,6 @@ namespace patchcraft
             return values[values.size() / 2];
         }
 
-        struct DrumPadGuess
-        {
-            int note = -1;
-            juce::String label;
-            int chokeGroup = 0;
-        };
-
-        static bool containsAny (const juce::String& lowerText,
-                                 std::initializer_list<const char*> terms)
-        {
-            for (auto* term : terms)
-                if (lowerText.contains (term))
-                    return true;
-            return false;
-        }
-
-        static DrumPadGuess inferDrumPadFromName (const juce::String& samplePath)
-        {
-            const auto name = juce::File (samplePath).getFileNameWithoutExtension().toLowerCase();
-
-            if (containsAny (name, { "kick", "kik", "bd", "bassdrum", "808" }))
-                return { 36, "Kick", 0 };
-            if (containsAny (name, { "rim", "rimshot", "side stick", "sidestick" }))
-                return { 37, "Rim", 0 };
-            if (containsAny (name, { "snare", "snr", "sd" }))
-                return { 38, "Snare", 0 };
-            if (containsAny (name, { "clap" }))
-                return { 39, "Clap", 0 };
-            if (containsAny (name, { "closed hat", "closed-hat", "closed_hat", "chh", "hhc", "hat closed", "cl hat" }))
-                return { 42, "Closed Hat", 1 };
-            if (containsAny (name, { "pedal hat", "pedal-hat", "pedal_hat", "phh" }))
-                return { 44, "Pedal Hat", 1 };
-            if (containsAny (name, { "open hat", "open-hat", "open_hat", "ohh", "hho", "hat open", "op hat" }))
-                return { 46, "Open Hat", 1 };
-            if (containsAny (name, { "hat", "hihat", "hi hat", "hi-hat", "hh" }))
-                return { 42, "Hat", 1 };
-            if (containsAny (name, { "low tom", "low-tom", "floor tom", "floor-tom", "tom low" }))
-                return { 41, "Low Tom", 0 };
-            if (containsAny (name, { "mid tom", "mid-tom", "tom mid" }))
-                return { 45, "Mid Tom", 0 };
-            if (containsAny (name, { "high tom", "high-tom", "tom high" }))
-                return { 48, "High Tom", 0 };
-            if (containsAny (name, { "tom" }))
-                return { 45, "Tom", 0 };
-            if (containsAny (name, { "crash", "cym" }))
-                return { 49, "Crash", 0 };
-            if (containsAny (name, { "ride" }))
-                return { 51, "Ride", 0 };
-            if (containsAny (name, { "shaker", "shake" }))
-                return { 50, "Shaker", 0 };
-            if (containsAny (name, { "perc", "percussion", "conga", "bongo", "clave", "cowbell" }))
-                return { 47, "Perc", 0 };
-
-            return {};
-        }
     }
 
     void SampleMap::removeAt (int index)
@@ -304,7 +249,7 @@ namespace patchcraft
         }
     }
 
-    void SampleMap::autoMapDrumPads (int startNote, int padCount)
+    void SampleMap::autoMapDrumPads (int startNote, int padCount, bool stackSamples)
     {
         if (zones.empty())
             return;
@@ -312,24 +257,16 @@ namespace patchcraft
         startNote = juce::jlimit (0, 127, startNote);
         padCount = juce::jlimit (1, 16, padCount);
 
-        int nextFallbackSlot = 0;
         std::array<int, 128> noteCounts {};
 
-        for (auto& zone : zones)
+        for (int i = 0; i < (int) zones.size(); ++i)
         {
-            const auto guess = inferDrumPadFromName (zone.samplePath);
-            int note = guess.note;
-            int pad = -1;
-
-            if (note >= startNote && note < startNote + padCount)
-                pad = note - startNote;
-
-            if (pad < 0)
-            {
-                pad = nextFallbackSlot % padCount;
-                note = juce::jlimit (0, 127, startNote + pad);
-                ++nextFallbackSlot;
-            }
+            auto& zone = zones[(size_t) i];
+            const bool assignToPad = stackSamples || i < padCount;
+            const int pad = stackSamples ? i % padCount : juce::jlimit (0, padCount - 1, i);
+            const int note = juce::jlimit (0, 127,
+                                           assignToPad ? startNote + pad
+                                                       : startNote + padCount + (i - padCount));
 
             zone.rootNote = note;
             zone.lowNote = note;
@@ -337,27 +274,27 @@ namespace patchcraft
             zone.lowVelocity = juce::jlimit (1, 127, zone.lowVelocity);
             zone.highVelocity = juce::jlimit (zone.lowVelocity, 127, zone.highVelocity);
             zone.loopEnabled = false;
-            zone.padIndex = juce::jlimit (0, 15, pad);
-            zone.padLabel = guess.label.isNotEmpty()
-                ? guess.label
-                : juce::File (zone.samplePath).getFileNameWithoutExtension();
+            zone.padIndex = assignToPad ? juce::jlimit (0, 15, pad) : -1;
+            zone.padLabel = juce::File (zone.samplePath).getFileNameWithoutExtension();
             if (zone.padLabel.isEmpty())
-                zone.padLabel = "Pad " + juce::String (zone.padIndex + 1);
-            zone.chokeGroup = juce::jlimit (0, 127, guess.chokeGroup);
+                zone.padLabel = assignToPad ? "Pad " + juce::String (zone.padIndex + 1) : "Unassigned";
+            zone.chokeGroup = 0;
             zone.oneShot = true;
             zone.triggerProbability = juce::jlimit (0, 100, zone.triggerProbability);
             zone.group = "Drum Pads";
             zone.roundRobinGroup = 0;
             zone.roundRobinIndex = 0;
 
-            ++noteCounts[(size_t) note];
+            if (assignToPad)
+                ++noteCounts[(size_t) note];
         }
 
         std::map<int, int> roundRobinIndexByNote;
         for (auto& zone : zones)
         {
             const int note = juce::jlimit (0, 127, zone.rootNote);
-            if (noteCounts[(size_t) note] > 1
+            if (stackSamples
+                && noteCounts[(size_t) note] > 1
                 && zone.lowVelocity == 1
                 && zone.highVelocity == 127)
             {
@@ -669,6 +606,10 @@ namespace patchcraft
                 continue;
             }
 
+            if (zone.midiPath.isNotEmpty()
+                && ! resolveSamplePath (projectFolder, zone.midiPath).existsAsFile())
+                ++status.missingMidiFiles;
+
             ++status.playableZones;
             for (int note = juce::jlimit (0, 127, zone.lowNote); note <= juce::jlimit (0, 127, zone.highNote); ++note)
                 covered[(size_t) note] = true;
@@ -693,6 +634,8 @@ namespace patchcraft
             status.primaryIssue = "Fix invalid key or velocity ranges.";
         else if (status.missingFiles > 0)
             status.primaryIssue = "Resolve missing sample files.";
+        else if (status.missingMidiFiles > 0)
+            status.primaryIssue = "Resolve missing zone MIDI files.";
         else if (status.playableZones == 0)
             status.primaryIssue = "No playable zones are available.";
         else if (status.rootOutsideRange > 0)
@@ -708,6 +651,8 @@ namespace patchcraft
             status.issues.add ("Invalid key/velocity ranges: " + juce::String (status.invalidRanges) + ".");
         if (status.missingFiles > 0)
             status.issues.add ("Missing sample files: " + juce::String (status.missingFiles) + ".");
+        if (status.missingMidiFiles > 0)
+            status.issues.add ("Missing zone MIDI files: " + juce::String (status.missingMidiFiles) + ".");
         if (status.rootOutsideRange > 0)
             status.issues.add ("Root notes outside key range: " + juce::String (status.rootOutsideRange) + ".");
         if (status.playableZones == 0 && status.totalZones > 0)
@@ -718,6 +663,7 @@ namespace patchcraft
                           && status.playableZones == status.totalZones
                           && status.invalidRanges == 0
                           && status.missingFiles == 0
+                          && status.missingMidiFiles == 0
                           && status.rootOutsideRange == 0;
         return status;
     }

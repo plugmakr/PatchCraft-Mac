@@ -31,6 +31,137 @@ namespace patchcraft
 {
     namespace
     {
+        static bool isScriptableControlElement (const LayoutElement& element)
+        {
+            return isRuntimeControlElement (element.type)
+                || element.type == ElementType::ValueDisplay
+                || element.type == ElementType::SampleDropZone;
+        }
+
+        static bool isScriptUnit (const juce::String& unit)
+        {
+            return unit == "%"
+                || unit.equalsIgnoreCase ("Hz")
+                || unit.equalsIgnoreCase ("dB")
+                || unit.equalsIgnoreCase ("st")
+                || unit.equalsIgnoreCase ("ms");
+        }
+
+        static juce::String formatScriptNumber (float value)
+        {
+            if (std::abs (value - std::round (value)) < 0.0001f)
+                return juce::String (juce::roundToInt (value));
+
+            auto text = juce::String (value, 4);
+            while (text.containsChar ('.') && text.endsWithChar ('0'))
+                text = text.dropLastCharacters (1);
+            if (text.endsWithChar ('.'))
+                text = text.dropLastCharacters (1);
+            return text;
+        }
+
+        static juce::String formatScriptValue (float value, const juce::String& unit)
+        {
+            auto text = formatScriptNumber (value);
+            return isScriptUnit (unit) ? text + " " + unit : text;
+        }
+
+        static juce::String formatScriptRange (const ParameterDef& parameter)
+        {
+            return formatScriptValue (parameter.min, parameter.unit)
+                + ".."
+                + formatScriptValue (parameter.max, parameter.unit);
+        }
+
+        static const ParameterDef* findFirstExistingParameter (const ParameterModel& parameters,
+                                                              std::initializer_list<const char*> ids,
+                                                              const juce::String& exceptId)
+        {
+            for (auto* id : ids)
+            {
+                if (exceptId == id)
+                    continue;
+                if (auto* def = parameters.find (id))
+                    return def;
+            }
+            return nullptr;
+        }
+
+        static const ParameterDef* choosePscriptMacroTarget (const ParameterModel& parameters,
+                                                            const juce::String& sourceParameterId)
+        {
+            if (auto* fxTarget = findFirstExistingParameter (parameters,
+                    { "delayMix", "reverbMix", "chorusMix", "phaserMix", "tapeMix", "stereoWidth", "volume" },
+                    sourceParameterId))
+                return fxTarget;
+
+            for (const auto& def : parameters.getAll())
+                if (def.id != sourceParameterId && def.visible && def.displayMode != "toggle")
+                    return &def;
+
+            return nullptr;
+        }
+
+        static std::pair<float, float> conservativePscriptTargetRange (const ParameterDef& target)
+        {
+            auto clamp = [&target] (float value)
+            {
+                return juce::jlimit (target.min, target.max, value);
+            };
+
+            if (target.id == "stereoWidth")
+                return { clamp (1.0f), clamp (1.25f) };
+            if (target.id == "volume")
+                return { clamp (0.65f), clamp (1.0f) };
+            if (target.unit.equalsIgnoreCase ("dB"))
+                return { clamp (target.defaultValue), clamp (target.defaultValue + 3.0f) };
+            if (target.id.containsIgnoreCase ("mix"))
+                return { clamp (0.0f), clamp (0.35f) };
+            if (target.max <= 1.0f && target.min >= 0.0f)
+                return { clamp (target.defaultValue), clamp (target.defaultValue + 0.35f) };
+
+            const auto width = target.max - target.min;
+            return { clamp (target.defaultValue), clamp (target.defaultValue + width * 0.25f) };
+        }
+
+        static juce::String pscriptEventNameForElement (const LayoutElement& element,
+                                                        const ParameterDef& parameter)
+        {
+            (void) element;
+            return parameter.id;
+        }
+
+        static juce::String buildPscriptHandlerSnippet (const LayoutElement& element,
+                                                       const ParameterDef& source,
+                                                       const ParameterDef* target)
+        {
+            const auto displayName = element.label.isNotEmpty() ? element.label : source.name;
+            juce::String snippet;
+            snippet << "# Generated for " << elementTypeDisplayName (element.type)
+                    << " \"" << displayName << "\".\n";
+            snippet << "# This control still moves " << source.id
+                    << "; the script makes it drive one more musical parameter.\n";
+            snippet << "when knob \"" << pscriptEventNameForElement (element, source) << "\" moves:\n";
+            snippet << "    let amount = value mapped " << formatScriptRange (source)
+                    << " -> 0.0..1.0\n";
+
+            if (target != nullptr)
+            {
+                const auto targetRange = conservativePscriptTargetRange (*target);
+                snippet << "    set " << target->id << " to amount mapped 0.0..1.0 -> "
+                        << formatScriptValue (targetRange.first, target->unit)
+                        << ".."
+                        << formatScriptValue (targetRange.second, target->unit)
+                        << "\n";
+            }
+            else
+            {
+                snippet << "    print amount\n";
+            }
+
+            return snippet;
+        }
+
         static bool tryAddRegistryParameterForExport (ParameterModel& parameters,
                                                       const juce::String& parameterId,
                                                       const juce::String& engineId)
@@ -1049,6 +1180,7 @@ namespace patchcraft
         auto& canvas = project.getCanvasSize();
         int assetWidth = type == ElementType::Slider ? 52 : (type == ElementType::Image ? 240 : 112);
         int assetHeight = type == ElementType::Slider ? 220 : (type == ElementType::Image ? 160 : 112);
+        float contentPadding = 0.0f;
         auto inferFramesFromImage = [] (const juce::Image& image, int requestedFrames, bool isVertical)
         {
             int detectedFrames = juce::jmax (0, requestedFrames);
@@ -1062,6 +1194,32 @@ namespace patchcraft
                     detectedFrames = inferred;
             }
             return juce::jmax (1, detectedFrames);
+        };
+        auto opaqueBoundsForFrame = [] (const juce::Image& image, int frameIndex, int frameCount, bool isVertical) -> juce::Rectangle<int>
+        {
+            if (! image.isValid())
+                return {};
+
+            const int safeFrames = juce::jmax (1, frameCount);
+            const int frameWidth = isVertical ? image.getWidth() : juce::jmax (1, image.getWidth() / safeFrames);
+            const int frameHeight = isVertical ? juce::jmax (1, image.getHeight() / safeFrames) : image.getHeight();
+            const int frameX = isVertical ? 0 : frameIndex * frameWidth;
+            const int frameY = isVertical ? frameIndex * frameHeight : 0;
+
+            int left = frameWidth, top = frameHeight, right = -1, bottom = -1;
+            for (int y = 0; y < frameHeight; ++y)
+                for (int x = 0; x < frameWidth; ++x)
+                    if (image.getPixelAt (frameX + x, frameY + y).getAlpha() > 8)
+                    {
+                        left = juce::jmin (left, x);
+                        top = juce::jmin (top, y);
+                        right = juce::jmax (right, x);
+                        bottom = juce::jmax (bottom, y);
+                    }
+
+            if (right < left || bottom < top)
+                return {};
+            return { left, top, right - left + 1, bottom - top + 1 };
         };
 
         int detectedFrames = juce::jmax (0, frames);
@@ -1080,6 +1238,18 @@ namespace patchcraft
                                              : image.getHeight();
             assetWidth = juce::jlimit (24, 320, frameWidth);
             assetHeight = juce::jlimit (24, 520, frameHeight);
+
+            if (type != ElementType::Image)
+            {
+                if (const auto opaque = opaqueBoundsForFrame (image, 0, safeFrames, vertical); ! opaque.isEmpty())
+                {
+                    assetWidth = juce::jlimit (24, 320, opaque.getWidth());
+                    assetHeight = juce::jlimit (24, 520, opaque.getHeight());
+                    const int marginX = juce::jmin (opaque.getX(), frameWidth - opaque.getRight());
+                    const int marginY = juce::jmin (opaque.getY(), frameHeight - opaque.getBottom());
+                    contentPadding = -(float) juce::jmin (marginX, marginY);
+                }
+            }
         }
         project.performLayoutEdit ("Add library asset", [&] (LayoutModel& layout)
         {
@@ -1116,6 +1286,7 @@ namespace patchcraft
                 element.labelSpacing = 0.0f;
                 element.labelOffsetX = 0.0f;
                 element.labelOffsetY = 0.0f;
+                element.contentPadding = contentPadding;
             }
             layout.add (element);
         });
@@ -1517,15 +1688,23 @@ namespace patchcraft
             const bool canAlign = selectedCount >= 2;
             const bool canDistribute = selectedCount >= 3;
             bool canDetachLabels = false;
+            bool canCreatePscriptHandler = false;
             for (const auto& id : selectedElementIds)
                 if (auto* el = project.getLayout().find (id))
+                {
                     if (isRuntimeControlElement (el->type)
                         && el->labelPosition != "hidden"
                         && (el->label.isNotEmpty() || el->parameterId.isNotEmpty()))
                     {
                         canDetachLabels = true;
-                        break;
                     }
+                    if (isScriptableControlElement (*el)
+                        && el->parameterId.isNotEmpty()
+                        && project.getParameters().find (el->parameterId) != nullptr)
+                    {
+                        canCreatePscriptHandler = true;
+                    }
+                }
 
             menu.addItem (2998, "Undo", project.canUndo());
             menu.addItem (2999, "Redo", project.canRedo());
@@ -1590,7 +1769,13 @@ namespace patchcraft
 
             juce::PopupMenu labelMenu;
             labelMenu.addItem (3090, "Detach Labels From Selection", canDetachLabels);
+            labelMenu.addItem (3091, "Hide Labels For Selection", hasSelection);
+            labelMenu.addItem (3092, "Show Labels For Selection", hasSelection);
             menu.addSubMenu ("Labels", labelMenu);
+
+            juce::PopupMenu scriptMenu;
+            scriptMenu.addItem (3100, "Create pScript Handler For Selected Control", canCreatePscriptHandler);
+            menu.addSubMenu ("pScript", scriptMenu);
 
             juce::PopupMenu styleMenu;
             styleMenu.addItem (3080, "Copy Style From Primary Selection", hasSelection);
@@ -1727,6 +1912,9 @@ namespace patchcraft
             case 3072: matchSelectedSize ("both"); break;
             case 3073: snapSelectedToGrid(); break;
             case 3090: detachLabelsFromSelectedControls(); break;
+            case 3091: setSelectedLabelVisibility (false); break;
+            case 3092: setSelectedLabelVisibility (true); break;
+            case 3100: createPscriptHandlerForSelectedControl(); break;
             case 3080: copySelectedDesignStyle(); break;
             case 3081: pasteDesignStyle(); break;
             case 3082: applyDesignStylePreset ("glass"); break;
@@ -3438,6 +3626,89 @@ namespace patchcraft
         refreshAllPanels();
     }
 
+    void StudioMainComponent::scaleSelectedElements (float scaleX, float scaleY)
+    {
+        const auto ids = selectedElementIds;
+        if (ids.isEmpty())
+            return;
+
+        scaleX = juce::jlimit (0.05f, 20.0f, scaleX);
+        scaleY = juce::jlimit (0.05f, 20.0f, scaleY);
+
+        int left = std::numeric_limits<int>::max();
+        int top = std::numeric_limits<int>::max();
+        int right = std::numeric_limits<int>::min();
+        int bottom = std::numeric_limits<int>::min();
+        bool found = false;
+
+        for (const auto& id : ids)
+        {
+            if (auto* el = project.getLayout().find (id); el != nullptr && ! el->locked)
+            {
+                left = juce::jmin (left, el->x);
+                top = juce::jmin (top, el->y);
+                right = juce::jmax (right, el->x + el->width);
+                bottom = juce::jmax (bottom, el->y + el->height);
+                found = true;
+            }
+        }
+
+        if (! found)
+            return;
+
+        const float centreX = ((float) left + (float) right) * 0.5f;
+        const float centreY = ((float) top + (float) bottom) * 0.5f;
+
+        project.performLayoutEdit ("Scale selection", [&] (LayoutModel& m)
+        {
+            for (const auto& id : ids)
+            {
+                if (auto* el = m.find (id); el != nullptr && ! el->locked)
+                {
+                    const float elementCentreX = (float) el->x + (float) el->width * 0.5f;
+                    const float elementCentreY = (float) el->y + (float) el->height * 0.5f;
+                    const float scaledCentreX = centreX + (elementCentreX - centreX) * scaleX;
+                    const float scaledCentreY = centreY + (elementCentreY - centreY) * scaleY;
+                    const float scaledWidth = juce::jmax (1.0f, (float) el->width * scaleX);
+                    const float scaledHeight = juce::jmax (1.0f, (float) el->height * scaleY);
+
+                    el->width = juce::jmax (1, juce::roundToInt (scaledWidth));
+                    el->height = juce::jmax (1, juce::roundToInt (scaledHeight));
+                    el->x = juce::roundToInt (scaledCentreX - (float) el->width * 0.5f);
+                    el->y = juce::roundToInt (scaledCentreY - (float) el->height * 0.5f);
+                }
+            }
+        });
+        refreshAllPanels();
+    }
+
+    void StudioMainComponent::setSelectedLabelVisibility (bool visible, const juce::String& defaultPosition)
+    {
+        const auto ids = selectedElementIds;
+        if (ids.isEmpty())
+            return;
+
+        project.performLayoutEdit (visible ? "Show labels for selection" : "Hide labels for selection", [&] (LayoutModel& m)
+        {
+            for (const auto& id : ids)
+            {
+                if (auto* el = m.find (id); el != nullptr && isRuntimeControlElement (el->type))
+                {
+                    if (visible)
+                    {
+                        if (el->labelPosition == "hidden")
+                            el->labelPosition = defaultPosition.isNotEmpty() ? defaultPosition : "bottom";
+                    }
+                    else
+                    {
+                        el->labelPosition = "hidden";
+                    }
+                }
+            }
+        });
+        refreshAllPanels();
+    }
+
     void StudioMainComponent::detachLabelsFromSelectedControls()
     {
         const auto ids = selectedElementIds;
@@ -3517,6 +3788,71 @@ namespace patchcraft
         if (! newLabelIds.isEmpty())
             setSelectedElementIds (newLabelIds);
         refreshAllPanels();
+    }
+
+    void StudioMainComponent::focusPscriptPanel()
+    {
+        if (bottomTab != BottomPanel::Page::Design)
+            setBottomTab (BottomPanel::Page::Design);
+
+        leftPanelCollapsed = false;
+        leftTabs.setCurrentTabIndex (3, juce::dontSendNotification);
+        showLayersInsteadOfElements = false;
+        showLibraryInsteadOfElements = false;
+        showScriptEditorInsteadOfElements = true;
+
+        if (elementPalette != nullptr)
+            elementPalette->setVisible (false);
+        if (layersPanel != nullptr)
+            layersPanel->setVisible (false);
+        if (assetLibraryPanel != nullptr)
+            assetLibraryPanel->setVisible (false);
+        if (scriptEditor != nullptr)
+        {
+            scriptEditor->setVisible (true);
+            scriptEditor->refresh();
+        }
+
+        resized();
+        repaint();
+    }
+
+    void StudioMainComponent::createPscriptHandlerForSelectedControl()
+    {
+        const LayoutElement* selected = nullptr;
+        const ParameterDef* source = nullptr;
+
+        for (const auto& id : selectedElementIds)
+        {
+            if (auto* element = project.getLayout().find (id);
+                element != nullptr
+                && isScriptableControlElement (*element)
+                && element->parameterId.isNotEmpty())
+            {
+                if (auto* parameter = project.getParameters().find (element->parameterId))
+                {
+                    selected = element;
+                    source = parameter;
+                    break;
+                }
+            }
+        }
+
+        if (selected == nullptr || source == nullptr)
+        {
+            juce::AlertWindow::showMessageBoxAsync (
+                juce::AlertWindow::WarningIcon,
+                "pScript needs a mapped control",
+                "Select a knob, slider, button, dropdown, value display, or sample drop zone that is assigned to a real parameter, then run this action again.");
+            return;
+        }
+
+        const auto* target = choosePscriptMacroTarget (project.getParameters(), source->id);
+        auto snippet = buildPscriptHandlerSnippet (*selected, *source, target);
+
+        focusPscriptPanel();
+        if (scriptEditor != nullptr)
+            scriptEditor->insertSnippetAndCompile (snippet);
     }
 
     namespace

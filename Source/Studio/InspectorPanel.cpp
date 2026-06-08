@@ -299,6 +299,7 @@ namespace patchcraft
         styleLabel (lblLabelOffsetY,  "Label Y");
         styleLabel (lblLabelSpacing,  "Spacing");
         styleLabel (lblLabelSize,     "Text Size");
+        styleLabel (lblContentPadding, "Padding");
         styleLabel (lblBgColour,      "BG Color");
         styleLabel (lblBorderColour,  "Border");
         styleLabel (lblAccentColour,  "Accent");
@@ -381,7 +382,7 @@ namespace patchcraft
                          &lblAudioReactiveMode, &lblAudioReactiveAmount,
                          &lblAnimationMode, &lblAnimationRate,
                          &lblLabelPosition, &lblLabelOffsetX, &lblLabelOffsetY,
-                         &lblLabelSpacing, &lblLabelSize, &lblBgColour, &lblBorderColour, &lblAccentColour,
+                         &lblLabelSpacing, &lblLabelSize, &lblContentPadding, &lblBgColour, &lblBorderColour, &lblAccentColour,
                          &lblDefault, &lblStep, &lblValType, &lblSmoothing,
                          &lblActions, &lblPosX, &lblPosY, &lblSizeW, &lblSizeH,
                          &lblAsset, &lblGroup, &lblTabs, &lblContainerManager, &lblContainerChildren,
@@ -418,7 +419,7 @@ namespace patchcraft
                                 "Arp Lane", "Mixer", "Macro Control", "Mod Matrix",
                                 "EQ Curve", "Spectrum Analyzer", "Reactive Image",
                                 "Sprite Animator", "Visual FX Layer", "AI Visual Prompt",
-                                "Sample Drop Zone" };
+                                "Sample Drop Zone", "Runtime Sample Library", "Pitch Wheel", "Mod Wheel" };
         int id = 1;
         for (auto* t : types) typeBox.addItem (t, id++);
         addAndMakeVisible (typeBox);
@@ -724,6 +725,7 @@ namespace patchcraft
         valueFormatBox.addItem ("dB",       4);
         valueFormatBox.addItem ("%",        5);
         valueFormatBox.addItem ("ms",       6);
+        valueFormatBox.addItem ("Tempo Div", 7);
         addAndMakeVisible (valueFormatBox);
 
         for (auto* sName : { "Modern Dark", "Vintage Gold", "Gold Dark",
@@ -795,7 +797,7 @@ namespace patchcraft
         labelPositionBox.addItem ("Right", 4);
         labelPositionBox.addItem ("Hidden", 5);
         addAndMakeVisible (labelPositionBox);
-        for (auto* slider : { &labelOffsetXSlider, &labelOffsetYSlider, &labelSpacingSlider, &labelSizeSlider })
+        for (auto* slider : { &labelOffsetXSlider, &labelOffsetYSlider, &labelSpacingSlider, &labelSizeSlider, &contentPaddingSlider })
         {
             slider->setSliderStyle (juce::Slider::LinearHorizontal);
             slider->setTextBoxStyle (juce::Slider::TextBoxRight, true, 52, 22);
@@ -805,6 +807,8 @@ namespace patchcraft
         labelOffsetYSlider.setRange (-120.0, 120.0, 1.0);
         labelSpacingSlider.setRange (-40.0, 80.0, 1.0);
         labelSizeSlider.setRange (0.0, 48.0, 1.0);
+        contentPaddingSlider.setRange (-48.0, 48.0, 1.0);
+        contentPaddingSlider.setTooltip ("Adjusts the inner padding of the asset inside its bounding box. Negative values let the art fill more of the box.");
 
         for (auto* edit : { &backgroundColourEdit, &borderColourEdit, &accentColourEdit })
         {
@@ -883,19 +887,49 @@ namespace patchcraft
             owner.orderSelected ("backward");
         };
 
+        auto isGeometryEditor = [this] (juce::Component* component) -> bool
+        {
+            return component == &xEdit || component == &yEdit
+                || component == &wEdit || component == &hEdit;
+        };
+
+        auto commitGeometryEditor = [this, isGeometryEditor] (juce::TextEditor& editor)
+        {
+            editor.setSelectAllWhenFocused (true);
+            editor.onReturnKey = [this] { writeFromUi(); };
+            editor.onFocusLost = [this, isGeometryEditor]
+            {
+                if (owner.getSelectedElementIds().size() > 1)
+                {
+                    if (auto* focused = juce::Component::getCurrentlyFocusedComponent();
+                        isGeometryEditor (focused))
+                        return;
+                }
+                writeFromUi();
+            };
+        };
+
+        auto commitEditor = [this] (juce::TextEditor& editor)
+        {
+            editor.setSelectAllWhenFocused (true);
+            editor.onReturnKey = [this] { writeFromUi(); };
+            editor.onFocusLost = [this] { writeFromUi(); };
+        };
+
+        for (auto* editor : { &xEdit, &yEdit, &wEdit, &hEdit })
+            commitGeometryEditor (*editor);
+        for (auto* editor : { &minEdit, &maxEdit, &defaultEdit, &stepEdit })
+            commitEditor (*editor);
+
+        idEdit.setSelectAllWhenFocused (true);
+        labelEdit.setSelectAllWhenFocused (true);
+        actionEdit.setSelectAllWhenFocused (true);
+
         // Wire change callbacks
         auto rewrite = [this] { writeFromUi(); };
         idEdit.onTextChange      = rewrite;
-        xEdit.onTextChange       = rewrite;
-        yEdit.onTextChange       = rewrite;
-        wEdit.onTextChange       = rewrite;
-        hEdit.onTextChange       = rewrite;
         labelEdit.onTextChange   = rewrite;
         actionEdit.onTextChange  = rewrite;
-        minEdit.onTextChange     = rewrite;
-        maxEdit.onTextChange     = rewrite;
-        defaultEdit.onTextChange = rewrite;
-        stepEdit.onTextChange    = rewrite;
         typeBox.onChange         = rewrite;
         parameterBox.onChange    = rewrite;
         valueFormatBox.onChange  = rewrite;
@@ -923,11 +957,25 @@ namespace patchcraft
         audioReactiveAmountSlider.onValueChange = rewrite;
         animationModeBox.onChange = rewrite;
         animationRateSlider.onValueChange = rewrite;
-        labelPositionBox.onChange = rewrite;
+        labelPositionBox.onChange = [this]
+        {
+            if (inhibitCallbacks) return;
+            if (owner.getSelectedElementIds().size() > 1)
+            {
+                const auto position = labelPositionBox.getSelectedId() == 2 ? "top"
+                    : labelPositionBox.getSelectedId() == 3 ? "left"
+                    : labelPositionBox.getSelectedId() == 4 ? "right"
+                    : labelPositionBox.getSelectedId() == 5 ? "hidden" : "bottom";
+                owner.setSelectedLabelVisibility (position != "hidden", position);
+                return;
+            }
+            writeFromUi();
+        };
         labelOffsetXSlider.onValueChange = rewrite;
         labelOffsetYSlider.onValueChange = rewrite;
         labelSpacingSlider.onValueChange = rewrite;
         labelSizeSlider.onValueChange = rewrite;
+        contentPaddingSlider.onValueChange = rewrite;
         backgroundColourEdit.onTextChange = rewrite;
         borderColourEdit.onTextChange = rewrite;
         accentColourEdit.onTextChange = rewrite;
@@ -1625,9 +1673,10 @@ namespace patchcraft
                                  static_cast<juce::Component*> (&labelOffsetXSlider),
                                  static_cast<juce::Component*> (&labelOffsetYSlider),
                                  static_cast<juce::Component*> (&labelSpacingSlider),
-                                 static_cast<juce::Component*> (&labelSizeSlider) })
+                                 static_cast<juce::Component*> (&labelSizeSlider),
+                                 static_cast<juce::Component*> (&contentPaddingSlider) })
             component->setVisible (showLabelLayout && showVisualControls);
-        for (auto* label : { &lblLabelPosition, &lblLabelOffsetX, &lblLabelOffsetY, &lblLabelSpacing, &lblLabelSize })
+        for (auto* label : { &lblLabelPosition, &lblLabelOffsetX, &lblLabelOffsetY, &lblLabelSpacing, &lblLabelSize, &lblContentPadding })
             label->setVisible (showLabelLayout && showVisualControls);
         if (showLabelLayout && showVisualControls)
         {
@@ -1636,6 +1685,7 @@ namespace patchcraft
             layoutRow (r, lblLabelOffsetY, &labelOffsetYSlider);
             layoutRow (r, lblLabelSpacing, &labelSpacingSlider);
             layoutRow (r, lblLabelSize, &labelSizeSlider);
+            layoutRow (r, lblContentPadding, &contentPaddingSlider);
         }
 
         for (auto* component : { static_cast<juce::Component*> (&backgroundColourEdit),
@@ -2082,6 +2132,7 @@ namespace patchcraft
             static_cast<juce::Component*> (&labelOffsetYSlider),
             static_cast<juce::Component*> (&labelSpacingSlider),
             static_cast<juce::Component*> (&labelSizeSlider),
+            static_cast<juce::Component*> (&contentPaddingSlider),
             static_cast<juce::Component*> (&backgroundColourEdit),
             static_cast<juce::Component*> (&borderColourEdit),
             static_cast<juce::Component*> (&accentColourEdit),
@@ -2186,6 +2237,18 @@ namespace patchcraft
             return;
         }
 
+        if (owner.getSelectedElementIds().size() > 1)
+        {
+            typeBox.setSelectedId ((int) el->type + 1, juce::dontSendNotification);
+            idEdit.setText ("(" + juce::String (owner.getSelectedElementIds().size()) + " selected)", juce::dontSendNotification);
+            xEdit.setText ("", juce::dontSendNotification);
+            yEdit.setText ("", juce::dontSendNotification);
+            wEdit.setText ("100%", juce::dontSendNotification);
+            hEdit.setText ("100%", juce::dontSendNotification);
+            labelEdit.setText ("", juce::dontSendNotification);
+            actionEdit.setText ("", juce::dontSendNotification);
+        }
+
         if (isContainerElement (el->type))
         {
             int childItemId = 2;
@@ -2201,13 +2264,16 @@ namespace patchcraft
         }
 
         typeBox.setSelectedId ((int) el->type + 1, juce::dontSendNotification);
-        idEdit.setText (el->id, juce::dontSendNotification);
-        xEdit.setText (juce::String (el->x), juce::dontSendNotification);
-        yEdit.setText (juce::String (el->y), juce::dontSendNotification);
-        wEdit.setText (juce::String (el->width),  juce::dontSendNotification);
-        hEdit.setText (juce::String (el->height), juce::dontSendNotification);
-        labelEdit.setText (el->label, juce::dontSendNotification);
-        actionEdit.setText (el->action, juce::dontSendNotification);
+        if (owner.getSelectedElementIds().size() <= 1)
+        {
+            idEdit.setText (el->id, juce::dontSendNotification);
+            xEdit.setText (juce::String (el->x), juce::dontSendNotification);
+            yEdit.setText (juce::String (el->y), juce::dontSendNotification);
+            wEdit.setText (juce::String (el->width),  juce::dontSendNotification);
+            hEdit.setText (juce::String (el->height), juce::dontSendNotification);
+            labelEdit.setText (el->label, juce::dontSendNotification);
+            actionEdit.setText (el->action, juce::dontSendNotification);
+        }
         opacitySlider.setValue (juce::jlimit (0.0f, 1.0f, el->opacity) * 100.0f, juce::dontSendNotification);
         visibleToggle.setToggleState (el->visible, juce::dontSendNotification);
         lockedToggle.setToggleState (el->locked, juce::dontSendNotification);
@@ -2254,6 +2320,7 @@ namespace patchcraft
         labelOffsetYSlider.setValue (el->labelOffsetY, juce::dontSendNotification);
         labelSpacingSlider.setValue (el->labelSpacing, juce::dontSendNotification);
         labelSizeSlider.setValue (el->labelSize, juce::dontSendNotification);
+        contentPaddingSlider.setValue (el->contentPadding, juce::dontSendNotification);
         backgroundColourEdit.setText (colourToHex (el->backgroundColour), juce::dontSendNotification);
         borderColourEdit.setText (colourToHex (el->borderColour), juce::dontSendNotification);
         accentColourEdit.setText (colourToHex (el->accentColour), juce::dontSendNotification);
@@ -2397,6 +2464,104 @@ namespace patchcraft
     void InspectorPanel::writeFromUi()
     {
         if (inhibitCallbacks) return;
+        const auto selectedIds = owner.getSelectedElementIds();
+        const bool multiSelection = selectedIds.size() > 1;
+
+        auto parsePercent = [] (juce::String text) -> float
+        {
+            text = text.trim();
+            if (! text.endsWithChar ('%'))
+                return 0.0f;
+            return text.dropLastCharacters (1).trim().getFloatValue() * 0.01f;
+        };
+
+        if (multiSelection)
+        {
+            const float scaleX = parsePercent (wEdit.getText());
+            const float scaleY = parsePercent (hEdit.getText());
+            if (scaleX > 0.0f || scaleY > 0.0f)
+            {
+                owner.scaleSelectedElements (scaleX > 0.0f ? scaleX : 1.0f,
+                                             scaleY > 0.0f ? scaleY : 1.0f);
+                return;
+            }
+
+            const auto widthText = wEdit.getText().trim();
+            const auto heightText = hEdit.getText().trim();
+            const bool applyAbsoluteWidth = widthText.isNotEmpty() && ! widthText.endsWithChar ('%') && widthText.getIntValue() > 0;
+            const bool applyAbsoluteHeight = heightText.isNotEmpty() && ! heightText.endsWithChar ('%') && heightText.getIntValue() > 0;
+            const int absoluteWidth = applyAbsoluteWidth ? widthText.getIntValue() : 0;
+            const int absoluteHeight = applyAbsoluteHeight ? heightText.getIntValue() : 0;
+
+            owner.getProject().performLayoutEdit ("Bulk inspector edit",
+                                                 [this, selectedIds, applyAbsoluteWidth, applyAbsoluteHeight, absoluteWidth, absoluteHeight] (LayoutModel& m)
+            {
+                for (const auto& id : selectedIds)
+                {
+                    auto* el = m.find (id);
+                    if (el == nullptr)
+                        continue;
+
+                    if (applyAbsoluteWidth || applyAbsoluteHeight)
+                    {
+                        const auto centreX = el->x + el->width / 2;
+                        const auto centreY = el->y + el->height / 2;
+                        if (applyAbsoluteWidth)
+                            el->width = juce::jmax (1, absoluteWidth);
+                        if (applyAbsoluteHeight)
+                            el->height = juce::jmax (1, absoluteHeight);
+                        el->x = centreX - el->width / 2;
+                        el->y = centreY - el->height / 2;
+                    }
+
+                    el->opacity = juce::jlimit (0.0f, 1.0f, (float) opacitySlider.getValue() * 0.01f);
+                    el->visible = visibleToggle.getToggleState();
+                    el->locked = lockedToggle.getToggleState();
+                    el->shapeKind = shapeKindBox.getSelectedId() == 2 ? "ellipse"
+                                  : shapeKindBox.getSelectedId() == 3 ? "triangle"
+                                  : shapeKindBox.getSelectedId() == 4 ? "diamond"
+                                  : shapeKindBox.getSelectedId() == 5 ? "line" : "roundedRect";
+                    el->cornerRadius = (float) cornerSlider.getValue();
+                    el->strokeWidth = (float) strokeSlider.getValue();
+                    el->shadowAmount = (float) shadowSlider.getValue() * 0.01f;
+                    el->glowAmount = (float) glowSlider.getValue() * 0.01f;
+                    el->blurAmount = (float) blurSlider.getValue() * 0.01f;
+                    el->audioReactive = audioReactiveToggle.getToggleState();
+                    el->audioReactiveMode = audioReactiveModeBox.getSelectedId() == 2 ? "peak"
+                                          : audioReactiveModeBox.getSelectedId() == 3 ? "lowBand"
+                                          : audioReactiveModeBox.getSelectedId() == 4 ? "midBand"
+                                          : audioReactiveModeBox.getSelectedId() == 5 ? "highBand"
+                                          : audioReactiveModeBox.getSelectedId() == 6 ? "transient" : "level";
+                    el->audioReactiveAmount = (float) audioReactiveAmountSlider.getValue() * 0.01f;
+                    el->animationMode = animationModeBox.getSelectedId() == 2 ? "pulse"
+                                      : animationModeBox.getSelectedId() == 3 ? "breathe"
+                                      : animationModeBox.getSelectedId() == 4 ? "shake"
+                                      : animationModeBox.getSelectedId() == 5 ? "glow" : "none";
+                    el->animationRate = juce::jmax (0.05f, (float) animationRateSlider.getValue());
+                    el->labelPosition = labelPositionBox.getSelectedId() == 2 ? "top"
+                                      : labelPositionBox.getSelectedId() == 3 ? "left"
+                                      : labelPositionBox.getSelectedId() == 4 ? "right"
+                                      : labelPositionBox.getSelectedId() == 5 ? "hidden" : "bottom";
+                    el->labelOffsetX = (float) labelOffsetXSlider.getValue();
+                    el->labelOffsetY = (float) labelOffsetYSlider.getValue();
+                    el->labelSpacing = (float) labelSpacingSlider.getValue();
+                    el->labelSize = (float) labelSizeSlider.getValue();
+                    el->contentPadding = (float) contentPaddingSlider.getValue();
+                    el->backgroundColour = colourFromHex (backgroundColourEdit.getText(), el->backgroundColour);
+                    el->borderColour = colourFromHex (borderColourEdit.getText(), el->borderColour);
+                    el->accentColour = colourFromHex (accentColourEdit.getText(), el->accentColour);
+                    if (styleBox.getSelectedId() > 0)
+                        el->style = styleBox.getText();
+                    if (knobStyleBox.getSelectedId() > 0)
+                        el->knobStyle = knobStyleBox.getText();
+                    if (valueFormatBox.getSelectedId() > 0)
+                        el->valueFormat = valueFormatBox.getText();
+                }
+            });
+            owner.refreshAllPanels();
+            return;
+        }
+
         auto* el = owner.getProject().getLayout().find (owner.getSelectedElementId());
         if (el == nullptr) return;
 
@@ -2459,6 +2624,7 @@ namespace patchcraft
         el->labelOffsetY = (float) labelOffsetYSlider.getValue();
         el->labelSpacing = (float) labelSpacingSlider.getValue();
         el->labelSize = (float) labelSizeSlider.getValue();
+        el->contentPadding = (float) contentPaddingSlider.getValue();
         el->backgroundColour = colourFromHex (backgroundColourEdit.getText(), el->backgroundColour);
         el->borderColour = colourFromHex (borderColourEdit.getText(), el->borderColour);
         el->accentColour = colourFromHex (accentColourEdit.getText(), el->accentColour);
@@ -2917,6 +3083,7 @@ namespace patchcraft
         block.values["dmSteps"] = 16.0f;
         block.values["dmPattern"] = 0.0f;
         block.values["dmTransport"] = 1.0f;
+        block.values["dmTriggerPadSlots"] = 1.0f;
         block.values["dmSwing"] = 0.08f;
         block.values["dmProbability"] = 1.0f;
         block.values["dmGate"] = 0.65f;

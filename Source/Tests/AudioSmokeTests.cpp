@@ -40,6 +40,24 @@ namespace
             throw std::runtime_error (message);
     }
 
+    bool isVisibleFactoryDemoRuntimeElement (const patchcraft::LayoutElement& element)
+    {
+        if (! element.visible)
+            return false;
+        if (! (element.groupId.isEmpty() || element.groupId == "main"))
+            return false;
+
+        return patchcraft::isRuntimeControlElement (element.type)
+            || element.type == patchcraft::ElementType::Keyboard
+            || element.type == patchcraft::ElementType::DrumPad
+            || element.type == patchcraft::ElementType::PadGrid
+            || element.type == patchcraft::ElementType::DrumGrid
+            || element.type == patchcraft::ElementType::ArpLane
+            || element.type == patchcraft::ElementType::XYPad
+            || element.type == patchcraft::ElementType::SampleDropZone
+            || element.type == patchcraft::ElementType::RuntimeSampleLibrary;
+    }
+
     float peakAbs (const juce::AudioBuffer<float>& buffer)
     {
         float peak = 0.0f;
@@ -463,16 +481,21 @@ namespace
         const auto& zones = map.getZones();
         require (zones.size() == 5, "drum pad auto map changed zone count");
         require (zones[0].rootNote == 36 && zones[0].lowNote == 36 && zones[0].highNote == 36,
-                 "kick did not map to C1 pad");
-        require (zones[0].oneShot && zones[0].padIndex == 0 && zones[0].padLabel == "Kick",
-                 "kick pad metadata was not assigned");
-        require (zones[1].rootNote == 38 && zones[1].padIndex == 2,
-                 "snare did not map to the expected drum pad");
-        require (zones[2].chokeGroup == 1 && zones[3].chokeGroup == 1,
-                 "hat samples did not share a choke group");
+                 "first dropped sample did not map to C1 pad");
+        require (zones[0].oneShot && zones[0].padIndex == 0 && zones[0].padLabel == "Deep Kick",
+                 "first pad metadata was not assigned from the sample file");
+        require (zones[1].rootNote == 37 && zones[1].padIndex == 1,
+                 "second dropped sample did not map to the next pad slot");
+        require (zones[2].chokeGroup == 0 && zones[3].chokeGroup == 0,
+                 "drum pad auto-map should not infer choke groups from filenames");
         require (zones[4].oneShot && zones[4].group == "Drum Pads",
                  "fallback drum pad did not become a one-shot drum zone");
         map.getZones()[2].bpm = 92.5f;
+        map.getZones()[2].midiPath = "midi/hat-loop.mid";
+        map.getZones()[2].midiPlaybackMode = "slice";
+        map.getZones()[2].midiHostSync = true;
+        map.getZones()[2].midiTranspose = -12;
+        map.getZones()[2].midiVelocityAmount = 0.65f;
 
         auto roundTrip = patchcraft::SampleZoneDef::fromVar (zones[2].toVar());
         require (roundTrip.padIndex == zones[2].padIndex
@@ -480,8 +503,28 @@ namespace
                  && roundTrip.chokeGroup == zones[2].chokeGroup
                  && roundTrip.oneShot == zones[2].oneShot
                  && roundTrip.triggerProbability == zones[2].triggerProbability
-                 && std::abs (roundTrip.bpm - zones[2].bpm) < 0.001f,
+                 && std::abs (roundTrip.bpm - zones[2].bpm) < 0.001f
+                 && roundTrip.midiPath == zones[2].midiPath
+                 && roundTrip.midiPlaybackMode == zones[2].midiPlaybackMode
+                 && roundTrip.midiHostSync == zones[2].midiHostSync
+                 && roundTrip.midiTranspose == zones[2].midiTranspose
+                 && std::abs (roundTrip.midiVelocityAmount - zones[2].midiVelocityAmount) < 0.001f,
                  "sample performance metadata did not serialize");
+
+        patchcraft::SampleMap stackedMap;
+        for (const auto& name : { "Kick A.wav", "Kick B.wav", "Kick C.wav" })
+        {
+            patchcraft::SampleZoneDef zone;
+            zone.samplePath = name;
+            stackedMap.add (zone);
+        }
+
+        stackedMap.autoMapDrumPads (36, 1, true);
+        const auto& stacked = stackedMap.getZones();
+        require (stacked[0].rootNote == 36 && stacked[1].rootNote == 36 && stacked[2].rootNote == 36,
+                 "stacked pad map did not keep all layers on the target pad");
+        require (stacked[0].roundRobinGroup > 0 && stacked[1].roundRobinIndex == 2 && stacked[2].roundRobinIndex == 3,
+                 "stacked pad map did not assign round-robin layer metadata");
 
         pass ("sample drum pad metadata");
     }
@@ -784,6 +827,7 @@ namespace
             { "dmPattern", 0.0f },
             { "dmTransport", 1.0f },
             { "dmProbability", 1.0f },
+            { "dmTriggerPadSlots", 0.0f },
             { "dmTrack0Note", 36.0f },
             { "dmTrack0FxTarget", 4.0f },
             { "dmTrack0FxAmount", 0.70f },
@@ -843,6 +887,39 @@ namespace
         context.isPlaying = false;
         runtime.process (engine, context);
 
+        patchcraft::DspBlock padSlotBlock;
+        padSlotBlock.id = "midi_playground_pad_slots";
+        padSlotBlock.section = "mod";
+        padSlotBlock.type = "drumMachine";
+        padSlotBlock.enabled = true;
+        padSlotBlock.values = {
+            { "rate", 4.0f },
+            { "sync", 0.0f },
+            { "dmTracks", 2.0f },
+            { "dmSteps", 4.0f },
+            { "dmPattern", 0.0f },
+            { "dmTransport", 1.0f },
+            { "dmTrack1Note", 38.0f },
+            { "dmP0T1S0On", 1.0f },
+            { "dmP0T1S0Vel", 0.85f },
+            { "dmP0T1S0Gate", 0.35f }
+        };
+        patchcraft::DspGraph padSlotGraph;
+        padSlotGraph.blocks.push_back (padSlotBlock);
+        patchcraft::MidiPlaygroundRuntime padSlotRuntime;
+        padSlotRuntime.bind (padSlotGraph);
+        CountingEngine padSlotEngine;
+        auto padSlotContext = makeContext (0);
+        for (int blockIndex = 0; blockIndex < 30; ++blockIndex)
+        {
+            padSlotRuntime.process (padSlotEngine, padSlotContext);
+            advanceContext (padSlotContext);
+        }
+        require (std::find (padSlotEngine.noteOns.begin(), padSlotEngine.noteOns.end(), 37) != padSlotEngine.noteOns.end(),
+                 "drum machine default did not trigger pad slot note for row 2");
+        require (std::find (padSlotEngine.noteOns.begin(), padSlotEngine.noteOns.end(), 38) == padSlotEngine.noteOns.end(),
+                 "drum machine default still used custom track note instead of pad slot");
+
         patchcraft::DspBlock divisionBlock;
         divisionBlock.id = "midi_playground_drum_divisions";
         divisionBlock.section = "mod";
@@ -855,6 +932,7 @@ namespace
             { "dmSteps", 4.0f },
             { "dmPattern", 0.0f },
             { "dmTransport", 1.0f },
+            { "dmTriggerPadSlots", 0.0f },
             { "dmTrack0Note", 42.0f },
             { "dmP0T0S0On", 1.0f },
             { "dmP0T0S0Vel", 0.80f },
@@ -874,7 +952,61 @@ namespace
         }
         require (std::count (divisionEngine.noteOns.begin(), divisionEngine.noteOns.end(), 42) >= 4,
                  "drum machine per-cell divisions did not retrigger inside one step");
+
         pass ("MIDI Playground drum machine runtime");
+    }
+
+    void smokeMidiPlaygroundSampleOverlayRuntime()
+    {
+        patchcraft::DspBlock block;
+        block.id = "midi_playground_sample_overlay";
+        block.section = "mod";
+        block.type = "drumMachine";
+        block.enabled = true;
+        block.values = {
+            { "rate", 4.0f },
+            { "sync", 0.0f },
+            { "dmTracks", 1.0f },
+            { "dmSteps", 4.0f },
+            { "dmPattern", 0.0f },
+            { "dmTransport", 1.0f },
+            { "dmTriggerPadSlots", 0.0f },
+            { "sampleSliceCount", 4.0f },
+            { "sampleStart", 0.10f },
+            { "sampleLength", 0.35f },
+            { "samplePitch", -3.0f },
+            { "dmTrack0Note", 62.0f },
+            { "dmP0T0S0On", 1.0f },
+            { "dmP0T0S0Vel", 0.90f },
+            { "dmP0T0S0Gate", 0.20f },
+            { "dmP0T0S0SampleSlice", 2.0f }
+        };
+
+        patchcraft::DspGraph graph;
+        graph.blocks.push_back (block);
+        patchcraft::MidiPlaygroundRuntime runtime;
+        runtime.bind (graph);
+
+        CountingEngine mainEngine;
+        CountingEngine sampleOverlayEngine;
+        auto context = makeContext (0);
+        runtime.process (mainEngine, context, &sampleOverlayEngine);
+        require (std::find (mainEngine.noteOns.begin(), mainEngine.noteOns.end(), 62) != mainEngine.noteOns.end(),
+                 "drum machine did not trigger custom MIDI note on main engine");
+        require (std::find (sampleOverlayEngine.noteOns.begin(), sampleOverlayEngine.noteOns.end(), 62) != sampleOverlayEngine.noteOns.end(),
+                 "drum machine did not trigger runtime sample overlay");
+        require (std::abs (sampleOverlayEngine.parameters["sampleSliceCount"] - 4.0f) < 0.001f
+              && std::abs (sampleOverlayEngine.parameters["sampleSlice"] - 2.0f) < 0.001f
+              && std::abs (sampleOverlayEngine.parameters["sampleStart"] - 0.10f) < 0.001f
+              && std::abs (sampleOverlayEngine.parameters["sampleLength"] - 0.35f) < 0.001f
+              && std::abs (sampleOverlayEngine.parameters["samplePitch"] + 3.0f) < 0.001f,
+                 "drum machine did not apply per-cell sample slice controls before triggering overlay");
+
+        context.isPlaying = false;
+        runtime.process (mainEngine, context, &sampleOverlayEngine);
+        require (std::find (sampleOverlayEngine.noteOffs.begin(), sampleOverlayEngine.noteOffs.end(), 62) != sampleOverlayEngine.noteOffs.end(),
+                 "drum machine did not stop runtime sample overlay on transport stop");
+        pass ("MIDI Playground sample overlay runtime");
     }
 
     void smokeMidiPlaygroundChordPresetRuntime()
@@ -1340,6 +1472,7 @@ namespace
             { "dmTracks", 2.0f },
             { "dmSteps", 4.0f },
             { "dmPattern", 0.0f },
+            { "dmTriggerPadSlots", 0.0f },
             { "dmTrack0Note", 36.0f },
             { "dmTrack1Note", 38.0f }
         };
@@ -1958,12 +2091,16 @@ namespace
         require (demoRoot.isDirectory(), "FactoryDemos folder is missing");
 
         patchcraft::LibraryScanner scanner;
+        for (const auto& path : scanner.getSearchPaths())
+            scanner.removeSearchPath (path);
         scanner.addSearchPath (demoRoot);
         scanner.scanLibrary();
 
         const auto entries = scanner.getEntries();
-        require (entries.size() >= 10, "Player library scanner did not find the factory demo packs");
-        require (scanner.search ("Braam").size() > 0, "Player library search cannot find Trailer Braam demo");
+        require (entries.size() >= 6, "Player library scanner did not find the approved factory demo packs");
+        require (scanner.search ("EchoCraft").size() > 0, "Player library search cannot find EchoCraft demo");
+        require (scanner.search ("CircleSEQ").size() > 0, "Player library search cannot find CircleSEQ demo");
+        require (scanner.search ("Analog House").size() > 0, "Player library search cannot find Analog House Drums demo");
         require (scanner.getEntriesByCategory ("synth").size() >= 1, "Player library scanner is missing the ship synth demo");
         require (scanner.getEntriesByCategory ("sample").size() >= 1, "Player library scanner is missing the ship sample demo");
         require (scanner.getEntriesByCategory ("fx").size() >= 1, "Player library scanner is missing the ship FX demo");
@@ -1986,7 +2123,7 @@ namespace
         require (demoRoot.isDirectory(), "FactoryDemos folder is missing");
 
         auto demoFolders = demoRoot.findChildFiles (juce::File::findDirectories, false, "*.patchcraft");
-        require (demoFolders.size() >= 5, "factory demo library should ship the approved five-demo RC set");
+        require (demoFolders.size() >= 6, "factory demo library should ship the approved six-demo RC set");
 
         int audibleInstrumentCount = 0;
         juce::StringArray defaultPresetSignatures;
@@ -1998,11 +2135,19 @@ namespace
             require (reader.read (folder, pack, error),
                      ("factory demo failed to read: " + folder.getFileName()).toRawUTF8());
             require (folder.getChildFile (pack.manifest.backgroundImage).existsAsFile(),
-                     "factory demo background image is missing");
+                      "factory demo background image is missing");
             require (folder.getChildFile (pack.manifest.libraryThumbnail).existsAsFile(),
-                     "factory demo thumbnail image is missing");
+                      "factory demo thumbnail image is missing");
+            require (pack.manifest.playerTitleBannerImage.isNotEmpty(),
+                     "factory demo is missing a Player title banner image reference");
+            require (folder.getChildFile (pack.manifest.playerTitleBannerImage).existsAsFile(),
+                     "factory demo Player title banner image is missing");
+            require (folder.getChildFile ("assets/library-artwork.png").existsAsFile(),
+                     "factory demo library artwork image is missing");
+            require (folder.getChildFile ("assets/player-library-modal.png").existsAsFile(),
+                     "factory demo Player library modal artwork is missing");
             require (pack.layout.getAll().size() >= 12,
-                     "factory demo does not contain a real player layout");
+                      "factory demo does not contain a real player layout");
             require (pack.presets.size() >= 5,
                      "factory demo does not contain enough curated presets");
             require (pack.manifest.playerDisplayName.isNotEmpty(),
@@ -2019,11 +2164,15 @@ namespace
                          ("factory demo contains a missing parameter reference: " + issueText).toRawUTF8());
             }
 
+            int visibleRuntimeElementCount = 0;
             for (const auto& element : pack.layout.getAll())
             {
                 require (patchcraft::isPlayerRuntimeElementSupported (element.type),
                          ("factory demo uses unsupported Player runtime element: "
                           + element.id + " / " + patchcraft::elementTypeDisplayName (element.type)).toRawUTF8());
+
+                if (isVisibleFactoryDemoRuntimeElement (element))
+                    ++visibleRuntimeElementCount;
 
                 if (element.type == patchcraft::ElementType::Knob)
                     require (element.width <= 180 && element.height <= 180,
@@ -2056,6 +2205,8 @@ namespace
                              "factory demo runtime control has no visible label or parameter fallback");
                 }
             }
+            require (visibleRuntimeElementCount >= 24,
+                     "factory demo does not expose enough visible runtime controls in the active surface");
 
             const patchcraft::LayoutElement* tabPanel = nullptr;
             for (const auto& element : pack.layout.getAll())
@@ -2064,29 +2215,45 @@ namespace
                     tabPanel = &element;
                     break;
                 }
-            require (tabPanel != nullptr && tabPanel->tabs.size() >= 4,
-                     "factory demo is missing the main runtime tab strip");
 
-            for (const auto& tab : tabPanel->tabs)
             {
-                const auto groupId = patchcraft::LayoutElement::tabLabelToGroupId (tab);
-                bool hasRuntimeControlOnTab = false;
+                int runtimeControlCount = 0;
+                for (const auto& element : pack.layout.getAll())
+                    if (patchcraft::isRuntimeControlElement (element.type))
+                        ++runtimeControlCount;
+                require (tabPanel == nullptr,
+                         "factory demo still uses the shared tab strip instead of a custom surface");
+                require (runtimeControlCount >= 24,
+                         "custom-surface factory demo does not expose enough runtime controls");
                 for (const auto& element : pack.layout.getAll())
                 {
-                    if (element.groupId == groupId
-                        && patchcraft::isRuntimeControlElement (element.type)
-                        && element.parameterId.isNotEmpty())
-                    {
-                        hasRuntimeControlOnTab = true;
-                        break;
-                    }
+                    require (element.groupId.isEmpty() || element.groupId == "main",
+                             "custom-surface factory demo stores a non-main group id that can hide controls without tabs");
                 }
-                require (hasRuntimeControlOnTab,
-                         "factory demo tab has no grouped runtime controls");
             }
 
             const auto* defaultPreset = pack.findDefaultPreset();
             require (defaultPreset != nullptr, "factory demo is missing a default preset");
+            for (const auto& preset : pack.presets)
+            {
+                if (auto it = preset.values.find ("oscType"); it != preset.values.end())
+                    require (it->second <= 3.0f, "factory demo preset still resolves oscType to unsupported noise waveform");
+                if (auto it = preset.values.find ("osc2Type"); it != preset.values.end())
+                    require (it->second <= 3.0f, "factory demo preset still resolves osc2Type to unsupported noise waveform");
+                if (auto it = preset.values.find ("noiseBlend"); it != preset.values.end())
+                    require (it->second <= 0.001f, "factory demo preset still enables broadband noise by default");
+            }
+
+            for (const auto& block : pack.dspGraph.blocks)
+            {
+                if (auto it = block.values.find ("oscType"); it != block.values.end())
+                    require (it->second <= 1.0f, "factory demo graph stores an out-of-range oscType source value");
+                if (auto it = block.values.find ("osc2Type"); it != block.values.end())
+                    require (it->second <= 1.0f, "factory demo graph stores an out-of-range osc2Type source value");
+                if (auto it = block.values.find ("noiseBlend"); it != block.values.end())
+                    require (it->second <= 0.001f, "factory demo graph enables broadband noise in the source stack by default");
+            }
+
             juce::String signature = folder.getFileNameWithoutExtension() + ":";
             for (const auto& id : { juce::String ("oscType"), juce::String ("wtEnabled"),
                                     juce::String ("sampleLength"), juce::String ("sampleSliceCount"),
@@ -2759,8 +2926,10 @@ namespace
             "    else: set filterCutoff to 800\n"
             "when note ends:\n"
             "    set volume to 0.0\n"
+            "when modwheel moves:\n"
+            "    set pan to modwheel mapped 0..127 -> -1.0..1.0\n"
             "when knob \"Cutoff\" moves:\n"
-            "    set delayMix to value mapped 0.0..1.0 -> 0.1..0.9\n";
+            "    set delayMix to value mapped 20 Hz..20000 Hz -> 0.1..0.9\n";
 
         juce::String err = engine.compile (script);
         require (err.isEmpty(), ("pScript compilation failed: " + err).toRawUTF8());
@@ -2780,9 +2949,13 @@ namespace
         engine.triggerEvent ("note ends", {});
         require (std::abs (store.getValue ("volume") - 0.0f) < 0.0001f, "volume was not set to 0.0 on note ends");
 
+        // Trigger modwheel with a negative mapped destination
+        engine.triggerEvent ("modwheel moves", {{"modwheel", 0.0f}});
+        require (std::abs (store.getValue ("pan") - -1.0f) < 0.0001f, "pan was not mapped to negative destination range");
+
         // Trigger knob moves for Cutoff
-        engine.triggerEvent ("knob moves", {{"value", 0.5f}}, "Cutoff");
-        require (std::abs (store.getValue ("delayMix") - 0.5f) < 0.0001f, "delayMix was not set on Cutoff move");
+        engine.triggerEvent ("knob moves", {{"value", 5015.0f}}, "Cutoff");
+        require (std::abs (store.getValue ("delayMix") - 0.3f) < 0.0001f, "delayMix was not mapped from knob value on Cutoff move");
 
         // Trigger knob moves for Resonance (should not trigger Cutoff event)
         store.setValue ("delayMix", 0.2f);
@@ -3000,6 +3173,101 @@ namespace
         require (foundPhaser, "Phaser DSP block missing");
         require (foundUtility, "Utility DSP block missing");
 
+        patchcraft::ParameterDef oscTypeDef;
+        require (patchcraft::ParameterModel::getRegistryDefinition ("oscType", "synth", oscTypeDef)
+                 && oscTypeDef.max <= 3.0f,
+                 "oscType registry still exposes the unsafe noise waveform slot");
+        patchcraft::ParameterDef osc2TypeDef;
+        require (patchcraft::ParameterModel::getRegistryDefinition ("osc2Type", "synth", osc2TypeDef)
+                 && osc2TypeDef.max <= 3.0f,
+                 "osc2Type registry still exposes the unsafe noise waveform slot");
+
+        struct ModuleBlockCase
+        {
+            const char* id;
+            const char* section;
+            const char* type;
+            const char* name;
+            const char* target;
+            const char* family;
+            const char* role;
+            const char* ioMode;
+        };
+
+        const ModuleBlockCase premiumModules[] = {
+            { "osc_stack_module_test",       "source", "oscStack",        "OSC Stack",          "oscBlend",       "synth",   "source",     "stereo" },
+            { "serum_table_module_test",     "source", "serumWavetable",  "Serum Table",        "wtPosition",     "synth",   "source",     "stereo" },
+            { "sample_player_module_test",   "source", "samplePlayer",    "Sample Player",      "sampleStart",    "sampler", "source",     "stereo" },
+            { "slice_chop_module_test",      "source", "sliceChop",       "Slice Chop",         "sampleSlice",    "sampler", "source",     "stereo" },
+            { "scratch_deck_module_test",    "source", "scratchDeck",     "Scratch Deck",       "sampleStart",    "sampler", "source",     "stereo" },
+            { "granular_sampler_module_test","source", "granularSampler", "Granular Sampler",   "granularDensity","sampler", "source",     "stereo" },
+            { "drum_rack_module_test",       "source", "drumRack",        "Drum Rack",          "pad1Volume",     "drums",   "source",     "stereo" },
+            { "drum_seq_module_test",        "mod",    "drumSequencer",   "Drum Sequencer",     "arpLaneRate",    "midi",    "sequencer",  "event" },
+            { "arp_lane_module_test",        "mod",    "arp",             "Arp Lane",           "arpLaneRate",    "midi",    "arp",        "event" },
+            { "step_lfo_module_test",        "mod",    "stepLfo",         "Step LFO",           "filterCutoff",   "midi",    "modulation", "modulation" },
+            { "dynamic_eq_module_test",      "filter", "dynamicEq",       "Dynamic EQ",         "eqMix",          "studio",  "tone",       "stereo" },
+            { "limiter_module_test",         "out",    "limiter",         "Limiter",            "outputCeilingDb", "studio", "dynamics",   "stereo" },
+            { "transient_module_test",       "fx",     "transientShaper", "Transient Shaper",   "dynMix",         "studio",  "dynamics",   "stereo" },
+            { "flanger_module_test",         "fx",     "flanger",         "Flanger",            "chorusMix",      "creative","modulation", "stereo" },
+            { "multitap_module_test",        "fx",     "multiTapDelay",   "MultiTap Delay",     "multiTapMix",    "creative","space",      "stereo" },
+            { "vocal_fx_module_test",        "fx",     "vocalFormant",    "Vocal FX",           "vocalMix",       "creative","tone",       "stereo" },
+            { "master_bus_module_test",      "out",    "masterBus",       "Master Bus",         "outputCeilingDb", "studio", "dynamics",   "stereo" }
+        };
+
+        for (const auto& module : premiumModules)
+        {
+            patchcraft::DspGraph moduleGraph;
+            if (juce::String (module.section) != "source")
+            {
+                patchcraft::DspBlock source;
+                source.id = "test_source";
+                source.section = "source";
+                source.type = "samplePlayer";
+                source.name = "Test Source";
+                source.targetId = "sampleStart";
+                source.enabled = true;
+                source.values["volume"] = 0.65f;
+                moduleGraph.blocks.push_back (source);
+            }
+
+            patchcraft::DspBlock block;
+            block.id = module.id;
+            block.section = module.section;
+            block.type = module.type;
+            block.name = module.name;
+            block.targetId = module.target;
+            block.enabled = true;
+            block.metadata["family"] = module.family;
+            block.metadata["role"] = module.role;
+            block.metadata["ioMode"] = module.ioMode;
+            block.values[module.target] = juce::String (module.id) == "limiter_module_test" ? -0.8f : 0.5f;
+            if (juce::String (module.section) == "out")
+                block.values["outputLimiter"] = 1.0f;
+            moduleGraph.blocks.push_back (block);
+
+            if (juce::String (module.section) != "out")
+            {
+                patchcraft::DspBlock output;
+                output.id = "test_output";
+                output.section = "out";
+                output.type = "limiter";
+                output.name = "Test Output";
+                output.targetId = "outputCeilingDb";
+                output.enabled = true;
+                output.values["outputLimiter"] = 1.0f;
+                output.values["outputCeilingDb"] = -0.8f;
+                moduleGraph.blocks.push_back (output);
+            }
+
+            for (const auto& issue : moduleGraph.validateTypedGraph ("sample"))
+            {
+                require (issue.severity != "error", ("premium DSP module graph validation error: " + issue.toString()).toRawUTF8());
+                if (issue.ownerId == module.id)
+                    require (! issue.message.containsIgnoreCase ("generic Player routing"),
+                             ("premium DSP module is not first-class in graph validation: " + issue.toString()).toRawUTF8());
+            }
+        }
+
         pass ("expanded canvas module templates");
     }
 }
@@ -3022,6 +3290,7 @@ int main()
         smokeArpeggiatorRuntime();
         smokeMidiPlaygroundRuntime();
         smokeMidiPlaygroundDrumMachineRuntime();
+        smokeMidiPlaygroundSampleOverlayRuntime();
         smokeMidiPlaygroundChordPresetRuntime();
         smokeMidiPlaygroundTransformers();
         smokeMidiPlaygroundTimingTransformers();

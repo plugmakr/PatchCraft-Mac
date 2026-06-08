@@ -1,0 +1,60 @@
+{
+  "blocks": [
+    {
+      "id": "source",
+      "section": "source",
+      "type": "liveInput",
+      "name": "EchoCraft Source",
+      "enabled": true,
+      "targetId": "volume",
+      "values": {
+        "oscType": 0.0,
+        "osc2Type": 0.0,
+        "oscBlend": 0.0,
+        "subBlend": 0.0,
+        "noiseBlend": 0.0,
+        "sampleStart": 0.0,
+        "sampleLength": 1.0
+      }
+    },
+    {
+      "id": "shape",
+      "section": "shape",
+      "type": "filter",
+      "name": "Tone Shape",
+      "enabled": true,
+      "targetId": "filterCutoff",
+      "values": {
+        "filterCutoff": 4200,
+        "filterResonance": 0.08,
+        "attack": 0.01,
+        "decay": 0.22,
+        "sustain": 0.42,
+        "release": 0.45
+      }
+    },
+    {
+      "id": "fx",
+      "section": "fx",
+      "type": "fxChain",
+      "name": "Factory FX",
+      "enabled": true,
+      "targetId": "delayMix",
+      "values": {
+        "drive": 0.02,
+        "mix": 0.35,
+        "delayTime": 0.125,
+        "delayFeedback": 0.16,
+        "delayMix": 0.08,
+        "reverbMix": 0.04,
+        "tapeMix": 0.0,
+        "chorusMix": 0.0,
+        "multiTapMix": 0.0
+      }
+    }
+  ],
+  "edges": [],
+  "macros": [],
+  "modulation": [],
+  "automation": []
+}

@@ -108,7 +108,10 @@ namespace patchcraft
         void snapSelectedToGrid();
         void setSelectedVisibility (bool visible);
         void setSelectedLocked (bool locked);
+        void scaleSelectedElements (float scaleX, float scaleY);
+        void setSelectedLabelVisibility (bool visible, const juce::String& defaultPosition = "bottom");
         void detachLabelsFromSelectedControls();
+        void createPscriptHandlerForSelectedControl();
         void copySelectedDesignStyle();
         void pasteDesignStyle();
         void applyDesignStylePreset (const juce::String& presetId);
@@ -176,6 +179,7 @@ namespace patchcraft
         void liveValueChanged (const juce::String&, float) override;
         void publishToPluginClubWithArtifactChoice (int artifactChoice);
         void refreshTooltipWindowState();
+        void focusPscriptPanel();
 
         double lastLiveValueUiRepaintMs = 0.0;
 

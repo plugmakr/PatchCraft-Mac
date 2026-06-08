@@ -1,74 +1,60 @@
 {
   "blocks": [
     {
-      "id": "source_sampler",
+      "id": "source",
       "section": "source",
-      "type": "sampler",
-      "name": "Mapped Sample Source",
+      "type": "sample",
+      "name": "Dream Keys Sampler Source",
       "enabled": true,
-      "targetId": "sampleStart",
-      "values": {}
+      "targetId": "volume",
+      "values": {
+        "oscType": 0.0,
+        "osc2Type": 0.0,
+        "oscBlend": 0.0,
+        "subBlend": 0.0,
+        "noiseBlend": 0.0,
+        "sampleStart": 0.0,
+        "sampleLength": 1.0
+      }
     },
     {
-      "id": "filter_sampler",
-      "section": "filter",
+      "id": "shape",
+      "section": "shape",
       "type": "filter",
-      "name": "Sampler Tone",
+      "name": "Tone Shape",
       "enabled": true,
       "targetId": "filterCutoff",
-      "values": {}
+      "values": {
+        "filterCutoff": 2400,
+        "filterResonance": 0.08,
+        "attack": 0.01,
+        "decay": 0.12,
+        "sustain": 0.38,
+        "release": 0.4
+      }
     },
     {
-      "id": "amp_sampler",
-      "section": "amp",
-      "type": "amp",
-      "name": "Sample Envelope",
-      "enabled": true,
-      "targetId": "attack",
-      "values": {}
-    },
-    {
-      "id": "mod_performance",
-      "section": "mod",
-      "type": "macro",
-      "name": "Performance Motion",
-      "enabled": true,
-      "targetId": "sampleGlitch",
-      "values": {}
-    },
-    {
-      "id": "fx_delay",
+      "id": "fx",
       "section": "fx",
-      "type": "delay",
-      "name": "Tempo Delay",
+      "type": "fxChain",
+      "name": "Factory FX",
       "enabled": true,
       "targetId": "delayMix",
-      "values": {}
-    },
-    {
-      "id": "fx_reverb",
-      "section": "fx",
-      "type": "reverb",
-      "name": "Room / Space",
-      "enabled": true,
-      "targetId": "reverbMix",
-      "values": {}
-    },
-    {
-      "id": "out_safe",
-      "section": "out",
-      "type": "output",
-      "name": "Safe Output",
-      "enabled": true,
-      "targetId": "outputGainDb",
-      "values": {}
+      "values": {
+        "drive": 0.0,
+        "mix": 1.0,
+        "delayTime": 0.125,
+        "delayFeedback": 0.0,
+        "delayMix": 0.0,
+        "reverbMix": 0.04,
+        "tapeMix": 0.0,
+        "chorusMix": 0.0,
+        "multiTapMix": 0.0
+      }
     }
   ],
   "edges": [],
   "macros": [],
   "modulation": [],
-  "automation": [],
-  "typedNodes": [],
-  "userConfigured": true,
-  "quickEditControls": {}
+  "automation": []
 }

@@ -135,6 +135,7 @@ namespace patchcraft
             std::array<float, kMaxDrumPatterns * kMaxDrumTracks * kMaxDrumSteps> drumDivisions {};
             std::array<float, kMaxDrumPatterns * kMaxDrumTracks * kMaxDrumSteps> drumFxTargets {};
             std::array<float, kMaxDrumPatterns * kMaxDrumTracks * kMaxDrumSteps> drumFxAmounts {};
+            std::array<float, kMaxDrumPatterns * kMaxDrumTracks * kMaxDrumSteps> drumSampleSlices {};
             std::array<float, kMaxDrumTracks> drumTrackFxTargets {};
             std::array<float, kMaxDrumTracks> drumTrackFxAmounts {};
         };
@@ -195,14 +196,15 @@ namespace patchcraft
         void buildBankStepNotes (int bank, int step, std::array<int, kMaxChordNotes>& notes, int& count);
         void applySampleControl (IInstrumentEngine&, int step) const;
         void applyBankSampleControl (IInstrumentEngine&, int bank, int step) const;
+        void applyDrumSampleControl (IInstrumentEngine&, size_t index) const;
         void applyBankStepFx (IInstrumentEngine&, int bank, int step, float velocity);
         void triggerPendingNotes (IInstrumentEngine&, int step, double stepPhase);
         void stopActive (IInstrumentEngine&);
         IInstrumentEngine& engineForBank (IInstrumentEngine&, IInstrumentEngine* sampleEngine, int bank) const;
         void stopActiveBank (IInstrumentEngine&, int bank, IInstrumentEngine* sampleEngine = nullptr);
         void stopActiveBanks (IInstrumentEngine&, IInstrumentEngine* sampleEngine = nullptr);
-        void stopActiveDrums (IInstrumentEngine&);
-        void processDrumMachine (IInstrumentEngine&, const RenderContext&);
+        void stopActiveDrums (IInstrumentEngine&, IInstrumentEngine* sampleEngine = nullptr);
+        void processDrumMachine (IInstrumentEngine&, const RenderContext&, IInstrumentEngine* sampleEngine = nullptr);
         void processMultiLane (IInstrumentEngine&, const RenderContext&, IInstrumentEngine* sampleEngine = nullptr);
         void triggerDrumFx (IInstrumentEngine&, int target, float amount, float velocity);
         void applyDrumFxState (IInstrumentEngine&);

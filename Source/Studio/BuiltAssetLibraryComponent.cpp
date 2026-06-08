@@ -237,7 +237,7 @@ namespace patchcraft
         {
             templatesButton.setButtonText ("Title Bars");
             assetsButton.setButtonText ("Images");
-            soundsButton.setButtonText ("Icons");
+            soundsButton.setButtonText ("Samples");
             const int modeWidth = modes.getWidth() / 3;
             templatesButton.setBounds (modes.removeFromLeft (modeWidth).reduced (2));
             assetsButton.setBounds (modes.removeFromLeft (modeWidth).reduced (2));
@@ -286,7 +286,9 @@ namespace patchcraft
         addButton.setButtonText (brandingMode ? "Apply" : (mode == LibraryMode::Sounds ? "To Mapper" : "Add"));
         autoAuditionToggle.setVisible (! brandingMode && mode == LibraryMode::Sounds);
 
-        if (brandingMode)
+        if (brandingMode && mode == LibraryMode::Sounds)
+            scanSounds();
+        else if (brandingMode)
             scanBrandingAssets();
         else if (mode == LibraryMode::Backgrounds)
             scanBackgrounds();

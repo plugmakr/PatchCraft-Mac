@@ -48,12 +48,12 @@ namespace patchcraft
     {
        #if PATCHCRAFT_PLAYER_FX
         return "This is an instrument pack (" + pack.manifest.instrumentName
-            + "). PatchCraft Player FX can load it for inspection and MIDI-triggered playback, "
+            + "). Player FX can load it for inspection and MIDI-triggered playback, "
               "but it will pass the host track through instead of replacing it.";
        #else
         return "This is an FX pack (" + pack.manifest.instrumentName
-            + "). Open it in PatchCraft Player FX, not PatchCraft Player.\n\n"
-              "PatchCraft Player only loads synth, sample, drum, and multi-instrument packs.";
+            + "). Open it in Player FX, not Player.\n\n"
+              "Player only loads synth, sample, drum, and multi-instrument packs.";
        #endif
     }
 
@@ -169,7 +169,7 @@ namespace patchcraft
         {
             params.push_back (std::make_unique<juce::AudioParameterFloat> (
                 juce::ParameterID { slotId (i), 1 },
-                juce::String ("PatchCraft Slot ") + juce::String (i + 1),
+                juce::String ("Instrument Control ") + juce::String (i + 1),
                 juce::NormalisableRange<float> (0.0f, 1.0f, 0.0001f),
                 0.0f));
         }
@@ -232,7 +232,7 @@ namespace patchcraft
                 .withOutput ("Aux 4", juce::AudioChannelSet::stereo(), false)
            #endif
             ),
-          apvts (*this, nullptr, "PatchCraft", createLayout())
+          apvts (*this, nullptr, "Player", createLayout())
     {
         try
         {
@@ -534,7 +534,7 @@ namespace patchcraft
             if (loaded)
                 routingEngine.processToEngine (*engine, context);
 
-            arpeggiator.process (*engine, context);
+            arpeggiator.process (*engine, context, userSampleOverlayEnabled ? &userSampleOverlay : nullptr);
             engine->process (buffer, 0, buffer.getNumSamples());
             if (userSampleOverlayEnabled)
             {
@@ -868,17 +868,33 @@ namespace patchcraft
 
     juce::File PlayerProcessor::getUserContentRoot() const
     {
-        auto key = loaded && pack.manifest.instrumentName.isNotEmpty()
-            ? pack.manifest.instrumentName + "_" + pack.manifest.creator + "_" + pack.manifest.version
-            : juce::String ("PatchCraft Demo");
+        auto brand = loaded ? pack.manifest.whiteLabelPublisher.trim() : juce::String();
+        if (brand.isEmpty() || brand.equalsIgnoreCase ("PatchCraft"))
+            brand = loaded ? pack.manifest.creator.trim() : juce::String();
+        if (brand.equalsIgnoreCase ("PatchCraft"))
+            brand.clear();
+        if (brand.isEmpty())
+            brand = loaded && pack.manifest.playerDisplayName.isNotEmpty()
+                ? pack.manifest.playerDisplayName
+                : juce::String ("Player Instruments");
+
+        auto key = loaded
+            ? (pack.manifest.playerDisplayName.isNotEmpty()
+                ? pack.manifest.playerDisplayName
+                : pack.manifest.instrumentName)
+            : juce::String ("Instrument");
+        if (loaded && pack.manifest.version.isNotEmpty())
+            key += "_" + pack.manifest.version;
+
+        brand = brand.retainCharacters ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ .").trim();
         key = key.retainCharacters ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ .").trim();
-        if (key.isEmpty())
-            key = "Instrument";
+        if (brand.isEmpty()) brand = "Player Instruments";
+        if (key.isEmpty()) key = "Instrument";
 
         return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-            .getChildFile ("PatchCraft")
+            .getChildFile (brand)
             .getChildFile ("Player")
-            .getChildFile ("User Imports")
+            .getChildFile ("User Content")
             .getChildFile (key);
     }
 
@@ -909,6 +925,8 @@ namespace patchcraft
                 object->setProperty ("noteCount", item.noteCount);
                 object->setProperty ("bpm", item.bpm);
                 object->setProperty ("tuneSemitones", item.tuneSemitones);
+                object->setProperty ("midiMode", item.midiMode);
+                object->setProperty ("midiVelocityAmount", (double) item.midiVelocityAmount);
                 items.add (juce::var (object));
             }
         }
@@ -953,6 +971,11 @@ namespace patchcraft
                         item.noteCount = juce::jmax (0, (int) object->getProperty ("noteCount"));
                         item.bpm = (double) object->getProperty ("bpm");
                         item.tuneSemitones = (int) object->getProperty ("tuneSemitones");
+                        if (object->hasProperty ("midiMode"))
+                            item.midiMode = object->getProperty ("midiMode").toString();
+                        if (object->hasProperty ("midiVelocityAmount"))
+                            item.midiVelocityAmount = juce::jlimit (0.0f, 1.0f,
+                                (float) (double) object->getProperty ("midiVelocityAmount"));
                         if (item.id.isNotEmpty() && item.kind.isNotEmpty() && juce::File (item.filePath).existsAsFile())
                             restored.push_back (std::move (item));
                     }
@@ -1007,6 +1030,143 @@ namespace patchcraft
         std::stable_sort (notes.begin(), notes.end(),
             [] (const NoteEvent& a, const NoteEvent& b) { return a.time < b.time; });
 
+        const bool targetZoneMidi = item.role.equalsIgnoreCase ("zoneMidi")
+                                 && item.rootNote >= 0
+                                 && item.rootNote <= 127;
+        if (targetZoneMidi)
+        {
+            auto safeBlockSuffix = item.id.retainCharacters ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-");
+            if (safeBlockSuffix.isEmpty())
+                safeBlockSuffix = juce::String (item.rootNote);
+            const auto targetBlockId = item.id.startsWithIgnoreCase ("authored_zone_midi_")
+                ? item.id
+                : "user_midi_zone_player_" + safeBlockSuffix;
+            DspBlock* block = nullptr;
+            for (auto& candidate : pack.dspGraph.blocks)
+            {
+                if (candidate.id == targetBlockId)
+                {
+                    block = &candidate;
+                    break;
+                }
+            }
+
+            if (block == nullptr)
+            {
+                DspBlock created;
+                created.id = targetBlockId;
+                created.section = "mod";
+                created.type = "drumMachine";
+                created.name = "Runtime Sample MIDI Player";
+                created.targetId = "sample";
+                created.enabled = true;
+                pack.dspGraph.blocks.push_back (std::move (created));
+                block = &pack.dspGraph.blocks.back();
+            }
+
+            static constexpr int kImportPattern = 0;
+            static constexpr int kImportSteps = 16;
+            static constexpr int kMaxTracks = 8;
+            const auto mode = (item.midiMode.isNotEmpty() ? item.midiMode : juce::String ("trigger")).trim().toLowerCase();
+            const bool pitchMode = mode == "pitch";
+            const bool sliceMode = mode == "slice";
+            std::vector<int> trackNotes;
+            if (pitchMode || sliceMode)
+            {
+                for (const auto& note : notes)
+                {
+                    const int mapped = juce::jlimit (0, 127, note.note + item.tuneSemitones);
+                    if (std::find (trackNotes.begin(), trackNotes.end(), mapped) == trackNotes.end())
+                    {
+                        trackNotes.push_back (mapped);
+                        if ((int) trackNotes.size() >= kMaxTracks)
+                            break;
+                    }
+                }
+            }
+            if (trackNotes.empty())
+                trackNotes.push_back (juce::jlimit (0, 127, item.rootNote + item.tuneSemitones));
+
+            block->enabled = true;
+            block->type = "drumMachine";
+            block->name = item.name.isNotEmpty() ? "Sample MIDI: " + item.name : "Runtime Sample MIDI Player";
+            block->targetId = "sample";
+            block->values["rate"] = 1.0f;
+            block->values["sync"] = 1.0f;
+            block->values["dmTracks"] = (float) trackNotes.size();
+            block->values["dmSteps"] = (float) kImportSteps;
+            block->values["dmPattern"] = (float) kImportPattern;
+            block->values["dmTransport"] = 1.0f;
+            block->values["dmTriggerPadSlots"] = 0.0f;
+            block->values["dmSongMode"] = 0.0f;
+            block->values["dmSwing"] = 0.0f;
+            block->values["dmProbability"] = 1.0f;
+            if (sliceMode)
+            {
+                block->values["sampleSliceCount"] = (float) juce::jlimit (1, kMaxTracks, (int) trackNotes.size());
+                block->values["sampleStart"] = 0.0f;
+                block->values["sampleLength"] = 1.0f;
+                block->values["samplePitch"] = 0.0f;
+            }
+            block->metadata["midiMode"] = mode;
+            block->metadata["midiSource"] = item.filePath;
+
+            for (int track = 0; track < kMaxTracks; ++track)
+            {
+                const int mappedNote = track < (int) trackNotes.size()
+                    ? trackNotes[(size_t) track]
+                    : juce::jlimit (0, 127, item.rootNote + item.tuneSemitones);
+                const int playbackNote = sliceMode
+                    ? juce::jlimit (0, 127, item.rootNote + item.tuneSemitones)
+                    : mappedNote;
+                block->values["dmTrack" + juce::String (track) + "Note"] = (float) playbackNote;
+                for (int step = 0; step < kImportSteps; ++step)
+                {
+                    const auto prefix = "dmP" + juce::String (kImportPattern)
+                                      + "T" + juce::String (track)
+                                      + "S" + juce::String (step);
+                    block->values[prefix + "On"] = 0.0f;
+                    block->values[prefix + "Vel"] = 0.78f;
+                    block->values[prefix + "Gate"] = 0.34f;
+                    block->values[prefix + "Prob"] = 1.0f;
+                    block->values[prefix + "Div"] = 1.0f;
+                    block->values[prefix + "SampleSlice"] = -1.0f;
+                }
+            }
+
+            const double firstTime = notes.front().time;
+            const double lastTime = juce::jmax (firstTime + 1.0, notes.back().time);
+            const double duration = juce::jmax (1.0, lastTime - firstTime);
+            for (const auto& note : notes)
+            {
+                const int eventNote = (pitchMode || sliceMode)
+                    ? juce::jlimit (0, 127, note.note + item.tuneSemitones)
+                    : trackNotes.front();
+                auto trackIt = std::find (trackNotes.begin(), trackNotes.end(), eventNote);
+                if (trackIt == trackNotes.end())
+                    continue;
+                const int track = (int) std::distance (trackNotes.begin(), trackIt);
+                const int step = juce::jlimit (0, kImportSteps - 1,
+                    juce::roundToInt (((note.time - firstTime) / duration) * (double) (kImportSteps - 1)));
+                const auto prefix = "dmP" + juce::String (kImportPattern)
+                                  + "T" + juce::String (track)
+                                  + "S" + juce::String (step);
+                block->values[prefix + "On"] = 1.0f;
+                block->values[prefix + "Vel"] = juce::jlimit (0.05f, 1.0f,
+                    note.velocity * juce::jlimit (0.0f, 1.0f, item.midiVelocityAmount));
+                block->values[prefix + "Gate"] = 0.34f;
+                block->values[prefix + "Prob"] = 1.0f;
+                if (sliceMode)
+                {
+                    block->values[prefix + "SampleSlice"] = (float) track;
+                }
+            }
+
+            pack.dspGraph.userConfigured = true;
+            bindRoutingFromPack();
+            return true;
+        }
+
         DspBlock* drumBlock = nullptr;
         for (auto& candidate : pack.dspGraph.blocks)
         {
@@ -1048,6 +1208,7 @@ namespace patchcraft
             drumBlock->values["dmSteps"] = (float) kImportSteps;
             drumBlock->values["dmPattern"] = (float) kImportPattern;
             drumBlock->values["dmTransport"] = 1.0f;
+            drumBlock->values["dmTriggerPadSlots"] = 0.0f;
             drumBlock->values["dmSongMode"] = 0.0f;
             drumBlock->values["dmSwing"] = 0.08f;
             drumBlock->values["dmProbability"] = 1.0f;
@@ -1114,7 +1275,7 @@ namespace patchcraft
             created.id = "user_midi_playground";
             created.section = "mod";
             created.type = "arpStepSequencer";
-            created.name = "User MIDI Playground";
+            created.name = "User MIDI Pattern";
             created.enabled = true;
             pack.dspGraph.blocks.push_back (std::move (created));
             block = &pack.dspGraph.blocks.back();
@@ -1122,7 +1283,7 @@ namespace patchcraft
 
         block->enabled = true;
         block->type = "arpStepSequencer";
-        block->name = item.name.isNotEmpty() ? "User MIDI: " + item.name : "User MIDI Playground";
+        block->name = item.name.isNotEmpty() ? "User MIDI: " + item.name : "User MIDI Pattern";
         block->values["arpRate"] = 1.0f;
         block->values["arpGate"] = 0.72f;
         block->values["arpPattern"] = 0.0f;
@@ -1154,6 +1315,46 @@ namespace patchcraft
         pack.dspGraph.userConfigured = true;
         bindRoutingFromPack();
         return true;
+    }
+
+    void PlayerProcessor::applyAuthoredZoneMidiToGraphLocked()
+    {
+        pack.dspGraph.blocks.erase (std::remove_if (pack.dspGraph.blocks.begin(), pack.dspGraph.blocks.end(),
+            [] (const DspBlock& block)
+            {
+                return block.id.startsWithIgnoreCase ("authored_zone_midi_");
+            }), pack.dspGraph.blocks.end());
+
+        const auto projectBase = loadedPath.isDirectory() ? loadedPath : juce::File();
+        const auto& zones = pack.sampleMap.getZones();
+        for (int zoneIndex = 0; zoneIndex < (int) zones.size(); ++zoneIndex)
+        {
+            const auto& zone = zones[(size_t) zoneIndex];
+            if (zone.midiPath.isEmpty())
+                continue;
+
+            auto midiFile = SampleMap::resolveSamplePath (projectBase, zone.midiPath);
+            if (! midiFile.existsAsFile())
+                continue;
+
+            UserContentItem item;
+            item.id = "authored_zone_midi_" + juce::String (zoneIndex);
+            item.kind = "midi";
+            item.name = midiFile.getFileNameWithoutExtension();
+            item.filePath = midiFile.getFullPathName();
+            item.role = "zoneMidi";
+            item.summary = "Authored " + zone.midiPlaybackMode + " MIDI drives "
+                         + juce::MidiMessage::getMidiNoteName (zone.rootNote, true, true, 4);
+            item.rootNote = juce::jlimit (0, 127, zone.rootNote);
+            item.lowNote = item.rootNote;
+            item.highNote = item.rootNote;
+            item.padIndex = zone.padIndex;
+            item.bpm = zone.bpm;
+            item.tuneSemitones = juce::jlimit (-48, 48, zone.midiTranspose);
+            item.midiMode = zone.midiPlaybackMode.isNotEmpty() ? zone.midiPlaybackMode : juce::String ("trigger");
+            item.midiVelocityAmount = juce::jlimit (0.0f, 1.0f, zone.midiVelocityAmount);
+            applyMidiContentToGraphLocked (item);
+        }
     }
 
     void PlayerProcessor::rebuildRuntimeUserContentLocked (bool reloadEngine)
@@ -1205,8 +1406,10 @@ namespace patchcraft
                 engine->loadFromPack (loadedPath, pack.sampleMap);
         }
 
+        applyAuthoredZoneMidiToGraphLocked();
+
         for (const auto& item : snapshot)
-            if (item.kind == "midi" && item.role == "playground")
+            if (item.kind == "midi" && (item.role == "playground" || item.role == "zoneMidi"))
                 applyMidiContentToGraphLocked (item);
 
         arpeggiator.bind (pack.dspGraph);
@@ -1216,8 +1419,12 @@ namespace patchcraft
 
     bool PlayerProcessor::importUserContentFiles (const juce::StringArray& files,
                                                   const juce::String& sampleMappingMode,
-                                                  juce::String& report)
+                                                  juce::String& report,
+                                                  int targetNote,
+                                                  int targetPadIndex)
     {
+        targetNote = juce::jlimit (-1, 127, targetNote);
+        targetPadIndex = juce::jlimit (-1, 63, targetPadIndex);
         const auto root = getUserContentRoot();
         const auto sampleDir = root.getChildFile ("Samples");
         const auto midiDir = root.getChildFile ("MIDI");
@@ -1230,6 +1437,8 @@ namespace patchcraft
         int skippedUnsupported = 0;
         int failedCopies = 0;
         const bool keyboardMode = sampleMappingMode.equalsIgnoreCase ("keyboard");
+        const bool hasTargetNote = targetNote >= 0;
+        const bool hasTargetPad = targetPadIndex >= 0;
         int nextPadIndex = 0;
         {
             const juce::ScopedLock lock (userContentLock);
@@ -1278,18 +1487,33 @@ namespace patchcraft
             item.kind = isSample ? "sample" : "midi";
             item.name = source.getFileNameWithoutExtension();
             item.filePath = destination.getFullPathName();
-            item.role = isSample ? (keyboardMode ? "keyboard" : "pads") : "playground";
+            item.role = isSample
+                ? (keyboardMode ? "keyboard" : (hasTargetPad ? "pads" : (hasTargetNote ? "zone" : "pads")))
+                : (hasTargetNote ? "zoneMidi" : "playground");
             item.bpm = getHostBpm();
 
             if (isSample)
             {
-                if (keyboardMode)
+                if (hasTargetNote && ! keyboardMode)
+                {
+                    item.padIndex = hasTargetPad ? juce::jlimit (0, 63, targetPadIndex + importedSamples) : -1;
+                    item.rootNote = hasTargetPad
+                        ? juce::jlimit (0, 127, targetNote + importedSamples)
+                        : targetNote;
+                    item.lowNote = item.rootNote;
+                    item.highNote = item.rootNote;
+                    item.summary = hasTargetPad
+                        ? "Pad " + juce::String (item.padIndex + 1)
+                            + " / " + juce::MidiMessage::getMidiNoteName (item.rootNote, true, true, 4)
+                        : "Zone " + juce::MidiMessage::getMidiNoteName (targetNote, true, true, 4);
+                }
+                else if (keyboardMode)
                 {
                     bool usedNamePitch = false;
                     bool usedAudioPitch = false;
                     auto zone = SampleMap::inferZoneFromFileWithAudio (destination, 60, 0, 127,
                                                                         &usedNamePitch, &usedAudioPitch, nullptr);
-                    item.rootNote = zone.rootNote;
+                    item.rootNote = hasTargetNote ? targetNote : zone.rootNote;
                     item.lowNote = 0;
                     item.highNote = 127;
                     item.summary = "Keyboard map"
@@ -1297,8 +1521,10 @@ namespace patchcraft
                 }
                 else
                 {
-                    item.padIndex = nextPadIndex + importedSamples;
+                    item.padIndex = hasTargetPad ? targetPadIndex : nextPadIndex + importedSamples;
                     item.rootNote = juce::jlimit (0, 127, 36 + item.padIndex);
+                    if (hasTargetNote)
+                        item.rootNote = targetNote;
                     item.lowNote = item.rootNote;
                     item.highNote = item.rootNote;
                     item.summary = "Pad " + juce::String (item.padIndex + 1)
@@ -1308,6 +1534,11 @@ namespace patchcraft
             }
             else
             {
+                item.rootNote = hasTargetNote ? targetNote : 60;
+                item.lowNote = item.rootNote;
+                item.highNote = item.rootNote;
+                item.padIndex = hasTargetPad ? targetPadIndex : -1;
+                item.midiMode = hasTargetPad ? "drum" : "trigger";
                 juce::FileInputStream input (destination);
                 juce::MidiFile midiFile;
                 if (input.openedOk() && midiFile.readFrom (input))
@@ -1323,7 +1554,10 @@ namespace patchcraft
                                 ++noteCount;
                     }
                     item.noteCount = noteCount;
-                    item.summary = juce::String (noteCount) + " notes / sent to MIDI Playground";
+                    item.summary = hasTargetNote
+                        ? juce::String (noteCount) + " notes / drives "
+                            + juce::MidiMessage::getMidiNoteName (item.rootNote, true, true, 4)
+                        : juce::String (noteCount) + " notes / sent to MIDI Pattern";
                 }
                 else
                 {
@@ -1343,6 +1577,25 @@ namespace patchcraft
 
         {
             const juce::ScopedLock lock (userContentLock);
+            if (hasTargetPad || hasTargetNote)
+            {
+                userContent.erase (std::remove_if (userContent.begin(), userContent.end(),
+                    [&imported, hasTargetPad, hasTargetNote, targetPadIndex, targetNote] (const UserContentItem& existing)
+                    {
+                        if (existing.kind == "sample" && hasTargetPad && existing.role == "pads")
+                            for (const auto& item : imported)
+                                if (item.kind == "sample" && item.role == "pads" && existing.padIndex == item.padIndex)
+                                    return true;
+
+                        if (existing.kind == "midi"
+                            && existing.role == "zoneMidi"
+                            && hasTargetNote
+                            && existing.rootNote == targetNote)
+                            return true;
+
+                        return false;
+                    }), userContent.end());
+            }
             userContent.insert (userContent.end(), imported.begin(), imported.end());
         }
 
@@ -1357,7 +1610,7 @@ namespace patchcraft
                + " and " + juce::String (importedMidi) + " MIDI file"
                + (importedMidi == 1 ? "" : "s") + ".";
         if (importedMidi > 0)
-            report += " MIDI pattern is active.";
+            report += hasTargetNote ? " MIDI now drives the target sample zone." : " MIDI pattern is active.";
         if (skippedUnsupported > 0)
             report += " Skipped " + juce::String (skippedUnsupported) + " unsupported item"
                 + (skippedUnsupported == 1 ? "" : "s") + ".";
@@ -1454,6 +1707,7 @@ namespace patchcraft
                 userSampleOverlay.allNotesOff();
                 heldNotes.fill (false);
                 sustainPedalDown = false;
+                applyAuthoredZoneMidiToGraphLocked();
             }
             if (libraryScanner != nullptr)
             {

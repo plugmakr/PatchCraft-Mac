@@ -3,8 +3,15 @@
                                            juce::Point<int> p) const
     {
         const bool hasLocalPreviewValue = el.parameterId.isEmpty()
-                                       && (el.type == ElementType::Knob || el.type == ElementType::Slider);
+                                       && (el.type == ElementType::Knob || el.type == ElementType::Slider
+                                           || el.type == ElementType::PitchWheel || el.type == ElementType::ModWheel);
         if (el.parameterId.isEmpty() && ! hasLocalPreviewValue) return false;
+        if (el.labelPosition == "top")
+            r = r.withTrimmedTop (juce::jmax (20, r.getHeight() / 5));
+        else if (el.labelPosition == "bottom")
+            r = r.withTrimmedBottom (juce::roundToInt ((float) r.getHeight() * 0.30f));
+        const int padding = juce::roundToInt (el.contentPadding);
+        r = padding >= 0 ? r.reduced (padding) : r.expanded (-padding);
         if (el.type == ElementType::Knob || el.type == ElementType::MacroControl)
         {
             // Use a circle inside r (matching how the knob is drawn).
@@ -17,7 +24,7 @@
             const float dx = p.x - cx, dy = p.y - cy;
             return dx * dx + dy * dy <= rad * rad;
         }
-        if (el.type == ElementType::Slider)
+        if (el.type == ElementType::Slider || el.type == ElementType::PitchWheel || el.type == ElementType::ModWheel)
             return r.contains (p);
         return false;
     }
@@ -339,29 +346,33 @@
             }
         }
 
-        // 1. BR-resize on the selection group first, then on a single selected element.
-        if (multiSelectionResizeHandleContains (e.getPosition()))
+        // 1. Resize handles on the selection group first, then on a single selected element.
+        juce::Rectangle<int> multiBounds;
+        if (getMultiSelectionScreenBounds (multiBounds))
         {
-            dragStart = e.getPosition();
-            dragLayoutBefore = owner.getProject().getLayout().getAll();
-            dragActionName = "Scale selection";
-            mode = DragMode::ResizeBR;
-            return;
+            activeResizeHandle = resizeHandleAt (e.getPosition(), multiBounds);
+            if (activeResizeHandle != ResizeHandle::None)
+            {
+                dragStart = e.getPosition();
+                dragLayoutBefore = owner.getProject().getLayout().getAll();
+                dragActionName = "Scale selection";
+                mode = DragMode::Resize;
+                return;
+            }
         }
 
         auto* sel = owner.getProject().getLayout().find (owner.getSelectedElementId());
         if (sel != nullptr && ! sel->locked)
         {
             auto r = elementScreenRect (*sel);
-            const int hs = 8;
-            if (juce::Rectangle<int> (r.getRight() - hs, r.getBottom() - hs, hs * 2, hs * 2)
-                .contains (e.getPosition()))
+            activeResizeHandle = resizeHandleAt (e.getPosition(), r);
+            if (activeResizeHandle != ResizeHandle::None)
             {
                 dragStart    = e.getPosition();
                 dragOriginal = *sel;
                 dragLayoutBefore = owner.getProject().getLayout().getAll();
                 dragActionName = owner.getSelectedElementIds().size() > 1 ? "Scale selection" : "Resize element";
-                mode = DragMode::ResizeBR;
+                mode = DragMode::Resize;
                 return;
             }
 
@@ -694,9 +705,10 @@
     {
         if (mode == DragMode::None) return;
 
-        auto snap = [this] (int v) -> int
+        const bool disableSnap = e.mods.isCtrlDown() || e.mods.isCommandDown();
+        auto snap = [this, disableSnap] (int v) -> int
         {
-            if (! snapEnabled || snapGrid <= 1) return v;
+            if (disableSnap || ! snapEnabled || snapGrid <= 1) return v;
             return juce::roundToInt ((float) v / snapGrid) * snapGrid;
         };
 
@@ -767,7 +779,7 @@
         auto* el = owner.getProject().getLayout().find (owner.getSelectedElementId());
         juce::Rectangle<int> dirtyBefore;
         bool hasDirtyBefore = false;
-        if (mode == DragMode::Move || mode == DragMode::ResizeBR)
+        if (mode == DragMode::Move || mode == DragMode::Resize)
         {
             hasDirtyBefore = getMultiSelectionScreenBounds (dirtyBefore);
             if (! hasDirtyBefore && el != nullptr)
@@ -793,7 +805,7 @@
             layoutChangedDuringDrag = true;
             owner.getProject().markDirty();
         }
-        else if (mode == DragMode::ResizeBR)
+        else if (mode == DragMode::Resize)
         {
             if (el == nullptr) return;
             const auto selectedIds = owner.getSelectedElementIds();
@@ -814,10 +826,28 @@
 
                 if (hasBounds && originalBounds.getWidth() > 0 && originalBounds.getHeight() > 0)
                 {
-                    const float scaleX = juce::jmax (0.05f, (float) juce::jmax (8, originalBounds.getWidth() + (int) deltaCanvas.x)
-                                                           / (float) originalBounds.getWidth());
-                    const float scaleY = juce::jmax (0.05f, (float) juce::jmax (8, originalBounds.getHeight() + (int) deltaCanvas.y)
-                                                           / (float) originalBounds.getHeight());
+                    int newLeft = originalBounds.getX();
+                    int newTop = originalBounds.getY();
+                    int newRight = originalBounds.getRight();
+                    int newBottom = originalBounds.getBottom();
+                    const int dx = (int) deltaCanvas.x;
+                    const int dy = (int) deltaCanvas.y;
+                    switch (activeResizeHandle)
+                    {
+                        case ResizeHandle::TopLeft: newLeft += dx; newTop += dy; break;
+                        case ResizeHandle::Top: newTop += dy; break;
+                        case ResizeHandle::TopRight: newRight += dx; newTop += dy; break;
+                        case ResizeHandle::Right: newRight += dx; break;
+                        case ResizeHandle::BottomRight: newRight += dx; newBottom += dy; break;
+                        case ResizeHandle::Bottom: newBottom += dy; break;
+                        case ResizeHandle::BottomLeft: newLeft += dx; newBottom += dy; break;
+                        case ResizeHandle::Left: newLeft += dx; break;
+                        default: break;
+                    }
+                    if (newRight - newLeft < 8) newRight = newLeft + 8;
+                    if (newBottom - newTop < 8) newBottom = newTop + 8;
+                    const float scaleX = juce::jmax (0.05f, (float) (newRight - newLeft) / (float) originalBounds.getWidth());
+                    const float scaleY = juce::jmax (0.05f, (float) (newBottom - newTop) / (float) originalBounds.getHeight());
 
                     for (const auto& original : dragLayoutBefore)
                     {
@@ -825,9 +855,9 @@
                             continue;
                         if (auto* selected = owner.getProject().getLayout().find (original.id))
                         {
-                            selected->x = snap (originalBounds.getX()
+                            selected->x = snap (newLeft
                                 + juce::roundToInt ((float) (original.x - originalBounds.getX()) * scaleX));
-                            selected->y = snap (originalBounds.getY()
+                            selected->y = snap (newTop
                                 + juce::roundToInt ((float) (original.y - originalBounds.getY()) * scaleY));
                             selected->width = juce::jmax (8, snap (juce::roundToInt ((float) original.width * scaleX)));
                             selected->height = juce::jmax (8, snap (juce::roundToInt ((float) original.height * scaleY)));
@@ -838,8 +868,30 @@
             }
             else
             {
-                el->width  = juce::jmax (8, snap (dragOriginal.width  + (int) deltaCanvas.x));
-                el->height = juce::jmax (8, snap (dragOriginal.height + (int) deltaCanvas.y));
+                int newX = dragOriginal.x;
+                int newY = dragOriginal.y;
+                int newW = dragOriginal.width;
+                int newH = dragOriginal.height;
+                const int dx = (int) deltaCanvas.x;
+                const int dy = (int) deltaCanvas.y;
+                switch (activeResizeHandle)
+                {
+                    case ResizeHandle::TopLeft: newX += dx; newY += dy; newW -= dx; newH -= dy; break;
+                    case ResizeHandle::Top: newY += dy; newH -= dy; break;
+                    case ResizeHandle::TopRight: newY += dy; newW += dx; newH -= dy; break;
+                    case ResizeHandle::Right: newW += dx; break;
+                    case ResizeHandle::BottomRight: newW += dx; newH += dy; break;
+                    case ResizeHandle::Bottom: newH += dy; break;
+                    case ResizeHandle::BottomLeft: newX += dx; newW -= dx; newH += dy; break;
+                    case ResizeHandle::Left: newX += dx; newW -= dx; break;
+                    default: break;
+                }
+                if (newW < 8) { newX -= (8 - newW); newW = 8; }
+                if (newH < 8) { newY -= (8 - newH); newH = 8; }
+                el->x = snap (newX);
+                el->y = snap (newY);
+                el->width  = juce::jmax (8, snap (newW));
+                el->height = juce::jmax (8, snap (newH));
                 owner.propagateLinkedElementChange (el->id);
             }
             layoutChangedDuringDrag = true;
@@ -890,7 +942,7 @@
         const bool shouldNotify = layoutChangedDuringDrag;
         const bool shouldCommitLayoutUndo = layoutChangedDuringDrag
                                          && ! dragLayoutBefore.empty()
-                                         && (mode == DragMode::Move || mode == DragMode::ResizeBR);
+                                         && (mode == DragMode::Move || mode == DragMode::Resize);
         const auto afterLayout = shouldCommitLayoutUndo
             ? owner.getProject().getLayout().getAll()
             : std::vector<LayoutElement>();
@@ -911,6 +963,7 @@
         multiDragOrigins.clear();
         dragLayoutBefore.clear();
         dragActionName.clear();
+        activeResizeHandle = ResizeHandle::None;
         layoutChangedDuringDrag = false;
         setMouseCursor (juce::MouseCursor::NormalCursor);
         if (shouldCommitLayoutUndo)
@@ -991,21 +1044,23 @@
         }
 
         // BR-corner resize cursor on selected group or selected element
-        if (multiSelectionResizeHandleContains (e.getPosition()))
+        juce::Rectangle<int> multiBounds;
+        if (getMultiSelectionScreenBounds (multiBounds))
         {
-            setMouseCursor (juce::MouseCursor::BottomRightCornerResizeCursor);
-            return;
+            if (resizeHandleAt (e.getPosition(), multiBounds) != ResizeHandle::None)
+            {
+                setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+                return;
+            }
         }
 
         auto* sel = owner.getProject().getLayout().find (owner.getSelectedElementId());
         if (sel != nullptr && ! sel->locked)
         {
             auto r = elementScreenRect (*sel);
-            const int hs = 8;
-            if (juce::Rectangle<int> (r.getRight() - hs, r.getBottom() - hs, hs * 2, hs * 2)
-                .contains (e.getPosition()))
+            if (resizeHandleAt (e.getPosition(), r) != ResizeHandle::None)
             {
-                setMouseCursor (juce::MouseCursor::BottomRightCornerResizeCursor);
+                setMouseCursor (juce::MouseCursor::DraggingHandCursor);
                 return;
             }
         }
@@ -1123,6 +1178,63 @@
     // -------------------------------------------------------------------------
     bool CanvasEditor::keyPressed (const juce::KeyPress& key)
     {
+        if (key.isKeyCode (juce::KeyPress::tabKey))
+        {
+            struct Candidate
+            {
+                juce::String id;
+                int x = 0;
+                int y = 0;
+                int row = 0;
+            };
+
+            std::vector<Candidate> candidates;
+            for (const auto& element : owner.getProject().getLayout().getAll())
+            {
+                if (! element.visible || element.locked || element.id == "background")
+                    continue;
+                if (! isElementOnCurrentTab (element))
+                    continue;
+
+                Candidate candidate;
+                candidate.id = element.id;
+                candidate.x = element.x;
+                candidate.y = element.y;
+                candidate.row = juce::roundToInt ((float) element.y / 24.0f);
+                candidates.push_back (candidate);
+            }
+
+            if (candidates.empty())
+                return false;
+
+            std::sort (candidates.begin(), candidates.end(), [] (const Candidate& a, const Candidate& b)
+            {
+                if (a.row != b.row) return a.row < b.row;
+                if (a.y != b.y) return a.y < b.y;
+                if (a.x != b.x) return a.x < b.x;
+                return a.id < b.id;
+            });
+
+            int index = -1;
+            for (int i = 0; i < (int) candidates.size(); ++i)
+                if (candidates[(size_t) i].id == owner.getSelectedElementId())
+                {
+                    index = i;
+                    break;
+                }
+
+            if (index < 0)
+                index = key.getModifiers().isShiftDown() ? 0 : -1;
+
+            index = key.getModifiers().isShiftDown()
+                ? (index + (int) candidates.size() - 1) % (int) candidates.size()
+                : (index + 1) % (int) candidates.size();
+
+            owner.setSelectedElementId (candidates[(size_t) index].id);
+            repaint();
+            return true;
+        }
+
         if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
         {
             const auto id = owner.getSelectedElementId();

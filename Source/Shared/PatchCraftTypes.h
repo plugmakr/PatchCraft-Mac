@@ -83,7 +83,7 @@ namespace patchcraft
         bool playerAllowMidiLearn = true;
         bool playerShowAbout = true;
         bool playerShowParameterGuidance = true;
-        bool playerShowPatchCraftBranding = true;
+        bool playerShowPatchCraftBranding = false;
         bool studioShowTutorials = true;
 
         // White-label packaging / installer metadata for client-ready Player products.
@@ -164,6 +164,7 @@ namespace patchcraft
         VisualFxLayer,
         AiVisualPrompt,
         SampleDropZone,
+        RuntimeSampleLibrary,
         PitchWheel,
         ModWheel
     };
@@ -204,6 +205,7 @@ namespace patchcraft
         float labelOffsetY = 0.0f;
         float labelSpacing = 0.0f;
         float labelSize = 0.0f;
+        float contentPadding = 0.0f;
         float controlPreviewValue = 0.5f;
         bool  audioReactive = false;
         juce::String audioReactiveMode { "level" };
@@ -377,6 +379,14 @@ namespace patchcraft
         bool oneShot        = false;    // Ignore note-off and play until sample end
         int  triggerProbability = 100;  // Percent chance a note-on will trigger this zone
         float bpm           = 120.0f;   // BPM for sample playback (120 = default)
+
+        // Runtime MIDI-player assignment. A zone can carry a MIDI loop that
+        // triggers, pitches, slices, or modulates this sample in the Player.
+        juce::String midiPath;
+        juce::String midiPlaybackMode { "trigger" }; // trigger, pitch, slice, drum, mod
+        bool midiHostSync = true;
+        int  midiTranspose = 0;
+        float midiVelocityAmount = 1.0f;
 
         juce::var toVar() const;
         static SampleZoneDef fromVar (const juce::var&);

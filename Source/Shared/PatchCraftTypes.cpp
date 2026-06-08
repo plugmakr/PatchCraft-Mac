@@ -379,7 +379,7 @@ namespace patchcraft
 
             if (m.formatVersion <= 0)   m.formatVersion = kFormatVersion;
             if (m.engine.isEmpty())     m.engine = "sample";
-            if (m.createdWith.isEmpty())m.createdWith = "PatchCraft Studio";
+            if (m.createdWith.isEmpty())m.createdWith = "Player Builder";
             if (m.licensePolicy.isEmpty()) m.licensePolicy = "online-or-offline-grace";
             if (m.salesCurrency.isEmpty()) m.salesCurrency = "USD";
             if (m.salesCtaText.isEmpty()) m.salesCtaText = "Buy Now";
@@ -429,6 +429,7 @@ namespace patchcraft
             case ElementType::VisualFxLayer: return "visualFxLayer";
             case ElementType::AiVisualPrompt: return "aiVisualPrompt";
             case ElementType::SampleDropZone: return "sampleDropZone";
+            case ElementType::RuntimeSampleLibrary: return "runtimeSampleLibrary";
             case ElementType::PitchWheel: return "pitchWheel";
             case ElementType::ModWheel: return "modWheel";
         }
@@ -470,6 +471,7 @@ namespace patchcraft
         if (s == "visualFxLayer") return ElementType::VisualFxLayer;
         if (s == "aiVisualPrompt") return ElementType::AiVisualPrompt;
         if (s == "sampleDropZone") return ElementType::SampleDropZone;
+        if (s == "runtimeSampleLibrary") return ElementType::RuntimeSampleLibrary;
         if (s == "pitchWheel") return ElementType::PitchWheel;
         if (s == "modWheel") return ElementType::ModWheel;
         return ElementType::Knob;
@@ -512,6 +514,7 @@ namespace patchcraft
             case ElementType::VisualFxLayer: return "Visual FX Layer";
             case ElementType::AiVisualPrompt: return "AI Visual Prompt";
             case ElementType::SampleDropZone: return "Sample Drop Zone";
+            case ElementType::RuntimeSampleLibrary: return "Runtime Sample Library";
             case ElementType::PitchWheel: return "Pitch Wheel";
             case ElementType::ModWheel: return "Mod Wheel";
         }
@@ -566,6 +569,7 @@ namespace patchcraft
             || type == ElementType::VisualFxLayer
             || type == ElementType::AiVisualPrompt
             || type == ElementType::SampleDropZone
+            || type == ElementType::RuntimeSampleLibrary
             || type == ElementType::PitchWheel
             || type == ElementType::ModWheel;
     }
@@ -611,6 +615,7 @@ namespace patchcraft
         obj->setProperty ("labelOffsetY", (double) labelOffsetY);
         obj->setProperty ("labelSpacing", (double) labelSpacing);
         obj->setProperty ("labelSize",    (double) labelSize);
+        obj->setProperty ("contentPadding", (double) contentPadding);
         obj->setProperty ("controlPreviewValue", (double) controlPreviewValue);
         obj->setProperty ("audioReactive", audioReactive);
         obj->setProperty ("audioReactiveMode", audioReactiveMode);
@@ -723,6 +728,7 @@ namespace patchcraft
             if (o->hasProperty ("labelOffsetY")) e.labelOffsetY = (float) (double) o->getProperty ("labelOffsetY");
             if (o->hasProperty ("labelSpacing")) e.labelSpacing = (float) (double) o->getProperty ("labelSpacing");
             if (o->hasProperty ("labelSize"))    e.labelSize    = juce::jmax (0.0f, (float) (double) o->getProperty ("labelSize"));
+            if (o->hasProperty ("contentPadding")) e.contentPadding = (float) (double) o->getProperty ("contentPadding");
             if (o->hasProperty ("controlPreviewValue")) e.controlPreviewValue = juce::jlimit (0.0f, 1.0f, (float) (double) o->getProperty ("controlPreviewValue"));
             if (o->hasProperty ("audioReactive")) e.audioReactive = (bool) o->getProperty ("audioReactive");
             e.audioReactiveMode = o->getProperty ("audioReactiveMode").toString();
@@ -981,6 +987,11 @@ namespace patchcraft
         obj->setProperty ("chokeGroup",     chokeGroup);
         obj->setProperty ("oneShot",        oneShot);
         obj->setProperty ("triggerProbability", triggerProbability);
+        obj->setProperty ("midiPath",       midiPath);
+        obj->setProperty ("midiPlaybackMode", midiPlaybackMode);
+        obj->setProperty ("midiHostSync",   midiHostSync);
+        obj->setProperty ("midiTranspose",  midiTranspose);
+        obj->setProperty ("midiVelocityAmount", (double) midiVelocityAmount);
         return juce::var (obj);
     }
 
@@ -1043,6 +1054,16 @@ namespace patchcraft
                 z.triggerProbability = (int) o->getProperty ("triggerProbability");
             if (o->hasProperty ("bpm"))
                 z.bpm = (float) (double) o->getProperty ("bpm");
+            if (o->hasProperty ("midiPath"))
+                z.midiPath = o->getProperty ("midiPath").toString();
+            if (o->hasProperty ("midiPlaybackMode"))
+                z.midiPlaybackMode = o->getProperty ("midiPlaybackMode").toString();
+            if (o->hasProperty ("midiHostSync"))
+                z.midiHostSync = (bool) o->getProperty ("midiHostSync");
+            if (o->hasProperty ("midiTranspose"))
+                z.midiTranspose = (int) o->getProperty ("midiTranspose");
+            if (o->hasProperty ("midiVelocityAmount"))
+                z.midiVelocityAmount = (float) (double) o->getProperty ("midiVelocityAmount");
             if (z.lowVelocity  <= 0)   z.lowVelocity  = 1;
             if (z.highVelocity <= 0)   z.highVelocity = 127;
             if (z.highNote     <= 0)   z.highNote     = 127;
@@ -1050,6 +1071,12 @@ namespace patchcraft
             z.chokeGroup = juce::jlimit (0, 127, z.chokeGroup);
             z.triggerProbability = juce::jlimit (0, 100, z.triggerProbability);
             z.keyTracking = juce::jlimit (0.0f, 2.0f, z.keyTracking);
+            if (! (z.midiPlaybackMode == "trigger" || z.midiPlaybackMode == "pitch"
+                   || z.midiPlaybackMode == "slice" || z.midiPlaybackMode == "drum"
+                   || z.midiPlaybackMode == "mod"))
+                z.midiPlaybackMode = "trigger";
+            z.midiTranspose = juce::jlimit (-48, 48, z.midiTranspose);
+            z.midiVelocityAmount = juce::jlimit (0.0f, 1.0f, z.midiVelocityAmount);
         }
         return z;
     }
@@ -1561,11 +1588,14 @@ namespace patchcraft
             return false;
 
         if (node.kind == DspNodeKind::source)
-            return containsAnyToken (type, { "osc", "wavetable", "noise", "sub", "sample", "layer", "granular", "input", "external", "drive", "hybrid" });
+            return containsAnyToken (type, { "osc", "wavetable", "serum", "noise", "sub", "sample", "sampler", "slice", "chop",
+                                             "scratch", "deck", "drumrack", "drum", "layer", "granular", "input", "external", "drive", "hybrid" });
         if (node.kind == DspNodeKind::processor)
             return containsAnyToken (type, { "state", "filter", "eq", "surgical", "envelope", "adsr", "gate", "delay", "reverb",
-                                             "dist", "shape", "crush", "dynamics", "compress", "chorus", "phaser", "comb", "resonator",
-                                             "convolution", "spectral", "effect", "utility", "router", "mixer", "amp" });
+                                             "multitap", "dist", "shape", "crush", "dynamics", "dynamic", "compress", "limiter",
+                                             "transient", "deess", "chorus", "phaser", "flanger", "comb", "resonator", "vocal",
+                                             "formant", "tape", "lofi", "vinyl", "convolution", "spectral", "effect", "utility",
+                                             "router", "mixer", "amp", "master" });
         if (node.kind == DspNodeKind::modulation)
             return containsAnyToken (type, { "lfo", "random", "macro", "midi", "drum", "cc", "velocity", "keytrack", "step", "sequencer", "arp", "auto", "envelopefollower", "peakfollower",
                                              "rmsfollower", "transientdetector", "spectralcentroid", "bandenergy", "gatetrigger" });
@@ -1574,7 +1604,7 @@ namespace patchcraft
         if (node.kind == DspNodeKind::utility)
             return containsAnyToken (type, { "utility", "router", "mixer", "output", "input" });
         if (node.kind == DspNodeKind::output)
-            return containsAnyToken (type, { "output", "mainoutput", "utility", "limiter" });
+            return containsAnyToken (type, { "output", "mainoutput", "utility", "limiter", "mixer", "drummixer", "master", "bus", "stereo" });
 
         return false;
     }

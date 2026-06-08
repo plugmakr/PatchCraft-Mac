@@ -119,6 +119,7 @@ namespace patchcraft
         void drawDrumGrid(juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
         void drawArpLane(juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
         void drawMixer  (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
+        void drawRuntimeSampleLibrary (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
         void drawMultiLayerDock (juce::Graphics&, juce::Rectangle<int>);
         juce::String tabTargetGroup (const LayoutElement&, const juce::String& label) const;
         bool tabTargetIsGlobal (const LayoutElement&, const juce::String& targetGroup) const;
@@ -153,6 +154,14 @@ namespace patchcraft
         bool startArpLaneMidiDrag (const LayoutElement&);
         bool handleMixerGesture (const juce::MouseEvent&, bool drag);
         int  padNoteAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>) const;
+        struct RuntimeDropTarget
+        {
+            juce::String mappingMode { "pads" };
+            int note = -1;
+            int padIndex = -1;
+            bool targeted = false;
+        };
+        RuntimeDropTarget runtimeDropTargetAt (juce::Point<int>) const;
         bool drumCellAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>,
                          int& pattern, int& track, int& step, float& velocity,
                          float& gate, float& probability, bool& active,

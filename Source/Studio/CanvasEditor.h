@@ -79,7 +79,8 @@ namespace patchcraft
         void addModuleLayout (const juce::String& moduleType, juce::Point<int> pos);
 
     private:
-        enum class DragMode { None, Move, ResizeBR, ValueDrag, Marquee, DrumGridEdit, ArpLaneEdit, Pan };
+        enum class DragMode { None, Move, Resize, ValueDrag, Marquee, DrumGridEdit, ArpLaneEdit, Pan };
+        enum class ResizeHandle { None, TopLeft, Top, TopRight, Right, BottomRight, Bottom, BottomLeft, Left };
 
         juce::Rectangle<int> canvasScreenRect() const;
         juce::Rectangle<int> elementScreenRect (const LayoutElement&) const;
@@ -117,6 +118,7 @@ namespace patchcraft
         void addMoveOriginWithChildren (const juce::String& id);
         bool getMultiSelectionScreenBounds (juce::Rectangle<int>& bounds) const;
         bool multiSelectionResizeHandleContains (juce::Point<int> point) const;
+        ResizeHandle resizeHandleAt (juce::Point<int> point, juce::Rectangle<int> bounds) const;
 
         StudioMainComponent& owner;
 
@@ -134,6 +136,7 @@ namespace patchcraft
         DragMode mode = DragMode::None;
         juce::Point<int> dragStart;
         LayoutElement dragOriginal;
+        ResizeHandle activeResizeHandle = ResizeHandle::None;
         juce::Rectangle<int> marqueeRect;
         std::map<juce::String, juce::Point<int>> multiDragOrigins;
         std::vector<LayoutElement> dragLayoutBefore;

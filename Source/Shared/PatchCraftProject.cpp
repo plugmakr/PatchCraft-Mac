@@ -8,6 +8,20 @@ namespace patchcraft
 {
     namespace
     {
+        static float sanitiseSafeOscillatorTypeValue (float value)
+        {
+            return (float) juce::jlimit (0, 3, juce::roundToInt (value));
+        }
+
+        static float sanitiseSafeOscillatorTypeNormalised (float value)
+        {
+            if (value < 0.0f || value > 1.0f)
+                value = sanitiseSafeOscillatorTypeValue (value) / 3.0f;
+
+            const int safeStep = juce::jlimit (0, 3, juce::roundToInt (juce::jlimit (0.0f, 1.0f, value) * 3.0f));
+            return safeStep / 3.0f;
+        }
+
         static void ensureGraphMacroParameters (ParameterModel& parameters,
                                                 LiveValueStore& liveValues,
                                                 const DspGraph& graph)
@@ -81,9 +95,7 @@ namespace patchcraft
                 return 0.0f;
 
             if (id == "oscType" || id == "osc2Type")
-            {
-                return value < 0.5f ? 0.0f : 1.0f;
-            }
+                return sanitiseSafeOscillatorTypeValue (value);
 
             if (id == "oscBlend")
                 return juce::jlimit (0.0f, 0.24f, value);
@@ -121,9 +133,7 @@ namespace patchcraft
                 return 0.0f;
 
             if (id == "oscType" || id == "osc2Type")
-            {
-                return value < 0.125f ? 0.0f : 0.25f;
-            }
+                return sanitiseSafeOscillatorTypeNormalised (value);
 
             if (id == "oscBlend")
                 return juce::jlimit (0.0f, 0.24f, value);
@@ -420,7 +430,10 @@ namespace patchcraft
             addAssetReference (patch.includedAssets, element.filmstripAsset);
         }
         for (const auto& zone : sampleMap.getZones())
+        {
             addAssetReference (patch.includedAssets, zone.samplePath);
+            addAssetReference (patch.includedAssets, zone.midiPath);
+        }
         patch.libraryReferences = patch.includedAssets;
 
         for (const auto& def : parameters.getAll())

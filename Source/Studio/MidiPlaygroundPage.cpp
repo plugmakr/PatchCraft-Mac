@@ -1144,6 +1144,7 @@ namespace patchcraft
             block->values["dmSteps"] = 16.0f;
             block->values["dmPattern"] = (float) juce::jlimit (0, 7, juce::roundToInt (valueFor (*block, "dmPattern", 0.0f)));
             block->values["dmTransport"] = 1.0f;
+            block->values["dmTriggerPadSlots"] = 1.0f;
             block->values["dmSwing"] = 0.0f;
             block->values["dmProbability"] = 1.0f;
             block->values["dmSongMode"] = 0.0f;
@@ -4150,7 +4151,10 @@ namespace patchcraft
             auto labelArea = juce::Rectangle<int> (area.getX(), y, labelW - 8, rowH);
             const auto labelKey = "dmTrack" + juce::String (track) + "Label";
             const auto label = block->metadata.count (labelKey) != 0 ? block->metadata.at (labelKey) : defaultTrackLabel (track);
-            const int note = juce::roundToInt (valueFor (*block, "dmTrack" + juce::String (track) + "Note", (float) defaultTrackNote (track)));
+            const bool triggerPadSlots = valueFor (*block, "dmTriggerPadSlots", 1.0f) >= 0.5f;
+            const int note = triggerPadSlots
+                ? juce::jlimit (0, 127, 36 + track)
+                : juce::roundToInt (valueFor (*block, "dmTrack" + juce::String (track) + "Note", (float) defaultTrackNote (track)));
 
             g.setColour (PatchCraftLookAndFeel::panelAlt());
             g.fillRoundedRectangle (labelArea.toFloat(), 5.0f);

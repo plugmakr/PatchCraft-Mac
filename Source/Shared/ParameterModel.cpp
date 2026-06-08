@@ -38,8 +38,8 @@ namespace patchcraft
 
             if (synth)
             {
-                add (makeDef ("oscType", "Osc Type", 0.0f, 4.0f, 1.0f, "", "source", "Oscillator", "stepped", 1.0f));
-                add (makeDef ("osc2Type", "OSC 2 Type", 0.0f, 4.0f, 3.0f, "", "source", "Layer Blend", "stepped", 1.0f));
+                add (makeDef ("oscType", "Osc Type", 0.0f, 3.0f, 1.0f, "", "source", "Oscillator", "stepped", 1.0f));
+                add (makeDef ("osc2Type", "OSC 2 Type", 0.0f, 3.0f, 3.0f, "", "source", "Layer Blend", "stepped", 1.0f));
                 add (makeDef ("oscBlend", "OSC Blend", 0.0f, 1.0f, 0.0f, "", "source", "Layer Blend"));
                 add (makeDef ("octave", "Octave", -2.0f, 2.0f, 0.0f, "", "source", "Pitch", "stepped", 1.0f));
                 add (makeDef ("detune", "Detune", -100.0f, 100.0f, 0.0f, "ct", "source", "Pitch"));

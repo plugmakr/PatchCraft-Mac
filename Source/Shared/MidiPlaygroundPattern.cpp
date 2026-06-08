@@ -278,6 +278,7 @@ namespace patchcraft
             const int tracks = juce::jlimit (1, 16, juce::roundToInt (valueFor (block, "dmTracks", 8.0f)));
             const int steps = juce::jlimit (1, 64, juce::roundToInt (valueFor (block, "dmSteps", 16.0f)));
             const bool songMode = valueFor (block, "dmSongMode", 0.0f) >= 0.5f;
+            const bool triggerPadSlots = valueFor (block, "dmTriggerPadSlots", 1.0f) >= 0.5f;
             const int chainLength = songMode
                 ? juce::jlimit (1, 8, juce::roundToInt (valueFor (block, "dmChainLength", 1.0f)))
                 : 1;
@@ -302,7 +303,9 @@ namespace patchcraft
                             continue;
 
                         const int note = juce::jlimit (0, 127,
-                            juce::roundToInt (valueFor (block, "dmTrack" + juce::String (track) + "Note", (float) defaultDrumNote (track))));
+                            triggerPadSlots
+                                ? 36 + track
+                                : juce::roundToInt (valueFor (block, "dmTrack" + juce::String (track) + "Note", (float) defaultDrumNote (track))));
                         const float velocity = juce::jlimit (0.01f, 1.0f,
                             valueFor (block, prefix + "Vel", valueFor (block, directPrefix + "Vel", track == 0 ? 1.0f : 0.75f)));
                         const float gate = juce::jlimit (0.05f, 1.0f,

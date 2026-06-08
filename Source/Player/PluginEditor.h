@@ -15,7 +15,7 @@ namespace patchcraft
     class PlayerUserImportPanel;
 
     /**
-        PatchCraft Player editor. Shows a "Load PatchCraft Instrument" splash
+        Player editor. Shows a "Load Instrument" splash
         when no pack is loaded; otherwise renders the loaded pack's UI.
     */
     class PlayerEditor : public juce::AudioProcessorEditor,
@@ -49,7 +49,7 @@ namespace patchcraft
         std::unique_ptr<PlayerControlCenter> controlCenter;
         std::unique_ptr<PlayerUserImportPanel> userImportPanel;
 
-        juce::TextButton loadBtn { "Load PatchCraft Instrument" };
+        juce::TextButton loadBtn { "Load Instrument" };
         juce::TextButton libraryBtn { "Library" };
         juce::TextButton viewBtn { "View" };
         juce::TextButton toolsBtn { "Tools" };

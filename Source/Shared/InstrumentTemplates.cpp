@@ -146,11 +146,11 @@ namespace patchcraft
             // Performance sliders (left side)
             if (engine != "fx" && engine != "drum")
             {
-                LayoutElement pitch; pitch.type = ElementType::Slider; pitch.id = "pitchwheel";
+                LayoutElement pitch; pitch.type = ElementType::PitchWheel; pitch.id = "pitchwheel";
                 pitch.x = 58; pitch.y = 500; pitch.width = 38; pitch.height = 128;
                 pitch.label = "Pitch"; pitch.parameterId = "pitchWheel"; layout.add (pitch);
 
-                LayoutElement mod; mod.type = ElementType::Slider; mod.id = "modwheel";
+                LayoutElement mod; mod.type = ElementType::ModWheel; mod.id = "modwheel";
                 mod.x = 102; mod.y = 500; mod.width = 38; mod.height = 128;
                 mod.label = "Mod"; mod.parameterId = "modWheel"; layout.add (mod);
             }

@@ -231,7 +231,7 @@ namespace patchcraft
         refreshButton = std::make_unique<juce::TextButton> ("Refresh");
         refreshButton->setColour (juce::TextButton::buttonColourId, juce::Colour (0xff202631));
         refreshButton->setColour (juce::TextButton::textColourOffId, PatchCraftLookAndFeel::text());
-        refreshButton->setTooltip ("Rescan PatchCraft library folders for instruments and patches.");
+        refreshButton->setTooltip ("Rescan library folders for instruments and patches.");
         refreshButton->onClick = [this]
         {
             scanner.scanLibrary();
@@ -286,7 +286,7 @@ namespace patchcraft
         auto header = getLocalBounds().reduced (14).removeFromTop (34);
         g.setColour (PatchCraftLookAndFeel::textBright());
         g.setFont (juce::FontOptions (18.5f).withStyle ("bold"));
-        g.drawText ("PatchCraft Library", header.removeFromLeft (205), juce::Justification::centredLeft, true);
+        g.drawText ("Library", header.removeFromLeft (120), juce::Justification::centredLeft, true);
         g.setColour (PatchCraftLookAndFeel::textDim());
         g.setFont (juce::FontOptions (12.0f));
         g.drawText (juce::String (filteredEntries.size()) + " discovered "
@@ -297,11 +297,11 @@ namespace patchcraft
             auto area = getLocalBounds().reduced (28).withTrimmedTop (112);
             g.setColour (PatchCraftLookAndFeel::textBright());
             g.setFont (juce::FontOptions (18.0f).withStyle ("bold"));
-            g.drawText ("No PatchCraft " + filterDisplayName (packFilter) + " found",
+            g.drawText ("No " + filterDisplayName (packFilter) + " found",
                         area.removeFromTop (30), juce::Justification::centred);
             g.setColour (PatchCraftLookAndFeel::textDim());
             g.setFont (juce::FontOptions (12.0f));
-            g.drawFittedText ("Use Refresh after exporting or copying compatible .patchcraft folders into Documents/PatchCraft/Library, Instruments, Packs, or FactoryDemos.",
+            g.drawFittedText ("Use Refresh after installing compatible instruments or packs.",
                               area.removeFromTop (56), juce::Justification::centred, 3);
         }
     }

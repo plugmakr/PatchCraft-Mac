@@ -9,6 +9,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(MSVC)
+    add_compile_options(/FS)
+endif()
+
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
@@ -218,6 +222,8 @@ if(PATCHCRAFT_BUILD_STUDIO)
         Source/Studio/SampleWaveformViewer.cpp
         Source/Studio/VelocityMapViewer.cpp
         Source/Studio/SampleMapEditor.cpp
+        Source/Studio/ProjectBrowserPage.cpp
+        Source/Studio/ExpansionsPage.cpp
         Source/Studio/VstExportModule.cpp)
 
     target_link_libraries(PatchCraftStudio PRIVATE PatchCraftCore)

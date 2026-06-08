@@ -76,6 +76,7 @@ namespace patchcraft
         juce::Slider    labelOffsetYSlider;
         juce::Slider    labelSpacingSlider;
         juce::Slider    labelSizeSlider;
+        juce::Slider    contentPaddingSlider;
         juce::TextEditor backgroundColourEdit;
         juce::TextEditor borderColourEdit;
         juce::TextEditor accentColourEdit;
@@ -295,7 +296,7 @@ namespace patchcraft
                     lblShadow, lblGlow, lblBlur, lblAudioReactive, lblAudioReactiveMode,
                     lblAudioReactiveAmount, lblAnimationMode, lblAnimationRate,
                     lblLabelPosition, lblLabelOffsetX, lblLabelOffsetY,
-                    lblLabelSpacing, lblLabelSize, lblBgColour, lblBorderColour, lblAccentColour,
+                    lblLabelSpacing, lblLabelSize, lblContentPadding, lblBgColour, lblBorderColour, lblAccentColour,
                     lblContainerManager, lblContainerChildren,
                     lblDefault, lblStep, lblValType, lblSmoothing,
                     lblActions, lblPosX, lblPosY, lblSizeW, lblSizeH;

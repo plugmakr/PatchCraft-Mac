@@ -1,23 +1,23 @@
 {
   "formatVersion": 1,
   "instrumentName": "Aurora Arp Synth",
-  "creator": "PatchCraft",
-  "description": "Professional PatchCraft synth factory demo with aligned Player UI, real parameter controls, and musical presets.",
+  "creator": "AudiCode",
+  "description": "A playable melodic synth demo with custom performance controls and clean musical presets.",
   "category": "Synth Instrument",
   "engine": "synth",
   "backgroundImage": "assets/background-clean.png",
   "libraryThumbnail": "assets/library-artwork.png",
-  "defaultPreset": "Pentatonic Glass Lead",
-  "createdWith": "PatchCraft Studio",
+  "defaultPreset": "Glass Pentatonic Lead",
+  "createdWith": "Player Builder",
   "version": "1.0",
   "playerDisplayName": "Aurora Arp Synth",
-  "playerTagline": "Playable synth template with musical macro controls",
+  "playerTagline": "Melodic synth with plucks, pads, keys, and arps",
   "playerAccentColour": "ff62f7d2",
   "tags": [
     "arp",
-    "arp synth",
     "export-ready",
     "factory-demo",
+    "melodic",
     "musical",
     "player-ready",
     "synth"
@@ -28,5 +28,6 @@
   "playerTitleBarTheme": "wide-banner",
   "playerTitleTextPlacement": "left",
   "playerTitleButtonStyle": "pill",
-  "playerTitleFontFamily": "Segoe UI"
+  "playerTitleFontFamily": "Segoe UI",
+  "playerShowPatchCraftBranding": false
 }

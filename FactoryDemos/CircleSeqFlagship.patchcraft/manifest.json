@@ -1,28 +1,26 @@
 {
   "formatVersion": 1,
   "instrumentName": "CircleSEQ Flagship",
-  "creator": "PatchCraft",
-  "description": "Professional PatchCraft circle factory demo with aligned Player UI, real parameter controls, and musical presets.",
+  "creator": "AudiCode",
+  "description": "A five-lane circular sequencer demo with lane roles, bypasses, and melodic pattern presets.",
   "category": "Circle Sequencer Demo",
   "engine": "synth",
-  "backgroundImage": "assets/background.png",
+  "backgroundImage": "assets/background-clean.png",
   "libraryThumbnail": "assets/library-artwork.png",
   "defaultPreset": "Pentatonic Spiral Kit",
-  "createdWith": "PatchCraft Studio",
+  "createdWith": "Player Builder",
   "version": "1.0",
   "playerDisplayName": "CircleSEQ Flagship",
-  "playerTagline": "Circular sequencer instrument with five musical lanes",
+  "playerTagline": "Five circular lanes for melodic performance sequencing",
   "playerAccentColour": "ff9b6dff",
   "tags": [
     "arp",
     "circle",
-    "circleseq",
     "export-ready",
     "factory-demo",
-    "flagship",
     "musical",
     "player-ready",
-    "synth"
+    "sequencer"
   ],
   "playerTitleBannerImage": "assets/player-title-banner.png",
   "playerPanelColour": "ff101722",
@@ -30,5 +28,6 @@
   "playerTitleBarTheme": "split-brand",
   "playerTitleTextPlacement": "left",
   "playerTitleButtonStyle": "pill",
-  "playerTitleFontFamily": "Segoe UI"
+  "playerTitleFontFamily": "Segoe UI",
+  "playerShowPatchCraftBranding": false
 }

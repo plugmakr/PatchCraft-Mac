@@ -14,13 +14,13 @@ namespace patchcraft
     /**
         Polyphonic oscillator-based synth.
 
-        Per-voice: oscillator (sine/saw/square/triangle/noise) + ADSR.
+        Per-voice: oscillator (sine/saw/square/triangle) + optional noise blend + ADSR.
         Global: low-pass filter (cutoff/resonance) + LFO (mod cutoff or pitch)
         + delay + reverb + master volume/pan.
 
         Parameters (id -> behaviour):
-            oscType       0..4   primary sine / saw / square / triangle / noise
-            osc2Type      0..4   secondary sine / saw / square / triangle / noise
+            oscType       0..3   primary sine / saw / square / triangle
+            osc2Type      0..3   secondary sine / saw / square / triangle
             oscBlend      0..1   crossfade from primary to secondary oscillator
             octave       -2..+2  pitch shift in octaves
             detune     -100..+100 cents

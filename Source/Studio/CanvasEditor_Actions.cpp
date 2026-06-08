@@ -15,6 +15,7 @@
                  : type == ElementType::VisualFxLayer ? 420
                  : type == ElementType::AiVisualPrompt ? 360
                  : type == ElementType::SampleDropZone ? 320
+                 : type == ElementType::RuntimeSampleLibrary ? 360
                  : type == ElementType::DrumGrid ? 560
                  : type == ElementType::ArpLane ? 260
                  : type == ElementType::Mixer ? 520
@@ -34,6 +35,7 @@
                   : type == ElementType::VisualFxLayer ? 180
                   : type == ElementType::AiVisualPrompt ? 170
                   : type == ElementType::SampleDropZone ? 156
+                  : type == ElementType::RuntimeSampleLibrary ? 220
                   : type == ElementType::DrumGrid ? 220
                   : type == ElementType::ArpLane ? 330
                   : type == ElementType::Mixer ? 260
@@ -163,6 +165,17 @@
             el.semanticRole = "sampleDropZone:" + el.id;
             el.cornerRadius = 10.0f;
             el.strokeWidth = 1.4f;
+            el.accentColour = PatchCraftLookAndFeel::accent();
+            el.backgroundColour = juce::Colour (0xdd10141a);
+            el.borderColour = PatchCraftLookAndFeel::border();
+        }
+        if (type == ElementType::RuntimeSampleLibrary)
+        {
+            el.label = "Runtime Samples";
+            el.parameterId.clear();
+            el.semanticRole = "runtimeSampleLibrary";
+            el.cornerRadius = 10.0f;
+            el.strokeWidth = 1.2f;
             el.accentColour = PatchCraftLookAndFeel::accent();
             el.backgroundColour = juce::Colour (0xdd10141a);
             el.borderColour = PatchCraftLookAndFeel::border();
@@ -1012,6 +1025,611 @@
         auto& pm = projectObj.getParameters();
         auto& liveValues = projectObj.getLiveValues();
         const auto tabGroup = currentTabGroup == "main" ? juce::String() : currentTabGroup;
+
+        auto ensureParam = [&] (const juce::String& paramId, const juce::String& engineHint)
+        {
+            if (paramId.isEmpty() || pm.find (paramId) != nullptr)
+                return;
+
+            juce::StringArray engines;
+            if (engineHint.isNotEmpty())
+                engines.addIfNotAlreadyThere (engineHint);
+            engines.addIfNotAlreadyThere (projectObj.getEngineType());
+            engines.addIfNotAlreadyThere ("synth");
+            engines.addIfNotAlreadyThere ("sample");
+            engines.addIfNotAlreadyThere ("fx");
+
+            ParameterDef def;
+            for (const auto& engine : engines)
+            {
+                if (ParameterModel::getRegistryDefinition (paramId, engine, def))
+                {
+                    pm.add (def);
+                    liveValues.getOrAddRaw (def.id, def.defaultValue);
+                    return;
+                }
+            }
+        };
+
+        auto ensureParams = [&] (const juce::StringArray& paramIds, const juce::String& engineHint)
+        {
+            for (const auto& paramId : paramIds)
+                ensureParam (paramId, engineHint);
+        };
+
+        auto ensureBlock = [&] (const juce::String& blockId,
+                                const juce::String& section,
+                                const juce::String& type,
+                                const juce::String& name,
+                                const juce::String& targetId,
+                                const juce::String& family,
+                                const juce::String& role,
+                                const juce::String& ioMode,
+                                std::initializer_list<std::pair<const char*, float>> defaults)
+        {
+            for (auto& block : graph.blocks)
+            {
+                if (block.id == blockId)
+                {
+                    block.section = section;
+                    block.type = type;
+                    block.name = name;
+                    block.targetId = targetId;
+                    block.enabled = true;
+                    block.metadata["family"] = family;
+                    block.metadata["role"] = role;
+                    block.metadata["ioMode"] = ioMode;
+                    for (const auto& value : defaults)
+                        if (block.values.find (value.first) == block.values.end())
+                            block.values[value.first] = value.second;
+                    graph.userConfigured = true;
+                    return;
+                }
+            }
+
+            DspBlock block;
+            block.id = blockId;
+            block.section = section;
+            block.type = type;
+            block.name = name;
+            block.targetId = targetId;
+            block.enabled = true;
+            block.metadata["family"] = family;
+            block.metadata["role"] = role;
+            block.metadata["ioMode"] = ioMode;
+            for (const auto& value : defaults)
+                block.values[value.first] = value.second;
+            graph.blocks.push_back (std::move (block));
+            graph.userConfigured = true;
+        };
+
+        auto addChildKnob = [&] (LayoutModel& layout, const juce::String& panelId,
+                                 const juce::String& label, const juce::String& paramId,
+                                 int xOffset, int yOffset, int size = 66)
+        {
+            LayoutElement knob;
+            knob.type = ElementType::Knob;
+            knob.label = label;
+            knob.parameterId = paramId;
+            knob.x = pos.x + xOffset;
+            knob.y = pos.y + yOffset;
+            knob.width = size;
+            knob.height = size;
+            knob.containerId = panelId;
+            knob.groupId = tabGroup;
+            knob.id = layout.generateUniqueId ("knob_");
+            knob.accentColour = PatchCraftLookAndFeel::accent();
+            layout.add (knob);
+        };
+
+        auto addChildSlider = [&] (LayoutModel& layout, const juce::String& panelId,
+                                   const juce::String& label, const juce::String& paramId,
+                                   int xOffset, int yOffset, int width = 44, int height = 118)
+        {
+            LayoutElement slider;
+            slider.type = ElementType::Slider;
+            slider.label = label;
+            slider.parameterId = paramId;
+            slider.x = pos.x + xOffset;
+            slider.y = pos.y + yOffset;
+            slider.width = width;
+            slider.height = height;
+            slider.containerId = panelId;
+            slider.groupId = tabGroup;
+            slider.id = layout.generateUniqueId ("slider_");
+            slider.accentColour = PatchCraftLookAndFeel::accent();
+            layout.add (slider);
+        };
+
+        auto addChildToggle = [&] (LayoutModel& layout, const juce::String& panelId,
+                                   const juce::String& label, const juce::String& paramId,
+                                   int xOffset, int yOffset, int width = 86, int height = 34)
+        {
+            LayoutElement toggle;
+            toggle.type = ElementType::Toggle;
+            toggle.label = label;
+            toggle.parameterId = paramId;
+            toggle.x = pos.x + xOffset;
+            toggle.y = pos.y + yOffset;
+            toggle.width = width;
+            toggle.height = height;
+            toggle.containerId = panelId;
+            toggle.groupId = tabGroup;
+            toggle.id = layout.generateUniqueId ("toggle_");
+            toggle.accentColour = PatchCraftLookAndFeel::accent();
+            layout.add (toggle);
+        };
+
+        auto addChildValue = [&] (LayoutModel& layout, const juce::String& panelId,
+                                  const juce::String& label, const juce::String& paramId,
+                                  int xOffset, int yOffset, int width = 86, int height = 34)
+        {
+            LayoutElement value;
+            value.type = ElementType::ValueDisplay;
+            value.label = label;
+            value.parameterId = paramId;
+            value.x = pos.x + xOffset;
+            value.y = pos.y + yOffset;
+            value.width = width;
+            value.height = height;
+            value.containerId = panelId;
+            value.groupId = tabGroup;
+            value.id = layout.generateUniqueId ("value_");
+            value.accentColour = PatchCraftLookAndFeel::accent();
+            layout.add (value);
+        };
+
+        auto addChildSurface = [&] (LayoutModel& layout, const juce::String& panelId,
+                                    ElementType type, const juce::String& label,
+                                    const juce::String& paramId,
+                                    int xOffset, int yOffset, int width, int height)
+        {
+            LayoutElement surface;
+            surface.type = type;
+            surface.label = label;
+            surface.parameterId = paramId;
+            surface.x = pos.x + xOffset;
+            surface.y = pos.y + yOffset;
+            surface.width = width;
+            surface.height = height;
+            surface.containerId = panelId;
+            surface.groupId = tabGroup;
+            surface.id = layout.generateUniqueId ("module_");
+            surface.accentColour = PatchCraftLookAndFeel::accent();
+            layout.add (surface);
+        };
+
+        auto addModulePanel = [&] (const juce::String& undoName,
+                                   const juce::String& title,
+                                   int width,
+                                   int height,
+                                   auto buildChildren)
+        {
+            owner.getProject().performLayoutEdit (undoName,
+                [&] (LayoutModel& layout)
+                {
+                    LayoutElement panel;
+                    panel.type = ElementType::Panel;
+                    panel.label = title;
+                    panel.x = pos.x;
+                    panel.y = pos.y;
+                    panel.width = width;
+                    panel.height = height;
+                    panel.groupId = tabGroup;
+                    panel.cornerRadius = 10.0f;
+                    panel.strokeWidth = 1.5f;
+                    panel.backgroundColour = juce::Colour (0xee11141e);
+                    panel.borderColour = PatchCraftLookAndFeel::accent();
+                    panel.accentColour = PatchCraftLookAndFeel::accent();
+                    auto& addedPanel = layout.add (panel);
+                    const auto panelId = addedPanel.id;
+                    buildChildren (layout, panelId);
+                });
+        };
+
+        auto finishModernModule = [&]
+        {
+            owner.getProject().notifyChanged();
+            repaint();
+        };
+
+        const auto moduleKey = moduleType.retainCharacters ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789").toLowerCase();
+        if (moduleKey == "oscstack")
+        {
+            ensureParams ({ "oscType", "osc2Type", "oscBlend", "osc2Detune", "subBlend", "noiseBlend", "volume", "outputLimiter" }, "synth");
+            liveValues.setValue ("oscType", 1.0f);
+            liveValues.setValue ("osc2Type", 1.0f);
+            liveValues.setValue ("noiseBlend", 0.0f);
+            liveValues.setValue ("outputLimiter", 1.0f);
+            ensureBlock ("osc_stack_module", "source", "oscStack", "OSC Stack", "oscBlend", "synth", "source", "stereo",
+                         { { "oscType", 1.0f }, { "osc2Type", 1.0f }, { "oscBlend", 0.0f }, { "osc2Detune", 7.0f },
+                           { "subBlend", 0.0f }, { "noiseBlend", 0.0f }, { "volume", 0.78f } });
+            addModulePanel ("Add OSC Stack Module", "OSC Stack", 420, 164,
+                [&] (LayoutModel& layout, const juce::String& panelId)
+                {
+                    addChildKnob (layout, panelId, "Wave", "oscType", 22, 38);
+                    addChildKnob (layout, panelId, "Wave 2", "osc2Type", 104, 38);
+                    addChildKnob (layout, panelId, "Blend", "oscBlend", 186, 38);
+                    addChildKnob (layout, panelId, "Sub", "subBlend", 268, 38);
+                    addChildValue (layout, panelId, "No Noise", "noiseBlend", 328, 108, 78, 28);
+                });
+            finishModernModule();
+            return;
+        }
+        if (moduleKey == "wavetable" || moduleKey == "serumtable")
+        {
+            const bool serumStyle = moduleKey == "serumtable";
+            ensureParams ({ "wtEnabled", "wtTable", "wtPosition", "wtMorph", "wtWarp", "wtFold",
+                            "wtUnison", "wtDetune", "wtSpread", "wtLevel", "wtBend", "wtSyncRatio",
+                            "wtSpectralTilt", "wtPhaseMode", "filterCutoff", "outputLimiter" }, "synth");
+            liveValues.setValue ("wtEnabled", 1.0f);
+            liveValues.setValue ("wtLevel", serumStyle ? 0.82f : 0.70f);
+            liveValues.setValue ("noiseBlend", 0.0f);
+            liveValues.setValue ("outputLimiter", 1.0f);
+            ensureBlock (serumStyle ? "serum_table_module" : "wavetable_module", "source",
+                         serumStyle ? "serumWavetable" : "wavetable",
+                         serumStyle ? "Serum-Style Wavetable" : "Wavetable Source",
+                         "wtPosition", "synth", "source", "stereo",
+                         { { "wtEnabled", 1.0f }, { "wtTable", serumStyle ? 4.0f : 1.0f }, { "wtPosition", 0.32f },
+                           { "wtMorph", 0.20f }, { "wtWarp", serumStyle ? 0.34f : 0.12f }, { "wtFold", serumStyle ? 0.18f : 0.0f },
+                           { "wtUnison", serumStyle ? 4.0f : 1.0f }, { "wtDetune", serumStyle ? 16.0f : 8.0f },
+                           { "wtSpread", serumStyle ? 0.62f : 0.0f }, { "wtLevel", serumStyle ? 0.82f : 0.70f } });
+            addModulePanel (serumStyle ? "Add Serum-Style Wavetable Module" : "Add Wavetable Module",
+                            serumStyle ? "Serum-Style Table" : "Wavetable Source", serumStyle ? 520 : 430, 196,
+                [&] (LayoutModel& layout, const juce::String& panelId)
+                {
+                    addChildSurface (layout, panelId, ElementType::Waveform, "Table View", "wtPosition", 18, 34, serumStyle ? 210 : 170, 86);
+                    addChildKnob (layout, panelId, "Pos", "wtPosition", serumStyle ? 244 : 198, 40);
+                    addChildKnob (layout, panelId, "Morph", "wtMorph", serumStyle ? 326 : 280, 40);
+                    addChildKnob (layout, panelId, "Warp", "wtWarp", serumStyle ? 408 : 198, serumStyle ? 40 : 116);
+                    if (serumStyle)
+                    {
+                        addChildKnob (layout, panelId, "Unison", "wtUnison", 244, 116);
+                        addChildKnob (layout, panelId, "Detune", "wtDetune", 326, 116);
+                        addChildKnob (layout, panelId, "Fold", "wtFold", 408, 116);
+                    }
+                    else
+                    {
+                        addChildToggle (layout, panelId, "On", "wtEnabled", 300, 126, 70, 28);
+                    }
+                });
+            finishModernModule();
+            return;
+        }
+        if (moduleKey == "sampleplayer" || moduleKey == "slicechop" || moduleKey == "scratchdeck" || moduleKey == "granularsampler")
+        {
+            ensureParams ({ "sampleStart", "sampleLength", "sampleSlice", "sampleSliceCount", "samplePitch",
+                            "sampleReverse", "sampleGlitch", "sampleGlitchGrid", "granularOn", "granularDensity",
+                            "granularSizeMs", "granularSpread", "granularScan", "granularPitchSpread",
+                            "granularPanSpread", "granularReverse", "granularTexture", "granularMaxGrains",
+                            "granularDirection", "granularFreeze", "volume", "pan", "outputLimiter" }, "sample");
+            liveValues.setValue ("outputLimiter", 1.0f);
+
+            if (moduleKey == "sampleplayer")
+            {
+                ensureBlock ("sample_player_module", "source", "samplePlayer", "Sample Player", "sampleStart", "sampler", "source", "stereo",
+                             { { "sampleStart", 0.0f }, { "sampleLength", 1.0f }, { "samplePitch", 0.0f }, { "volume", 0.90f } });
+                addModulePanel ("Add Sample Player Module", "Sample Player", 430, 190,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Sample", "sampleStart", 18, 36, 150, 116);
+                        addChildSurface (layout, panelId, ElementType::Waveform, "Sample View", "sampleStart", 182, 36, 194, 58);
+                        addChildKnob (layout, panelId, "Start", "sampleStart", 184, 106);
+                        addChildKnob (layout, panelId, "Length", "sampleLength", 266, 106);
+                        addChildKnob (layout, panelId, "Pitch", "samplePitch", 348, 106);
+                    });
+            }
+            else if (moduleKey == "slicechop")
+            {
+                ensureBlock ("slice_chop_module", "source", "sliceChop", "Slice / Chop Sampler", "sampleSlice", "sampler", "source", "stereo",
+                             { { "sampleSliceCount", 16.0f }, { "sampleSlice", 0.0f }, { "sampleLength", 0.25f }, { "sampleGlitchGrid", 16.0f } });
+                addModulePanel ("Add Slice Chop Module", "Slice / Chop", 520, 210,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Loop", "sampleStart", 18, 36, 150, 126);
+                        addChildSurface (layout, panelId, ElementType::Waveform, "Slices", "sampleSlice", 182, 36, 266, 60);
+                        addChildKnob (layout, panelId, "Slice", "sampleSlice", 184, 116);
+                        addChildKnob (layout, panelId, "Count", "sampleSliceCount", 266, 116);
+                        addChildKnob (layout, panelId, "Glitch", "sampleGlitch", 348, 116);
+                        addChildValue (layout, panelId, "Grid", "sampleGlitchGrid", 430, 132, 72, 30);
+                    });
+            }
+            else if (moduleKey == "scratchdeck")
+            {
+                ensureBlock ("scratch_deck_module", "source", "scratchDeck", "Scratch Deck", "sampleStart", "sampler", "source", "stereo",
+                             { { "sampleStart", 0.0f }, { "sampleLength", 1.0f }, { "samplePitch", 0.0f }, { "sampleReverse", 0.0f } });
+                addModulePanel ("Add Scratch Deck Module", "Scratch Deck", 520, 228,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Deck Audio", "sampleStart", 18, 38, 150, 138);
+                        addChildSurface (layout, panelId, ElementType::XYPad, "Scratch Motion", "sampleStart", 188, 38, 160, 138);
+                        addChildKnob (layout, panelId, "Start", "sampleStart", 364, 44);
+                        addChildKnob (layout, panelId, "Pitch", "samplePitch", 442, 44);
+                        addChildToggle (layout, panelId, "Reverse", "sampleReverse", 366, 136, 100, 30);
+                    });
+            }
+            else
+            {
+                liveValues.setValue ("granularOn", 1.0f);
+                ensureBlock ("granular_sampler_module", "source", "granularSampler", "Granular Sampler", "granularDensity", "sampler", "source", "stereo",
+                             { { "granularOn", 1.0f }, { "granularDensity", 32.0f }, { "granularSizeMs", 90.0f },
+                               { "granularSpread", 0.18f }, { "granularScan", 0.0f }, { "granularPanSpread", 0.45f } });
+                addModulePanel ("Add Granular Sampler Module", "Granular Sampler", 560, 230,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Texture", "sampleStart", 18, 38, 150, 138);
+                        addChildSurface (layout, panelId, ElementType::GranularField, "Grain Field", "granularScan", 184, 38, 176, 138);
+                        addChildKnob (layout, panelId, "Density", "granularDensity", 378, 42);
+                        addChildKnob (layout, panelId, "Size", "granularSizeMs", 456, 42);
+                        addChildKnob (layout, panelId, "Spread", "granularSpread", 378, 122);
+                        addChildKnob (layout, panelId, "Scan", "granularScan", 456, 122);
+                    });
+            }
+            finishModernModule();
+            return;
+        }
+        if (moduleKey == "drumrack" || moduleKey == "drumsequencer" || moduleKey == "drummixer")
+        {
+            juce::StringArray drumParams { "volume", "pan", "outputLimiter" };
+            for (int pad = 1; pad <= 16; ++pad)
+            {
+                const auto padText = juce::String (pad);
+                drumParams.add ("pad" + padText + "Volume");
+                drumParams.add ("pad" + padText + "Pitch");
+                drumParams.add ("pad" + padText + "Pan");
+            }
+            ensureParams (drumParams, "sample");
+            liveValues.setValue ("outputLimiter", 1.0f);
+
+            if (moduleKey == "drumrack")
+            {
+                ensureBlock ("drum_rack_module", "source", "drumRack", "Drum Rack", "pad1Volume", "drums", "source", "stereo",
+                             { { "pad1Volume", 1.0f }, { "pad2Volume", 1.0f }, { "pad3Volume", 1.0f }, { "pad4Volume", 1.0f } });
+                addModulePanel ("Add Drum Rack Module", "Drum Rack", 520, 430,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::PadGrid, "16 Pads", "padGrid", 20, 38, 256, 256);
+                        addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Samples", "sampleStart", 300, 38, 170, 116);
+                        addChildKnob (layout, panelId, "Pad Level", "pad1Volume", 310, 182);
+                        addChildKnob (layout, panelId, "Pad Tune", "pad1Pitch", 392, 182);
+                        addChildKnob (layout, panelId, "Master", "volume", 310, 264);
+                        addChildKnob (layout, panelId, "Pan", "pan", 392, 264);
+                    });
+            }
+            else if (moduleKey == "drumsequencer")
+            {
+                ensureParams ({ "arpLaneRate", "arpLaneSwing", "arpLaneProbability", "retrigger" }, "sample");
+                ensureBlock ("drum_sequencer_module", "mod", "drumSequencer", "Drum Sequencer", "arpLaneRate", "midi", "sequencer", "event",
+                             { { "arpLaneRate", 1.0f }, { "arpLaneSwing", 0.04f }, { "arpLaneProbability", 1.0f }, { "retrigger", 1.0f } });
+                addModulePanel ("Add Drum Sequencer Module", "Drum Sequencer", 650, 300,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::DrumGrid, "Pattern Grid", "arpLaneRate", 18, 36, 460, 190);
+                        addChildKnob (layout, panelId, "Rate", "arpLaneRate", 500, 48);
+                        addChildKnob (layout, panelId, "Swing", "arpLaneSwing", 580, 48);
+                        addChildKnob (layout, panelId, "Chance", "arpLaneProbability", 500, 132);
+                        addChildToggle (layout, panelId, "Retrig", "retrigger", 580, 150, 70, 30);
+                    });
+            }
+            else
+            {
+                ensureBlock ("drum_mixer_module", "out", "drumMixer", "Drum Mixer", "pad1Volume", "drums", "mix", "stereo",
+                             { { "pad1Volume", 1.0f }, { "pad2Volume", 1.0f }, { "pad3Volume", 1.0f }, { "pad4Volume", 1.0f } });
+                addModulePanel ("Add Drum Mixer Module", "Drum Mixer", 560, 220,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::Mixer, "Pad Mixer", "pad1Volume", 18, 34, 330, 160);
+                        addChildSlider (layout, panelId, "1", "pad1Volume", 370, 42);
+                        addChildSlider (layout, panelId, "2", "pad2Volume", 416, 42);
+                        addChildSlider (layout, panelId, "3", "pad3Volume", 462, 42);
+                        addChildSlider (layout, panelId, "4", "pad4Volume", 508, 42);
+                    });
+            }
+            finishModernModule();
+            return;
+        }
+        if (moduleKey == "arplanemodule" || moduleKey == "lfo" || moduleKey == "steplfo" || moduleKey == "macrobank")
+        {
+            ensureParams ({ "arpLaneIndex", "arpLaneSteps", "arpLaneRate", "arpLaneGate", "arpLaneSwing",
+                            "arpLaneProbability", "arpLaneGroup", "arpLaneFxTarget", "arpLaneFxAmount",
+                            "lfoRate", "lfoAmount", "filterCutoff" }, "synth");
+            if (moduleKey == "arplanemodule")
+            {
+                ensureBlock ("arp_lane_module", "mod", "arp", "Arp Lane", "arpLaneRate", "midi", "arp", "event",
+                             { { "arpLaneSteps", 16.0f }, { "arpLaneRate", 1.0f }, { "arpLaneGate", 0.58f },
+                               { "arpLaneProbability", 1.0f }, { "arpLaneFxAmount", 0.0f } });
+                addModulePanel ("Add Arp Lane Module", "Arp Lane", 520, 390,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::ArpLane, "Arp Lane", "arpLaneRate", 24, 34, 260, 300);
+                        addChildKnob (layout, panelId, "Rate", "arpLaneRate", 318, 42);
+                        addChildKnob (layout, panelId, "Gate", "arpLaneGate", 398, 42);
+                        addChildKnob (layout, panelId, "Swing", "arpLaneSwing", 318, 122);
+                        addChildKnob (layout, panelId, "FX Amt", "arpLaneFxAmount", 398, 122);
+                        addChildValue (layout, panelId, "Group", "arpLaneGroup", 320, 220, 78, 30);
+                        addChildValue (layout, panelId, "FX", "arpLaneFxTarget", 410, 220, 78, 30);
+                    });
+            }
+            else if (moduleKey == "lfo")
+            {
+                ensureBlock ("lfo_module", "mod", "lfo", "LFO", "filterCutoff", "midi", "modulation", "modulation",
+                             { { "lfoRate", 4.0f }, { "lfoAmount", 0.25f } });
+                addModulePanel ("Add LFO Module", "LFO Module", 320, 156,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::Waveform, "LFO Shape", "lfoRate", 18, 36, 130, 72);
+                        addChildKnob (layout, panelId, "Rate", "lfoRate", 168, 42);
+                        addChildKnob (layout, panelId, "Amount", "lfoAmount", 246, 42);
+                    });
+            }
+            else if (moduleKey == "steplfo")
+            {
+                ensureBlock ("step_lfo_module", "mod", "stepLfo", "Step LFO", "filterCutoff", "midi", "modulation", "modulation",
+                             { { "lfoRate", 2.0f }, { "lfoAmount", 0.35f } });
+                addModulePanel ("Add Step LFO Module", "Step LFO", 480, 210,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::ModMatrix, "Step Matrix", "lfoAmount", 18, 36, 290, 132);
+                        addChildKnob (layout, panelId, "Rate", "lfoRate", 330, 52);
+                        addChildKnob (layout, panelId, "Amount", "lfoAmount", 408, 52);
+                    });
+            }
+            else
+            {
+                ensureBlock ("macro_bank_module", "mod", "macroBank", "Macro Bank", "filterCutoff", "midi", "macro", "modulation",
+                             { { "lfoAmount", 0.0f } });
+                addModulePanel ("Add Macro Bank Module", "Macro Bank", 520, 180,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::MacroControl, "Macro 1", "filterCutoff", 20, 42, 116, 104);
+                        addChildSurface (layout, panelId, ElementType::MacroControl, "Macro 2", "delayMix", 148, 42, 116, 104);
+                        addChildSurface (layout, panelId, ElementType::MacroControl, "Macro 3", "reverbMix", 276, 42, 116, 104);
+                        addChildSurface (layout, panelId, ElementType::MacroControl, "Macro 4", "stereoWidth", 404, 42, 116, 104);
+                    });
+            }
+            finishModernModule();
+            return;
+        }
+        if (moduleKey == "surgicaleq" || moduleKey == "dynamiceq" || moduleKey == "limiter" || moduleKey == "transient")
+        {
+            ensureParams ({ "eqEnabled", "eqMix", "eqOutputTrimDb", "eqBand1On", "eqBand1Freq", "eqBand1GainDb", "eqBand1Q",
+                            "eqBand2On", "eqBand2Freq", "eqBand2GainDb", "eqBand2Q", "eqBand3On", "eqBand3Freq",
+                            "eqBand3GainDb", "eqBand3Q", "eqBand4On", "eqBand4Freq", "eqBand4GainDb", "eqBand4Q",
+                            "eqBand1DynMode", "eqBand1DynThresholdDb", "eqBand1DynRangeDb",
+                            "dynThresholdDb", "dynRatio", "dynAttackMs", "dynReleaseMs", "dynMakeupDb", "dynMix",
+                            "outputLimiter", "outputCeilingDb", "outputGainDb", "drive" }, "fx");
+            if (moduleKey == "surgicaleq" || moduleKey == "dynamiceq")
+            {
+                const bool dynamic = moduleKey == "dynamiceq";
+                liveValues.setValue ("eqEnabled", 1.0f);
+                ensureBlock (dynamic ? "dynamic_eq_module" : "surgical_eq_module", "filter",
+                             dynamic ? "dynamicEq" : "surgicalEq",
+                             dynamic ? "Dynamic EQ" : "Surgical EQ",
+                             "eqMix", "studio", "tone", "stereo",
+                             { { "eqEnabled", 1.0f }, { "eqMix", 1.0f }, { "eqBand1On", 1.0f }, { "eqBand1Freq", 120.0f },
+                               { "eqBand1GainDb", dynamic ? -1.5f : 0.0f }, { "eqBand1Q", 0.8f }, { "eqBand2On", 1.0f },
+                               { "eqBand2Freq", 2500.0f }, { "eqBand2GainDb", 1.0f }, { "eqBand2Q", 1.2f },
+                               { "eqBand1DynMode", dynamic ? 1.0f : 0.0f }, { "eqBand1DynThresholdDb", -24.0f },
+                               { "eqBand1DynRangeDb", dynamic ? -3.0f : 0.0f } });
+                addModulePanel (dynamic ? "Add Dynamic EQ Module" : "Add Surgical EQ Module",
+                                dynamic ? "Dynamic EQ" : "Surgical EQ", 560, 236,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::EqCurve, "EQ Curve", "eqMix", 18, 36, 260, 132);
+                        addChildKnob (layout, panelId, "Low Freq", "eqBand1Freq", 304, 44);
+                        addChildKnob (layout, panelId, "Low Gain", "eqBand1GainDb", 382, 44);
+                        addChildKnob (layout, panelId, "Mid Freq", "eqBand2Freq", 460, 44);
+                        addChildKnob (layout, panelId, "Mid Gain", "eqBand2GainDb", 304, 124);
+                        if (dynamic)
+                        {
+                            addChildKnob (layout, panelId, "Dyn Thr", "eqBand1DynThresholdDb", 382, 124);
+                            addChildKnob (layout, panelId, "Dyn Rng", "eqBand1DynRangeDb", 460, 124);
+                        }
+                        else
+                        {
+                            addChildKnob (layout, panelId, "Trim", "eqOutputTrimDb", 382, 124);
+                            addChildToggle (layout, panelId, "EQ On", "eqEnabled", 462, 142, 72, 28);
+                        }
+                    });
+            }
+            else if (moduleKey == "limiter")
+            {
+                liveValues.setValue ("outputLimiter", 1.0f);
+                ensureBlock ("limiter_module", "out", "limiter", "Limiter", "outputCeilingDb", "studio", "dynamics", "stereo",
+                             { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "outputGainDb", 0.0f } });
+                addModulePanel ("Add Limiter Module", "Limiter", 310, 150,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildToggle (layout, panelId, "On", "outputLimiter", 20, 42, 70, 30);
+                        addChildKnob (layout, panelId, "Ceiling", "outputCeilingDb", 112, 40);
+                        addChildKnob (layout, panelId, "Gain", "outputGainDb", 202, 40);
+                    });
+            }
+            else
+            {
+                ensureBlock ("transient_module", "fx", "transientShaper", "Transient Shaper", "dynMix", "studio", "dynamics", "stereo",
+                             { { "dynMix", 0.35f }, { "dynAttackMs", 4.0f }, { "dynReleaseMs", 90.0f }, { "dynRatio", 1.5f } });
+                addModulePanel ("Add Transient Shaper Module", "Transient Shaper", 390, 164,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::Waveform, "Transient View", "dynMix", 18, 42, 126, 72);
+                        addChildKnob (layout, panelId, "Attack", "dynAttackMs", 164, 42);
+                        addChildKnob (layout, panelId, "Release", "dynReleaseMs", 244, 42);
+                        addChildKnob (layout, panelId, "Mix", "dynMix", 324, 42);
+                    });
+            }
+            finishModernModule();
+            return;
+        }
+        if (moduleKey == "multitapdelay" || moduleKey == "flanger" || moduleKey == "vocalfx" || moduleKey == "masterbus")
+        {
+            ensureParams ({ "multiTapTime", "multiTapFeedback", "multiTapSpread", "multiTapMix",
+                            "chorusRate", "chorusDepth", "chorusFeedback", "chorusMix",
+                            "vocalFormant", "vocalBody", "vocalMix",
+                            "eqEnabled", "eqMix", "dynThresholdDb", "dynRatio", "dynMix",
+                            "stereoWidth", "monoMaker", "outputLimiter", "outputCeilingDb", "outputGainDb" }, "fx");
+            if (moduleKey == "multitapdelay")
+            {
+                ensureBlock ("multitap_delay_module", "fx", "multiTapDelay", "MultiTap Delay", "multiTapMix", "creative", "space", "stereo",
+                             { { "multiTapTime", 0.375f }, { "multiTapFeedback", 0.35f }, { "multiTapSpread", 0.45f }, { "multiTapMix", 0.32f } });
+                addModulePanel ("Add MultiTap Delay Module", "MultiTap Delay", 410, 164,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildKnob (layout, panelId, "Time", "multiTapTime", 22, 42);
+                        addChildKnob (layout, panelId, "Feedback", "multiTapFeedback", 106, 42);
+                        addChildKnob (layout, panelId, "Spread", "multiTapSpread", 190, 42);
+                        addChildKnob (layout, panelId, "Mix", "multiTapMix", 274, 42);
+                    });
+            }
+            else if (moduleKey == "flanger")
+            {
+                ensureBlock ("flanger_module", "fx", "flanger", "Flanger", "chorusMix", "creative", "modulation", "stereo",
+                             { { "chorusRate", 0.18f }, { "chorusDepth", 0.72f }, { "chorusFeedback", 0.34f }, { "chorusMix", 0.36f } });
+                addModulePanel ("Add Flanger Module", "Flanger", 410, 164,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildKnob (layout, panelId, "Rate", "chorusRate", 22, 42);
+                        addChildKnob (layout, panelId, "Depth", "chorusDepth", 106, 42);
+                        addChildKnob (layout, panelId, "Feedback", "chorusFeedback", 190, 42);
+                        addChildKnob (layout, panelId, "Mix", "chorusMix", 274, 42);
+                    });
+            }
+            else if (moduleKey == "vocalfx")
+            {
+                ensureBlock ("vocal_fx_module", "fx", "vocalFormant", "Vocal FX", "vocalMix", "creative", "tone", "stereo",
+                             { { "vocalFormant", 0.40f }, { "vocalBody", 0.35f }, { "vocalMix", 0.22f }, { "dynMix", 0.20f } });
+                addModulePanel ("Add Vocal FX Module", "Vocal FX", 430, 180,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::SpectrumAnalyzer, "Voice View", "vocalMix", 18, 38, 146, 90);
+                        addChildKnob (layout, panelId, "Formant", "vocalFormant", 184, 46);
+                        addChildKnob (layout, panelId, "Body", "vocalBody", 266, 46);
+                        addChildKnob (layout, panelId, "Mix", "vocalMix", 348, 46);
+                    });
+            }
+            else
+            {
+                liveValues.setValue ("outputLimiter", 1.0f);
+                ensureBlock ("master_bus_eq_module", "filter", "surgicalEq", "Master Bus EQ", "eqMix", "studio", "tone", "stereo",
+                             { { "eqEnabled", 1.0f }, { "eqMix", 1.0f }, { "eqBand1On", 1.0f }, { "eqBand1Freq", 120.0f }, { "eqBand1GainDb", -0.8f } });
+                ensureBlock ("master_bus_comp_module", "fx", "dynamics", "Master Bus Glue", "dynMix", "studio", "dynamics", "stereo",
+                             { { "dynThresholdDb", -18.0f }, { "dynRatio", 2.0f }, { "dynMix", 0.28f } });
+                ensureBlock ("master_bus_limiter_module", "out", "limiter", "Master Limiter", "outputCeilingDb", "studio", "dynamics", "stereo",
+                             { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "outputGainDb", 0.0f } });
+                addModulePanel ("Add Master Bus Module", "Master Bus", 620, 206,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::SpectrumAnalyzer, "Spectrum", "eqMix", 18, 38, 170, 92);
+                        addChildKnob (layout, panelId, "EQ Mix", "eqMix", 210, 44);
+                        addChildKnob (layout, panelId, "Glue", "dynMix", 292, 44);
+                        addChildKnob (layout, panelId, "Width", "stereoWidth", 374, 44);
+                        addChildKnob (layout, panelId, "Ceiling", "outputCeilingDb", 456, 44);
+                        addChildToggle (layout, panelId, "Limit", "outputLimiter", 536, 64, 72, 30);
+                    });
+            }
+            finishModernModule();
+            return;
+        }
 
         if (moduleType.equalsIgnoreCase ("Chorus"))
         {
@@ -2091,16 +2709,31 @@
         }
         menu.addSeparator();
         bool canDetachLabels = false;
+        bool canCreatePscriptHandler = false;
         for (const auto& id : owner.getSelectedElementIds())
             if (auto* selected = owner.getProject().getLayout().find (id))
+            {
                 if (isRuntimeControlElement (selected->type)
                     && selected->labelPosition != "hidden"
                     && (selected->label.isNotEmpty() || selected->parameterId.isNotEmpty()))
                 {
                     canDetachLabels = true;
-                    break;
-        }
+                }
+                if ((isRuntimeControlElement (selected->type)
+                     || selected->type == ElementType::ValueDisplay
+                     || selected->type == ElementType::SampleDropZone)
+                    && selected->parameterId.isNotEmpty()
+                    && owner.getProject().getParameters().find (selected->parameterId) != nullptr)
+                {
+                    canCreatePscriptHandler = true;
+                }
+            }
         menu.addItem (15, "Detach Labels From Selection", canDetachLabels);
+        menu.addItem (36, "Hide Labels For Selection", ! owner.getSelectedElementIds().isEmpty());
+        menu.addItem (37, "Show Labels For Selection", ! owner.getSelectedElementIds().isEmpty());
+        menu.addItem (38, "Create pScript Handler For Selected Control", canCreatePscriptHandler);
+        menu.addItem (34, "Convert Shape/Text To Button", ! owner.getSelectedElementIds().isEmpty());
+        menu.addItem (35, "Convert Selection To Label", ! owner.getSelectedElementIds().isEmpty());
         menu.addItem (16, "Copy Selection", ! owner.getSelectedElementIds().isEmpty());
         menu.addItem (17, "Copy Selection Without Parameters", ! owner.getSelectedElementIds().isEmpty());
         menu.addItem (18, "Paste Elements", owner.hasCopiedElements());
@@ -2282,6 +2915,45 @@
                 else if (result == 23)
                 {
                     addDrumMachineControlLayout (canvasPos);
+                }
+                else if (result == 34)
+                {
+                    const auto ids = owner.getSelectedElementIds();
+                    owner.getProject().performLayoutEdit ("Convert selection to button", [ids] (LayoutModel& m)
+                    {
+                        for (const auto& id : ids)
+                            if (auto* el = m.find (id); el != nullptr
+                                && (el->type == ElementType::Shape || el->type == ElementType::Label))
+                            {
+                                el->type = ElementType::Button;
+                                if (el->label.isEmpty())
+                                    el->label = "Button";
+                            }
+                    });
+                    owner.refreshAllPanels();
+                }
+                else if (result == 35)
+                {
+                    const auto ids = owner.getSelectedElementIds();
+                    owner.getProject().performLayoutEdit ("Convert selection to label", [ids] (LayoutModel& m)
+                    {
+                        for (const auto& id : ids)
+                            if (auto* el = m.find (id); el != nullptr)
+                                el->type = ElementType::Label;
+                    });
+                    owner.refreshAllPanels();
+                }
+                else if (result == 36)
+                {
+                    owner.setSelectedLabelVisibility (false);
+                }
+                else if (result == 37)
+                {
+                    owner.setSelectedLabelVisibility (true);
+                }
+                else if (result == 38)
+                {
+                    owner.createPscriptHandlerForSelectedControl();
                 }
                 else if (result == 26)
                 {

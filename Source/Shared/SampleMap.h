@@ -9,6 +9,7 @@ namespace patchcraft
         int totalZones = 0;
         int playableZones = 0;
         int missingFiles = 0;
+        int missingMidiFiles = 0;
         int invalidRanges = 0;
         int rootOutsideRange = 0;
         int coveredNotes = 0;
@@ -44,7 +45,7 @@ namespace patchcraft
         // Auto-distribute zones across the keyboard given existing list of samples.
         void autoMapAcrossKeyboard();
         void autoMapByRootNotes();
-        void autoMapDrumPads (int startNote = 36, int padCount = 16);
+        void autoMapDrumPads (int startNote = 36, int padCount = 16, bool stackSamples = false);
 
         static int noteNumberFromName (const juce::String& noteName);
         static SampleZoneDef inferZoneFromFile (const juce::File& file,

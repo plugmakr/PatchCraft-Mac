@@ -110,6 +110,89 @@ namespace patchcraft
                 : juce::String (value, 2);
         }
 
+        static juce::String formatElementValue (const PatchCraftProject& project,
+                                                const LayoutElement& element,
+                                                const ParameterDef* def,
+                                                float value,
+                                                const juce::String& parameterId)
+        {
+            const auto fmt = element.valueFormat.trim();
+            if (fmt == "0.00")
+                return juce::String (value, 2);
+            if (fmt == "4.2 kHz")
+                return value >= 1000.0f ? juce::String (value / 1000.0f, 1) + " kHz"
+                                        : juce::String (value, 0) + " Hz";
+            if (fmt == "dB")
+                return juce::String (value, 1) + " dB";
+            if (fmt == "%")
+                return juce::String (juce::roundToInt (value * 100.0f)) + " %";
+            if (fmt == "ms")
+                return juce::String (value, 0) + " ms";
+            if (fmt == "Tempo Div")
+            {
+                static const char* divisions[] = { "1/64", "1/32", "1/16", "1/8", "1/4", "1/2", "1/1" };
+                return divisions[(size_t) juce::jlimit (0, 6, juce::roundToInt (value))];
+            }
+
+            if (parameterId.isNotEmpty() && fmt == "Auto")
+                return displayValueForParameter (project, parameterId);
+
+            if (def != nullptr)
+            {
+                if (def->unit == "Hz" && value >= 1000.0f) return juce::String (value / 1000.0f, 1) + " kHz";
+                if (def->unit == "Hz") return juce::String (value, 0) + " Hz";
+                if (def->unit == "%") return juce::String (juce::roundToInt (value * 100.0f)) + " %";
+                if (def->unit == "s") return juce::String (value * 1000.0f, 0) + " ms";
+                if (def->unit.isNotEmpty()) return juce::String (value, 2) + " " + def->unit;
+            }
+
+            return juce::String (value, 2);
+        }
+
+        static juce::Rectangle<int> runtimeControlBodyBounds (juce::Rectangle<int> r, const LayoutElement& e)
+        {
+            auto body = r;
+            if (e.labelPosition == "top")
+                body = body.withTrimmedTop (juce::jmax (20, r.getHeight() / 5));
+            else if (e.labelPosition == "bottom")
+                body = body.withTrimmedBottom (juce::roundToInt ((float) r.getHeight() * 0.30f));
+
+            const int padding = juce::roundToInt (e.contentPadding);
+            if (padding >= 0)
+                body = body.reduced (padding);
+            else
+                body = body.expanded (-padding);
+            return body;
+        }
+
+        static void drawRuntimeWheelControl (juce::Graphics& g, juce::Rectangle<int> r,
+                                             const LayoutElement& e, float norm)
+        {
+            const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
+            const auto border = e.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : e.borderColour;
+            const auto fill = e.backgroundColour.isTransparent() ? PatchCraftLookAndFeel::panelAlt() : e.backgroundColour;
+
+            auto wheel = r.toFloat();
+            g.setColour (fill.withAlpha (0.88f));
+            g.fillRoundedRectangle (wheel, juce::jmax (8.0f, e.cornerRadius));
+            g.setColour (border);
+            g.drawRoundedRectangle (wheel.reduced (0.5f), juce::jmax (8.0f, e.cornerRadius), 1.0f);
+
+            auto track = wheel.reduced (wheel.getWidth() * 0.34f, 8.0f);
+            g.setColour (juce::Colour (0xff11141a));
+            g.fillRoundedRectangle (track, track.getWidth() * 0.5f);
+            g.setColour (border.withAlpha (0.7f));
+            g.drawRoundedRectangle (track.reduced (0.5f), track.getWidth() * 0.5f, 1.0f);
+
+            const float thumbHeight = juce::jmax (16.0f, wheel.getHeight() * 0.18f);
+            const float thumbY = juce::jmap (norm, track.getBottom() - thumbHeight, track.getY());
+            juce::Rectangle<float> thumb (track.getX() - 2.0f, thumbY, track.getWidth() + 4.0f, thumbHeight);
+            g.setColour (accent.withAlpha (0.95f));
+            g.fillRoundedRectangle (thumb, thumb.getHeight() * 0.5f);
+            g.setColour (juce::Colours::white.withAlpha (0.28f));
+            g.drawRoundedRectangle (thumb.reduced (0.5f), thumb.getHeight() * 0.5f, 1.0f);
+        }
+
         static int whiteNotesBefore (int midiNote)
         {
             int count = 0;
@@ -786,6 +869,7 @@ namespace patchcraft
     bool StudioInstrumentRenderer::isElementOnCurrentTab (const LayoutElement& e) const
     {
         if (e.groupId.isEmpty()) return true;
+        bool hasTabPanels = false;
         for (const auto& parent : elementsCopy)
         {
             if ((parent.type == ElementType::Group || parent.type == ElementType::Panel)
@@ -793,6 +877,7 @@ namespace patchcraft
                 return true;
             if (parent.type == ElementType::TabPanel)
             {
+                hasTabPanels = true;
                 for (const auto& tab : parent.tabs)
                 {
                     const auto group = scopedTabGroupId (parent, tab);
@@ -807,6 +892,8 @@ namespace patchcraft
                 }
             }
         }
+        if (! hasTabPanels && ! isScopedTabGroupId (e.groupId))
+            return true;
         if (isScopedTabGroupId (e.groupId))
             return false;
         return e.groupId == currentTabGroup;
@@ -877,10 +964,14 @@ namespace patchcraft
                 continue;
             }
 
-            if (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::MacroControl)
+            if (e.type == ElementType::Knob || e.type == ElementType::Slider
+                || e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel
+                || e.type == ElementType::MacroControl)
             {
                 auto slider = std::make_unique<juce::Slider>();
-                slider->setSliderStyle (e.type == ElementType::Slider
+                slider->setSliderStyle ((e.type == ElementType::Slider
+                                         || e.type == ElementType::PitchWheel
+                                         || e.type == ElementType::ModWheel)
                     ? juce::Slider::LinearVertical
                     : juce::Slider::RotaryHorizontalVerticalDrag);
                 slider->setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
@@ -893,7 +984,8 @@ namespace patchcraft
                 // Set range from parameter definition if available
                 auto* paramDef = project.getParameters().find (e.parameterId);
                 const bool visualOnlyControl = e.parameterId.isEmpty()
-                    && (e.type == ElementType::Knob || e.type == ElementType::Slider);
+                    && (e.type == ElementType::Knob || e.type == ElementType::Slider
+                        || e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel);
                 if (paramDef != nullptr)
                 {
                     slider->setRange (paramDef->min, paramDef->max, paramDef->step > 0.0f ? paramDef->step : 0.001);
@@ -1036,10 +1128,10 @@ namespace patchcraft
 
     juce::Rectangle<int> StudioInstrumentRenderer::elementRect (const LayoutElement& e, const CanvasMetrics& m) const
     {
-        int x = m.canvas.getX() + (int) (e.x * m.scale);
-        int y = m.canvas.getY() + (int) (e.y * m.scale);
-        int w = (int) (e.width * m.scale);
-        int h = (int) (e.height * m.scale);
+        int x = m.canvas.getX() + juce::roundToInt ((float) e.x * m.scale);
+        int y = m.canvas.getY() + juce::roundToInt ((float) e.y * m.scale);
+        int w = juce::roundToInt ((float) e.width * m.scale);
+        int h = juce::roundToInt ((float) e.height * m.scale);
         return { x, y, w, h };
     }
 
@@ -1118,9 +1210,19 @@ namespace patchcraft
                 }
 
                 case ElementType::Label:
-                    drawLabel (g, r, e.label, e.labelSize > 0.0f ? e.labelSize : 14.0f,
+                {
+                    juce::String text = e.label;
+                    if (e.parameterId.isNotEmpty())
+                    {
+                        const auto* def = project.getParameters().find (e.parameterId);
+                        const auto value = project.getLiveValues().getValue (e.parameterId, def != nullptr ? def->defaultValue : 0.0f);
+                        const auto valueText = formatElementValue (project, e, def, value, e.parameterId);
+                        text = e.label.isNotEmpty() ? (e.label + " " + valueText) : valueText;
+                    }
+                    drawLabel (g, r, text, e.labelSize > 0.0f ? e.labelSize : 14.0f,
                                e.textColour.isTransparent() ? PatchCraftLookAndFeel::text() : e.textColour);
                     break;
+                }
 
                 case ElementType::Panel:
                     drawPanel (g, r, e.label);
@@ -1281,13 +1383,21 @@ namespace patchcraft
                     drawLabel (g, r.reduced (8), e.label.isNotEmpty() ? e.label : "Sample Drop Zone", 12.0f, e.accentColour);
                     break;
 
+                case ElementType::RuntimeSampleLibrary:
+                    g.setColour (e.backgroundColour.isTransparent() ? PatchCraftLookAndFeel::panelAlt().withAlpha (0.82f) : e.backgroundColour);
+                    g.fillRoundedRectangle (r.toFloat(), juce::jmax (4.0f, e.cornerRadius));
+                    g.setColour (e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour);
+                    g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (4.0f, e.cornerRadius), 1.0f);
+                    drawLabel (g, r.reduced (10), e.label.isNotEmpty() ? e.label : "Runtime Sample Library", 12.0f, e.accentColour);
+                    break;
+
                 case ElementType::Knob:
                 case ElementType::Slider:
+                case ElementType::PitchWheel:
+                case ElementType::ModWheel:
                 case ElementType::MacroControl:
                     drawRuntimeControl (g,
-                                        e.labelPosition == "hidden"
-                                            ? r.reduced (2)
-                                            : r.withTrimmedBottom (juce::jmax (20, r.getHeight() / 4)),
+                                        runtimeControlBodyBounds (r, e),
                                         e);
                     break;
 
@@ -1318,7 +1428,11 @@ namespace patchcraft
                 case ElementType::Dropdown:
                     drawDropdown (g, r, e.parameterId.isEmpty()
                         ? "Select..."
-                        : ((e.label.isNotEmpty() ? e.label + ": " : juce::String()) + displayValueForParameter (project, e.parameterId)));
+                        : ((e.label.isNotEmpty() ? e.label + ": " : juce::String())
+                           + formatElementValue (project, e,
+                                                 project.getParameters().find (e.parameterId),
+                                                 project.getLiveValues().getValue (e.parameterId, 0.0f),
+                                                 e.parameterId)));
                     break;
 
                 case ElementType::ValueDisplay:
@@ -1327,12 +1441,21 @@ namespace patchcraft
                     const auto value = project.getLiveValues().getValue (e.parameterId, def != nullptr ? def->defaultValue : 0.0f);
                     g.setColour (PatchCraftLookAndFeel::panelAlt());
                     g.fillRoundedRectangle (r.toFloat(), 5.0f);
-                    g.setColour (PatchCraftLookAndFeel::textDim());
-                    g.setFont (10.0f);
-                    g.drawText (e.label.isNotEmpty() ? e.label : e.parameterId, r.removeFromTop (16).reduced (5, 0), juce::Justification::centredLeft, true);
+                    auto valueArea = r.reduced (5, 0);
+                    if (e.label.isNotEmpty())
+                    {
+                        g.setColour (PatchCraftLookAndFeel::textDim());
+                        g.setFont (10.0f);
+                        g.drawText (e.label, r.removeFromTop (16).reduced (5, 0), juce::Justification::centredLeft, true);
+                        valueArea = r.reduced (5, 0);
+                    }
                     g.setColour (PatchCraftLookAndFeel::accent());
                     g.setFont (juce::Font (16.0f, juce::Font::bold));
-                    g.drawText (juce::String (value, 2), r.reduced (5, 0), juce::Justification::centredRight, true);
+                    g.drawText (formatElementValue (project, e, def, value, e.parameterId),
+                                valueArea,
+                                e.label.isNotEmpty() ? juce::Justification::centredRight
+                                                     : juce::Justification::centred,
+                                true);
                     break;
                 }
 
@@ -1721,16 +1844,16 @@ namespace patchcraft
                     break;
             }
 
-            if (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::MacroControl)
+            if (e.type == ElementType::Knob || e.type == ElementType::Slider
+                || e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel
+                || e.type == ElementType::MacroControl)
             {
                 const auto* def = project.getParameters().find (e.parameterId);
                 juce::String valueText;
                 if (def != nullptr)
                 {
                     const auto v = project.getLiveValues().getValue (def->id, def->defaultValue);
-                    if (def->unit == "Hz" && v >= 1000.0f) valueText = juce::String (v / 1000.0f, 1) + " kHz";
-                    else if (def->unit.isNotEmpty())       valueText = juce::String (v, 2) + " " + def->unit;
-                    else                                   valueText = juce::String (v, 2);
+                    valueText = formatElementValue (project, e, def, v, def->id);
                 }
 
                 drawRuntimeLabelText (g, r, e, valueText);
@@ -1748,10 +1871,8 @@ namespace patchcraft
             if (knobs[(int) i] != nullptr && e.visible && isElementOnCurrentTab (e))
             {
                 auto bounds = elementRect (e, m);
-                if (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::MacroControl)
-                    bounds.removeFromBottom (juce::jmax (20, bounds.getHeight() / 4));
                 bounds = animatedElementRect (e, bounds);
-                knobs[(int) i]->setBounds (bounds.reduced (2));
+                knobs[(int) i]->setBounds (runtimeControlBodyBounds (bounds, e));
             }
         }
     }
@@ -1808,9 +1929,10 @@ namespace patchcraft
         divisions = block != nullptr
             ? juce::jlimit (1, 4, juce::roundToInt (blockValue (*block, prefix + "Div", 1.0f)))
             : 1;
-        note = block != nullptr
-            ? juce::jlimit (0, 127, juce::roundToInt (blockValue (*block, "dmTrack" + juce::String (track) + "Note", (float) (36 + track))))
-            : juce::jlimit (0, 127, 36 + track);
+        const bool triggerPadSlots = block == nullptr || blockValue (*block, "dmTriggerPadSlots", 1.0f) >= 0.5f;
+        note = triggerPadSlots
+            ? juce::jlimit (0, 127, 36 + track)
+            : juce::jlimit (0, 127, juce::roundToInt (blockValue (*block, "dmTrack" + juce::String (track) + "Note", (float) (36 + track))));
 
         const auto trackTop = (float) area.getY() + (float) track * cellH;
         const float localY = juce::jlimit (0.0f, 1.0f, ((float) pos.y - trackTop) / cellH);
@@ -2761,17 +2883,24 @@ namespace patchcraft
             return;
         }
 
+        const bool transportActive = isTransportPlaying ? isTransportPlaying() : false;
+        const bool audioReactiveActive = audioReactiveLevel.load (std::memory_order_relaxed) > 0.004f;
+
         for (const auto& item : elementsCopy)
         {
             if (! item.visible || ! isElementOnCurrentTab (item))
                 continue;
-            if ((item.animationMode.isNotEmpty() && item.animationMode != "none")
-                || item.audioReactive
-                || item.type == ElementType::ArpLane
-                || item.type == ElementType::GranularField
-                || item.type == ElementType::SpectrumAnalyzer)
+
+            const bool hasActiveAnimation = item.animationMode.isNotEmpty() && item.animationMode != "none";
+            const bool needsReactivePaint = item.audioReactive && audioReactiveActive;
+            const bool isPlaybackVisual = item.type == ElementType::ArpLane
+                                       || item.type == ElementType::SpectrumAnalyzer;
+
+            if (hasActiveAnimation
+                || needsReactivePaint
+                || (isPlaybackVisual && (transportActive || audioReactiveActive)))
             {
-                if (item.animationMode.isNotEmpty() && item.animationMode != "none")
+                if (hasActiveAnimation)
                     resized();
                 repaint();
                 return;
@@ -2979,6 +3108,12 @@ namespace patchcraft
 
         if (e.type == ElementType::Slider)
         {
+            if (e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel
+                || e.parameterId == "pitchWheel" || e.parameterId == "modWheel")
+            {
+                drawRuntimeWheelControl (g, r, e, norm);
+                return;
+            }
             auto track = r.reduced (r.getWidth() / 3, 6).toFloat();
             g.setColour (fill);
             g.fillRoundedRectangle (track, 4.0f);

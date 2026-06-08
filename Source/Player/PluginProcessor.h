@@ -18,7 +18,7 @@ namespace patchcraft
     class LibraryScanner;
 
     /**
-        PatchCraft Player VST3 instrument plugin. Loads a .patchcraft pack
+        White-label Player VST3 instrument plugin. Loads a .patchcraft pack
         folder at runtime and renders the custom UI from the pack's layout.
     */
     class PlayerProcessor : public juce::AudioProcessor
@@ -45,9 +45,9 @@ namespace patchcraft
             }
 
            #if PATCHCRAFT_PLAYER_FX
-            return "PatchCraft Player FX";
+            return "Player FX";
            #else
-            return "PatchCraft Player";
+            return "Player";
            #endif
         }
         bool acceptsMidi() const override                         { return true; }
@@ -172,14 +172,14 @@ namespace patchcraft
         LibraryScanner& getLibraryScanner() { return *libraryScanner; }
 
         // Runtime user imports. These are end-user overlays saved with the
-        // host session and copied to the user's writable PatchCraft folder.
+        // host session and copied to the user's writable instrument folder.
         struct UserContentItem
         {
             juce::String id;
             juce::String kind;      // "sample" or "midi"
             juce::String name;
             juce::String filePath;
-            juce::String role;      // "pads", "keyboard", "playground"
+            juce::String role;      // "pads", "keyboard", "zone", "playground", or "zoneMidi"
             juce::String summary;
             int rootNote = 60;
             int lowNote = 0;
@@ -188,11 +188,15 @@ namespace patchcraft
             int noteCount = 0;
             double bpm = 120.0;
             int tuneSemitones = 0;
+            juce::String midiMode { "trigger" };
+            float midiVelocityAmount = 1.0f;
         };
         std::vector<UserContentItem> getUserContentSnapshot() const;
         bool importUserContentFiles (const juce::StringArray& files,
                                      const juce::String& sampleMappingMode,
-                                     juce::String& report);
+                                     juce::String& report,
+                                     int targetNote = -1,
+                                     int targetPadIndex = -1);
         bool clearUserContent();
         bool applyUserMidiToPlayground (const juce::String& contentId);
         bool setUserContentTuneSemitones (const juce::String& contentId, int semitones);
@@ -222,6 +226,7 @@ namespace patchcraft
         void userContentFromJson (const juce::String& json);
         void saveUserContentManifest() const;
         void rebuildRuntimeUserContentLocked (bool reloadEngine);
+        void applyAuthoredZoneMidiToGraphLocked();
         bool applyMidiContentToGraphLocked (const UserContentItem& item);
         static juce::String safeUserContentFileName (const juce::File& file);
         static bool isSupportedUserSampleFile (const juce::File& file);

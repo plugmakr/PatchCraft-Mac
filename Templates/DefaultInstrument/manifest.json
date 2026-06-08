@@ -1,11 +1,11 @@
 {
   "formatVersion": 1,
   "instrumentName": "Cinematic Evolve Pad",
-  "creator": "PatchCraft",
+  "creator": "Your Brand",
   "description": "Default cinematic pad instrument template.",
   "category": "Sample Instrument",
   "engine": "sample",
   "backgroundImage": "assets/background.png",
   "defaultPreset": "Deep Horizon",
-  "createdWith": "PatchCraft Studio"
+  "createdWith": "Player Builder"
 }

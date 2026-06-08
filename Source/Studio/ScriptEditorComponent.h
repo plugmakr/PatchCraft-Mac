@@ -111,6 +111,20 @@ namespace patchcraft
             rebuildRegistryPanel();
         }
 
+        void insertSnippetAndCompile (const juce::String& snippet)
+        {
+            auto src = codeEditor.getText().trimEnd();
+            if (src.isNotEmpty())
+                src += "\n\n";
+            src += snippet.trimEnd();
+            src += "\n";
+
+            codeEditor.setText (src, juce::dontSendNotification);
+            codeEditor.setCaretPosition (src.length());
+            compileScript();
+            codeEditor.grabKeyboardFocus();
+        }
+
         void projectChanged() override
         {
             if (codeEditor.getText() != project.getPscriptSource())
@@ -282,20 +296,16 @@ namespace patchcraft
         void setupCheatsheetItems()
         {
             cheatsheetItems = {
-                { "Note Start Event", "Triggers when a MIDI note begins", "when note starts:\n    " },
-                { "Note End Event", "Triggers when a MIDI note ends", "when note ends:\n    " },
-                { "Knob Move Event", "Triggers when a canvas knob changes", "when knob \"Cutoff\" moves:\n    " },
-                { "Timer Loop Event", "Fires repeatedly at time intervals", "when timer 50 ms:\n    " },
-                { "Variable Definition", "Allocates a scoped float variable", "let speed = 1.0\n" },
-                { "Parameter Set", "Modifies a parameter directly", "set filter.cutoff to 1200 Hz\n" },
-                { "Parameter Mapping", "Linear mapping scale utility", "set filter.cutoff to velocity mapped 0..127 -> 200 Hz..8000 Hz\n" },
-                { "Print Telemetry", "Outputs log trace to console", "print speed\n" },
-                { "Condition Branching", "Executes code block based on status", "if velocity > 100:\n    set filter.cutoff to 12000 Hz\nelse:\n    set filter.cutoff to 800 Hz\n" },
-                { "Repeat Loop", "Executes statement block count-wise", "repeat 4:\n    play layer \"Attack\"\n" },
-                { "Randomize Param", "Randomizes range parameter bounds", "randomize filter.cutoff between 600 Hz and 1800 Hz\n" },
-                { "Parameter Smooth", "Applies filter ramp smoothing", "smooth 30 ms\n" },
-                { "Play Sound Layer", "Triggers layers in project engine", "play layer \"Sample\"\n" },
-                { "Turn Effect On/Off", "Bypasses or enables rack effects", "turn off effect \"Delay\"\n" }
+                { "Control Macro", "One mapped control drives another parameter", "when knob \"filterCutoff\" moves:\n    let amount = value mapped 20 Hz..20000 Hz -> 0.0..1.0\n    set delayMix to amount * 0.35\n" },
+                { "Note Velocity", "MIDI velocity opens the filter musically", "when note starts:\n    set filterCutoff to velocity mapped 0..127 -> 800 Hz..9000 Hz\n" },
+                { "Note Release", "Reset a value when notes stop", "when note ends:\n    set delayMix to 0.0\n" },
+                { "Mod Wheel", "Hardware mod wheel controls an effect amount", "when modwheel moves:\n    set reverbMix to modwheel mapped 0..127 -> 0.0..0.45\n" },
+                { "Timer Motion", "Creates a periodic script event", "when timer 250 ms:\n    print value\n" },
+                { "Variable", "Create a readable intermediate value", "let amount = value mapped 0.0..1.0 -> 0.0..1.0\n" },
+                { "Set Parameter", "Write directly to a real parameter ID", "set filterCutoff to 1200 Hz\n" },
+                { "Randomize Safe Range", "Randomize inside a musical range", "randomize filterCutoff between 600 Hz and 1800 Hz\n" },
+                { "Conditional", "Choose behavior from an input value", "if velocity > 100:\n    set delayMix to 0.25\nelse:\n    set delayMix to 0.05\n" },
+                { "Print Debug", "Show a value in the pScript log", "print value\n" }
             };
 
             // Setup buttons in cheatsheet viewport container
@@ -326,15 +336,15 @@ namespace patchcraft
             int idx = 0;
             for (const auto& p : allParams)
             {
-                auto friendlyName = getFriendlyParameterName (p.id);
+                auto friendlyName = p.name.isNotEmpty() ? p.name : p.id;
                 auto desc = "ID: " + p.id + " | Range: " + juce::String (p.min) + ".." + juce::String (p.max) + " " + p.unit;
 
                 auto* btn = new juce::TextButton();
-                btn->setButtonText (friendlyName);
+                btn->setButtonText (friendlyName + "  (" + p.id + ")");
                 btn->setTooltip (desc);
                 btn->setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1c1c1c));
-                btn->onClick = [this, friendlyName] {
-                    codeEditor.insertTextAtCaret (friendlyName);
+                btn->onClick = [this, parameterId = p.id] {
+                    codeEditor.insertTextAtCaret (parameterId);
                     codeEditor.grabKeyboardFocus();
                 };
                 registryContainer.addAndMakeVisible (btn);

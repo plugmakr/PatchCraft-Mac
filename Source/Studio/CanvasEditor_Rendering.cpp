@@ -194,6 +194,57 @@
         }
     }
 
+    static juce::String formatCanvasElementValue (const PatchCraftProject& project,
+                                                  const LayoutElement& element,
+                                                  const ParameterDef* def,
+                                                  float value)
+    {
+        const auto fmt = element.valueFormat.trim();
+        if (fmt == "0.00")
+            return juce::String (value, 2);
+        if (fmt == "4.2 kHz")
+            return value >= 1000.0f ? juce::String (value / 1000.0f, 1) + " kHz"
+                                    : juce::String (value, 0) + " Hz";
+        if (fmt == "dB")
+            return juce::String (value, 1) + " dB";
+        if (fmt == "%")
+            return juce::String (juce::roundToInt (value * 100.0f)) + " %";
+        if (fmt == "ms")
+            return juce::String (value, 0) + " ms";
+        if (fmt == "Tempo Div")
+        {
+            static const char* divisions[] = { "1/64", "1/32", "1/16", "1/8", "1/4", "1/2", "1/1" };
+            return divisions[(size_t) juce::jlimit (0, 6, juce::roundToInt (value))];
+        }
+
+        if (def != nullptr)
+        {
+            if (def->unit == "Hz" && value >= 1000.0f) return juce::String (value / 1000.0f, 1) + " kHz";
+            if (def->unit == "Hz") return juce::String (value, 0) + " Hz";
+            if (def->unit == "%") return juce::String (juce::roundToInt (value * 100.0f)) + " %";
+            if (def->unit == "s") return juce::String (value * 1000.0f, 0) + " ms";
+            if (def->unit.isNotEmpty()) return juce::String (value, 2) + " " + def->unit;
+        }
+
+        return juce::String (value, 2);
+    }
+
+    static juce::Rectangle<int> canvasControlBodyBounds (juce::Rectangle<int> r, const LayoutElement& e)
+    {
+        auto body = r;
+        if (e.labelPosition == "top")
+            body = body.withTrimmedTop (juce::jmax (20, r.getHeight() / 5));
+        else if (e.labelPosition == "bottom")
+            body = body.withTrimmedBottom (juce::roundToInt ((float) r.getHeight() * 0.30f));
+
+        const int padding = juce::roundToInt (e.contentPadding);
+        if (padding >= 0)
+            body = body.reduced (padding);
+        else
+            body = body.expanded (-padding);
+        return body;
+    }
+
     static void drawCanvasKnob (juce::Graphics& g, juce::Rectangle<int> r,
                                 const LayoutElement& e, juce::String valueText,
                                 juce::Colour accent, float pos01)
@@ -404,6 +455,34 @@
                 g.fillRect (sx, inner.getY(), sw, inner.getHeight());
             }
         }
+    }
+
+    static void drawWheelControl (juce::Graphics& g, juce::Rectangle<int> r,
+                                  const LayoutElement& e, float norm)
+    {
+        const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
+        const auto border = e.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : e.borderColour;
+        const auto fill = e.backgroundColour.isTransparent() ? PatchCraftLookAndFeel::panelAlt() : e.backgroundColour;
+
+        auto wheel = r.toFloat();
+        g.setColour (fill.withAlpha (0.88f));
+        g.fillRoundedRectangle (wheel, juce::jmax (8.0f, e.cornerRadius));
+        g.setColour (border);
+        g.drawRoundedRectangle (wheel.reduced (0.5f), juce::jmax (8.0f, e.cornerRadius), 1.0f);
+
+        auto track = wheel.reduced (wheel.getWidth() * 0.34f, 8.0f);
+        g.setColour (juce::Colour (0xff11141a));
+        g.fillRoundedRectangle (track, track.getWidth() * 0.5f);
+        g.setColour (border.withAlpha (0.7f));
+        g.drawRoundedRectangle (track.reduced (0.5f), track.getWidth() * 0.5f, 1.0f);
+
+        const float thumbHeight = juce::jmax (16.0f, wheel.getHeight() * 0.18f);
+        const float thumbY = juce::jmap (norm, track.getBottom() - thumbHeight, track.getY());
+        juce::Rectangle<float> thumb (track.getX() - 2.0f, thumbY, track.getWidth() + 4.0f, thumbHeight);
+        g.setColour (accent.withAlpha (0.95f));
+        g.fillRoundedRectangle (thumb, thumb.getHeight() * 0.5f);
+        g.setColour (juce::Colours::white.withAlpha (0.28f));
+        g.drawRoundedRectangle (thumb.reduced (0.5f), thumb.getHeight() * 0.5f, 1.0f);
     }
 
     static float eqFrequencyToX01 (float frequency)
@@ -1064,6 +1143,34 @@
                                                           : "drop once to create linked Start / Length / Pitch / Level controls",
                               area, juce::Justification::centred, 2);
         }
+        else if (e.type == ElementType::RuntimeSampleLibrary)
+        {
+            const auto bg = e.backgroundColour.isTransparent() ? juce::Colour (0xdd10141a) : e.backgroundColour;
+            const auto border = e.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : e.borderColour;
+            const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
+            g.setColour (bg);
+            g.fillRoundedRectangle (r.toFloat(), juce::jmax (6.0f, e.cornerRadius));
+            g.setColour (border);
+            g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (6.0f, e.cornerRadius), 1.0f);
+
+            auto area = r.reduced (10, 8);
+            g.setColour (accent);
+            g.setFont (juce::FontOptions (12.0f).withStyle ("bold"));
+            g.drawFittedText (e.label.isNotEmpty() ? e.label : "Runtime Sample Library",
+                              area.removeFromTop (24), juce::Justification::centredLeft, 1);
+
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (juce::FontOptions (10.0f));
+            g.drawFittedText ("Player runtime drop target for samples and MIDI.",
+                              area.removeFromTop (22), juce::Justification::centredLeft, 1);
+
+            g.setColour (accent.withAlpha (0.14f));
+            g.fillRoundedRectangle (area.reduced (0, 4).toFloat(), 6.0f);
+            g.setColour (PatchCraftLookAndFeel::text());
+            g.setFont (juce::FontOptions (10.0f));
+            g.drawFittedText ("End users can drop files here, or onto pads/zones.",
+                              area.reduced (8, 6), juce::Justification::centred, 2);
+        }
         else if (e.type == ElementType::Knob)
         {
             const auto* p = owner.getProject().getParameters().find (e.parameterId);
@@ -1074,19 +1181,7 @@
                 const float live = owner.getProject().getLiveValues()
                                         .getValue (p->id, p->defaultValue);
                 pos01 = (p->max > p->min) ? (live - p->min) / (p->max - p->min) : 0.0f;
-
-                if (p->unit == "Hz" && live >= 1000.0f)
-                    value = juce::String (live / 1000.0f, 1) + " kHz";
-                else if (p->unit == "Hz")
-                    value = juce::String (live, 0) + " Hz";
-                else if (p->unit == "%")
-                    value = juce::String (juce::roundToInt (live * 100.0f)) + " %";
-                else if (p->unit == "s")
-                    value = juce::String (live, 2) + " s";
-                else if (p->unit.isNotEmpty())
-                    value = juce::String (live, 2) + " " + p->unit;
-                else
-                    value = juce::String (live, 2);
+                value = formatCanvasElementValue (owner.getProject(), e, p, live);
             }
             else if (e.filmstripAsset.isNotEmpty())
             {
@@ -1106,9 +1201,7 @@
                     int frames = e.filmstripFrames;
                     if (frames <= 1)
                         frames = juce::jmax (frames, PatchCraftLookAndFeel::detectFilmstripFrames (img, e.filmstripVertical));
-                    auto stripRect = e.labelPosition == "hidden"
-                        ? r.reduced (2)
-                        : r.withTrimmedBottom (juce::roundToInt (r.getHeight() * 0.30f));
+                    auto stripRect = canvasControlBodyBounds (r, e);
                     PatchCraftLookAndFeel::drawFilmstripFrame (
                         g, stripRect, img, frames, pos01, e.filmstripVertical);
 
@@ -1116,17 +1209,33 @@
                 }
                 else
                 {
-                    drawCanvasKnob (g, r, e, value, e.accentColour, pos01);
+                    drawCanvasKnob (g, canvasControlBodyBounds (r, e), e, value, e.accentColour, pos01);
                 }
             }
             else
             {
-                drawCanvasKnob (g, r, e, value, e.accentColour, pos01);
+                drawCanvasKnob (g, canvasControlBodyBounds (r, e), e, value, e.accentColour, pos01);
             }
         }
-        else if (e.type == ElementType::Slider)
+        else if (e.type == ElementType::Slider || e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel)
         {
-            drawCanvasVerticalSlider (g, r, e);
+            const auto body = canvasControlBodyBounds (r, e);
+            if (e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel
+                || e.parameterId == "pitchWheel" || e.parameterId == "modWheel")
+            {
+                const auto* p = owner.getProject().getParameters().find (e.parameterId);
+                const float live = p != nullptr
+                    ? owner.getProject().getLiveValues().getValue (p->id, p->defaultValue)
+                    : 0.0f;
+                const float norm = p != nullptr && p->max > p->min
+                    ? juce::jlimit (0.0f, 1.0f, (live - p->min) / (p->max - p->min))
+                    : 0.5f;
+                drawWheelControl (g, body, e, norm);
+            }
+            else
+            {
+                drawCanvasVerticalSlider (g, body, e);
+            }
         }
         else if (e.type == ElementType::Toggle)
         {
@@ -1163,10 +1272,17 @@
         }
         else if (e.type == ElementType::Label)
         {
+            juce::String text = e.label;
+            if (auto* p = owner.getProject().getParameters().find (e.parameterId))
+            {
+                const float live = owner.getProject().getLiveValues().getValue (p->id, p->defaultValue);
+                const auto value = formatCanvasElementValue (owner.getProject(), e, p, live);
+                text = e.label.isNotEmpty() ? (e.label + " " + value) : value;
+            }
             g.setColour (PatchCraftLookAndFeel::text());
             g.setFont (juce::Font (juce::jmax (12.0f, (float) r.getHeight() * 0.5f),
                                    juce::Font::bold));
-            g.drawText (e.label, r, juce::Justification::centredLeft);
+            g.drawText (text, r, juce::Justification::centredLeft);
         }
         else if (e.type == ElementType::Dropdown)
         {
@@ -1486,10 +1602,12 @@
             // resize handles
             const int hs = 6;
             for (auto p : { r.getTopLeft(), r.getTopRight(),
-                            r.getBottomLeft(), r.getBottomRight() })
-            {
+                            r.getBottomLeft(), r.getBottomRight(),
+                            juce::Point<int> (r.getCentreX(), r.getY()),
+                            juce::Point<int> (r.getCentreX(), r.getBottom()),
+                            juce::Point<int> (r.getX(), r.getCentreY()),
+                            juce::Point<int> (r.getRight(), r.getCentreY()) })
                 g.fillRect (p.x - hs / 2, p.y - hs / 2, hs, hs);
-            }
         }
     }
 

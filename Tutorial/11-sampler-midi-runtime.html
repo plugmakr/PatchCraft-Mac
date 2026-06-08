@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>11 - Sampler, MIDI, and Runtime Drop Workflows - PatchCraft Tutorial</title>
+    <meta name="description" content="Visual guide to PatchCraft sample mapping, MIDI-driven samples, Slice mode, runtime sample library drops, and one-shot handoff workflows."/>
+    <link rel="stylesheet" href="assets/css/main.css"/>
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo.svg"/>
+    <style>
+        .visual-panel {
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            background: linear-gradient(180deg, rgba(28, 31, 37, 0.96), rgba(13, 15, 19, 0.96));
+            padding: 1.2em;
+            margin: 1.3em 0 1.8em;
+            box-shadow: var(--shadow-md);
+        }
+        .flow-row {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 0.65em;
+            align-items: stretch;
+        }
+        .flow-row.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .flow-row.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .flow-box {
+            min-height: 94px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: #10131a;
+            padding: 0.9em;
+            position: relative;
+        }
+        .flow-box::after {
+            content: ">";
+            position: absolute;
+            right: -0.6em;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--accent);
+            font-weight: 800;
+        }
+        .flow-box:last-child::after { content: ""; }
+        .flow-box h3 {
+            margin: 0 0 0.35em;
+            color: var(--accent);
+            font-size: 0.98rem;
+        }
+        .flow-box p {
+            color: var(--text-mid);
+            font-size: 0.88rem;
+            line-height: 1.45;
+            margin: 0;
+        }
+        .ui-map {
+            display: grid;
+            grid-template-columns: 180px 1fr 220px;
+            grid-template-rows: auto auto auto;
+            gap: 0.65em;
+        }
+        .ui-tile {
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            background: #10131a;
+            padding: 0.85em;
+            color: var(--text-mid);
+            min-height: 86px;
+        }
+        .ui-tile strong {
+            color: var(--text-bright);
+            display: block;
+            margin-bottom: 0.35em;
+        }
+        .ui-wide { grid-column: 1 / -1; }
+        .drop-target {
+            border-style: dashed;
+            border-color: var(--accent);
+            background: rgba(245, 166, 35, 0.06);
+        }
+        .mode-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 0.75em;
+            margin: 1.2em 0;
+        }
+        .mode-card {
+            border: 1px solid var(--border);
+            border-top: 3px solid var(--accent);
+            border-radius: var(--radius-md);
+            background: var(--bg-card);
+            padding: 1em;
+        }
+        .mode-card h3 {
+            margin-top: 0;
+            color: var(--text-bright);
+        }
+        .mini-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 4px;
+            margin: 0.8em 0;
+        }
+        .mini-cell {
+            height: 24px;
+            border-radius: 3px;
+            background: #242830;
+            border: 1px solid var(--border-soft);
+        }
+        .mini-cell.on { background: var(--accent); border-color: var(--accent); }
+        .mini-cell.slice-a { background: #4ec6ff; }
+        .mini-cell.slice-b { background: #44d18a; }
+        .mini-cell.slice-c { background: #8a4fff; }
+        .mini-cell.slice-d { background: #ff5e6c; }
+        .keyboard-strip {
+            display: grid;
+            grid-template-columns: repeat(16, 1fr);
+            gap: 3px;
+            margin-top: 0.75em;
+        }
+        .key {
+            height: 44px;
+            border: 1px solid var(--border);
+            border-radius: 0 0 4px 4px;
+            background: #e9dfc7;
+            color: #14110d;
+            font-size: 0.7rem;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            padding-bottom: 0.35em;
+        }
+        .key.active { background: var(--accent); }
+        .pad-strip {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+            max-width: 320px;
+        }
+        .pad-cell {
+            aspect-ratio: 1.25;
+            border: 1px solid var(--accent);
+            border-radius: 5px;
+            background: rgba(245, 166, 35, 0.08);
+            color: var(--text-bright);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+        }
+        .check-flow {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 0.8em;
+        }
+        .check-item {
+            border: 1px solid var(--border);
+            background: #10131a;
+            border-radius: var(--radius-sm);
+            padding: 0.9em;
+        }
+        .check-item strong {
+            color: var(--accent);
+            display: block;
+            margin-bottom: 0.25em;
+        }
+        @media (max-width: 900px) {
+            .flow-row,
+            .flow-row.four,
+            .flow-row.three,
+            .ui-map {
+                grid-template-columns: 1fr;
+            }
+            .flow-box::after {
+                content: "v";
+                right: 50%;
+                top: auto;
+                bottom: -1.05em;
+                transform: translateX(50%);
+            }
+            .flow-box:last-child::after { content: ""; }
+        }
+    </style>
+</head>
+<body>
+<header class="topbar">
+    <div class="topbar-logo"><img src="assets/img/logo.svg" alt="" class="hex"/>PATCHCRAFT</div>
+    <span class="topbar-tagline">Sampler Workflow Guide</span>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-actions">
+        <a href="index.html">Home</a>
+        <a href="04-sample-mapper.html">Sample Mapper</a>
+        <a href="05-midi-playground.html">MIDI</a>
+        <a class="cta" href="#quick-start">Quick Start</a>
+    </div>
+</header>
+
+<div class="shell">
+    <nav class="sidebar">
+        <div class="sidebar-section">
+            <h5>Guide</h5>
+            <ul>
+                <li><a href="#overview">Overview</a></li>
+                <li><a href="#new-features">New Features</a></li>
+                <li><a href="#sample-map">Sample Mapper Map</a></li>
+                <li><a href="#midi-modes">MIDI Modes</a></li>
+                <li><a href="#slice-mode">Slice Mode</a></li>
+                <li><a href="#runtime-library">Runtime Library</a></li>
+                <li><a href="#one-shot">One Shot Handoff</a></li>
+                <li><a href="#recipes">Build Recipes</a></li>
+                <li><a href="#test">Test Checklist</a></li>
+                <li><a href="#troubleshooting">Troubleshooting</a></li>
+            </ul>
+        </div>
+        <div class="sidebar-section">
+            <h5>Reference</h5>
+            <ul>
+                <li><a href="04-sample-mapper.html">4 - Sample Mapper</a></li>
+                <li><a href="05-midi-playground.html">5 - MIDI Playground</a></li>
+                <li><a href="06-dsp-builder.html">6 - DSP Builder</a></li>
+                <li><a href="10-glossary.html">10 - Glossary</a></li>
+                <li><a href="12-pscript.html">12 - pScript automation</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="content">
+        <section id="overview" class="hero">
+            <div class="pill-row">
+                <span class="pill bass">Samples</span>
+                <span class="pill pad">MIDI</span>
+                <span class="pill arp">Runtime</span>
+                <span class="pill fx">DAW</span>
+            </div>
+            <h1>Sampler, MIDI, and Runtime Drop Workflows</h1>
+            <p class="lede">This guide shows how to use the new sample and MIDI features in PatchCraft: targeted sample drops, drum-pad mapping, MIDI files that drive sample zones, Slice mode chopping, runtime sample libraries in the Player, and the One Shot Maker handoff.</p>
+            <div class="actions">
+                <a class="btn primary" href="#quick-start">Start with the fastest path</a>
+                <a class="btn secondary" href="#slice-mode">Jump to Slice mode</a>
+            </div>
+        </section>
+
+        <section id="new-features">
+            <h2>What Changed</h2>
+            <div class="visual-panel">
+                <div class="flow-row">
+                    <div class="flow-box">
+                        <h3>1. Drop Audio</h3>
+                        <p>Drag WAV, AIFF, or FLAC onto pads, zones, or the runtime library.</p>
+                    </div>
+                    <div class="flow-box">
+                        <h3>2. Pick Target</h3>
+                        <p>Pad drops map to pad notes. Zone drops map to that zone. Library drops auto-place.</p>
+                    </div>
+                    <div class="flow-box">
+                        <h3>3. Assign MIDI</h3>
+                        <p>Drop or assign a MIDI file to a zone or pad.</p>
+                    </div>
+                    <div class="flow-box">
+                        <h3>4. Choose Mode</h3>
+                        <p>Trigger, Pitch, Slice, Drum, or Mod decides how MIDI affects the sample.</p>
+                    </div>
+                    <div class="flow-box">
+                        <h3>5. Test Runtime</h3>
+                        <p>Brand Lab and exported Player use the same active sample/MIDI routing.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="callout info">
+                <strong>Core idea</strong>
+                A sample zone is now more than an audio file. It can also carry a MIDI file, playback mode, transpose, velocity amount, host-sync behavior, pad assignment, and performance metadata.
+            </div>
+        </section>
+
+        <section id="quick-start">
+            <h2>Fastest Path: Build a Playable Drum Kit</h2>
+            <ol class="steps">
+                <li><h3>Open Sample Mapper</h3><p>Use a blank project or a drum/sampler template. Stay in the Sample Mapper for the first pass.</p></li>
+                <li><h3>Drag drum samples onto the pad area</h3><p>Drop one sample per pad. By default, PatchCraft maps one sample to one pad instead of stacking everything.</p></li>
+                <li><h3>Switch to Drum Map if needed</h3><p>The drum map uses pad notes starting at C1. Pads should trigger the imported samples directly.</p></li>
+                <li><h3>Add MIDI if you want a pattern</h3><p>Drop a MIDI file onto a pad or zone. The MIDI becomes the trigger pattern for that sample or pad.</p></li>
+                <li><h3>Open Brand Lab and press Play</h3><p>The drum grid should trigger the same pad slots. If the Player library is present, runtime users can also drop samples there.</p></li>
+            </ol>
+
+            <div class="visual-panel">
+                <h3>Pad mapping view</h3>
+                <div class="pad-strip" aria-label="16 pad visual map">
+                    <div class="pad-cell">Kick</div><div class="pad-cell">Snare</div><div class="pad-cell">Hat</div><div class="pad-cell">Clap</div>
+                    <div class="pad-cell">Tom</div><div class="pad-cell">Perc</div><div class="pad-cell">Ride</div><div class="pad-cell">Crash</div>
+                    <div class="pad-cell">FX 1</div><div class="pad-cell">FX 2</div><div class="pad-cell">Loop</div><div class="pad-cell">Vox</div>
+                    <div class="pad-cell">User 1</div><div class="pad-cell">User 2</div><div class="pad-cell">User 3</div><div class="pad-cell">User 4</div>
+                </div>
+                <p style="color:var(--text-mid);margin-top:1em;">Each pad points to one note and one sample by default. Turn on stacking only when you deliberately want layers or round robin.</p>
+            </div>
+        </section>
+
+        <section id="sample-map">
+            <h2>Sample Mapper Visual Map</h2>
+            <p>Use the Sample Mapper as the source editor. This is where audio files become playable zones, pads, slices, or sample instruments.</p>
+
+            <div class="visual-panel">
+                <div class="ui-map">
+                    <div class="ui-tile drop-target"><strong>Library</strong>Drag audio or MIDI from here.</div>
+                    <div class="ui-tile drop-target"><strong>Zone Editor</strong>Drop samples to create zones. Drop MIDI to assign playback to the selected zone.</div>
+                    <div class="ui-tile"><strong>Inspector</strong>Edit root note, key range, velocity, MIDI mode, transpose, and host sync.</div>
+                    <div class="ui-tile"><strong>Pad Bank</strong>Drop one-shots onto pads. Pads are full targets, not just buttons.</div>
+                    <div class="ui-tile drop-target"><strong>Waveform / Zone Lane</strong>Trim, fade, loop, slice, and place samples across keys.</div>
+                    <div class="ui-tile"><strong>Advanced Playback</strong>Assign MIDI, clear MIDI, choose Trigger/Pitch/Slice/Drum/Mod.</div>
+                    <div class="ui-tile ui-wide"><strong>Health / Export Readiness</strong>Missing samples or missing MIDI files block a clean export. Fix these before building the Player.</div>
+                </div>
+            </div>
+
+            <h3>Sample zone fields that matter now</h3>
+            <table>
+                <thead><tr><th>Field</th><th>What it means</th><th>When to change it</th></tr></thead>
+                <tbody>
+                    <tr><td>Root Note</td><td>The note that plays the sample at original pitch.</td><td>Use for tuned samples and MIDI-to-zone playback.</td></tr>
+                    <tr><td>Pad Index</td><td>The pad slot for drum-machine style playback.</td><td>Use for drum kits and Player pad drops.</td></tr>
+                    <tr><td>MIDI Path</td><td>The MIDI file assigned to this zone.</td><td>Use when a sample should be triggered by a loop or phrase.</td></tr>
+                    <tr><td>MIDI Mode</td><td>How the assigned MIDI drives the sample.</td><td>Trigger, Pitch, Slice, Drum, or Mod.</td></tr>
+                    <tr><td>MIDI Transpose</td><td>Semitone shift applied to MIDI notes.</td><td>Use to fit a pattern into the sample's playable range.</td></tr>
+                    <tr><td>MIDI Velocity Amount</td><td>How strongly MIDI velocity affects sample hit level.</td><td>Lower it for smoother loops; raise it for expressive drums.</td></tr>
+                    <tr><td>Host Sync</td><td>Use DAW transport/BPM for playback timing.</td><td>Keep on for loops and performance patterns.</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section id="midi-modes">
+            <h2>MIDI Modes: Which One Should I Use?</h2>
+            <div class="mode-grid">
+                <div class="mode-card">
+                    <h3>Trigger</h3>
+                    <p>Every MIDI note triggers the selected sample zone at its root note.</p>
+                    <p><strong>Use for:</strong> one sample played rhythmically.</p>
+                </div>
+                <div class="mode-card">
+                    <h3>Pitch</h3>
+                    <p>MIDI notes keep their pitch and play the sample engine melodically.</p>
+                    <p><strong>Use for:</strong> riffs, basslines, melodies, and tuned instruments.</p>
+                </div>
+                <div class="mode-card">
+                    <h3>Slice</h3>
+                    <p>Different MIDI notes select different slices of one sample while the rhythm comes from the MIDI file.</p>
+                    <p><strong>Use for:</strong> Serato-style chops, vocal cuts, breaks, loops, and phrases.</p>
+                </div>
+                <div class="mode-card">
+                    <h3>Drum</h3>
+                    <p>MIDI maps to pad slots and drum rows.</p>
+                    <p><strong>Use for:</strong> drum kits and imported drum patterns.</p>
+                </div>
+                <div class="mode-card">
+                    <h3>Mod</h3>
+                    <p>MIDI is used as a performance/modulation source instead of only notes.</p>
+                    <p><strong>Use for:</strong> future performance routing and expressive controls.</p>
+                </div>
+            </div>
+
+            <div class="callout tip">
+                <strong>Simple choice</strong>
+                If you are unsure, use Trigger for one-shot loops, Pitch for tuned playing, Slice for chopping one long sample, and Drum for pad kits.
+            </div>
+        </section>
+
+        <section id="slice-mode">
+            <h2>Slice Mode: MIDI-Controlled Sample Chopping</h2>
+            <p>Slice mode is the new important path. It lets one sample behave like a playable chop instrument. The MIDI file supplies rhythm and note lanes. PatchCraft turns those unique MIDI notes into slice indexes.</p>
+
+            <div class="visual-panel">
+                <h3>How Slice mode thinks</h3>
+                <div class="flow-row four">
+                    <div class="flow-box">
+                        <h3>Long Sample</h3>
+                        <p>Vocal phrase, drum break, loop, texture, guitar riff, or one-shot with movement.</p>
+                    </div>
+                    <div class="flow-box">
+                        <h3>Slice Count</h3>
+                        <p>PatchCraft splits the playable region into equal slices for this pass.</p>
+                    </div>
+                    <div class="flow-box">
+                        <h3>MIDI Notes</h3>
+                        <p>Unique MIDI notes choose slice 1, slice 2, slice 3, etc.</p>
+                    </div>
+                    <div class="flow-box">
+                        <h3>Playback</h3>
+                        <p>The root sample triggers, but each hit jumps to the chosen slice.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="visual-panel">
+                <h3>Example: one MIDI loop drives four slices</h3>
+                <div class="mini-grid" aria-label="slice mode grid">
+                    <div class="mini-cell slice-a"></div><div class="mini-cell"></div><div class="mini-cell slice-b"></div><div class="mini-cell"></div>
+                    <div class="mini-cell slice-c"></div><div class="mini-cell"></div><div class="mini-cell slice-d"></div><div class="mini-cell"></div>
+                </div>
+                <div class="keyboard-strip">
+                    <div class="key active">S1</div><div class="key">S2</div><div class="key active">S2</div><div class="key">S4</div>
+                    <div class="key active">S3</div><div class="key">S6</div><div class="key active">S4</div><div class="key">S8</div>
+                    <div class="key">S9</div><div class="key">S10</div><div class="key">S11</div><div class="key">S12</div>
+                    <div class="key">S13</div><div class="key">S14</div><div class="key">S15</div><div class="key">S16</div>
+                </div>
+                <p style="color:var(--text-mid);margin-top:1em;">The colored MIDI hits do not have to play different pitches. In Slice mode they choose different parts of the same sample.</p>
+            </div>
+
+            <h3>How to build a Slice instrument</h3>
+            <ol class="steps">
+                <li><h3>Import or drag in one sample</h3><p>Use a vocal phrase, drum break, melodic loop, or texture with clear movement.</p></li>
+                <li><h3>Select the zone</h3><p>Click the sample zone in the key zone editor or zone list.</p></li>
+                <li><h3>Assign a MIDI file</h3><p>Use Assign MIDI in Advanced Playback, or drag a MIDI file onto the selected zone.</p></li>
+                <li><h3>Set MIDI Mode to Slice</h3><p>The MIDI note lanes become slice selectors. Velocity still affects hit level.</p></li>
+                <li><h3>Press Play in Brand Lab or Player</h3><p>The playhead follows the MIDI pattern and each trigger jumps to its slice.</p></li>
+            </ol>
+
+            <div class="callout warn">
+                <strong>Current limitation</strong>
+                Slice mode currently uses equal slice regions from the sample zone. For transient-aware slicing, first use the Sample Mapper slice tools to create mapped slices, or wait for the next pass where transient markers become first-class runtime slice points.
+            </div>
+        </section>
+
+        <section id="runtime-library">
+            <h2>Runtime Sample Library in the Player</h2>
+            <p>The Player can expose a sample library/drop area to end users. This lets a customer drag samples into the instrument while using it in a DAW.</p>
+
+            <div class="visual-panel">
+                <div class="flow-row four">
+                    <div class="flow-box">
+                        <h3>Add Element</h3>
+                        <p>In Design, add the Runtime Sample Library element.</p>
+                    </div>
+                    <div class="flow-box">
+                        <h3>Brand It</h3>
+                        <p>In Brand Lab, size it as a real Player feature, not hidden clutter.</p>
+                    </div>
+                    <div class="flow-box">
+                        <h3>Drop Content</h3>
+                        <p>User drops samples or MIDI from disk/DAW file browser.</p>
+                    </div>
+                    <div class="flow-box">
+                        <h3>Active Overlay</h3>
+                        <p>Runtime imports are saved in the host session and play through the sample overlay.</p>
+                    </div>
+                </div>
+            </div>
+
+            <table>
+                <thead><tr><th>Drop target</th><th>Drop audio</th><th>Drop MIDI</th></tr></thead>
+                <tbody>
+                    <tr><td>Runtime Sample Library</td><td>Adds samples to the current runtime library and maps them.</td><td>Adds a MIDI pattern to the Player.</td></tr>
+                    <tr><td>Pad</td><td>Replaces or fills that pad slot.</td><td>Drives that pad/sample as a zone MIDI pattern.</td></tr>
+                    <tr><td>Zone editor/drop zone</td><td>Maps the sample to that target note/zone.</td><td>Assigns the MIDI file to the selected/target zone.</td></tr>
+                    <tr><td>Keyboard area</td><td>Maps sample to a keyboard note or range.</td><td>Creates a playable MIDI phrase or sample-zone driver.</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section id="one-shot">
+            <h2>One Shot Maker Handoff</h2>
+            <p>The One Shot Maker can render plugin or instrument sounds into a pack, then hand that rendered pack to the Sample Mapper as the active source.</p>
+
+            <div class="visual-panel">
+                <div class="flow-row">
+                    <div class="flow-box"><h3>Load Plugin</h3><p>Create or capture source sounds.</p></div>
+                    <div class="flow-box"><h3>Render Pack</h3><p>Generate one-shots or chromatic samples.</p></div>
+                    <div class="flow-box"><h3>Review Audio</h3><p>Preview, trim, reject bad renders.</p></div>
+                    <div class="flow-box"><h3>Send to Mapper</h3><p>Stops/closes live plugin host and opens Sample Mapper.</p></div>
+                    <div class="flow-box"><h3>Active Source</h3><p>The rendered pack becomes the current project's sample source.</p></div>
+                </div>
+            </div>
+
+            <h3>Two buttons, two meanings</h3>
+            <table>
+                <thead><tr><th>Button</th><th>Meaning</th><th>Use when</th></tr></thead>
+                <tbody>
+                    <tr><td>Send to Sample Mapper</td><td>The rendered pack becomes the active sample source in the current project.</td><td>You want to keep building the current instrument.</td></tr>
+                    <tr><td>Create Patch From Pack</td><td>Captures the rendered pack as a named sample patch/preset.</td><td>You want a reusable preset/patch entry.</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section id="recipes">
+            <h2>Build Recipes</h2>
+
+            <div class="recipe">
+                <h3>Recipe 1: Serato-style vocal chop</h3>
+                <ol>
+                    <li>Open Sample Mapper and import a vocal phrase.</li>
+                    <li>Select the zone and trim the playable start/end.</li>
+                    <li>Assign a MIDI file with several unique note lanes.</li>
+                    <li>Set MIDI Mode to Slice.</li>
+                    <li>Lower MIDI Velocity Amount if the hits jump too much.</li>
+                    <li>Add filter, delay, and reverb controls on the Design page.</li>
+                    <li>Test in Brand Lab while DAW sync or internal Play is running.</li>
+                </ol>
+            </div>
+
+            <div class="recipe">
+                <h3>Recipe 2: Drum machine with user-swappable pads</h3>
+                <ol>
+                    <li>Add a Pad Bank and Runtime Sample Library to the Player UI.</li>
+                    <li>Map factory drum one-shots to C1 and up.</li>
+                    <li>Use the drum pattern grid to trigger pad slots.</li>
+                    <li>Expose per-pad Tune, Volume, Pan, Filter, and Send controls.</li>
+                    <li>In Brand Lab, drag a new sample onto a pad and confirm it plays immediately.</li>
+                    <li>Export and test the VST3 in a DAW with dragged replacement samples.</li>
+                </ol>
+            </div>
+
+            <div class="recipe">
+                <h3>Recipe 3: MIDI-controlled one-shot instrument</h3>
+                <ol>
+                    <li>Render or import a crisp one-shot.</li>
+                    <li>Map it to a zone with one root note.</li>
+                    <li>Assign a MIDI groove to the zone.</li>
+                    <li>Use Trigger mode so every note triggers the same sample.</li>
+                    <li>Add macro controls for attack, release, filter, delay, and drive.</li>
+                    <li>Create presets by changing the sample, MIDI file, and DSP chain together.</li>
+                </ol>
+            </div>
+
+            <div class="recipe">
+                <h3>Recipe 4: Tuned sample phrase</h3>
+                <ol>
+                    <li>Import a tuned sample or multisample set.</li>
+                    <li>Set root notes and key ranges.</li>
+                    <li>Assign a MIDI melody.</li>
+                    <li>Use Pitch mode so MIDI notes stay melodic.</li>
+                    <li>Use MIDI Transpose to fit the phrase to the sample range.</li>
+                    <li>Add scale-safe presets and test the low/high key ranges.</li>
+                </ol>
+            </div>
+        </section>
+
+        <section id="test">
+            <h2>Test Checklist Before Shipping</h2>
+            <div class="check-flow">
+                <div class="check-item"><strong>Sample pads</strong>Click every pad. It should play the assigned sample, not a sine tone.</div>
+                <div class="check-item"><strong>Zone map</strong>Play across the keyboard. No unexpected silent notes unless intentionally unmapped.</div>
+                <div class="check-item"><strong>MIDI trigger</strong>Assigned MIDI should trigger the target zone while transport is running.</div>
+                <div class="check-item"><strong>Slice mode</strong>Different MIDI lanes should jump to different sample slices.</div>
+                <div class="check-item"><strong>Runtime drops</strong>Drop a sample onto a pad in Brand Lab and confirm it replaces/fills that pad.</div>
+                <div class="check-item"><strong>Export health</strong>No missing sample or missing MIDI warnings before export.</div>
+                <div class="check-item"><strong>DAW sync</strong>In a DAW, play/stop should start/stop patterns cleanly.</div>
+                <div class="check-item"><strong>Preset recall</strong>Changing presets should not lose sample/MIDI assignments.</div>
+            </div>
+        </section>
+
+        <section id="troubleshooting">
+            <h2>Troubleshooting</h2>
+            <table>
+                <thead><tr><th>Problem</th><th>Likely cause</th><th>Fix</th></tr></thead>
+                <tbody>
+                    <tr><td>Pad plays a tone instead of my sample.</td><td>The pad is not mapped to a sample zone, or the sample overlay is not active.</td><td>Drop the sample onto the pad again, verify pad index/root note, and retest in Sample Mapper.</td></tr>
+                    <tr><td>MIDI does not trigger the sample.</td><td>MIDI file is assigned to the wrong zone or transport is stopped.</td><td>Select the zone, check MIDI Path and Mode, enable Host Sync, then press Play.</td></tr>
+                    <tr><td>Slice mode sounds like one repeated sample.</td><td>The MIDI file only has one unique note lane or slice count is effectively one.</td><td>Use a MIDI file with multiple notes, or edit the MIDI so different notes select different slices.</td></tr>
+                    <tr><td>Export validation fails.</td><td>A sample or MIDI file path is missing.</td><td>Open Sample Mapper health/readiness, relink missing files, then export again.</td></tr>
+                    <tr><td>Runtime sample drops do not persist.</td><td>Runtime imports live in the host session/user content store, not the factory sample map.</td><td>Save the DAW session. For factory content, import samples in Studio and export the pack.</td></tr>
+                    <tr><td>Pattern plays out of time.</td><td>Host Sync or BPM source is wrong.</td><td>Enable Host Sync for loop-style playback and confirm DAW transport is running.</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <div class="section-nav">
+            <a href="05-midi-playground.html"><strong>Back</strong><span>5 - MIDI Playground</span></a>
+            <a class="next" href="06-dsp-builder.html"><strong>Next</strong><span>6 - DSP Builder</span></a>
+        </div>
+    </main>
+</div>
+
+<footer class="footer">PatchCraft - Tutorial bundle</footer>
+<script src="assets/js/nav.js"></script>
+</body>
+</html>

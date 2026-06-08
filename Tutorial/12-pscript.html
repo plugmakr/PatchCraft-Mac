@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>12 - pScript Automation - PatchCraft Tutorial</title>
+    <link rel="stylesheet" href="assets/css/main.css"/>
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo.svg"/>
+</head>
+<body>
+<header class="topbar">
+    <div class="topbar-logo"><img src="assets/img/logo.svg" alt="" class="hex"/>PATCHCRAFT</div>
+    <span class="topbar-tagline">Instrument Builder Tutorial</span>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-actions">
+        <a href="index.html">Home</a>
+        <a href="10-glossary.html">Glossary</a>
+        <a class="cta" href="PatchCraftTutorial.zip">Download</a>
+    </div>
+</header>
+
+<div class="shell">
+    <nav class="sidebar">
+        <div class="sidebar-section"><h5>Tutorial</h5>
+            <ul>
+                <li><a href="index.html">Overview</a></li>
+                <li><a href="01-overview.html">1 - What is PatchCraft</a></li>
+                <li><a href="02-getting-started.html">2 - Getting started</a></li>
+                <li><a href="03-design.html">3 - Design canvas</a></li>
+                <li><a href="04-sample-mapper.html">4 - Sample mapper</a></li>
+                <li><a href="05-midi-playground.html">5 - MIDI playground</a></li>
+                <li><a href="06-dsp-builder.html">6 - DSP builder</a></li>
+                <li><a href="07-brand-lab.html">7 - Brand Lab</a></li>
+                <li><a href="08-presets-expansions.html">8 - Presets &amp; expansions</a></li>
+                <li><a href="09-export-distribute.html">9 - Export &amp; ship</a></li>
+                <li><a href="10-glossary.html">10 - Glossary</a></li>
+                <li><a href="11-sampler-midi-runtime.html">11 - Sampler MIDI runtime</a></li>
+                <li><a href="12-pscript.html">12 - pScript automation</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="content">
+        <h1>12 - pScript automation</h1>
+        <p class="lede" style="color:var(--text-mid);font-size:1.1rem;">pScript is PatchCraft's human-readable automation language. It lets instrument builders connect notes, knobs, mod wheel movement, presets, and timers to live parameter changes without writing C++.</p>
+
+        <div class="callout important">
+            <strong>Current model:</strong> pScript is project-level, not stored directly on each knob. A knob triggers pScript when it is mapped to a parameter and that parameter changes in the Player.
+        </div>
+
+        <h2>How to attach pScript to a knob</h2>
+        <ol class="steps">
+            <li><h3>Create or choose a parameter</h3><p>Use a real DSP/Sample/FX parameter such as <code>filterCutoff</code>, <code>delayMix</code>, <code>volume</code>, or <code>reverbMix</code>.</p></li>
+            <li><h3>Bind the knob to that parameter</h3><p>On the Design canvas, select the knob and set its parameter assignment in the Inspector. The knob must control a real parameter.</p></li>
+            <li><h3>Generate a starter</h3><p>Right-click the selected control and choose <strong>Create pScript Handler For Selected Control</strong>, or use <strong>Design &gt; pScript &gt; Create pScript Handler For Selected Control</strong>. PatchCraft inserts a starter block using that control's real parameter id and range.</p></li>
+            <li><h3>Edit the behavior</h3><p>The generated block keeps the control's normal parameter mapping and adds script behavior. Replace the second <code>set</code> target with the sound parameter you want to affect.</p></li>
+            <li><h3>Compile and test</h3><p>Click <strong>Compile &amp; Test</strong>. Fix any compile error before export.</p></li>
+            <li><h3>Export the Player</h3><p>The script is saved as <code>pscript.txt</code> in the pack. The Player loads it and runs events when presets load, notes play, controls move, or timers fire.</p></li>
+        </ol>
+
+        <h2>Smallest knob example</h2>
+        <p>This runs when a knob mapped to <code>volume</code> moves. <code>value</code> is the knob's live parameter value.</p>
+        <pre><code>when knob "volume" moves:
+    set delayMix to value * 0.25</code></pre>
+
+        <p>For a friendly parameter name, this works because <code>Cutoff</code> resolves to <code>filterCutoff</code> internally:</p>
+        <pre><code>when knob "filterCutoff" moves:
+    set delayMix to 0.20</code></pre>
+
+        <div class="callout">
+            <strong>Important:</strong> for knob events, <code>value</code> is the actual parameter value, not always 0.0 to 1.0. A volume knob may send 0.0 to 1.5. A cutoff knob may send 20 to 20000. Match your math to the parameter's range.
+        </div>
+
+        <h2>Knob range conversion</h2>
+        <p>Use <code>mapped</code> when a source range should drive a different destination range. For knob/control events, <code>value</code> is the event source. Source and destination ranges can use common musical units such as <code>Hz</code>, <code>dB</code>, <code>ms</code>, <code>st</code>, and <code>%</code>.</p>
+        <pre><code># Cutoff range: 200 Hz to 12000 Hz.
+# Map it directly to a useful delay mix range.
+when knob "Cutoff" moves:
+    set delayMix to value mapped 200 Hz..12000 Hz -> 0.05..0.45</code></pre>
+
+        <h2>Good musical uses</h2>
+        <div class="table-wrap">
+            <table class="reference-table">
+                <thead><tr><th>Use case</th><th>What pScript does</th><th>Example</th></tr></thead>
+                <tbody>
+                    <tr><td>Macro behavior</td><td>One knob moves several parameters.</td><td>Drive increases while output lowers.</td></tr>
+                    <tr><td>Velocity expression</td><td>Harder notes open filter or raise sample brightness.</td><td>Velocity maps to cutoff.</td></tr>
+                    <tr><td>Mod wheel scenes</td><td>Mod wheel fades in vibrato, delay, reverb, or motion.</td><td>Wheel raises vibrato and reverb.</td></tr>
+                    <tr><td>Preset initialization</td><td>A preset load sets hidden support parameters.</td><td>Reset delay feedback or safety gain.</td></tr>
+                    <tr><td>Timed motion</td><td>A timer gently moves a value.</td><td>Pulse delay mix or pan.</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h2>Common recipes</h2>
+        <h3>Velocity opens the filter</h3>
+        <pre><code>when note starts:
+    set filterCutoff to velocity mapped 0..127 -> 500 Hz..8000 Hz</code></pre>
+
+        <h3>Mod wheel adds performance motion</h3>
+        <pre><code>when modwheel moves:
+    set vibratoDepth to modwheel mapped 0..127 -> 0.0..0.75
+    set reverbMix to modwheel mapped 0..127 -> 0.05..0.35</code></pre>
+
+        <h3>One knob controls tone and space</h3>
+        <pre><code>when knob "Tone" moves:
+    set filterCutoff to value
+    let normal = (value - 200) / 11800
+    set delayMix to normal * 0.25
+    set stereoWidth to 0.85 + normal * 0.30</code></pre>
+
+        <h3>Safety reset when a preset loads</h3>
+        <pre><code>when preset loads:
+    set volume to 0.85
+    set delayFeedback to 0.32
+    set reverbMix to 0.18</code></pre>
+
+        <h3>Conditional behavior</h3>
+        <pre><code>when note starts:
+    if velocity > 100:
+        set filterCutoff to 9000 Hz
+    else:
+        set filterCutoff to 1200 Hz</code></pre>
+
+        <h2>Current event reference</h2>
+        <div class="table-wrap">
+            <table class="reference-table">
+                <thead><tr><th>Event</th><th>When it runs</th><th>Useful values</th></tr></thead>
+                <tbody>
+                    <tr><td><code>when preset loads:</code></td><td>After the Player loads a pack/preset state.</td><td>Current parameter values.</td></tr>
+                    <tr><td><code>when note starts:</code></td><td>On MIDI note-on.</td><td><code>velocity</code> from 0 to 127.</td></tr>
+                    <tr><td><code>when note ends:</code></td><td>On MIDI note-off.</td><td>Current parameter values.</td></tr>
+                    <tr><td><code>when modwheel moves:</code></td><td>On MIDI CC1.</td><td><code>modwheel</code> from 0 to 127.</td></tr>
+                    <tr><td><code>when knob "Name" moves:</code></td><td>When a mapped Player control changes a parameter. The quoted name must resolve to the parameter id.</td><td><code>value</code>, the actual parameter value.</td></tr>
+                    <tr><td><code>when timer 250 ms:</code></td><td>Repeated timer callback.</td><td>Current parameter values.</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h2>Current statement reference</h2>
+        <div class="table-wrap">
+            <table class="reference-table">
+                <thead><tr><th>Statement</th><th>Purpose</th><th>Example</th></tr></thead>
+                <tbody>
+                    <tr><td><code>set</code></td><td>Write a parameter value.</td><td><code>set delayMix to 0.25</code></td></tr>
+                    <tr><td><code>let</code></td><td>Create a temporary variable.</td><td><code>let normal = value / 127</code></td></tr>
+                    <tr><td><code>if / else</code></td><td>Branch on a value.</td><td><code>if velocity &gt; 100:</code></td></tr>
+                    <tr><td><code>repeat</code></td><td>Run a block multiple times.</td><td><code>repeat 4:</code></td></tr>
+                    <tr><td><code>randomize</code></td><td>Pick a random value in a range.</td><td><code>randomize delayMix between 0.1 and 0.4</code></td></tr>
+                    <tr><td><code>print</code></td><td>Write to the pScript console.</td><td><code>print value</code></td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h2>What is wired today vs. what needs polish</h2>
+        <div class="table-wrap">
+            <table class="reference-table">
+                <thead><tr><th>Status</th><th>Feature</th><th>Note</th></tr></thead>
+                <tbody>
+                    <tr><td>Ready</td><td>Project-level scripts</td><td>Saved as <code>pscript.txt</code> and loaded by the Player.</td></tr>
+                    <tr><td>Ready</td><td>Knob events</td><td>Triggered by mapped parameters in the Player.</td></tr>
+                    <tr><td>Ready</td><td>Note, mod wheel, preset, timer events</td><td>Covered by smoke tests.</td></tr>
+                    <tr><td>Needs polish</td><td>Per-control attachment UI</td><td>There is no right-click "Attach pScript to this knob" flow yet. The event attaches to the parameter, so two knobs mapped to the same parameter trigger the same script.</td></tr>
+                    <tr><td>Needs polish</td><td>Mapping UI helpers</td><td>The language supports <code>value mapped</code>, but the editor still needs dropdown helpers so users do not have to type common ranges manually.</td></tr>
+                    <tr><td>Needs polish</td><td>Player compile errors</td><td>The Player should show script compile errors instead of failing silently.</td></tr>
+                    <tr><td>Reserved</td><td><code>smooth</code>, <code>play layer</code>, <code>turn effect</code></td><td>Parsed by the language, but not yet a reliable customer-facing workflow.</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h2>Recommended language direction</h2>
+        <p>The language should stay readable enough for musicians but predictable enough for professional builders. The ideal authoring flow is:</p>
+        <pre><code>control "Tone" affects filterCutoff:
+    map value 0..1 to 200 Hz..12000 Hz
+    also set delayMix to value * 0.25
+    also set stereoWidth to 0.85 + value * 0.30</code></pre>
+        <p>That is not the current syntax yet. It is the direction: named controls, plain verbs, explicit ranges, safe units, and obvious side effects.</p>
+
+        <div class="section-nav">
+            <a href="11-sampler-midi-runtime.html"><strong>Back</strong><span>11 - Sampler MIDI runtime</span></a>
+            <a class="next" href="index.html"><strong>Return</strong><span>Tutorial home</span></a>
+        </div>
+    </main>
+</div>
+</body>
+</html>

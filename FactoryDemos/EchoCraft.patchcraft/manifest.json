@@ -1,0 +1,33 @@
+{
+  "formatVersion": 1,
+  "instrumentName": "EchoCraft",
+  "creator": "AudiCode",
+  "description": "A delay workstation demo with four delay stages, feedback shaping, modulation, tone, and output controls.",
+  "category": "Delay Workstation",
+  "engine": "fx",
+  "backgroundImage": "assets/background-clean.png",
+  "libraryThumbnail": "assets/library-artwork.png",
+  "defaultPreset": "Clean Quarter Echo",
+  "createdWith": "Player Builder",
+  "version": "1.0",
+  "playerDisplayName": "EchoCraft",
+  "playerTagline": "Delay workstation with clean, tape, dual, and reverse-style motion",
+  "playerAccentColour": "ff12e8f3",
+  "tags": [
+    "delay",
+    "echo",
+    "export-ready",
+    "factory-demo",
+    "fx",
+    "musical",
+    "player-ready"
+  ],
+  "playerTitleBannerImage": "assets/player-title-banner.png",
+  "playerPanelColour": "ff101722",
+  "playerBackgroundColour": "ff07090f",
+  "playerTitleBarTheme": "wide-banner",
+  "playerTitleTextPlacement": "left",
+  "playerTitleButtonStyle": "pill",
+  "playerTitleFontFamily": "Segoe UI",
+  "playerShowPatchCraftBranding": false
+}

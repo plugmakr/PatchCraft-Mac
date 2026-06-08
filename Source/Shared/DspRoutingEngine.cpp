@@ -7,6 +7,15 @@ namespace patchcraft
 {
     namespace
     {
+        static float normaliseOscillatorTypeForRouting (float value)
+        {
+            if (value < 0.0f || value > 1.0f)
+                value = juce::jlimit (0.0f, 3.0f, value) / 3.0f;
+
+            const int safeStep = juce::jlimit (0, 3, juce::roundToInt (juce::jlimit (0.0f, 1.0f, value) * 3.0f));
+            return safeStep / 3.0f;
+        }
+
         static float onePoleCoefficient (float milliseconds, double sampleRate, int numSamples)
         {
             const auto seconds = juce::jlimit (0.001f, 2.0f, milliseconds * 0.001f);
@@ -464,11 +473,14 @@ namespace patchcraft
             if (auto* target = findParam (id))
             {
                 auto normalised = value01;
-                if ((value01 < 0.0f || value01 > 1.0f) && std::abs (target->max - target->min) > 0.000001f)
+                if (id == "oscType" || id == "osc2Type")
+                    normalised = normaliseOscillatorTypeForRouting (value01);
+                else if ((value01 < 0.0f || value01 > 1.0f) && std::abs (target->max - target->min) > 0.000001f)
                     normalised = (value01 - target->min) / (target->max - target->min);
 
+                const float maxValue = (id == "oscType" || id == "osc2Type") ? 3.0f : target->max;
                 target->routed = juce::jlimit (target->min, target->max,
-                    juce::jmap (juce::jlimit (0.0f, 1.0f, normalised), 0.0f, 1.0f, target->min, target->max));
+                    juce::jmap (juce::jlimit (0.0f, 1.0f, normalised), 0.0f, 1.0f, target->min, maxValue));
             }
         };
         auto setValue = [this] (const juce::String& id, float value)
@@ -481,11 +493,14 @@ namespace patchcraft
             if (auto* target = findParam (id))
             {
                 auto normalised = valueForKey (block, key, valueForKey (block, "value", 0.5f));
-                if ((normalised < 0.0f || normalised > 1.0f) && std::abs (target->max - target->min) > 0.000001f)
+                if (id == "oscType" || id == "osc2Type")
+                    normalised = normaliseOscillatorTypeForRouting (normalised);
+                else if ((normalised < 0.0f || normalised > 1.0f) && std::abs (target->max - target->min) > 0.000001f)
                     normalised = (normalised - target->min) / (target->max - target->min);
 
+                const float maxValue = (id == "oscType" || id == "osc2Type") ? 3.0f : target->max;
                 target->routed = juce::jlimit (target->min, target->max,
-                    juce::jmap (juce::jlimit (0.0f, 1.0f, normalised), 0.0f, 1.0f, target->min, target->max));
+                    juce::jmap (juce::jlimit (0.0f, 1.0f, normalised), 0.0f, 1.0f, target->min, maxValue));
             }
         };
 

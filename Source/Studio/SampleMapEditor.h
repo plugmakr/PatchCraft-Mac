@@ -79,6 +79,7 @@ namespace patchcraft
         juce::TextButton clearAllBtn{ "Clear All" };
         juce::TextButton autoMapBtn{ "Auto Map" };
         juce::ToggleButton spanOnDropToggle{ "Span on Drop" };
+        juce::ToggleButton stackPadsToggle{ "Stack Samples" };
         juce::ComboBox   mapPresetBox;
         juce::TextButton zoomInBtn{ "+" };
         juce::TextButton zoomOutBtn{ "-" };
@@ -89,6 +90,10 @@ namespace patchcraft
         juce::TextButton fadeInBtn{ "+ Fade In" };
         juce::TextButton fadeOutBtn{ "+ Fade Out" };
         juce::TextButton zoomFitBtn{ "Fit" };
+        juce::TextButton assignMidiBtn{ "Assign MIDI" };
+        juce::TextButton clearMidiBtn{ "Clear MIDI" };
+        juce::ComboBox midiModeBox;
+        juce::ToggleButton midiSyncToggle{ "Host Sync" };
 
         // Smart zone tools: one-click professional sample recipes for the
         // currently selected zones. These keep Easy mode simple while giving
@@ -164,6 +169,8 @@ namespace patchcraft
         juce::ToggleButton oneShotToggle{ "One Shot" };
         StepperControl tuneStepper{ "Tune" };
         StepperControl trackStepper{ "Tracking" };
+        StepperControl midiTransposeStepper{ "MIDI Trans" };
+        StepperControl midiVelocityStepper{ "MIDI Vel" };
         StepperControl padIndexStepper{ "Pad" };
         StepperControl chokeGroupStepper{ "Choke" };
         StepperControl triggerChanceStepper{ "Chance" };
@@ -251,10 +258,11 @@ namespace patchcraft
         void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
         // Zone manipulation
-        enum class DragMode { none, moveZone, resizeLeft, resizeRight, resizeVelocityLow, resizeVelocityHigh, moveVelocity };
+        enum class DragMode { none, moveZone, resizeLeft, resizeRight, resizeVelocityLow, resizeVelocityHigh, moveVelocity, movePad };
         DragMode dragMode = DragMode::none;
         int dragStartX = 0;
         int dragStartY = 0;
+        int dragStartPad = -1;
         int dragStartNote = 0;
         int dragStartVelocity = 0;
         int dragStartLoKey = 0;
@@ -310,6 +318,13 @@ namespace patchcraft
         void importSampleFiles (const juce::Array<juce::File>& files, bool spanMappedRoots = true);
         void importDroppedSampleFiles (const juce::Array<juce::File>& files,
                                        juce::Point<int> localPosition);
+        void assignMidiToSelectedZone();
+        void clearMidiFromSelectedZones();
+        void assignMidiFilesToZone (const juce::Array<juce::File>& files,
+                                    juce::Point<int> localPosition);
+        bool assignMidiFileToZone (int zoneIndex, const juce::File& file,
+                                   const juce::String& actionName);
+        int zoneIndexAtPosition (juce::Point<int> position) const;
         void commitSampleMapEdit (const juce::String& actionName,
                                   std::vector<SampleZoneDef> beforeZones);
 

@@ -97,6 +97,40 @@ namespace patchcraft
             juce::TextButton applyBtn { "Apply" };
             juce::TextButton closeBtn { "Close" };
         };
+
+        static bool isSupportedSampleEditorAudioFile (const juce::File& file)
+        {
+            const auto ext = file.getFileExtension().toLowerCase();
+            return ext == ".wav" || ext == ".aiff" || ext == ".aif" || ext == ".flac";
+        }
+
+        static bool isSupportedSampleEditorMidiFile (const juce::File& file)
+        {
+            const auto ext = file.getFileExtension().toLowerCase();
+            return ext == ".mid" || ext == ".midi";
+        }
+
+        static juce::String midiModeForComboId (int id)
+        {
+            switch (id)
+            {
+                case 2: return "pitch";
+                case 3: return "slice";
+                case 4: return "drum";
+                case 5: return "mod";
+                case 1:
+                default: return "trigger";
+            }
+        }
+
+        static int comboIdForMidiMode (const juce::String& mode)
+        {
+            if (mode == "pitch") return 2;
+            if (mode == "slice") return 3;
+            if (mode == "drum")  return 4;
+            if (mode == "mod")   return 5;
+            return 1;
+        }
     }
 
     //============================================================================
@@ -186,6 +220,7 @@ namespace patchcraft
         addAndMakeVisible (clearAllBtn);
         addAndMakeVisible (autoMapBtn);
         addAndMakeVisible (spanOnDropToggle);
+        addAndMakeVisible (stackPadsToggle);
         addAndMakeVisible (mapPresetBox);
 
         // Map preset dropdown — replaces the standalone Pad Map / Glitch Kit
@@ -206,7 +241,7 @@ namespace patchcraft
         mapPresetBox.addItem ("32 slices  (equal grid)",     213);
         mapPresetBox.addSeparator();
         mapPresetBox.addSectionHeading ("Build Patch");
-        mapPresetBox.addItem ("Build Drum Kit (auto)",       401);
+        mapPresetBox.addItem ("Build Drum Kit (pads)",       401);
         mapPresetBox.addItem ("Build Multi-Sample Patch",    402);
         mapPresetBox.addItem ("Build Remix Performance Kit", 403);
         mapPresetBox.addSeparator();
@@ -232,6 +267,10 @@ namespace patchcraft
         addAndMakeVisible (fadeInBtn);
         addAndMakeVisible (fadeOutBtn);
         addAndMakeVisible (zoomFitBtn);
+        addAndMakeVisible (assignMidiBtn);
+        addAndMakeVisible (clearMidiBtn);
+        addAndMakeVisible (midiModeBox);
+        addAndMakeVisible (midiSyncToggle);
         for (auto* button : { &smartTrimBtn, &smartDrumBtn, &smartLoopBtn, &smartVelLayerBtn,
                               &smartRRBtn, &smartHumanizeBtn, &smartResetBtn })
         {
@@ -325,6 +364,7 @@ namespace patchcraft
         clearAllBtn.setTooltip ("Remove all sample zones from this instrument.");
         autoMapBtn.setTooltip ("Build a playable keyboard map from imported sample names and pitch detection.");
         spanOnDropToggle.setTooltip ("When enabled, dropped pitched samples span between root notes. When off, every dropped one-shot stays on a single key or pad.");
+        stackPadsToggle.setTooltip ("Off: one sample per pad and drops replace the pad. On: multiple samples on a pad become round-robin stack layers.");
         mapPresetBox.setTooltip ("Apply pad maps, glitch slicing, patch-building, and level presets.");
         zoomInBtn.setTooltip ("Zoom in on the keyzone grid.");
         zoomOutBtn.setTooltip ("Zoom out on the keyzone grid.");
@@ -335,6 +375,10 @@ namespace patchcraft
         fadeInBtn.setTooltip ("Add a short fade-in to selected zones.");
         fadeOutBtn.setTooltip ("Add a short fade-out to selected zones.");
         zoomFitBtn.setTooltip ("Fit the selected waveform view.");
+        assignMidiBtn.setTooltip ("Assign a MIDI loop to the selected sample zone. In the Player, that MIDI drives this sample zone.");
+        clearMidiBtn.setTooltip ("Remove MIDI loop assignments from the selected zones.");
+        midiModeBox.setTooltip ("Choose how the MIDI loop affects this zone: trigger, pitch, slice, drum, or modulation.");
+        midiSyncToggle.setTooltip ("Sync this zone's MIDI loop to the DAW transport and tempo.");
         easyModeBtn.setTooltip ("Show the guided Easy Sample Builder workflow.");
         advancedModeBtn.setTooltip ("Show the full Sample Mapper editor with zone, velocity, RR, playback, and waveform tools.");
         easyImportBtn.setTooltip ("Import samples into the current map. Then choose a map type and press Build Map.");
@@ -411,6 +455,17 @@ namespace patchcraft
         loopToggle.onClick = [this] { toggleLoopForSelected(); };
         fadeInBtn.onClick = [this] { addDefaultFade (true); };
         fadeOutBtn.onClick = [this] { addDefaultFade (false); };
+        assignMidiBtn.onClick = [this] { assignMidiToSelectedZone(); };
+        clearMidiBtn.onClick = [this] { clearMidiFromSelectedZones(); };
+        midiModeBox.addItem ("Trigger sample", 1);
+        midiModeBox.addItem ("Pitch follow", 2);
+        midiModeBox.addItem ("Slice/chop", 3);
+        midiModeBox.addItem ("Drum pad", 4);
+        midiModeBox.addItem ("Mod only", 5);
+        midiModeBox.setSelectedId (1, juce::dontSendNotification);
+        midiModeBox.onChange = [this] { updateZoneFromSteppers(); };
+        midiSyncToggle.setToggleState (true, juce::dontSendNotification);
+        midiSyncToggle.onClick = [this] { updateZoneFromSteppers(); };
         smartTrimBtn.onClick = [this] { applySmartTrimToSelected(); };
         smartDrumBtn.onClick = [this] { applyDrumOneShotRecipeToSelected(); };
         smartLoopBtn.onClick = [this] { applySustainLoopRecipeToSelected(); };
@@ -499,11 +554,15 @@ namespace patchcraft
         oneShotToggle.onClick = [this] { updateZoneFromSteppers(); };
         addAndMakeVisible (tuneStepper);
         addAndMakeVisible (trackStepper);
+        addAndMakeVisible (midiTransposeStepper);
+        addAndMakeVisible (midiVelocityStepper);
         addAndMakeVisible (padIndexStepper);
         addAndMakeVisible (chokeGroupStepper);
         addAndMakeVisible (triggerChanceStepper);
         tuneStepper.minValue = -100; tuneStepper.maxValue = 100;
         trackStepper.minValue = 0; trackStepper.maxValue = 200;
+        midiTransposeStepper.minValue = -48; midiTransposeStepper.maxValue = 48;
+        midiVelocityStepper.minValue = 0; midiVelocityStepper.maxValue = 100;
         padIndexStepper.minValue = -1; padIndexStepper.maxValue = 15;
         chokeGroupStepper.minValue = 0; chokeGroupStepper.maxValue = 127;
         triggerChanceStepper.minValue = 0; triggerChanceStepper.maxValue = 100;
@@ -515,6 +574,8 @@ namespace patchcraft
         panStepper.minValue = -64; panStepper.maxValue = 64;
         trackStepper.setEnabled (true);
         trackStepper.setTooltip ("Keyboard pitch tracking for selected zones. 0% keeps one pitch, 100% follows keys normally, 200% exaggerates pitch movement.");
+        midiTransposeStepper.setTooltip ("Transpose this zone's assigned MIDI loop before it triggers the sample.");
+        midiVelocityStepper.setTooltip ("How strongly MIDI velocity affects playback level and modulation for this zone.");
         reverseBtn.setTooltip ("Reverse selected zones for risers, swells, and backwards one-shots.");
         oneShotToggle.setTooltip ("Play selected zones to their end instead of stopping on note-off.");
         sourceMode.setTooltip ("Choose the sampler playback source mode for selected zones.");
@@ -566,6 +627,8 @@ namespace patchcraft
         sampleEndStepper.onChange = onStep;
         tuneStepper.onChange = onStep;
         trackStepper.onChange = onStep;
+        midiTransposeStepper.onChange = onStep;
+        midiVelocityStepper.onChange = onStep;
         padIndexStepper.onChange = onStep;
         chokeGroupStepper.onChange = onStep;
         triggerChanceStepper.onChange = onStep;
@@ -917,9 +980,14 @@ namespace patchcraft
         juce::String coverage = status.coveredNotes > 0
             ? noteToString (status.firstCoveredNote) + "-" + noteToString (status.lastCoveredNote)
             : "No key coverage";
+        int midiZones = 0;
+        for (const auto& zone : owner.getProject().getSampleMap().getZones())
+            if (zone.midiPath.isNotEmpty())
+                ++midiZones;
 
         return "Zones " + juce::String (status.playableZones) + "/" + juce::String (status.totalZones)
              + "  |  " + coverage
+             + (midiZones > 0 ? "  |  MIDI zones " + juce::String (midiZones) : juce::String())
              + "  |  " + (status.exportReady ? "Ready" : "Needs attention");
     }
 
@@ -997,6 +1065,7 @@ namespace patchcraft
                                  static_cast<juce::Component*> (&clearAllBtn),
                                  static_cast<juce::Component*> (&autoMapBtn),
                                  static_cast<juce::Component*> (&spanOnDropToggle),
+                                 static_cast<juce::Component*> (&stackPadsToggle),
                                  static_cast<juce::Component*> (&mapPresetBox),
                                  static_cast<juce::Component*> (&zoomInBtn),
                                  static_cast<juce::Component*> (&zoomOutBtn),
@@ -1007,6 +1076,10 @@ namespace patchcraft
                                  static_cast<juce::Component*> (&fadeInBtn),
                                  static_cast<juce::Component*> (&fadeOutBtn),
                                  static_cast<juce::Component*> (&zoomFitBtn),
+                                 static_cast<juce::Component*> (&assignMidiBtn),
+                                 static_cast<juce::Component*> (&clearMidiBtn),
+                                 static_cast<juce::Component*> (&midiModeBox),
+                                 static_cast<juce::Component*> (&midiSyncToggle),
                                  static_cast<juce::Component*> (&smartDrumBtn),
                                  static_cast<juce::Component*> (&smartLoopBtn),
                                  static_cast<juce::Component*> (&smartVelLayerBtn),
@@ -1018,6 +1091,8 @@ namespace patchcraft
                                  static_cast<juce::Component*> (&oneShotToggle),
                                  static_cast<juce::Component*> (&tuneStepper),
                                  static_cast<juce::Component*> (&trackStepper),
+                                 static_cast<juce::Component*> (&midiTransposeStepper),
+                                 static_cast<juce::Component*> (&midiVelocityStepper),
                                  static_cast<juce::Component*> (&padIndexStepper),
                                  static_cast<juce::Component*> (&chokeGroupStepper),
                                  static_cast<juce::Component*> (&triggerChanceStepper),
@@ -1045,6 +1120,7 @@ namespace patchcraft
         applyImportVelocityAllBtn.setVisible (showAdvanced);
         smartTrimBtn.setVisible (true);
         spanOnDropToggle.setVisible (true);
+        stackPadsToggle.setVisible (true);
         selectAllBtn.setVisible (true);
         libraryDrawerBtn.setVisible (true);
         for (auto* component : { static_cast<juce::Component*> (&healthFixEngineBtn),
@@ -1314,6 +1390,10 @@ namespace patchcraft
                 const int zoneIndex = zoneIndexForPad (padIndex);
                 const bool hasZone = zoneIndex >= 0 && zoneIndex < (int) zones.size();
                 const bool selected = hasZone && isZoneSelected (zoneIndex);
+                int padLayerCount = 0;
+                for (const auto& zone : zones)
+                    if (zone.padIndex == padIndex)
+                        ++padLayerCount;
                 const auto area = juce::Rectangle<int> (r.getX() + col * (padW + gap),
                                                         r.getY() + row * (padH + gap),
                                                         padW,
@@ -1348,6 +1428,8 @@ namespace patchcraft
                     g.setFont (juce::FontOptions (sideBank ? 10.0f : 9.0f));
                     g.setColour (PatchCraftLookAndFeel::textDim());
                     juce::String flags = note + (zone.oneShot ? "  One-shot" : "  Gate");
+                    if (padLayerCount > 1)
+                        flags << "  Stack x" << padLayerCount;
                     if (zone.chokeGroup > 0)
                         flags << "  Choke " << zone.chokeGroup;
                     if (zone.triggerProbability < 100)
@@ -1705,7 +1787,7 @@ namespace patchcraft
             guide.removeFromTop (8);
             auto actionRow = guide.removeFromTop (36);
 
-            auto placeEasyButton = [] (juce::Rectangle<int>& row, juce::TextButton& button, int width)
+            auto placeEasyButton = [] (juce::Rectangle<int>& row, juce::Component& button, int width)
             {
                 const int w = juce::jmin (width, row.getWidth());
                 button.setBounds (row.removeFromLeft (w).reduced (2, 3));
@@ -1722,6 +1804,7 @@ namespace patchcraft
             placeEasyButton (actionRow, easyPlayModeBtn, 100);
             placeEasyButton (actionRow, easyAuditionBtn, 94);
             placeEasyButton (actionRow, easyStopBtn, 52);
+            placeEasyButton (actionRow, stackPadsToggle, 120);
             placeEasyButton (actionRow, easyTestBtn, 94);
             placeEasyButton (actionRow, easyClearBtn, 64);
 
@@ -1758,6 +1841,8 @@ namespace patchcraft
             libraryDrawerBtn.setBounds (toolbar.removeFromLeft (70));
             toolbar.removeFromLeft (4);
             spanOnDropToggle.setBounds (toolbar.removeFromLeft (112).reduced (2, 4));
+            toolbar.removeFromLeft (4);
+            stackPadsToggle.setBounds (toolbar.removeFromLeft (124).reduced (2, 4));
             toolbar.removeFromLeft (4);
             removeBtn.setBounds (toolbar.removeFromLeft (74));
             toolbar.removeFromLeft (4);
@@ -1826,8 +1911,8 @@ namespace patchcraft
         // Bottom editor: waveform plus professional zone/playback cards.
         const int lowerAreaHeight = r.getHeight();
         const int maxEditorHeight = juce::jmax (220, lowerAreaHeight - 132 - 96);
-        const int desiredEditorHeight = juce::jlimit (260, 320, juce::roundToInt ((float) lowerAreaHeight * 0.48f));
-        const int editPanelHeight = juce::jlimit (220, 320, juce::jmin (desiredEditorHeight, maxEditorHeight));
+        const int desiredEditorHeight = juce::jlimit (300, 380, juce::roundToInt ((float) lowerAreaHeight * 0.56f));
+        const int editPanelHeight = juce::jlimit (260, 380, juce::jmin (desiredEditorHeight, maxEditorHeight));
         editPanelBounds = r.removeFromBottom (editPanelHeight).reduced (0, 2);
         auto waveformArea = r.removeFromBottom (132).reduced (0, 4);
         waveformStatus.setBounds (waveformArea.removeFromTop (18));
@@ -1901,9 +1986,23 @@ namespace patchcraft
         playbackButtons.removeFromLeft (6);
         oneShotToggle.setBounds (playbackButtons.reduced (2));
         auto playbackRow = playback.removeFromTop (56);
-        tuneStepper.setBounds (playbackRow.removeFromLeft ((playbackRow.getWidth() - 6) / 2).reduced (3));
+        const int playbackControlW = juce::jmax (52, (playbackRow.getWidth() - 18) / 4);
+        tuneStepper.setBounds (playbackRow.removeFromLeft (playbackControlW).reduced (3));
         playbackRow.removeFromLeft (6);
-        trackStepper.setBounds (playbackRow.reduced (3));
+        trackStepper.setBounds (playbackRow.removeFromLeft (playbackControlW).reduced (3));
+        playbackRow.removeFromLeft (6);
+        midiTransposeStepper.setBounds (playbackRow.removeFromLeft (playbackControlW).reduced (3));
+        playbackRow.removeFromLeft (6);
+        midiVelocityStepper.setBounds (playbackRow.reduced (3));
+        playback.removeFromTop (4);
+        auto midiModeRow = playback.removeFromTop (26);
+        midiSyncToggle.setBounds (midiModeRow.removeFromRight (88).reduced (2, 3));
+        midiModeBox.setBounds (midiModeRow.reduced (2));
+        playback.removeFromTop (4);
+        auto midiButtons = playback.removeFromTop (28);
+        assignMidiBtn.setBounds (midiButtons.removeFromLeft ((midiButtons.getWidth() - 6) / 2).reduced (2));
+        midiButtons.removeFromLeft (6);
+        clearMidiBtn.setBounds (midiButtons.reduced (2));
 
         auto amp = ampCard.reduced (10);
         amp.removeFromTop (28);
@@ -1998,7 +2097,8 @@ namespace patchcraft
                           + (z.padIndex >= 0 ? "  Pad " + juce::String (z.padIndex + 1) : "")
                           + (z.oneShot ? "  One-shot" : "")
                           + (z.chokeGroup > 0 ? "  Choke " + juce::String (z.chokeGroup) : "")
-                          + (z.roundRobinGroup > 0 ? "  RR" + juce::String (z.roundRobinIndex > 0 ? z.roundRobinIndex : z.roundRobinGroup) : "");
+                          + (z.roundRobinGroup > 0 ? "  RR" + juce::String (z.roundRobinIndex > 0 ? z.roundRobinIndex : z.roundRobinGroup) : "")
+                          + (z.midiPath.isNotEmpty() ? "  MIDI " + z.midiPlaybackMode : "");
         g.drawText (detail, r, juce::Justification::centredLeft);
     }
 
@@ -2116,6 +2216,10 @@ namespace patchcraft
             sampleEndStepper.setValue (0, false);
             tuneStepper.setValue (0, false);
             trackStepper.setValue (100, false);
+            midiModeBox.setSelectedId (1, juce::dontSendNotification);
+            midiSyncToggle.setToggleState (true, juce::dontSendNotification);
+            midiTransposeStepper.setValue (0, false);
+            midiVelocityStepper.setValue (100, false);
             padIndexStepper.setValue (-1, false);
             chokeGroupStepper.setValue (0, false);
             triggerChanceStepper.setValue (100, false);
@@ -2151,6 +2255,10 @@ namespace patchcraft
         sampleEndStepper.setValue (z.sampleEnd, false);
         tuneStepper.setValue (juce::roundToInt (z.pitchOffset * 100.0f), false);
         trackStepper.setValue (juce::roundToInt (juce::jlimit (0.0f, 2.0f, z.keyTracking) * 100.0f), false);
+        midiModeBox.setSelectedId (comboIdForMidiMode (z.midiPlaybackMode), juce::dontSendNotification);
+        midiSyncToggle.setToggleState (z.midiHostSync, juce::dontSendNotification);
+        midiTransposeStepper.setValue (juce::jlimit (-48, 48, z.midiTranspose), false);
+        midiVelocityStepper.setValue (juce::roundToInt (juce::jlimit (0.0f, 1.0f, z.midiVelocityAmount) * 100.0f), false);
         padIndexStepper.setValue (juce::jlimit (-1, 15, z.padIndex), false);
         chokeGroupStepper.setValue (juce::jlimit (0, 127, z.chokeGroup), false);
         triggerChanceStepper.setValue (juce::jlimit (0, 100, z.triggerProbability), false);
@@ -2171,7 +2279,11 @@ namespace patchcraft
             ? juce::File (z.samplePath)
             : owner.getProject().getProjectFolder().getChildFile (z.samplePath);
         const auto missing = sampleFile.existsAsFile() ? juce::String() : "  [MISSING]";
-        sampleNameLabel.setText ("Sample: " + z.samplePath.fromLastOccurrenceOf ("/", false, true).fromLastOccurrenceOf ("\\", false, true) + missing,
+        const auto midiInfo = z.midiPath.isNotEmpty()
+            ? "  |  MIDI: " + juce::File (z.midiPath).getFileNameWithoutExtension()
+                + " (" + z.midiPlaybackMode + ")"
+            : juce::String();
+        sampleNameLabel.setText ("Sample: " + z.samplePath.fromLastOccurrenceOf ("/", false, true).fromLastOccurrenceOf ("\\", false, true) + missing + midiInfo,
                                  juce::dontSendNotification);
         sampleNameLabel.setColour (juce::Label::textColourId,
                                    missing.isEmpty() ? PatchCraftLookAndFeel::text()
@@ -2202,6 +2314,10 @@ namespace patchcraft
         z.sampleEnd = sampleEndStepper.value;
         z.pitchOffset = tuneStepper.value / 100.0f;
         z.keyTracking = juce::jlimit (0.0f, 2.0f, trackStepper.value / 100.0f);
+        z.midiPlaybackMode = midiModeForComboId (midiModeBox.getSelectedId());
+        z.midiHostSync = midiSyncToggle.getToggleState();
+        z.midiTranspose = juce::jlimit (-48, 48, midiTransposeStepper.value);
+        z.midiVelocityAmount = juce::jlimit (0.0f, 1.0f, midiVelocityStepper.value / 100.0f);
         z.reverse = reverseBtn.getToggleState();
         z.oneShot = oneShotToggle.getToggleState();
         z.padIndex = juce::jlimit (-1, 15, padIndexStepper.value);
@@ -2234,7 +2350,7 @@ namespace patchcraft
             {
                 selectZone (zoneIndex);
                 const auto& zone = owner.getProject().getSampleMap().getZones()[(size_t) zoneIndex];
-                if (playModeEnabled || e.getNumberOfClicks() == 1)
+                if (playModeEnabled)
                 {
                     const auto inner = drumPadBounds.reduced (10);
                     const float yNorm = juce::jlimit (0.0f, 1.0f,
@@ -2246,6 +2362,16 @@ namespace patchcraft
                 else if (e.getNumberOfClicks() > 1)
                 {
                     auditionSelectedZone();
+                }
+                else
+                {
+                    mousePreviewNote = zone.rootNote;
+                    triggerPreviewNoteOn (mousePreviewNote, 0.85f, false);
+                    dragMode = DragMode::movePad;
+                    dragStartPad = pad;
+                    dragZonesBefore = owner.getProject().getSampleMap().getZones();
+                    dragChangedSampleMap = false;
+                    setMouseCursor (juce::MouseCursor::DraggingHandCursor);
                 }
             }
             return;
@@ -2344,6 +2470,14 @@ namespace patchcraft
 
     void SampleMapEditor::mouseMove (const juce::MouseEvent& e)
     {
+        if (drumPadBounds.contains (e.getPosition()))
+        {
+            setMouseCursor (padIndexAtPosition (e.getPosition()) >= 0
+                ? juce::MouseCursor::DraggingHandCursor
+                : juce::MouseCursor::NormalCursor);
+            return;
+        }
+
         if (! gridBounds.contains (e.getPosition()))
         {
             setMouseCursor (juce::MouseCursor::NormalCursor);
@@ -2383,6 +2517,51 @@ namespace patchcraft
 
     void SampleMapEditor::mouseDrag (const juce::MouseEvent& e)
     {
+        if (dragMode == DragMode::movePad)
+        {
+            if (selectedZone < 0 || selectedZone >= (int) owner.getProject().getSampleMap().getZones().size())
+                return;
+
+            const int targetPad = padIndexAtPosition (e.getPosition());
+            if (targetPad < 0 || targetPad == dragStartPad)
+                return;
+
+            auto& zones = owner.getProject().getSampleMap().getZones();
+            auto applyPad = [] (SampleZoneDef& zone, int pad)
+            {
+                pad = juce::jlimit (0, 15, pad);
+                const int note = juce::jlimit (0, 127, 36 + pad);
+                zone.padIndex = pad;
+                zone.rootNote = note;
+                zone.lowNote = note;
+                zone.highNote = note;
+                zone.lowVelocity = 1;
+                zone.highVelocity = 127;
+                zone.oneShot = true;
+                zone.loopEnabled = false;
+                zone.group = "Drum Pads";
+                zone.triggerProbability = juce::jlimit (1, 100, zone.triggerProbability);
+                if (zone.padLabel.isEmpty())
+                    zone.padLabel = juce::File (zone.samplePath).getFileNameWithoutExtension();
+            };
+
+            if (! stackPadsToggle.getToggleState())
+            {
+                for (int i = 0; i < (int) zones.size(); ++i)
+                    if (i != selectedZone && zones[(size_t) i].padIndex == targetPad)
+                        applyPad (zones[(size_t) i], dragStartPad);
+            }
+
+            applyPad (zones[(size_t) selectedZone], targetPad);
+            dragStartPad = targetPad;
+            dragChangedSampleMap = true;
+            owner.getProject().markDirty();
+            updateSteppersFromZone();
+            updateHealthButtons();
+            repaint();
+            return;
+        }
+
         if (playModeEnabled && mousePreviewNote >= 0)
         {
             const int nextNote = noteAtKeyboardPosition (e.getPosition());
@@ -2953,6 +3132,190 @@ namespace patchcraft
             });
     }
 
+    int SampleMapEditor::zoneIndexAtPosition (juce::Point<int> position) const
+    {
+        if (drumPadBounds.contains (position))
+        {
+            const int pad = padIndexAtPosition (position);
+            if (pad >= 0)
+                return zoneIndexForPad (pad);
+        }
+
+        if (gridBounds.contains (position))
+        {
+            const auto& zones = owner.getProject().getSampleMap().getZones();
+            const float noteWidth = 12.0f * zoomLevel;
+            const int startNote = scrollOffset;
+            const auto zoneArea = getZoneArea (gridBounds);
+            for (int i = (int) zones.size() - 1; i >= 0; --i)
+                if (zoneRectFor (zones[(size_t) i], zoneArea, startNote, noteWidth)
+                        .expanded (3.0f, 3.0f)
+                        .contains ((float) position.x, (float) position.y))
+                    return i;
+        }
+
+        return selectedZone;
+    }
+
+    bool SampleMapEditor::assignMidiFileToZone (int zoneIndex,
+                                                const juce::File& file,
+                                                const juce::String& actionName)
+    {
+        if (! file.existsAsFile() || ! isSupportedSampleEditorMidiFile (file))
+            return false;
+
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        if (zoneIndex < 0 || zoneIndex >= (int) zones.size())
+            return false;
+
+        auto before = zones;
+        auto& zone = zones[(size_t) zoneIndex];
+        zone.midiPath = file.getFullPathName();
+        zone.midiPlaybackMode = midiModeForComboId (midiModeBox.getSelectedId());
+        zone.midiHostSync = midiSyncToggle.getToggleState();
+        zone.midiTranspose = juce::jlimit (-48, 48, midiTransposeStepper.value);
+        zone.midiVelocityAmount = juce::jlimit (0.0f, 1.0f, midiVelocityStepper.value / 100.0f);
+        const auto sampleName = juce::File (zone.samplePath).getFileNameWithoutExtension();
+        const auto midiMode = zone.midiPlaybackMode;
+        commitSampleMapEdit (actionName, std::move (before));
+        selectZone (zoneIndex);
+        waveformStatus.setText ("Assigned MIDI " + file.getFileName()
+                                + " to " + sampleName
+                                + " (" + midiMode + ").",
+                                juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+        refresh();
+        return true;
+    }
+
+    void SampleMapEditor::assignMidiFilesToZone (const juce::Array<juce::File>& files,
+                                                 juce::Point<int> localPosition)
+    {
+        if (files.isEmpty())
+            return;
+
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        if (zones.empty())
+        {
+            waveformStatus.setText ("Import or drop a sample before assigning MIDI.",
+                                    juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colours::orange);
+            return;
+        }
+
+        int target = zoneIndexAtPosition (localPosition);
+        if (target < 0)
+            target = selectedZone;
+
+        if (target < 0 || target >= (int) zones.size())
+        {
+            waveformStatus.setText ("Select a sample zone, then assign a MIDI file.",
+                                    juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colours::orange);
+            return;
+        }
+
+        auto before = zones;
+        int assigned = 0;
+        juce::Array<int> targetZones;
+        if (selectedZoneIndexes.size() > 1 && files.size() > 1)
+            targetZones = selectedZoneIndexes;
+        else
+            targetZones.add (target);
+
+        for (int i = 0; i < files.size() && i < targetZones.size(); ++i)
+        {
+            const auto file = files.getReference (i);
+            const int zoneIndex = targetZones[i];
+            if (zoneIndex < 0 || zoneIndex >= (int) zones.size()
+                || ! file.existsAsFile()
+                || ! isSupportedSampleEditorMidiFile (file))
+                continue;
+
+            auto& zone = zones[(size_t) zoneIndex];
+            zone.midiPath = file.getFullPathName();
+            zone.midiPlaybackMode = midiModeForComboId (midiModeBox.getSelectedId());
+            zone.midiHostSync = midiSyncToggle.getToggleState();
+            zone.midiTranspose = juce::jlimit (-48, 48, midiTransposeStepper.value);
+            zone.midiVelocityAmount = juce::jlimit (0.0f, 1.0f, midiVelocityStepper.value / 100.0f);
+            ++assigned;
+        }
+
+        if (assigned <= 0)
+        {
+            waveformStatus.setText ("No supported MIDI files assigned. Use MID or MIDI files.",
+                                    juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colours::orange);
+            return;
+        }
+
+        commitSampleMapEdit ("Assign MIDI to sample zone", std::move (before));
+        selectZone (target);
+        waveformStatus.setText ("Assigned " + juce::String (assigned)
+                                + " MIDI loop" + (assigned == 1 ? "" : "s")
+                                + " to sample zone" + (assigned == 1 ? "" : "s") + ".",
+                                juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+        refresh();
+    }
+
+    void SampleMapEditor::assignMidiToSelectedZone()
+    {
+        if (selectedZone < 0)
+        {
+            waveformStatus.setText ("Select a sample zone before assigning MIDI.",
+                                    juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colours::orange);
+            return;
+        }
+
+        auto* chooser = new juce::FileChooser (
+            "Assign MIDI loop to selected sample zone", juce::File(), "*.mid;*.midi");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode
+                            | juce::FileBrowserComponent::canSelectFiles,
+            [this, chooser] (const juce::FileChooser& fc)
+            {
+                const auto file = fc.getResult();
+                if (file.existsAsFile())
+                    assignMidiFileToZone (selectedZone, file, "Assign MIDI to sample zone");
+                delete chooser;
+            });
+    }
+
+    void SampleMapEditor::clearMidiFromSelectedZones()
+    {
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        if (selectedZoneIndexes.isEmpty())
+            return;
+
+        auto before = zones;
+        int cleared = 0;
+        for (int index : selectedZoneIndexes)
+        {
+            if (index < 0 || index >= (int) zones.size())
+                continue;
+            auto& zone = zones[(size_t) index];
+            if (zone.midiPath.isEmpty())
+                continue;
+            zone.midiPath.clear();
+            zone.midiPlaybackMode = "trigger";
+            zone.midiHostSync = true;
+            zone.midiTranspose = 0;
+            zone.midiVelocityAmount = 1.0f;
+            ++cleared;
+        }
+
+        if (cleared <= 0)
+            return;
+
+        commitSampleMapEdit ("Clear sample-zone MIDI", std::move (before));
+        waveformStatus.setText ("Cleared MIDI from " + juce::String (cleared)
+                                + " zone" + (cleared == 1 ? "" : "s") + ".",
+                                juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+        refresh();
+    }
+
     void SampleMapEditor::startVoiceRecording()
     {
         beginVoiceRecordingNow();
@@ -3373,8 +3736,7 @@ namespace patchcraft
         {
             const juce::File f (path);
             if (f.isDirectory()) return true;
-            const auto ext = f.getFileExtension().toLowerCase();
-            if (ext == ".wav" || ext == ".aiff" || ext == ".aif" || ext == ".flac")
+            if (isSupportedSampleEditorAudioFile (f) || isSupportedSampleEditorMidiFile (f))
                 return true;
         }
         return false;
@@ -3385,7 +3747,8 @@ namespace patchcraft
         // Walk dropped paths: a file goes straight in, a folder recurses one
         // level deep collecting any audio files. This makes "drop a kit
         // folder" do the right thing.
-        juce::Array<juce::File> collected;
+        juce::Array<juce::File> audioFiles;
+        juce::Array<juce::File> midiFiles;
         const juce::String wildcard ("*.wav;*.aiff;*.aif;*.flac");
         for (const auto& path : files)
         {
@@ -3395,17 +3758,25 @@ namespace patchcraft
                 juce::Array<juce::File> inFolder;
                 f.findChildFiles (inFolder, juce::File::findFiles, true, wildcard);
                 for (const auto& child : inFolder)
-                    collected.add (child);
+                    audioFiles.add (child);
+
+                juce::Array<juce::File> midiInFolder;
+                f.findChildFiles (midiInFolder, juce::File::findFiles, true, "*.mid;*.midi");
+                for (const auto& child : midiInFolder)
+                    midiFiles.add (child);
             }
             else if (f.existsAsFile())
             {
-                const auto ext = f.getFileExtension().toLowerCase();
-                if (ext == ".wav" || ext == ".aiff" || ext == ".aif" || ext == ".flac")
-                    collected.add (f);
+                if (isSupportedSampleEditorAudioFile (f))
+                    audioFiles.add (f);
+                else if (isSupportedSampleEditorMidiFile (f))
+                    midiFiles.add (f);
             }
         }
-        if (! collected.isEmpty())
-            importDroppedSampleFiles (collected, { x, y });
+        if (! audioFiles.isEmpty())
+            importDroppedSampleFiles (audioFiles, { x, y });
+        if (! midiFiles.isEmpty())
+            assignMidiFilesToZone (midiFiles, { x, y });
     }
 
     bool SampleMapEditor::isInterestedInDragSource (const SourceDetails& details)
@@ -3426,8 +3797,7 @@ namespace patchcraft
                     const juce::File file (path.toString());
                     if (file.existsAsFile())
                     {
-                        const auto ext = file.getFileExtension().toLowerCase();
-                        if (ext == ".wav" || ext == ".aiff" || ext == ".aif" || ext == ".flac")
+                        if (isSupportedSampleEditorAudioFile (file) || isSupportedSampleEditorMidiFile (file))
                             return true;
                     }
                 }
@@ -3438,8 +3808,7 @@ namespace patchcraft
             if (! file.existsAsFile())
                 return false;
 
-            const auto ext = file.getFileExtension().toLowerCase();
-            return ext == ".wav" || ext == ".aiff" || ext == ".aif" || ext == ".flac";
+            return isSupportedSampleEditorAudioFile (file) || isSupportedSampleEditorMidiFile (file);
         }
 
         return false;
@@ -3466,8 +3835,20 @@ namespace patchcraft
                     files.add (file);
             }
 
-            if (! files.isEmpty())
-                importDroppedSampleFiles (files, details.localPosition);
+            juce::Array<juce::File> audioFiles;
+            juce::Array<juce::File> midiFiles;
+            for (const auto& file : files)
+            {
+                if (isSupportedSampleEditorAudioFile (file))
+                    audioFiles.add (file);
+                else if (isSupportedSampleEditorMidiFile (file))
+                    midiFiles.add (file);
+            }
+
+            if (! audioFiles.isEmpty())
+                importDroppedSampleFiles (audioFiles, details.localPosition);
+            if (! midiFiles.isEmpty())
+                assignMidiFilesToZone (midiFiles, details.localPosition);
         }
     }
 
@@ -3504,8 +3885,29 @@ namespace patchcraft
             return;
         }
 
+        juce::Array<juce::File> filesToImport = files;
+        const bool stackPads = stackPadsToggle.getToggleState();
+        int skippedFiles = 0;
+        if (drumPadDrop && ! stackPads)
+        {
+            const int availablePads = juce::jmax (0, 16 - padIndex);
+            while (filesToImport.size() > availablePads)
+            {
+                filesToImport.remove (filesToImport.size() - 1);
+                ++skippedFiles;
+            }
+        }
+
+        if (filesToImport.isEmpty())
+        {
+            waveformStatus.setText ("No empty pad slots from this drop point. Turn on Stack Samples to layer samples on one pad.",
+                                    juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colours::orange);
+            return;
+        }
+
         const auto beforeImportCount = (int) owner.getProject().getSampleMap().getZones().size();
-        importSampleFiles (files, false);
+        importSampleFiles (filesToImport, false);
 
         auto& zones = owner.getProject().getSampleMap().getZones();
         const int afterImportCount = (int) zones.size();
@@ -3515,11 +3917,17 @@ namespace patchcraft
         auto beforeTargetMap = zones;
         juce::Array<int> mappedIndexes;
         const int importCount = afterImportCount - beforeImportCount;
+        juce::Array<int> targetPads;
         for (int i = 0; i < importCount; ++i)
         {
             const int zoneIndex = beforeImportCount + i;
             auto& zone = zones[(size_t) zoneIndex];
-            const int note = juce::jlimit (0, 127, targetNote + i);
+            const int targetPad = drumPadDrop
+                ? (stackPads ? padIndex : padIndex + i)
+                : -1;
+            const int note = drumPadDrop
+                ? juce::jlimit (0, 127, 36 + targetPad)
+                : juce::jlimit (0, 127, targetNote + i);
             zone.rootNote = note;
             zone.lowNote = note;
             zone.highNote = note;
@@ -3529,14 +3937,53 @@ namespace patchcraft
             zone.loopEnabled = false;
             if (drumPadDrop)
             {
-                zone.padIndex = juce::jlimit (0, 15, padIndex + i);
+                zone.padIndex = targetPad;
                 zone.padLabel = zone.padLabel.isNotEmpty()
                     ? zone.padLabel
                     : juce::File (zone.samplePath).getFileNameWithoutExtension();
                 zone.group = "Drum Pads";
                 zone.triggerProbability = juce::jlimit (1, 100, zone.triggerProbability);
+                zone.roundRobinGroup = 0;
+                zone.roundRobinIndex = 0;
+                targetPads.addIfNotAlreadyThere (targetPad);
             }
             mappedIndexes.add (zoneIndex);
+        }
+
+        if (drumPadDrop && ! stackPads)
+        {
+            std::vector<SampleZoneDef> nextZones;
+            nextZones.reserve (zones.size());
+            for (int i = 0; i < (int) zones.size(); ++i)
+            {
+                const auto& zone = zones[(size_t) i];
+                if (i < beforeImportCount && targetPads.contains (zone.padIndex))
+                    continue;
+                nextZones.push_back (zone);
+            }
+            zones = std::move (nextZones);
+            mappedIndexes.clear();
+            for (int pad : targetPads)
+            {
+                const int index = zoneIndexForPad (pad);
+                if (index >= 0)
+                    mappedIndexes.addIfNotAlreadyThere (index);
+            }
+        }
+        else if (drumPadDrop && stackPads)
+        {
+            std::map<int, int> rrIndexByPad;
+            for (auto& zone : zones)
+            {
+                if (! targetPads.contains (zone.padIndex))
+                    continue;
+                const int note = juce::jlimit (0, 127, 36 + zone.padIndex);
+                zone.rootNote = note;
+                zone.lowNote = note;
+                zone.highNote = note;
+                zone.roundRobinGroup = juce::jlimit (1, 127, note + 1);
+                zone.roundRobinIndex = ++rrIndexByPad[zone.padIndex];
+            }
         }
 
         commitSampleMapEdit (drumPadDrop ? "Map samples to pads" : "Map dropped samples", std::move (beforeTargetMap));
@@ -3549,10 +3996,15 @@ namespace patchcraft
         }
         refresh();
 
-        waveformStatus.setText ((drumPadDrop ? "Mapped " : "Dropped ")
-                                    + juce::String (importCount)
-                                    + (importCount == 1 ? " sample at " : " samples from ")
-                                    + noteToString (targetNote) + ".",
+        auto message = (drumPadDrop ? "Mapped " : "Dropped ")
+                     + juce::String (importCount)
+                     + (importCount == 1 ? " sample at " : " samples from ")
+                     + noteToString (targetNote) + ".";
+        if (skippedFiles > 0)
+            message += " Skipped " + juce::String (skippedFiles) + " extra file"
+                     + (skippedFiles == 1 ? "" : "s")
+                     + "; turn on Stack Samples to layer them.";
+        waveformStatus.setText (message,
                                 juce::dontSendNotification);
         waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
     }
@@ -3785,15 +4237,16 @@ namespace patchcraft
         }
 
         auto before = map.getZones();
-        map.autoMapDrumPads (startNote, padCount);
+        map.autoMapDrumPads (startNote, padCount, stackPadsToggle.getToggleState());
         commitSampleMapEdit ("Auto-map drum pads", std::move (before));
         if (owner.getProject().getEngineType() != "sample")
             owner.getProject().setEngineType ("sample");
         refresh();
         const auto rootName = juce::MidiMessage::getMidiNoteName (startNote, true, true, 4);
-        waveformStatus.setText ("Mapped imported samples to " + juce::String (padCount)
-                                + " one-shot drum pads starting at " + rootName
-                                + ". Hats auto-share choke group 1.",
+        waveformStatus.setText ("Mapped imported samples to pads starting at " + rootName
+                                + (stackPadsToggle.getToggleState()
+                                    ? ". Stack Pads is on: repeated pads become round-robin layers."
+                                    : ". One sample per pad; filename guessing is off."),
                                 juce::dontSendNotification);
         waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
     }

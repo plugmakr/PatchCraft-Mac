@@ -112,7 +112,7 @@ namespace patchcraft
 
         // pScript integration
         juce::String getPscriptSource() const                    { return pscriptSource; }
-        void         setPscriptSource (const juce::String& src) { pscriptSource = src; scriptEngine.compile (src); }
+        void         setPscriptSource (const juce::String& src) { pscriptSource = src; scriptEngine.compile (src); markDirty(); }
         PScriptEngine& getScriptEngine()                         { return scriptEngine; }
         const PScriptEngine& getScriptEngine() const             { return scriptEngine; }
 

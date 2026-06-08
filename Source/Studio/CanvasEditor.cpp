@@ -681,6 +681,7 @@ namespace patchcraft
             block.values["dmSteps"] = 16.0f;
             block.values["dmPattern"] = 0.0f;
             block.values["dmTransport"] = 1.0f;
+            block.values["dmTriggerPadSlots"] = 1.0f;
             block.values["dmGate"] = 0.65f;
             block.values["dmProbability"] = 1.0f;
             block.values["rate"] = 1.0f;
@@ -1527,6 +1528,7 @@ namespace patchcraft
             return state != manualContainerOpen.end() && state->second;
         }
 
+        bool hasTabPanels = false;
         for (const auto& parent : owner.getProject().getLayout().getAll())
         {
             if ((parent.type == ElementType::Group || parent.type == ElementType::Panel)
@@ -1534,6 +1536,7 @@ namespace patchcraft
                 return true;
             if (parent.type == ElementType::TabPanel)
             {
+                hasTabPanels = true;
                 for (const auto& tab : parent.tabs)
                 {
                     const auto group = scopedTabGroupId (parent, tab);
@@ -1548,6 +1551,8 @@ namespace patchcraft
                 }
             }
         }
+        if (! hasTabPanels && ! isScopedTabGroupId (e.groupId))
+            return true;
         if (isScopedTabGroupId (e.groupId))
             return false;
         return e.groupId == currentTabGroup;
@@ -1703,17 +1708,24 @@ namespace patchcraft
             g.setColour (accent.withAlpha (0.95f));
             g.drawRect (multiBounds.expanded (3), 2);
 
-            constexpr int handleSize = 10;
-            const juce::Rectangle<int> handle (multiBounds.getRight() - handleSize,
-                                               multiBounds.getBottom() - handleSize,
-                                               handleSize * 2,
-                                               handleSize * 2);
-            g.setColour (PatchCraftLookAndFeel::bg().withAlpha (0.92f));
-            g.fillRect (handle);
-            g.setColour (accent);
-            g.drawRect (handle, 2);
-            g.drawLine ((float) handle.getX() + 4.0f, (float) handle.getBottom() - 4.0f,
-                        (float) handle.getRight() - 4.0f, (float) handle.getY() + 4.0f, 1.2f);
+            constexpr int hs = 8;
+            juce::Array<juce::Rectangle<int>> handles;
+            handles.add ({ multiBounds.getX() - hs, multiBounds.getY() - hs, hs * 2, hs * 2 });
+            handles.add ({ multiBounds.getCentreX() - hs, multiBounds.getY() - hs, hs * 2, hs * 2 });
+            handles.add ({ multiBounds.getRight() - hs, multiBounds.getY() - hs, hs * 2, hs * 2 });
+            handles.add ({ multiBounds.getRight() - hs, multiBounds.getCentreY() - hs, hs * 2, hs * 2 });
+            handles.add ({ multiBounds.getRight() - hs, multiBounds.getBottom() - hs, hs * 2, hs * 2 });
+            handles.add ({ multiBounds.getCentreX() - hs, multiBounds.getBottom() - hs, hs * 2, hs * 2 });
+            handles.add ({ multiBounds.getX() - hs, multiBounds.getBottom() - hs, hs * 2, hs * 2 });
+            handles.add ({ multiBounds.getX() - hs, multiBounds.getCentreY() - hs, hs * 2, hs * 2 });
+
+            for (const auto& handle : handles)
+            {
+                g.setColour (PatchCraftLookAndFeel::bg().withAlpha (0.92f));
+                g.fillRect (handle);
+                g.setColour (accent);
+                g.drawRect (handle, 2);
+            }
         }
 
         if (hoverGuidance.isNotEmpty() && ! hoverGuidanceBounds.isEmpty())
@@ -2042,11 +2054,32 @@ namespace patchcraft
         if (! getMultiSelectionScreenBounds (bounds))
             return false;
 
-        constexpr int handleSize = 10;
-        return juce::Rectangle<int> (bounds.getRight() - handleSize,
-                                     bounds.getBottom() - handleSize,
-                                     handleSize * 2,
-                                     handleSize * 2).contains (point);
+        return resizeHandleAt (point, bounds) != ResizeHandle::None;
+    }
+
+    CanvasEditor::ResizeHandle CanvasEditor::resizeHandleAt (juce::Point<int> point, juce::Rectangle<int> bounds) const
+    {
+        constexpr int hs = 8;
+        const int cx = bounds.getCentreX();
+        const int cy = bounds.getCentreY();
+        const juce::Rectangle<int> tl (bounds.getX() - hs, bounds.getY() - hs, hs * 2, hs * 2);
+        const juce::Rectangle<int> tr (bounds.getRight() - hs, bounds.getY() - hs, hs * 2, hs * 2);
+        const juce::Rectangle<int> br (bounds.getRight() - hs, bounds.getBottom() - hs, hs * 2, hs * 2);
+        const juce::Rectangle<int> bl (bounds.getX() - hs, bounds.getBottom() - hs, hs * 2, hs * 2);
+        const juce::Rectangle<int> top (cx - hs, bounds.getY() - hs, hs * 2, hs * 2);
+        const juce::Rectangle<int> bottom (cx - hs, bounds.getBottom() - hs, hs * 2, hs * 2);
+        const juce::Rectangle<int> left (bounds.getX() - hs, cy - hs, hs * 2, hs * 2);
+        const juce::Rectangle<int> right (bounds.getRight() - hs, cy - hs, hs * 2, hs * 2);
+
+        if (tl.contains (point)) return ResizeHandle::TopLeft;
+        if (tr.contains (point)) return ResizeHandle::TopRight;
+        if (br.contains (point)) return ResizeHandle::BottomRight;
+        if (bl.contains (point)) return ResizeHandle::BottomLeft;
+        if (top.contains (point)) return ResizeHandle::Top;
+        if (bottom.contains (point)) return ResizeHandle::Bottom;
+        if (left.contains (point)) return ResizeHandle::Left;
+        if (right.contains (point)) return ResizeHandle::Right;
+        return ResizeHandle::None;
     }
 
     // ---- Rulers --------------------------------------------------------------

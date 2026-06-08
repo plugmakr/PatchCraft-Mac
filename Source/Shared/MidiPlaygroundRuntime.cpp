@@ -167,7 +167,53 @@ namespace patchcraft
 
         reset();
         enabled = false;
-        settings = {};
+        settings.drumMachine = false;
+        settings.rate = 1.0f;
+        settings.sync = true;
+        settings.steps = 8;
+        settings.activeBank = 0;
+        settings.multiLane = false;
+        settings.pattern = 0;
+        settings.polymeterSteps = 0;
+        settings.gate = 0.55f;
+        settings.octaves = 2;
+        settings.swing = 0.0f;
+        settings.probability = 1.0f;
+        settings.laneMuted = false;
+        settings.humanize = 0.0f;
+        settings.mutation = 0.0f;
+        settings.velocityCurve = 0.0f;
+        settings.octaveFold = false;
+        settings.ratchet = 1;
+        settings.strum = 0.0f;
+        settings.flam = 0.0f;
+        settings.echoRepeats = 0;
+        settings.echoDelay = 0.18f;
+        settings.echoDecay = 0.55f;
+        settings.patternMorph = 0.0f;
+        settings.retrigger = true;
+        settings.euclideanPulses = 0;
+        settings.euclideanRotate = 0;
+        settings.keySwitchEnabled = false;
+        settings.keySwitchBase = 24;
+        settings.scaleRoot = 0;
+        settings.scaleType = 0;
+        settings.chordMode = 0;
+        settings.chordSize = 1;
+        settings.chordSpread = 0.0f;
+        settings.latch = false;
+        settings.sampleControl = false;
+        settings.sampleSliceCount = 1;
+        settings.sampleStart = 0.0f;
+        settings.sampleLength = 1.0f;
+        settings.samplePitch = 0.0f;
+        settings.seed = 0x50434d49u;
+        settings.drumTracks = 8;
+        settings.drumSteps = 16;
+        settings.drumPattern = 0;
+        settings.drumTransport = true;
+        settings.drumSongMode = false;
+        settings.drumChainLength = 1;
         for (int step = 0; step < kMaxSteps; ++step)
             settings.notes[(size_t) step] = kDefaultNotes[(size_t) (step % (int) kDefaultNotes.size())];
         settings.velocities.fill (1.0f);
@@ -212,6 +258,7 @@ namespace patchcraft
         settings.drumDivisions.fill (1.0f);
         settings.drumFxTargets.fill (0.0f);
         settings.drumFxAmounts.fill (0.0f);
+        settings.drumSampleSlices.fill (-1.0f);
         settings.drumTrackFxTargets.fill (0.0f);
         settings.drumTrackFxAmounts.fill (0.0f);
         drumFxState.fill (0.0f);
@@ -238,16 +285,23 @@ namespace patchcraft
                 settings.swing = juce::jlimit (0.0f, 0.75f, valueForKey (block, "dmSwing", valueForKey (block, "arpSwing", 0.0f)));
                 settings.probability = juce::jlimit (0.0f, 1.0f, valueForKey (block, "dmProbability", valueForKey (block, "mpProbability", 1.0f)));
                 settings.seed = (uint32_t) juce::roundToInt (valueForKey (block, "dmSeed", valueForKey (block, "mpSeed", 12001.0f)));
+                settings.sampleSliceCount = juce::jlimit (1, 64, juce::roundToInt (valueForKey (block, "sampleSliceCount", valueForKey (block, "dmSampleSliceCount", 1.0f))));
+                settings.sampleStart = juce::jlimit (0.0f, 1.0f, valueForKey (block, "sampleStart", valueForKey (block, "dmSampleStart", 0.0f)));
+                settings.sampleLength = juce::jlimit (0.01f, 1.0f, valueForKey (block, "sampleLength", valueForKey (block, "dmSampleLength", 1.0f)));
+                settings.samplePitch = juce::jlimit (-48.0f, 48.0f, valueForKey (block, "samplePitch", valueForKey (block, "dmSamplePitch", 0.0f)));
 
                 static constexpr std::array<int, kMaxDrumTracks> defaultNotes {{
                     36, 38, 42, 46, 41, 45, 49, 51, 37, 39, 44, 48, 50, 47, 52, 53
                 }};
+                const bool triggerPadSlots = valueForKey (block, "dmTriggerPadSlots", 1.0f) >= 0.5f;
 
                 for (int track = 0; track < kMaxDrumTracks; ++track)
                 {
-                    settings.drumNotes[(size_t) track] = juce::jlimit (0, 127,
-                        juce::roundToInt (valueForKey (block, "dmTrack" + juce::String (track) + "Note",
-                                                       (float) defaultNotes[(size_t) track])));
+                    settings.drumNotes[(size_t) track] = triggerPadSlots
+                        ? juce::jlimit (0, 127, 36 + track)
+                        : juce::jlimit (0, 127,
+                            juce::roundToInt (valueForKey (block, "dmTrack" + juce::String (track) + "Note",
+                                                           (float) defaultNotes[(size_t) track])));
                     settings.drumTrackFxTargets[(size_t) track] = (float) juce::jlimit (0, kDrumFxTargetCount - 1,
                         juce::roundToInt (valueForKey (block, "dmTrack" + juce::String (track) + "FxTarget", 0.0f)));
                     settings.drumTrackFxAmounts[(size_t) track] = juce::jlimit (0.0f, 1.0f,
@@ -279,6 +333,8 @@ namespace patchcraft
                                 valueForKey (block, patternPrefix + "FxAmount",
                                     valueForKey (block, directPrefix + "FxAmount",
                                         settings.drumTrackFxAmounts[(size_t) track])));
+                            settings.drumSampleSlices[index] = valueForKey (block, patternPrefix + "SampleSlice",
+                                valueForKey (block, directPrefix + "SampleSlice", -1.0f));
                         }
                 }
 
@@ -1195,6 +1251,27 @@ namespace patchcraft
         engine.setParameter ("samplePitch", settings.samplePitch);
     }
 
+    void MidiPlaygroundRuntime::applyDrumSampleControl (IInstrumentEngine& engine, size_t index) const
+    {
+        if (index >= settings.drumSampleSlices.size())
+            return;
+
+        const auto storedSlice = settings.drumSampleSlices[index];
+        if (storedSlice < 0.0f)
+            return;
+
+        const int sliceCount = juce::jlimit (1, 64, settings.sampleSliceCount);
+        const int slice = storedSlice >= 0.0f
+            ? juce::jlimit (0, sliceCount - 1, juce::roundToInt (storedSlice))
+            : positiveMod ((int) index, sliceCount);
+
+        engine.setParameter ("sampleSliceCount", (float) sliceCount);
+        engine.setParameter ("sampleSlice", (float) slice);
+        engine.setParameter ("sampleStart", settings.sampleStart);
+        engine.setParameter ("sampleLength", settings.sampleLength);
+        engine.setParameter ("samplePitch", settings.samplePitch);
+    }
+
     void MidiPlaygroundRuntime::stopActive (IInstrumentEngine& engine)
     {
         for (int i = 0; i < activeNoteCount; ++i)
@@ -1255,12 +1332,16 @@ namespace patchcraft
             stopActiveBank (engine, bank, sampleEngine);
     }
 
-    void MidiPlaygroundRuntime::stopActiveDrums (IInstrumentEngine& engine)
+    void MidiPlaygroundRuntime::stopActiveDrums (IInstrumentEngine& engine, IInstrumentEngine* sampleEngine)
     {
         for (auto& note : activeDrumNotes)
         {
             if (note >= 0)
+            {
                 engine.noteOff (note);
+                if (sampleEngine != nullptr)
+                    sampleEngine->noteOff (note);
+            }
             note = -1;
         }
 
@@ -1305,13 +1386,14 @@ namespace patchcraft
     }
 
     void MidiPlaygroundRuntime::processDrumMachine (IInstrumentEngine& engine,
-                                                    const RenderContext& context)
+                                                    const RenderContext& context,
+                                                    IInstrumentEngine* sampleEngine)
     {
         applyDrumFxState (engine);
 
         if (settings.drumTransport && ! context.isPlaying)
         {
-            stopActiveDrums (engine);
+            stopActiveDrums (engine, sampleEngine);
             currentStep = -1;
             phase = 0.0;
             return;
@@ -1329,7 +1411,7 @@ namespace patchcraft
 
         if (step != currentStep)
         {
-            stopActiveDrums (engine);
+            stopActiveDrums (engine, sampleEngine);
             currentStep = step;
             activeDrumSubSlots.fill (-1);
             const int pattern = activeDrumPattern();
@@ -1356,7 +1438,11 @@ namespace patchcraft
 
                 auto& activeNote = activeDrumNotes[(size_t) track];
                 if (activeNote >= 0)
+                {
                     engine.noteOff (activeNote);
+                    if (sampleEngine != nullptr)
+                        sampleEngine->noteOff (activeNote);
+                }
 
                 const int divisions = juce::jlimit (1, 4, juce::roundToInt (settings.drumDivisions[index]));
                 const int note = juce::jlimit (0, 127, settings.drumNotes[(size_t) track]);
@@ -1373,7 +1459,12 @@ namespace patchcraft
                                juce::roundToInt (settings.drumFxTargets[index]),
                                settings.drumFxAmounts[index],
                                velocity);
+                applyDrumSampleControl (engine, index);
+                if (sampleEngine != nullptr)
+                    applyDrumSampleControl (*sampleEngine, index);
                 engine.noteOn (note, velocity);
+                if (sampleEngine != nullptr)
+                    sampleEngine->noteOn (note, velocity);
             };
 
             for (int track = 0; track < tracks; ++track)
@@ -1407,7 +1498,11 @@ namespace patchcraft
                                 {
                                     auto& activeNote = activeDrumNotes[(size_t) track];
                                     if (activeNote >= 0)
+                                    {
                                         engine.noteOff (activeNote);
+                                        if (sampleEngine != nullptr)
+                                            sampleEngine->noteOff (activeNote);
+                                    }
 
                                     const int note = juce::jlimit (0, 127, settings.drumNotes[(size_t) track]);
                                     const float baseVelocity = juce::jlimit (0.01f, 1.0f, settings.drumVelocities[index]);
@@ -1422,7 +1517,12 @@ namespace patchcraft
                                                    juce::roundToInt (settings.drumFxTargets[index]),
                                                    settings.drumFxAmounts[index],
                                                    velocity);
+                                    applyDrumSampleControl (engine, index);
+                                    if (sampleEngine != nullptr)
+                                        applyDrumSampleControl (*sampleEngine, index);
                                     engine.noteOn (note, velocity);
+                                    if (sampleEngine != nullptr)
+                                        sampleEngine->noteOn (note, velocity);
                                 }
                                 else
                                 {
@@ -1437,7 +1537,11 @@ namespace patchcraft
                                     {
                                         auto& activeNote = activeDrumNotes[(size_t) track];
                                         if (activeNote >= 0)
+                                        {
                                             engine.noteOff (activeNote);
+                                            if (sampleEngine != nullptr)
+                                                sampleEngine->noteOff (activeNote);
+                                        }
 
                                         const int note = juce::jlimit (0, 127, settings.drumNotes[(size_t) track]);
                                         const float baseVelocity = juce::jlimit (0.01f, 1.0f, settings.drumVelocities[index]);
@@ -1452,7 +1556,12 @@ namespace patchcraft
                                                        juce::roundToInt (settings.drumFxTargets[index]),
                                                        settings.drumFxAmounts[index],
                                                        velocity);
+                                        applyDrumSampleControl (engine, index);
+                                        if (sampleEngine != nullptr)
+                                            applyDrumSampleControl (*sampleEngine, index);
                                         engine.noteOn (note, velocity);
+                                        if (sampleEngine != nullptr)
+                                            sampleEngine->noteOn (note, velocity);
                                     }
                                     else
                                     {
@@ -1468,6 +1577,8 @@ namespace patchcraft
                 if (note >= 0 && stepPhase >= activeDrumGateEnds[(size_t) track])
                 {
                     engine.noteOff (note);
+                    if (sampleEngine != nullptr)
+                        sampleEngine->noteOff (note);
                     note = -1;
                 }
             }
@@ -1728,7 +1839,7 @@ namespace patchcraft
 
         if (settings.drumMachine)
         {
-            processDrumMachine (engine, context);
+            processDrumMachine (engine, context, sampleEngine);
             return;
         }
 

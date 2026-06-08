@@ -283,7 +283,7 @@ namespace patchcraft
 
             Expression leftCopy = expr;
             expr.type = Expression::Type::BinaryOp;
-            expr.op = op[0];
+            expr.op = static_cast<char> (op[0]);
             expr.left = std::make_shared<Expression> (leftCopy);
             expr.right = std::make_shared<Expression> (right);
         }
@@ -306,7 +306,7 @@ namespace patchcraft
 
             Expression leftCopy = expr;
             expr.type = Expression::Type::BinaryOp;
-            expr.op = op[0];
+            expr.op = static_cast<char> (op[0]);
             expr.left = std::make_shared<Expression> (leftCopy);
             expr.right = std::make_shared<Expression> (right);
         }
@@ -345,68 +345,77 @@ namespace patchcraft
 
         juce::String firstToken = tokens[index];
 
-        if (firstToken.equalsIgnoreCase ("velocity") || firstToken.equalsIgnoreCase ("modwheel"))
+        auto tokenCanBeMappedSource = [] (const juce::String& token)
         {
+            if (token.isEmpty())
+                return false;
+
+            const auto firstChar = token[0];
+            return ! (std::isdigit (firstChar) || firstChar == '.' || firstChar == '-' || firstChar == '+');
+        };
+
+        if (tokenCanBeMappedSource (firstToken)
+            && index + 1 < tokens.size()
+            && tokens[index + 1].equalsIgnoreCase ("mapped"))
+        {
+            auto parseMappedEndpoint = [&tokens, &index] (float fallback)
+            {
+                if (index >= tokens.size())
+                    return fallback;
+
+                juce::String valueText = tokens[index];
+                index++;
+                if ((valueText == "-" || valueText == "+") && index < tokens.size())
+                {
+                    valueText += tokens[index];
+                    index++;
+                }
+
+                if (index < tokens.size()
+                    && (tokens[index].equalsIgnoreCase ("Hz")
+                        || tokens[index].equalsIgnoreCase ("dB")
+                        || tokens[index].equalsIgnoreCase ("st")
+                        || tokens[index].equalsIgnoreCase ("ms")
+                        || tokens[index] == "%"))
+                {
+                    valueText += tokens[index];
+                    index++;
+                }
+
+                return parseValueWithUnit (valueText);
+            };
+
             expr.type = Expression::Type::Mapped;
             expr.mappedSource = firstToken.toLowerCase();
-            index++;
+            index += 2;
 
-            if (index < tokens.size() && tokens[index].equalsIgnoreCase ("mapped"))
+            expr.srcMin = parseMappedEndpoint (expr.srcMin);
+            if (index < tokens.size() && tokens[index] == "..")
             {
                 index++;
-                
-                if (index < tokens.size())
-                {
-                    expr.srcMin = parseValueWithUnit (tokens[index]);
-                    index++;
-                }
-                if (index < tokens.size() && tokens[index] == "..")
-                {
-                    index++;
-                }
-                if (index < tokens.size())
-                {
-                    expr.srcMax = parseValueWithUnit (tokens[index]);
-                    index++;
-                }
-
-                if (index < tokens.size() && tokens[index] == "->")
-                {
-                    index++;
-                }
-
-                juce::String destMinStr;
-                if (index < tokens.size())
-                {
-                    destMinStr = tokens[index];
-                    index++;
-                    if (index < tokens.size() && (tokens[index].equalsIgnoreCase ("Hz") || tokens[index].equalsIgnoreCase ("dB") || tokens[index].equalsIgnoreCase ("st") || tokens[index].equalsIgnoreCase ("ms") || tokens[index] == "%"))
-                    {
-                        destMinStr += tokens[index];
-                        index++;
-                    }
-                    expr.destMin = parseValueWithUnit (destMinStr);
-                }
-
-                if (index < tokens.size() && tokens[index] == "..")
-                {
-                    index++;
-                }
-
-                juce::String destMaxStr;
-                if (index < tokens.size())
-                {
-                    destMaxStr = tokens[index];
-                    index++;
-                    if (index < tokens.size() && (tokens[index].equalsIgnoreCase ("Hz") || tokens[index].equalsIgnoreCase ("dB") || tokens[index].equalsIgnoreCase ("st") || tokens[index].equalsIgnoreCase ("ms") || tokens[index] == "%"))
-                    {
-                        destMaxStr += tokens[index];
-                        index++;
-                    }
-                    expr.destMax = parseValueWithUnit (destMaxStr);
-                }
-                return true;
             }
+            expr.srcMax = parseMappedEndpoint (expr.srcMax);
+
+            if (index < tokens.size() && tokens[index] == "->")
+            {
+                index++;
+            }
+
+            expr.destMin = parseMappedEndpoint (expr.destMin);
+
+            if (index < tokens.size() && tokens[index] == "..")
+            {
+                index++;
+            }
+
+            expr.destMax = parseMappedEndpoint (expr.destMax);
+
+            return true;
+        }
+
+        if (firstToken.equalsIgnoreCase ("velocity") || firstToken.equalsIgnoreCase ("modwheel"))
+        {
+            index++;
             expr.type = Expression::Type::Identifier;
             expr.identifier = firstToken;
             return true;
@@ -951,9 +960,7 @@ namespace patchcraft
                 
                 juce::String eventType = handler.eventType;
                 activeTimers.push_back (std::make_unique<PScriptTimer> ([this, eventType] {
-                    juce::MessageManager::callAsync ([this, eventType] {
-                        triggerEvent (eventType, {});
-                    });
+                    triggerEvent (eventType, {});
                 }, intervalMs));
             }
         }

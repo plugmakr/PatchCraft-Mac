@@ -18,6 +18,8 @@ namespace patchcraft
 {
     namespace
     {
+        constexpr int kApprovedFactoryDemoCount = 6;
+
         static juce::String safeSlug (juce::String text)
         {
             text = text.trim();
@@ -215,8 +217,8 @@ namespace patchcraft
                 && ! appDir.getChildFile ("PatchCraft Studio.exe").existsAsFile()
                 && ! appDir.getChildFile ("PatchCraftStudio").existsAsFile())
                 missing.add ("PatchCraft Studio executable");
-            if (countRuntimeFactoryDemos() < 10)
-                missing.add ("FactoryDemos with at least 10 demo packs");
+            if (countRuntimeFactoryDemos() < kApprovedFactoryDemoCount)
+                missing.add ("FactoryDemos with the approved six-demo RC set");
             if (! appDir.getChildFile ("Library").isDirectory())
                 missing.add ("Library folder");
             if (! appDir.getChildFile ("Library").getChildFile ("Assets").isDirectory())
@@ -1858,7 +1860,7 @@ namespace patchcraft
         lines.add ("## Required Payload");
         lines.add ("");
         lines.add ("- `PatchCraftStudio.exe`");
-        lines.add ("- `FactoryDemos/` with at least 10 `.patchcraft` factory products");
+        lines.add ("- `FactoryDemos/` with the approved six `.patchcraft` factory products");
         lines.add ("- `Library/Backgrounds`, `Library/Templates`, and `Library/Assets`");
         lines.add ("- `PlayerPlugins/PatchCraft Player.vst3`");
         lines.add ("- `PlayerPlugins/PatchCraft Player FX.vst3`");

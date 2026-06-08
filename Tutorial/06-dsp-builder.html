@@ -34,6 +34,7 @@
                 <li><a href="08-presets-expansions.html">8 — Presets &amp; expansions</a></li>
                 <li><a href="09-export-distribute.html">9 — Export &amp; ship</a></li>
                 <li><a href="10-glossary.html">10 — Glossary</a></li>
+                <li><a href="12-pscript.html">12 - pScript automation</a></li>
             </ul>
         </div>
     </nav>
@@ -83,6 +84,11 @@
 
         <p>When the Player loads a preset that's linked to a patch, the patch state restores first, then the preset's values overlay.</p>
 
+
+        <h2>pScript automation</h2>
+        <p>For behavior that is more than a direct knob-to-parameter binding, use <a href="12-pscript.html">pScript automation</a>. A knob can trigger script when it is mapped to a real parameter and the script listens for <code>when knob "Name" moves:</code>.</p>
+        <pre><code>when knob "Cutoff" moves:
+    set delayMix to value mapped 200 Hz..12000 Hz -> 0.05..0.45</code></pre>
         <h2>Modulation routes</h2>
         <p>Each modulation entry has a source (LFO / envelope / macro / MIDI), a destination (any DSP parameter), depth, polarity (uni/bi), and an optional curve. Right-click in the routes list → <strong>Add modulation</strong> to create a new route.</p>
 

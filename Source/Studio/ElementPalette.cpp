@@ -337,9 +337,17 @@ namespace patchcraft
         scrollContent.addAndMakeVisible (proVisualSection);
         scrollContent.addAndMakeVisible (performanceSection);
         scrollContent.addAndMakeVisible (containerSection);
-        scrollContent.addAndMakeVisible (modulesSection);
+        scrollContent.addAndMakeVisible (synthModuleSection);
+        scrollContent.addAndMakeVisible (samplerModuleSection);
+        scrollContent.addAndMakeVisible (drumModuleSection);
+        scrollContent.addAndMakeVisible (midiModuleSection);
+        scrollContent.addAndMakeVisible (eqDynamicsModuleSection);
+        scrollContent.addAndMakeVisible (fxModuleSection);
+        scrollContent.addAndMakeVisible (outputModuleSection);
 
-        for (auto* section : { &controlSection, &analysisSection, &uiSection, &motionSection, &proVisualSection, &performanceSection, &containerSection, &modulesSection })
+        for (auto* section : { &controlSection, &analysisSection, &uiSection, &motionSection, &proVisualSection, &performanceSection, &containerSection,
+                               &synthModuleSection, &samplerModuleSection, &drumModuleSection, &midiModuleSection,
+                               &eqDynamicsModuleSection, &fxModuleSection, &outputModuleSection })
             section->onToggle = [this] { resized(); repaint(); };
 
         struct Entry { ElementType t; juce::String label; juce::String icon; };
@@ -432,26 +440,76 @@ namespace patchcraft
                 [this, type] { addElementOfType (type); }));
         }
 
-        modulesSection.addRow (std::make_unique<Row> ("Chorus Module", "group",
-            [this] { owner.addModuleToCanvas ("Chorus"); }));
-        modulesSection.addRow (std::make_unique<Row> ("Filter Module", "group",
+        synthModuleSection.addRow (std::make_unique<Row> ("OSC Stack", "knob",
+            [this] { owner.addModuleToCanvas ("OscStack"); }));
+        synthModuleSection.addRow (std::make_unique<Row> ("Wavetable Source", "waveform",
+            [this] { owner.addModuleToCanvas ("Wavetable"); }));
+        synthModuleSection.addRow (std::make_unique<Row> ("Serum-Style Table", "waveform",
+            [this] { owner.addModuleToCanvas ("SerumTable"); }));
+        synthModuleSection.addRow (std::make_unique<Row> ("Filter Module", "eq",
             [this] { owner.addModuleToCanvas ("Filter"); }));
-        modulesSection.addRow (std::make_unique<Row> ("ADSR Envelope", "group",
+        synthModuleSection.addRow (std::make_unique<Row> ("ADSR Envelope", "slider",
             [this] { owner.addModuleToCanvas ("ADSR"); }));
-        modulesSection.addRow (std::make_unique<Row> ("Delay Module", "group",
-            [this] { owner.addModuleToCanvas ("Delay"); }));
-        modulesSection.addRow (std::make_unique<Row> ("Reverb Module", "group",
-            [this] { owner.addModuleToCanvas ("Reverb"); }));
-        modulesSection.addRow (std::make_unique<Row> ("Phaser Module", "group",
-            [this] { owner.addModuleToCanvas ("Phaser"); }));
-        modulesSection.addRow (std::make_unique<Row> ("Tape Module", "group",
-            [this] { owner.addModuleToCanvas ("Tape"); }));
-        modulesSection.addRow (std::make_unique<Row> ("Lo-Fi Module", "group",
-            [this] { owner.addModuleToCanvas ("LoFi"); }));
-        modulesSection.addRow (std::make_unique<Row> ("Dynamics Module", "group",
+
+        samplerModuleSection.addRow (std::make_unique<Row> ("Sample Player", "waveform",
+            [this] { owner.addModuleToCanvas ("SamplePlayer"); }));
+        samplerModuleSection.addRow (std::make_unique<Row> ("Slice / Chop", "grid",
+            [this] { owner.addModuleToCanvas ("SliceChop"); }));
+        samplerModuleSection.addRow (std::make_unique<Row> ("Scratch Deck", "xy",
+            [this] { owner.addModuleToCanvas ("ScratchDeck"); }));
+        samplerModuleSection.addRow (std::make_unique<Row> ("Granular Sampler", "granular",
+            [this] { owner.addModuleToCanvas ("GranularSampler"); }));
+
+        drumModuleSection.addRow (std::make_unique<Row> ("Drum Rack", "drum",
+            [this] { owner.addModuleToCanvas ("DrumRack"); }));
+        drumModuleSection.addRow (std::make_unique<Row> ("Drum Sequencer", "grid",
+            [this] { owner.addModuleToCanvas ("DrumSequencer"); }));
+        drumModuleSection.addRow (std::make_unique<Row> ("Drum Mixer", "mixer",
+            [this] { owner.addModuleToCanvas ("DrumMixer"); }));
+
+        midiModuleSection.addRow (std::make_unique<Row> ("Arp Lane", "grid",
+            [this] { owner.addModuleToCanvas ("ArpLaneModule"); }));
+        midiModuleSection.addRow (std::make_unique<Row> ("LFO Module", "reactive",
+            [this] { owner.addModuleToCanvas ("LFO"); }));
+        midiModuleSection.addRow (std::make_unique<Row> ("Step LFO", "grid",
+            [this] { owner.addModuleToCanvas ("StepLFO"); }));
+        midiModuleSection.addRow (std::make_unique<Row> ("Macro Bank", "knob",
+            [this] { owner.addModuleToCanvas ("MacroBank"); }));
+
+        eqDynamicsModuleSection.addRow (std::make_unique<Row> ("Surgical EQ", "eq",
+            [this] { owner.addModuleToCanvas ("SurgicalEQ"); }));
+        eqDynamicsModuleSection.addRow (std::make_unique<Row> ("Dynamic EQ", "eq",
+            [this] { owner.addModuleToCanvas ("DynamicEQ"); }));
+        eqDynamicsModuleSection.addRow (std::make_unique<Row> ("Compressor", "meter",
             [this] { owner.addModuleToCanvas ("Dynamics"); }));
-        modulesSection.addRow (std::make_unique<Row> ("Stereo Module", "group",
+        eqDynamicsModuleSection.addRow (std::make_unique<Row> ("Limiter", "meter",
+            [this] { owner.addModuleToCanvas ("Limiter"); }));
+        eqDynamicsModuleSection.addRow (std::make_unique<Row> ("Transient Shaper", "waveform",
+            [this] { owner.addModuleToCanvas ("Transient"); }));
+
+        fxModuleSection.addRow (std::make_unique<Row> ("Delay Module", "fx",
+            [this] { owner.addModuleToCanvas ("Delay"); }));
+        fxModuleSection.addRow (std::make_unique<Row> ("MultiTap Delay", "fx",
+            [this] { owner.addModuleToCanvas ("MultiTapDelay"); }));
+        fxModuleSection.addRow (std::make_unique<Row> ("Reverb Module", "fx",
+            [this] { owner.addModuleToCanvas ("Reverb"); }));
+        fxModuleSection.addRow (std::make_unique<Row> ("Chorus Module", "fx",
+            [this] { owner.addModuleToCanvas ("Chorus"); }));
+        fxModuleSection.addRow (std::make_unique<Row> ("Phaser Module", "fx",
+            [this] { owner.addModuleToCanvas ("Phaser"); }));
+        fxModuleSection.addRow (std::make_unique<Row> ("Flanger Module", "fx",
+            [this] { owner.addModuleToCanvas ("Flanger"); }));
+        fxModuleSection.addRow (std::make_unique<Row> ("Tape Module", "fx",
+            [this] { owner.addModuleToCanvas ("Tape"); }));
+        fxModuleSection.addRow (std::make_unique<Row> ("Lo-Fi Module", "fx",
+            [this] { owner.addModuleToCanvas ("LoFi"); }));
+        fxModuleSection.addRow (std::make_unique<Row> ("Vocal FX", "fx",
+            [this] { owner.addModuleToCanvas ("VocalFX"); }));
+
+        outputModuleSection.addRow (std::make_unique<Row> ("Stereo Module", "mixer",
             [this] { owner.addModuleToCanvas ("Stereo"); }));
+        outputModuleSection.addRow (std::make_unique<Row> ("Master Bus", "meter",
+            [this] { owner.addModuleToCanvas ("MasterBus"); }));
 
         performanceSection.addRow (std::make_unique<Row> ("BPM Sync", "toggle",
             [this] { owner.addElementToCanvas (ElementType::Toggle, "bpmSync"); }));
@@ -463,6 +521,8 @@ namespace patchcraft
             [this] { owner.addMixerChannelToCanvas(); }));
         performanceSection.addRow (std::make_unique<Row> ("Drum Machine Surface", "grid",
             [this] { owner.addDrumMachineControlsToCanvas(); }));
+        performanceSection.addRow (std::make_unique<Row> ("Runtime Sample Library", "library",
+            [this] { owner.addElementToCanvas (ElementType::RuntimeSampleLibrary); }));
 
         for (auto* b : { &trashBtn, &copyBtn, &folderBtn })
         {
@@ -564,8 +624,20 @@ namespace patchcraft
         contentHeight += perfH + 8;
         const int containerH = containerSection.getNeededHeight();
         contentHeight += containerH + 8;
-        const int modulesH = modulesSection.getNeededHeight();
-        contentHeight += modulesH + 16;
+        const int synthModulesH = synthModuleSection.getNeededHeight();
+        contentHeight += synthModulesH + 8;
+        const int samplerModulesH = samplerModuleSection.getNeededHeight();
+        contentHeight += samplerModulesH + 8;
+        const int drumModulesH = drumModuleSection.getNeededHeight();
+        contentHeight += drumModulesH + 8;
+        const int midiModulesH = midiModuleSection.getNeededHeight();
+        contentHeight += midiModulesH + 8;
+        const int eqDynamicsModulesH = eqDynamicsModuleSection.getNeededHeight();
+        contentHeight += eqDynamicsModulesH + 8;
+        const int fxModulesH = fxModuleSection.getNeededHeight();
+        contentHeight += fxModulesH + 8;
+        const int outputModulesH = outputModuleSection.getNeededHeight();
+        contentHeight += outputModulesH + 16;
 
         scrollContent.setBounds (0, 0, contentWidth, juce::jmax (viewport.getHeight(), contentHeight));
 
@@ -584,7 +656,19 @@ namespace patchcraft
         r.removeFromTop (8);
         containerSection.setBounds (r.removeFromTop (containerH));
         r.removeFromTop (8);
-        modulesSection.setBounds (r.removeFromTop (modulesH));
+        synthModuleSection.setBounds (r.removeFromTop (synthModulesH));
+        r.removeFromTop (8);
+        samplerModuleSection.setBounds (r.removeFromTop (samplerModulesH));
+        r.removeFromTop (8);
+        drumModuleSection.setBounds (r.removeFromTop (drumModulesH));
+        r.removeFromTop (8);
+        midiModuleSection.setBounds (r.removeFromTop (midiModulesH));
+        r.removeFromTop (8);
+        eqDynamicsModuleSection.setBounds (r.removeFromTop (eqDynamicsModulesH));
+        r.removeFromTop (8);
+        fxModuleSection.setBounds (r.removeFromTop (fxModulesH));
+        r.removeFromTop (8);
+        outputModuleSection.setBounds (r.removeFromTop (outputModulesH));
 
         // bottom action icons
         const int iw = bottom.getHeight();

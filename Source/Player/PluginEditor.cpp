@@ -363,7 +363,7 @@ namespace patchcraft
         explicit PlayerPerformancePanel (PlayerProcessor& processorToUse)
             : processor (processorToUse)
         {
-            titleLabel.setText ("Sound Control Center", juce::dontSendNotification);
+            titleLabel.setText ("Sound Controls", juce::dontSendNotification);
             titleLabel.setJustificationType (juce::Justification::centredLeft);
             titleLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
             addAndMakeVisible (titleLabel);
@@ -387,7 +387,7 @@ namespace patchcraft
             addAndMakeVisible (closeButton);
 
             floatButton.setButtonText ("Dock");
-            floatButton.setTooltip ("Sound Control Center is now a dedicated Player workspace.");
+            floatButton.setTooltip ("Sound Controls is now a dedicated workspace.");
             floatButton.onClick = [this]
             {
                 floating = ! floating;
@@ -876,7 +876,7 @@ namespace patchcraft
             }
 
             libraryButton.setButtonText ("Open Library");
-            libraryButton.setTooltip ("Open the Player library browser.");
+            libraryButton.setTooltip ("Open this instrument's library.");
             libraryButton.onClick = [this]
             {
                 if (onOpenLibrary)
@@ -884,7 +884,7 @@ namespace patchcraft
             };
             addAndMakeVisible (libraryButton);
 
-            engineButton.setButtonText ("Sound Control Center");
+            engineButton.setButtonText ("Sound Controls");
             engineButton.setTooltip ("Open the dedicated runtime control workspace.");
             engineButton.onClick = [this]
             {
@@ -902,7 +902,7 @@ namespace patchcraft
             recallSnapshotButton.setButtonText ("Recall");
             favoriteSnapshotButton.setButtonText ("Favorite");
             deleteSnapshotButton.setButtonText ("Delete");
-            saveSnapshotButton.setTooltip ("Capture the current parameter state as a user snapshot saved with this DAW session.");
+            saveSnapshotButton.setTooltip ("Capture the current parameter state as a snapshot saved with this DAW session.");
             recallSnapshotButton.setTooltip ("Recall the selected user snapshot.");
             favoriteSnapshotButton.setTooltip ("Mark or unmark the selected snapshot as a favorite.");
             deleteSnapshotButton.setTooltip ("Delete the selected user snapshot from this DAW session.");
@@ -1443,12 +1443,12 @@ namespace patchcraft
         {
             switch (currentTab)
             {
-                case Tab::Info:    return "Instrument identity, licensing-facing metadata, and buyer controls.";
+                case Tab::Info:    return "Instrument identity, license status, and support details.";
                 case Tab::Rack:    return "Layer stack, MIDI channel splits, output routes, tuning, mute, solo, and bypass.";
                 case Tab::Mix:     return "Global and per-instrument mixing controls that affect the loaded patch.";
-                case Tab::Routing: return "Audio/MIDI routing visibility for this Player instance.";
+                case Tab::Routing: return "Audio/MIDI routing for this plugin.";
                 case Tab::Midi:    return "MIDI learn, hardware mappings, and performance inputs.";
-                case Tab::Snapshots: return "Save buyer presets, favorite useful states, and recall them without changing factory content.";
+                case Tab::Snapshots: return "Save favorite sound states and recall them without changing factory presets.";
                 case Tab::SoundDna:  return "Readable signal-chain formula: blocks, modulation, samples, mappings, and live parameter values.";
             }
             return {};
@@ -1636,8 +1636,8 @@ namespace patchcraft
             graphics.setFont (juce::FontOptions (14.0f).withStyle ("bold"));
             graphics.drawText ("Routing", area.removeFromTop (26), juce::Justification::centredLeft, true);
             drawField (graphics, area, "Audio Path", pack != nullptr && pack->manifest.engine.equalsIgnoreCase ("fx")
-                ? "Host Input -> PatchCraft FX -> Host Output"
-                : "MIDI -> PatchCraft Engine -> Host Output");
+                ? "Host Input -> FX -> Host Output"
+                : "MIDI -> Instrument -> Host Output");
             drawField (graphics, area, "Main Output", "Stereo host bus");
             drawField (graphics, area, "Layer Routes", "Main + optional Aux 1-4 stereo buses");
             drawField (graphics, area, "Automation", juce::String (kPatchCraftHostParameterSlots) + " exported host slots");
@@ -1662,7 +1662,7 @@ namespace patchcraft
                 : "Idle");
             drawField (graphics, area, "Learn Workflow", "Right-click a control, choose MIDI Learn, move hardware.");
             drawField (graphics, area, "Performance", "Mod wheel, expression, pitch bend, sustain, CC mappings.");
-            drawField (graphics, area, "Mappings", "Saved in the host plugin state with this Player instance.");
+            drawField (graphics, area, "Mappings", "Saved in the host plugin state.");
         }
 
         void drawSnapshots (juce::Graphics& graphics, juce::Rectangle<int> area)
@@ -1673,7 +1673,7 @@ namespace patchcraft
 
             graphics.setColour (PatchCraftLookAndFeel::textDim());
             graphics.setFont (juce::FontOptions (12.0f));
-            graphics.drawText ("Capture live tweaks as buyer presets. Favorites appear first and survive DAW session reloads.",
+            graphics.drawText ("Capture live tweaks as snapshots. Favorites appear first and survive DAW session reloads.",
                                area.removeFromTop (24), juce::Justification::centredLeft, true);
 
             snapshotRowBounds.clear();
@@ -1841,12 +1841,12 @@ namespace patchcraft
         explicit PlayerUserImportPanel (PlayerProcessor& processorToUse)
             : processor (processorToUse), keyboard (processorToUse)
         {
-            title.setText ("User Imports", juce::dontSendNotification);
+            title.setText ("Samples + MIDI", juce::dontSendNotification);
             title.setJustificationType (juce::Justification::centredLeft);
             title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
             addAndMakeVisible (title);
 
-            subtitle.setText ("Let the end user add samples or MIDI to this Player instance without editing the protected instrument pack.",
+            subtitle.setText ("Add samples or MIDI loops to this instrument session.",
                               juce::dontSendNotification);
             subtitle.setJustificationType (juce::Justification::centredLeft);
             subtitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
@@ -1857,7 +1857,7 @@ namespace patchcraft
             addAndMakeVisible (status);
 
             closeButton.setButtonText ("Close");
-            closeButton.setTooltip ("Close user imports.");
+            closeButton.setTooltip ("Close the sample and MIDI library.");
             closeButton.onClick = [this]
             {
                 if (onClose)
@@ -1872,12 +1872,12 @@ namespace patchcraft
             addAndMakeVisible (sampleMode);
 
             importSamplesButton.setButtonText ("Import Samples");
-            importSamplesButton.setTooltip ("Import WAV, AIFF, or FLAC files into the user's writable PatchCraft import folder.");
+            importSamplesButton.setTooltip ("Import WAV, AIFF, or FLAC files into this instrument session.");
             importSamplesButton.onClick = [this] { chooseFiles (false); };
             addAndMakeVisible (importSamplesButton);
 
             importMidiButton.setButtonText ("Import MIDI");
-            importMidiButton.setTooltip ("Import MIDI files and convert them into a playable MIDI Playground pattern.");
+            importMidiButton.setTooltip ("Import MIDI files and convert them into a playable pattern.");
             importMidiButton.onClick = [this] { chooseFiles (true); };
             addAndMakeVisible (importMidiButton);
 
@@ -1887,7 +1887,7 @@ namespace patchcraft
             addAndMakeVisible (auditionButton);
 
             applyMidiButton.setButtonText ("Apply MIDI");
-            applyMidiButton.setTooltip ("Apply the selected MIDI file to the Player's MIDI Playground pattern block.");
+            applyMidiButton.setTooltip ("Apply the selected MIDI file to the playable pattern.");
             applyMidiButton.onClick = [this] { applySelectedMidi(); };
             addAndMakeVisible (applyMidiButton);
 
@@ -1926,7 +1926,7 @@ namespace patchcraft
             addAndMakeVisible (tuneSlider);
 
             clearButton.setButtonText ("Clear Imports");
-            clearButton.setTooltip ("Remove this Player instance's user sample/MIDI overlay. Original files in the protected pack are untouched.");
+            clearButton.setTooltip ("Remove imported samples and MIDI from this session.");
             clearButton.onClick = [this] { clearImports(); };
             addAndMakeVisible (clearButton);
 
@@ -1937,7 +1937,7 @@ namespace patchcraft
             contentList.setTooltip ("Imported samples and MIDI saved with this host session.");
             addAndMakeVisible (contentList);
 
-            keyboard.setTooltip ("Audition imported samples from the Player. Hardware MIDI also triggers mapped imported samples.");
+            keyboard.setTooltip ("Audition imported samples. Hardware MIDI also triggers mapped imported samples.");
             addAndMakeVisible (keyboard);
 
             refresh();
@@ -2089,11 +2089,11 @@ namespace patchcraft
             auto text = helpBounds.reduced (14, 10);
             graphics.setColour (PatchCraftLookAndFeel::accent());
             graphics.setFont (juce::FontOptions (13.0f).withStyle ("bold"));
-            graphics.drawText ("Runtime overlay rules", text.removeFromTop (18), juce::Justification::centredLeft, true);
+            graphics.drawText ("Session library", text.removeFromTop (18), juce::Justification::centredLeft, true);
             graphics.setColour (PatchCraftLookAndFeel::textDim());
             graphics.setFont (juce::FontOptions (12.0f));
-            graphics.drawFittedText ("Samples are copied to the user's PatchCraft folder and mixed over the protected instrument. "
-                                     "MIDI files become a playable MIDI Playground pattern. Host session state recalls the imports.",
+            graphics.drawFittedText ("Samples are copied into this instrument session. MIDI files become playable patterns. "
+                                     "The host recalls these imports with the session.",
                                      text, juce::Justification::topLeft, 3);
 
             auto drop = dropBounds.toFloat();
@@ -2109,7 +2109,7 @@ namespace patchcraft
             graphics.setColour (PatchCraftLookAndFeel::textDim());
             graphics.setFont (juce::FontOptions (11.5f));
             graphics.drawFittedText ("WAV/AIFF/FLAC become pads or keyboard zones. MID/MIDI becomes the playable pattern. "
-                                     "Imports are user overlays; the protected branded instrument is untouched.",
+                                     "Your original instrument sounds stay intact.",
                                      dropBounds.reduced (12, 26),
                                      juce::Justification::topLeft, 2);
         }
@@ -2501,13 +2501,19 @@ namespace patchcraft
         };
         renderer->onRuntimeImportReport = [this] (const juce::String& report)
         {
-            userImportVisible = true;
             if (userImportPanel != nullptr)
             {
                 userImportPanel->setLastReport (report);
                 userImportPanel->refresh();
             }
-            resized();
+            refreshPresetControls();
+            if (performancePanel != nullptr)
+                performancePanel->rebuild();
+            if (controlCenter != nullptr)
+                controlCenter->rebuild();
+            if (userImportVisible)
+                resized();
+            repaint();
         };
         addAndMakeVisible (*renderer);
 
@@ -2613,16 +2619,16 @@ namespace patchcraft
         loadBtn.getProperties().set ("accent", true);
         loadBtn.onClick = [this] { showLoadDialog(); };
 
-        menuBtn.setButtonText ("F");
+        menuBtn.setButtonText ("MENU");
         libraryBtn.setButtonText ("LIB");
         viewBtn.setButtonText ("VIEW");
         toolsBtn.setButtonText ("TOOL");
-        performanceBtn.setButtonText ("SND");
+        performanceBtn.setButtonText ("SOUND");
         rackBtn.setButtonText ("RACK");
         controlBtn.setButtonText ("CTRL");
         snapshotBtn.setButtonText ("SNAP");
         dnaBtn.setButtonText ("DNA");
-        importBtn.setButtonText ("IMP");
+        importBtn.setButtonText ("SAMPLES");
         transportBtn.setButtonText ("PLAY");
         randomizeBtn.setButtonText ("RND");
         abBtn.setButtonText ("A/B");
@@ -2630,9 +2636,9 @@ namespace patchcraft
         addAndMakeVisible (libraryBtn);
         libraryBtn.getProperties().set ("accent", true);
        #if PATCHCRAFT_PLAYER_FX
-        libraryBtn.setTooltip ("Open the branded PatchCraft library. FX Player passes host audio through when previewing instrument packs.");
+        libraryBtn.setTooltip ("Open the instrument library. FX Player passes host audio through when previewing instrument packs.");
        #else
-        libraryBtn.setTooltip ("Open the branded PatchCraft instrument library.");
+        libraryBtn.setTooltip ("Open the instrument library.");
        #endif
         libraryBtn.onClick = [this] { toggleLibrary(); };
 
@@ -2640,12 +2646,12 @@ namespace patchcraft
         viewBtn.onClick = [this] { showViewMenu(); };
         addAndMakeVisible (viewBtn);
 
-        toolsBtn.setTooltip ("Open creative Player tools: rack, routing, mixer, MIDI learn, and preset actions.");
+        toolsBtn.setTooltip ("Open extra performance tools.");
         toolsBtn.onClick = [this] { showToolsMenu(); };
         addAndMakeVisible (toolsBtn);
 
         importBtn.getProperties().set ("accent", true);
-        importBtn.setTooltip ("Import user samples or MIDI into this Player session, or drag WAV/MID files onto the Player.");
+        importBtn.setTooltip ("Import samples or MIDI into this instrument, or drag files onto a drop zone.");
         importBtn.onClick = [this] { toggleUserImportPanel(); };
         addAndMakeVisible (importBtn);
 
@@ -2707,23 +2713,23 @@ namespace patchcraft
         addAndMakeVisible (nextPresetBtn);
 
         addAndMakeVisible (performanceBtn);
-        performanceBtn.setTooltip ("Open the Player Sound Control Center for exposed synth, sample, FX, drum-pad, and MIDI controls.");
+        performanceBtn.setTooltip ("Open live sound controls for this instrument.");
         performanceBtn.onClick = [this] { togglePerformancePanel(); };
 
         addAndMakeVisible (snapshotBtn);
-        snapshotBtn.setTooltip ("Open user snapshots and favorites. These buyer presets are saved with the DAW session.");
+        snapshotBtn.setTooltip ("Open snapshots and favorites saved with this DAW session.");
         snapshotBtn.onClick = [this] { showSnapshotsPanel(); };
 
         addAndMakeVisible (dnaBtn);
-        dnaBtn.setTooltip ("Open Sound DNA: a clear formula showing blocks, modulation, samples, and live parameters.");
+        dnaBtn.setTooltip ("Open the sound formula: sources, modulation, samples, and live parameters.");
         dnaBtn.onClick = [this] { showSoundDnaPanel(); };
 
         addAndMakeVisible (rackBtn);
-        rackBtn.setTooltip ("Open the multi-instrument rack for layer power, MIDI channel splits, routes, tuning, and per-layer mix.");
+        rackBtn.setTooltip ("Open layer power, MIDI channel splits, routes, tuning, and per-layer mix.");
         rackBtn.onClick = [this] { showRackPanel(); };
 
         addAndMakeVisible (menuBtn);
-        menuBtn.setTooltip ("Open Player file and pack actions.");
+        menuBtn.setTooltip ("Open instrument actions.");
         menuBtn.onClick = [this] { showPackMenu(); };
 
         controlBtn.setTooltip ("Open instrument info, mix, routing, and MIDI controls.");
@@ -2754,12 +2760,9 @@ namespace patchcraft
         };
         addAndMakeVisible (abBtn);
 
-        // Player layouts are authored against a fixed canvas. Host resizing was
-        // scaling text and controls independently enough to misalign exported
-        // instruments, so the editor now locks to the loaded pack canvas.
         setSize (1280, 800 + kPlayerMenuBarHeight);
-        setResizable (false, false);
-        setResizeLimits (1280, 800 + kPlayerMenuBarHeight, 1280, 800 + kPlayerMenuBarHeight);
+        setResizable (true, true);
+        setResizeLimits (720, 520, 2400, 1800);
 
         proc.addEditorListener (this);
         packChanged();
@@ -2945,7 +2948,7 @@ namespace patchcraft
         }
         if (! drewTitleBanner && ! drewLogo && bannerWidth > 0 && titleTheme != "no-chrome")
         {
-            const auto fallbackName = pack != nullptr ? playerInstrumentName (pack) : juce::String ("PatchCraft");
+            const auto fallbackName = pack != nullptr ? playerInstrumentName (pack) : juce::String ("Instrument");
             const auto initial = fallbackName.isNotEmpty() ? fallbackName.substring (0, 1).toUpperCase() : juce::String ("P");
             g.setColour ((pack != nullptr ? pack->manifest.playerAccentColour : PatchCraftLookAndFeel::accent()).withAlpha (0.22f));
             g.fillRoundedRectangle (artworkBounds.toFloat().reduced (1.0f), 5.0f);
@@ -3088,10 +3091,11 @@ namespace patchcraft
             }
         };
 
-        placeLeft (menuBtn, showPackMenu, compact ? 38 : 44);
+        placeLeft (menuBtn, showPackMenu || showLibrary, compact ? 58 : 66);
         placeLeft (libraryBtn, showLibrary, compact ? 48 : 54);
-        placeLeft (viewBtn, true, compact ? 48 : 54);
-        placeLeft (toolsBtn, runtimeVisible && ! tight, compact ? 48 : 54);
+        placeLeft (transportBtn, runtimeVisible && ! tight, compact ? 62 : 68);
+        placeLeft (viewBtn, false, 0);
+        placeLeft (toolsBtn, false, 0);
 
         int rightX = toolWell.getRight() - 4;
         auto placeRight = [&] (juce::TextButton& button, bool visible, int width)
@@ -3109,15 +3113,14 @@ namespace patchcraft
             }
         };
 
-        placeRight (controlBtn, runtimeVisible, compact ? 50 : 56);
-        placeRight (rackBtn, runtimeVisible, compact ? 50 : 54);
-        placeRight (performanceBtn, runtimeVisible, compact ? 50 : 54);
-        placeRight (dnaBtn, runtimeVisible && chromeBar.getWidth() >= 980, compact ? 44 : 50);
-        placeRight (snapshotBtn, runtimeVisible && chromeBar.getWidth() >= 1040, compact ? 50 : 58);
-        placeRight (importBtn, runtimeVisible && ! tight, compact ? 48 : 54);
-        placeRight (transportBtn, runtimeVisible && ! tight, compact ? 50 : 56);
-        placeRight (randomizeBtn, runtimeVisible && chromeBar.getWidth() >= 1120, 50);
-        placeRight (abBtn, runtimeVisible && chromeBar.getWidth() >= 1080, 42);
+        placeRight (importBtn, runtimeVisible, compact ? 78 : 92);
+        placeRight (performanceBtn, runtimeVisible, compact ? 68 : 82);
+        placeRight (controlBtn, false, 0);
+        placeRight (rackBtn, false, 0);
+        placeRight (dnaBtn, false, 0);
+        placeRight (snapshotBtn, false, 0);
+        placeRight (randomizeBtn, false, 0);
+        placeRight (abBtn, false, 0);
 
         const bool hasPresets = pack != nullptr && proc.getPresetCount() > 0;
         const int presetAreaWidth = juce::jmax (0, rightX - leftX - 12);
@@ -3150,7 +3153,13 @@ namespace patchcraft
             height = juce::jlimit (420, 1200, loadedPack->canvasSize.height + kPlayerMenuBarHeight);
         }
 
-        setResizeLimits (width, height, width, height);
+        const int minWidth = juce::jlimit (640, 1200, width / 2);
+        const int minHeight = juce::jlimit (420, 900, height / 2);
+        const int maxWidth = juce::jlimit (width, 2600, width * 2);
+        const int maxHeight = juce::jlimit (height, 1900, height * 2);
+
+        setResizable (true, true);
+        setResizeLimits (minWidth, minHeight, maxWidth, maxHeight);
         if (getWidth() != width || getHeight() != height)
             setSize (width, height);
     }
@@ -3164,15 +3173,15 @@ namespace patchcraft
         loadBtn.setVisible (false);
         menuBtn.setVisible (proc.getPack() == nullptr || proc.getPack()->manifest.playerShowPackMenu);
         libraryBtn.setVisible (proc.getPack() == nullptr || proc.getPack()->manifest.playerShowLibraryBrowser);
-        viewBtn.setVisible (true);
-        toolsBtn.setVisible (proc.getPack() != nullptr);
-        randomizeBtn.setVisible (proc.getPack() != nullptr);
-        abBtn.setVisible (proc.getPack() != nullptr);
+        viewBtn.setVisible (false);
+        toolsBtn.setVisible (false);
+        randomizeBtn.setVisible (false);
+        abBtn.setVisible (false);
         performanceBtn.setVisible (proc.getPack() != nullptr);
-        snapshotBtn.setVisible (proc.getPack() != nullptr);
-        dnaBtn.setVisible (proc.getPack() != nullptr);
-        rackBtn.setVisible (proc.getPack() != nullptr);
-        controlBtn.setVisible (proc.getPack() != nullptr);
+        snapshotBtn.setVisible (false);
+        dnaBtn.setVisible (false);
+        rackBtn.setVisible (false);
+        controlBtn.setVisible (false);
         importBtn.setVisible (proc.getPack() != nullptr);
         transportBtn.setVisible (proc.getPack() != nullptr);
         transportBtn.setButtonText (proc.isInternalTransportPlaying() ? "STOP" : "PLAY");
@@ -3201,18 +3210,24 @@ namespace patchcraft
         return false;
     }
 
-    void PlayerEditor::fileDragEnter (const juce::StringArray& files, int, int)
+    void PlayerEditor::fileDragEnter (const juce::StringArray& files, int x, int y)
     {
         if (proc.getPack() == nullptr || ! isInterestedInFileDrag (files))
             return;
 
-        userImportVisible = true;
+        if (renderer != nullptr
+            && renderer->isVisible()
+            && renderer->getBounds().contains (x, y)
+            && renderer->isInterestedInFileDrag (files))
+            return;
+
         if (userImportPanel != nullptr)
         {
             userImportPanel->setDragActive (true);
-            userImportPanel->setLastReport ("Drop samples, MIDI, or a folder to add a runtime overlay.");
+            userImportPanel->setLastReport ("Drop samples, MIDI, or a folder to add them to this session.");
         }
-        resized();
+        if (userImportVisible)
+            resized();
     }
 
     void PlayerEditor::refreshTooltipWindowState()
@@ -3222,10 +3237,21 @@ namespace patchcraft
         tooltipWindow.setMillisecondsBeforeTipAppears (enabled ? 650 : std::numeric_limits<int>::max() / 4);
     }
 
-    void PlayerEditor::fileDragMove (const juce::StringArray& files, int, int)
+    void PlayerEditor::fileDragMove (const juce::StringArray& files, int x, int y)
     {
-        if (proc.getPack() != nullptr && userImportPanel != nullptr && isInterestedInFileDrag (files))
-            userImportPanel->setDragActive (true);
+        if (proc.getPack() == nullptr || userImportPanel == nullptr || ! isInterestedInFileDrag (files))
+            return;
+
+        if (renderer != nullptr
+            && renderer->isVisible()
+            && renderer->getBounds().contains (x, y)
+            && renderer->isInterestedInFileDrag (files))
+        {
+            userImportPanel->setDragActive (false);
+            return;
+        }
+
+        userImportPanel->setDragActive (true);
     }
 
     void PlayerEditor::fileDragExit (const juce::StringArray&)
@@ -3234,7 +3260,7 @@ namespace patchcraft
             userImportPanel->setDragActive (false);
     }
 
-    void PlayerEditor::filesDropped (const juce::StringArray& files, int, int)
+    void PlayerEditor::filesDropped (const juce::StringArray& files, int x, int y)
     {
         if (userImportPanel != nullptr)
             userImportPanel->setDragActive (false);
@@ -3243,6 +3269,18 @@ namespace patchcraft
 
         if (proc.getPack() != nullptr && ! runtimeFiles.isEmpty())
         {
+            if (renderer != nullptr
+                && renderer->isVisible()
+                && renderer->getBounds().contains (x, y)
+                && renderer->isInterestedInFileDrag (files))
+            {
+                const auto rendererBounds = renderer->getBounds();
+                renderer->filesDropped (files, x - rendererBounds.getX(), y - rendererBounds.getY());
+                userImportVisible = false;
+                resized();
+                return;
+            }
+
             juce::String report;
             proc.importUserContentFiles (runtimeFiles, "pads", report);
             userImportVisible = true;
@@ -3313,29 +3351,30 @@ namespace patchcraft
         const bool allowLoad = pack == nullptr || pack->manifest.playerAllowPackLoading;
         const bool showLibrary = pack == nullptr || pack->manifest.playerShowLibraryBrowser;
         const bool showAbout = pack == nullptr || pack->manifest.playerShowAbout;
-        m.addItem (1, "Load Pack...", allowLoad);
-        m.addItem (2, "Library Browser", showLibrary);
+        if (allowLoad)
+            m.addItem (1, "Load Instrument...", true);
+        if (showLibrary)
+            m.addItem (2, "Library", true);
+        if ((allowLoad || showLibrary) && pack != nullptr)
+            m.addSeparator();
         if (pack != nullptr)
         {
-            m.addSeparator();
-            m.addItem (9, "Show Instrument Rack", true);
-            m.addItem (7, performanceVisible ? "Hide Sound Control Center" : "Show Sound Control Center", true);
-            m.addItem (10, "Snapshots + Favorites", true);
-            m.addItem (11, "Sound DNA", true);
-            m.addItem (8, "Preset Browser", proc.getPresetCount() > 0);
+            m.addItem (7, performanceVisible ? "Hide Sound Controls" : "Show Sound Controls", true);
+            m.addItem (9, userImportVisible ? "Hide Samples + MIDI" : "Show Samples + MIDI", true);
             m.addItem (5, "Randomize Preset", true);
-            m.addItem (6, "Save A/B Snapshots", true);
+            m.addItem (6, "Reset Controls", true);
         }
-        if (allowLoad || showLibrary)
+        if ((allowLoad || showLibrary) && pack != nullptr)
             m.addSeparator();
-        m.addItem (3, "Reset to Demo Instrument", allowLoad);
+        if (allowLoad && pack != nullptr)
+            m.addItem (3, "Close Instrument", true);
         if (showAbout)
         {
             m.addSeparator();
             juce::String about = "About / Support";
             if (pack != nullptr)
             {
-                about += " — ";
+                about += " - ";
                 about += pack->manifest.playerDisplayName.isNotEmpty()
                     ? pack->manifest.playerDisplayName
                     : pack->manifest.instrumentName;
@@ -3353,14 +3392,17 @@ namespace patchcraft
                 else if (r == 5) proc.randomizeCurrentPreset();
                 else if (r == 6)
                 {
-                    proc.saveAbSnapshot (0);
-                    proc.saveAbSnapshot (1);
+                    proc.restoreAllPresets();
+                    refreshPresetControls();
+                    if (performancePanel != nullptr)
+                        performancePanel->rebuild();
+                    if (controlCenter != nullptr)
+                        controlCenter->rebuild();
+                    if (renderer != nullptr)
+                        renderer->repaint();
                 }
                 else if (r == 7) togglePerformancePanel();
-                else if (r == 8) showPresetMenu();
-                else if (r == 9) showRackPanel();
-                else if (r == 10) showSnapshotsPanel();
-                else if (r == 11) showSoundDnaPanel();
+                else if (r == 9) toggleUserImportPanel();
                 else if (r == 4) showAboutDialog();
             });
     }
@@ -3370,14 +3412,10 @@ namespace patchcraft
         juce::PopupMenu menu;
         const bool hasPack = proc.getPack() != nullptr;
         menu.addItem (1, libraryVisible ? "Hide Library" : "Show Library", proc.allowsExternalPackLoading());
-        menu.addItem (2, performanceVisible ? "Hide Sound Control Center" : "Show Sound Control Center", hasPack);
-        menu.addItem (3, controlCenterVisible ? "Hide Control Center" : "Show Control Center", hasPack);
-        menu.addItem (4, "Show Instrument Rack", hasPack);
-        menu.addItem (7, "Snapshots + Favorites", hasPack);
-        menu.addItem (8, "Sound DNA", hasPack);
-        menu.addItem (6, "Preset Browser", hasPack && proc.getPresetCount() > 0);
+        menu.addItem (2, performanceVisible ? "Hide Sound Controls" : "Show Sound Controls", hasPack);
+        menu.addItem (3, userImportVisible ? "Hide Samples + MIDI" : "Show Samples + MIDI", hasPack);
         menu.addSeparator();
-        menu.addItem (5, "Reset Current Values", hasPack);
+        menu.addItem (5, "Reset Controls", hasPack);
 
         menu.showMenuAsync (juce::PopupMenu::Options()
                                 .withTargetComponent (&viewBtn)
@@ -3389,15 +3427,7 @@ namespace patchcraft
                 else if (result == 2)
                     togglePerformancePanel();
                 else if (result == 3)
-                    toggleControlCenter();
-                else if (result == 4)
-                    showRackPanel();
-                else if (result == 7)
-                    showSnapshotsPanel();
-                else if (result == 8)
-                    showSoundDnaPanel();
-                else if (result == 6)
-                    showPresetMenu();
+                    toggleUserImportPanel();
                 else if (result == 5)
                 {
                     proc.restoreAllPresets();
@@ -3415,22 +3445,13 @@ namespace patchcraft
     {
         juce::PopupMenu menu;
         const bool hasPack = proc.getPack() != nullptr;
-        menu.addSectionHeader ("Performance");
-        menu.addItem (1, "Layer Rack / Stack", hasPack);
-        menu.addItem (2, "Global + Layer Mixer", hasPack);
-        menu.addItem (3, "Output Routing", hasPack);
-        menu.addItem (4, "MIDI Learn + Mapping", hasPack);
-        menu.addItem (10, "Snapshots + Favorites", hasPack);
-        menu.addItem (11, "Sound DNA Formula", hasPack);
+        menu.addSectionHeader ("Sound");
+        menu.addItem (5, "Sound Controls", hasPack);
+        menu.addItem (7, "Randomize Preset", hasPack);
+        menu.addItem (8, "Reset Controls", hasPack);
         menu.addSeparator();
-        menu.addSectionHeader ("Creative");
-        menu.addItem (5, "Sound Control Center", hasPack);
-        menu.addItem (6, "Preset Browser", hasPack && proc.getPresetCount() > 0);
-        menu.addItem (7, "Randomize Current Preset", hasPack);
-        menu.addItem (8, "Reset Current Values", hasPack);
-        menu.addSeparator();
-        menu.addSectionHeader ("End User Content");
-        menu.addItem (9, "Samples + MIDI Imports", hasPack);
+        menu.addSectionHeader ("User Content");
+        menu.addItem (9, "Samples + MIDI", hasPack);
 
         menu.showMenuAsync (juce::PopupMenu::Options()
                                 .withTargetComponent (&toolsBtn)
@@ -3440,54 +3461,9 @@ namespace patchcraft
                 if (result <= 0 || proc.getPack() == nullptr)
                     return;
 
-                libraryVisible = false;
-                performanceVisible = false;
-                userImportVisible = false;
-
-                if (result == 1)
-                {
-                    controlCenterVisible = true;
-                    if (controlCenter != nullptr)
-                        controlCenter->showRack();
-                }
-                else if (result == 2)
-                {
-                    controlCenterVisible = true;
-                    if (controlCenter != nullptr)
-                        controlCenter->showMix();
-                }
-                else if (result == 3)
-                {
-                    controlCenterVisible = true;
-                    if (controlCenter != nullptr)
-                        controlCenter->showRouting();
-                }
-                else if (result == 4)
-                {
-                    controlCenterVisible = true;
-                    if (controlCenter != nullptr)
-                        controlCenter->showMidi();
-                }
-                else if (result == 10)
-                {
-                    controlCenterVisible = true;
-                    if (controlCenter != nullptr)
-                        controlCenter->showSnapshots();
-                }
-                else if (result == 11)
-                {
-                    controlCenterVisible = true;
-                    if (controlCenter != nullptr)
-                        controlCenter->showSoundDna();
-                }
-                else if (result == 5)
+                if (result == 5)
                 {
                     togglePerformancePanel();
-                    return;
-                }
-                else if (result == 6)
-                {
-                    showPresetMenu();
                     return;
                 }
                 else if (result == 7)
@@ -4079,7 +4055,6 @@ namespace patchcraft
                 drawRow ("License", manifest.licenseRequired
                     ? "License required" + (manifest.trialDays > 0 ? " / trial available" : juce::String())
                     : "No license required");
-                drawRow ("Product ID", manifest.licenseProductId);
                 body.removeFromTop (8);
 
                 if (manifest.description.isNotEmpty() || manifest.playerLegalText.isNotEmpty())
@@ -4102,11 +4077,13 @@ namespace patchcraft
                                        juce::Justification::centredLeft, true);
                 }
 
-                if (manifest.playerShowPatchCraftBranding)
+                if (manifest.playerShowPatchCraftBranding
+                    && manifest.whiteLabelPublisher.isNotEmpty()
+                    && ! manifest.whiteLabelPublisher.equalsIgnoreCase ("PatchCraft"))
                 {
                     graphics.setColour (manifest.playerTextDimColour.withAlpha (0.7f));
                     graphics.setFont (juce::FontOptions (10.5f));
-                    graphics.drawText ("Powered by PatchCraft",
+                    graphics.drawText ("Powered by " + manifest.whiteLabelPublisher,
                                        area.reduced (22).removeFromBottom (22),
                                        juce::Justification::centredRight, true);
                 }

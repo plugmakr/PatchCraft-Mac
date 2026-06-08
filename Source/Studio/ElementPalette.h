@@ -61,7 +61,13 @@ namespace patchcraft
         Section proVisualSection { "Pro / AI Visuals" };
         Section performanceSection { "MIDI + Performance" };
         Section containerSection { "Containers + Layout" };
-        Section modulesSection { "Modules" };
+        Section synthModuleSection { "Synth / OSC Modules" };
+        Section samplerModuleSection { "Sampler / Scratch Modules" };
+        Section drumModuleSection { "Drum Modules" };
+        Section midiModuleSection { "MIDI / ARP Modules" };
+        Section eqDynamicsModuleSection { "EQ + Dynamics Modules" };
+        Section fxModuleSection { "Creative FX Modules" };
+        Section outputModuleSection { "Output / Master Modules" };
 
         juce::TextButton trashBtn  { "Del" };
         juce::TextButton copyBtn   { "Dup" };
