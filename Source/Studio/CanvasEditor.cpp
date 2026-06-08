@@ -1,6 +1,7 @@
 #include "CanvasEditor.h"
 #include "StudioMainComponent.h"
 #include "PatchCraftLookAndFeel.h"
+#include "MidiPlaygroundPattern.h"
 #include "SampleMap.h"
 
 #include <array>

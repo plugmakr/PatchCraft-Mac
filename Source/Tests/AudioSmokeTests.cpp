@@ -1263,6 +1263,14 @@ namespace
                  && progressionNames.contains ("Neo Soul Glow")
                  && progressionNames.contains ("Future Bass Anthem"),
                  "MIDI Playground curated progression library is missing flagship presets");
+        require (progressionNames.size() >= 28,
+                 "MIDI Playground progression library is not deep enough for chord-assistant products");
+        require (progressionNames.contains ("Trap Minor Bounce")
+                 && progressionNames.contains ("Boom Bap Soul Loop")
+                 && progressionNames.contains ("R&B Seventh Turnaround")
+                 && progressionNames.contains ("House Piano Lift")
+                 && progressionNames.contains ("LoFi Neo Soul Pocket"),
+                 "MIDI Playground curated progression library is missing producer chord progressions");
         require (progressionBlock.values["arpSteps"] == 16.0f,
                  "MIDI progression helper did not create a 16-step phrase");
         require (progressionBlock.values["mpChordSize"] >= 3.0f,
@@ -3158,6 +3166,11 @@ namespace
         require (pm.find ("reverbMix") != nullptr, "reverbMix parameter not registered");
         require (pm.find ("phaserRate") != nullptr, "phaserRate parameter not registered");
         require (pm.find ("stereoWidth") != nullptr, "stereoWidth parameter not registered");
+        patchcraft::ParameterDef chordParamDef;
+        require (patchcraft::ParameterModel::getRegistryDefinition ("mpProgressionPreset", "synth", chordParamDef),
+                 "mpProgressionPreset chord-assistant parameter not registered");
+        require (patchcraft::ParameterModel::getRegistryDefinition ("mpChordSpread", "synth", chordParamDef),
+                 "mpChordSpread chord-assistant parameter not registered");
 
         bool foundReverb = false;
         bool foundPhaser = false;
@@ -3210,6 +3223,10 @@ namespace
             { "drum_seq_module_test",        "mod",    "drumSequencer",   "Drum Sequencer",     "arpLaneRate",    "midi",    "sequencer",  "event" },
             { "eight_oh_eight_module_test",  "source", "drumRack",        "808 Kit Builder",    "pad1Pitch",      "drums",   "source",     "stereo" },
             { "boom_bap_module_test",         "source", "drumRack",        "Boom Bap Pad Bank",  "pad1Volume",     "drums",   "source",     "stereo" },
+            { "chord_progression_builder_test","mod",   "midiPlayground",  "Chord Progression",  "filterCutoff",   "midi",    "chordProgression", "event" },
+            { "scale_chord_assistant_test",  "mod",    "midiPlayground",  "Scale Chord Assistant", "filterCutoff", "midi",    "chordProgression", "event" },
+            { "chord_pad_bank_test",         "mod",    "midiPlayground",  "Chord Pad Bank",     "filterCutoff",   "midi",    "chordProgression", "event" },
+            { "voicing_humanize_test",       "mod",    "midiPlayground",  "Voicing Humanize",   "filterCutoff",   "midi",    "chordProgression", "event" },
             { "arp_lane_module_test",        "mod",    "arp",             "Arp Lane",           "arpLaneRate",    "midi",    "arp",        "event" },
             { "step_lfo_module_test",        "mod",    "stepLfo",         "Step LFO",           "filterCutoff",   "midi",    "modulation", "modulation" },
             { "dynamic_eq_module_test",      "filter", "dynamicEq",       "Dynamic EQ",         "eqMix",          "studio",  "tone",       "stereo" },
@@ -3417,6 +3434,21 @@ namespace
         addStarterBlock (loopRemixFxStarter, "starter_loopfx_output", "out", "limiter", "outputCeilingDb", "starter", "output",
                          { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f } });
         validateStarterGraph (loopRemixFxStarter, "fx", "Loop Remix FX Starter");
+
+        patchcraft::DspGraph chordPluginStarter;
+        addStarterBlock (chordPluginStarter, "starter_chord_progression_midi", "mod", "midiPlayground", "filterCutoff", "midi", "chordProgression",
+                         { { "rate", 1.0f }, { "arpSteps", 16.0f }, { "mpProgressionPreset", 7.0f },
+                           { "mpScaleRoot", 0.0f }, { "mpScaleType", 1.0f }, { "mpChordSize", 4.0f },
+                           { "mpChordSpread", 0.64f }, { "mpStrum", 0.16f }, { "mpHumanize", 0.04f } });
+        addStarterBlock (chordPluginStarter, "starter_chord_preview_source", "source", "serumWavetable", "wtPosition", "starter", "source",
+                         { { "wtEnabled", 1.0f }, { "wtPosition", 0.24f }, { "wtLevel", 0.58f }, { "volume", 0.72f } });
+        addStarterBlock (chordPluginStarter, "starter_chord_filter", "filter", "stateVariable", "filterCutoff", "starter", "tone",
+                         { { "filterCutoff", 5200.0f }, { "filterResonance", 0.12f } });
+        addStarterBlock (chordPluginStarter, "starter_chord_space", "fx", "reverb", "reverbMix", "starter", "space",
+                         { { "delayMix", 0.08f }, { "reverbMix", 0.18f } });
+        addStarterBlock (chordPluginStarter, "starter_chord_output", "out", "limiter", "outputCeilingDb", "starter", "output",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f } });
+        validateStarterGraph (chordPluginStarter, "synth", "Chord Progression Plugin Starter");
 
         patchcraft::DspGraph fxStarter;
         addStarterBlock (fxStarter, "starter_delay_input", "source", "liveInput", "drive", "starter", "source",

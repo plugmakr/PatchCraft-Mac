@@ -458,6 +458,8 @@ namespace patchcraft
             [this] { owner.addModuleToCanvas ("StarterMpcPads"); }));
         productStarterSection.addRow (std::make_unique<Row> ("Loop Remix FX Starter", "fx",
             [this] { owner.addModuleToCanvas ("StarterLoopRemixFx"); }));
+        productStarterSection.addRow (std::make_unique<Row> ("Chord Progression Plugin Starter", "grid",
+            [this] { owner.addModuleToCanvas ("StarterChordProgressionPlugin"); }));
         productStarterSection.addRow (std::make_unique<Row> ("Delay FX Starter", "fx",
             [this] { owner.addModuleToCanvas ("StarterDelayFx"); }));
         productStarterSection.addRow (std::make_unique<Row> ("Vocal / Master FX Starter", "meter",
@@ -506,6 +508,14 @@ namespace patchcraft
 
         midiModuleSection.addRow (std::make_unique<Row> ("Arp Lane", "grid",
             [this] { owner.addModuleToCanvas ("ArpLaneModule"); }));
+        midiModuleSection.addRow (std::make_unique<Row> ("Chord Progression Builder", "grid",
+            [this] { owner.addModuleToCanvas ("ChordProgressionBuilder"); }));
+        midiModuleSection.addRow (std::make_unique<Row> ("Scale + Chord Assistant", "keyboard",
+            [this] { owner.addModuleToCanvas ("ScaleChordAssistant"); }));
+        midiModuleSection.addRow (std::make_unique<Row> ("Chord Pad Bank", "drum",
+            [this] { owner.addModuleToCanvas ("ChordPadBank"); }));
+        midiModuleSection.addRow (std::make_unique<Row> ("Voicing + Humanize", "knob",
+            [this] { owner.addModuleToCanvas ("VoicingHumanize"); }));
         midiModuleSection.addRow (std::make_unique<Row> ("LFO Module", "reactive",
             [this] { owner.addModuleToCanvas ("LFO"); }));
         midiModuleSection.addRow (std::make_unique<Row> ("Step LFO", "grid",

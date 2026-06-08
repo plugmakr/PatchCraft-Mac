@@ -1278,6 +1278,81 @@
             liveValues.setValue ("mix", 1.0f);
         };
 
+        auto findGraphBlock = [&] (const juce::String& blockId) -> DspBlock*
+        {
+            for (auto& block : graph.blocks)
+                if (block.id == blockId)
+                    return &block;
+            return nullptr;
+        };
+
+        auto ensureChordModuleParams = [&]
+        {
+            ensureParams ({ "arpLaneRate", "arpLaneGate", "arpLaneSwing", "arpLaneProbability",
+                            "arpLanePatternLaunch", "arpLaneRetrigger", "retrigger",
+                            "mpActiveBank", "mpProgressionPreset", "mpScaleRoot", "mpScaleType",
+                            "mpChordMode", "mpChordSize", "mpChordSpread", "mpStrum",
+                            "mpHumanize", "mpMutation", "mpProbability", "mpLatch", "mpSampleControl",
+                            "filterCutoff", "delayMix", "reverbMix", "volume", "pan",
+                            "outputLimiter", "outputCeilingDb" }, "synth");
+            liveValues.setValue ("outputLimiter", 1.0f);
+            liveValues.setValue ("retrigger", 1.0f);
+        };
+
+        auto ensureProgressionBlock = [&] (const juce::String& blockId,
+                                           const juce::String& name,
+                                           std::initializer_list<int> progressionIndexes,
+                                           float rate,
+                                           float swing,
+                                           float strum,
+                                           float humanize,
+                                           float chordSpread) -> DspBlock*
+        {
+            ensureBlock (blockId, "mod", "midiPlayground", name, "filterCutoff", "midi", "chordProgression", "event",
+                         { { "rate", rate }, { "sync", 1.0f }, { "arpSteps", 16.0f }, { "arpGate", 0.62f },
+                           { "arpSwing", swing }, { "arpLaneRate", rate }, { "arpLaneSwing", swing },
+                           { "arpLaneProbability", 1.0f }, { "mpProbability", 1.0f },
+                           { "mpChordSize", 4.0f }, { "mpChordSpread", chordSpread },
+                           { "mpStrum", strum }, { "mpHumanize", humanize }, { "mpMutation", 0.0f },
+                           { "mpSampleControl", 0.0f }, { "retrigger", 1.0f } });
+
+            auto* block = findGraphBlock (blockId);
+            if (block == nullptr)
+                return nullptr;
+
+            int bank = 0;
+            for (const auto progressionIndex : progressionIndexes)
+            {
+                if (bank >= MidiPlaygroundPattern::kPhraseBankCount)
+                    break;
+                MidiPlaygroundPattern::applyProgressionPreset (*block, progressionIndex, bank);
+                ++bank;
+            }
+
+            if (bank == 0)
+                MidiPlaygroundPattern::applyProgressionPreset (*block, 0, 0);
+
+            MidiPlaygroundPattern::loadBank (*block, 0, false);
+            block->name = name;
+            block->targetId = "filterCutoff";
+            block->metadata["family"] = "midi";
+            block->metadata["role"] = "chordProgression";
+            block->metadata["ioMode"] = "event";
+            block->values["rate"] = rate;
+            block->values["sync"] = 1.0f;
+            block->values["arpSwing"] = swing;
+            block->values["arpLaneRate"] = rate;
+            block->values["arpLaneSwing"] = swing;
+            block->values["arpLaneProbability"] = 1.0f;
+            block->values["mpStrum"] = strum;
+            block->values["mpHumanize"] = humanize;
+            block->values["mpChordSpread"] = chordSpread;
+            block->values["mpProbability"] = 1.0f;
+            block->values["retrigger"] = 1.0f;
+            graph.userConfigured = true;
+            return block;
+        };
+
         if (moduleKey == "startersynthplugin")
         {
             ensureParams ({ "oscType", "osc2Type", "oscBlend", "osc2Detune", "subBlend", "noiseBlend",
@@ -1634,6 +1709,60 @@
                     addChildKnob (layout, panelId, "Duck", "dynMix", 638, 174);
                     addChildSurface (layout, panelId, ElementType::Meter, "Output", "outputGainDb", 718, 44, 62, 250);
                     addChildToggle (layout, panelId, "Limiter", "outputLimiter", 622, 314, 88, 30);
+                });
+            finishModernModule();
+            return;
+        }
+
+        if (moduleKey == "starterchordprogressionplugin")
+        {
+            ensureChordModuleParams();
+            ensureParams ({ "oscType", "osc2Type", "oscBlend", "noiseBlend", "wtEnabled", "wtPosition",
+                            "wtLevel", "filterCutoff", "filterResonance", "attack", "release",
+                            "delayMix", "reverbMix", "volume", "outputLimiter", "outputCeilingDb" }, "synth");
+            liveValues.setValue ("oscType", 1.0f);
+            liveValues.setValue ("osc2Type", 1.0f);
+            liveValues.setValue ("noiseBlend", 0.0f);
+            liveValues.setValue ("wtEnabled", 1.0f);
+            liveValues.setValue ("wtLevel", 0.58f);
+            liveValues.setValue ("outputLimiter", 1.0f);
+
+            ensureProgressionBlock ("starter_chord_progression_midi", "Chord Progression Engine",
+                                    { 7, 8, 13, 20, 21, 27, 28, 10 }, 1.0f, 0.08f, 0.16f, 0.04f, 0.64f);
+            ensureBlock ("starter_chord_preview_source", "source", "serumWavetable", "Chord Preview Synth", "wtPosition", "starter", "source", "stereo",
+                         { { "wtEnabled", 1.0f }, { "wtTable", 2.0f }, { "wtPosition", 0.24f }, { "wtMorph", 0.12f },
+                           { "wtUnison", 2.0f }, { "wtDetune", 6.0f }, { "wtSpread", 0.34f }, { "wtLevel", 0.58f },
+                           { "noiseBlend", 0.0f }, { "volume", 0.72f } });
+            ensureBlock ("starter_chord_filter", "filter", "stateVariable", "Chord Tone Filter", "filterCutoff", "starter", "tone", "stereo",
+                         { { "filterCutoff", 5200.0f }, { "filterResonance", 0.12f } });
+            ensureBlock ("starter_chord_space", "fx", "reverb", "Chord Space", "reverbMix", "starter", "space", "stereo",
+                         { { "delayMix", 0.08f }, { "reverbMix", 0.18f } });
+            ensureBlock ("starter_chord_output", "out", "limiter", "Chord Plugin Output", "outputCeilingDb", "starter", "output", "stereo",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "volume", 0.78f } });
+
+            addModulePanel ("Add Chord Progression Plugin Starter", "Chord Progression Plugin Starter", 900, 500,
+                [&] (LayoutModel& layout, const juce::String& panelId)
+                {
+                    addChildSurface (layout, panelId, ElementType::Label, "PROGRESSIONS", juce::String(), 22, 28, 150, 24);
+                    addChildSurface (layout, panelId, ElementType::ArpLane, "Chord Banks", "arpLaneRate", 22, 58, 248, 250);
+                    addChildSurface (layout, panelId, ElementType::DrumGrid, "Chord Timeline", "arpLaneRate", 296, 58, 356, 164);
+                    addChildSurface (layout, panelId, ElementType::PadGrid, "Chord Pads", "mpActiveBank", 676, 58, 174, 174);
+                    addChildValue (layout, panelId, "Progression", "mpProgressionPreset", 296, 242, 110, 30);
+                    addChildValue (layout, panelId, "Root", "mpScaleRoot", 420, 242, 70, 30);
+                    addChildValue (layout, panelId, "Scale", "mpScaleType", 504, 242, 70, 30);
+                    addChildValue (layout, panelId, "Chord", "mpChordMode", 588, 242, 70, 30);
+
+                    addChildSurface (layout, panelId, ElementType::Keyboard, "Preview Keys", juce::String(), 22, 344, 330, 70);
+                    addChildKnob (layout, panelId, "Rate", "arpLaneRate", 382, 330);
+                    addChildKnob (layout, panelId, "Spread", "mpChordSpread", 464, 330);
+                    addChildKnob (layout, panelId, "Strum", "mpStrum", 546, 330);
+                    addChildKnob (layout, panelId, "Human", "mpHumanize", 628, 330);
+                    addChildKnob (layout, panelId, "Tone", "filterCutoff", 710, 330);
+                    addChildKnob (layout, panelId, "Space", "reverbMix", 792, 330);
+                    addChildToggle (layout, panelId, "Latch", "mpLatch", 382, 424, 82, 28);
+                    addChildToggle (layout, panelId, "Retrig", "retrigger", 478, 424, 82, 28);
+                    addChildValue (layout, panelId, "Drag MIDI", "mpActiveBank", 588, 424, 106, 28);
+                    addChildKnob (layout, panelId, "Out", "volume", 792, 420, 58);
                 });
             finishModernModule();
             return;
@@ -2106,6 +2235,90 @@
             finishModernModule();
             return;
         }
+        if (moduleKey == "chordprogressionbuilder" || moduleKey == "scalechordassistant"
+            || moduleKey == "chordpadbank" || moduleKey == "voicinghumanize")
+        {
+            ensureChordModuleParams();
+
+            if (moduleKey == "chordprogressionbuilder")
+            {
+                ensureProgressionBlock ("chord_progression_builder_module", "Chord Progression Builder",
+                                        { 0, 7, 8, 13, 20, 21, 27, 28 }, 1.0f, 0.08f, 0.14f, 0.04f, 0.58f);
+                addModulePanel ("Add Chord Progression Builder Module", "Chord Progression Builder", 720, 360,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::DrumGrid, "Progression Timeline", "arpLaneRate", 18, 36, 430, 156);
+                        addChildSurface (layout, panelId, ElementType::Keyboard, "Preview Keys", juce::String(), 18, 232, 430, 58);
+                        addChildValue (layout, panelId, "Preset", "mpProgressionPreset", 474, 40, 100, 30);
+                        addChildValue (layout, panelId, "Bank", "mpActiveBank", 590, 40, 70, 30);
+                        addChildKnob (layout, panelId, "Rate", "arpLaneRate", 472, 92);
+                        addChildKnob (layout, panelId, "Swing", "arpLaneSwing", 552, 92);
+                        addChildKnob (layout, panelId, "Chance", "mpProbability", 632, 92);
+                        addChildKnob (layout, panelId, "Spread", "mpChordSpread", 472, 182);
+                        addChildKnob (layout, panelId, "Strum", "mpStrum", 552, 182);
+                        addChildKnob (layout, panelId, "Human", "mpHumanize", 632, 182);
+                    });
+            }
+            else if (moduleKey == "scalechordassistant")
+            {
+                ensureProgressionBlock ("scale_chord_assistant_module", "Scale + Chord Assistant",
+                                        { 0, 1, 2, 5, 6, 8, 15, 26 }, 1.0f, 0.04f, 0.10f, 0.03f, 0.52f);
+                addModulePanel ("Add Scale Chord Assistant Module", "Scale + Chord Assistant", 620, 280,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::Keyboard, "Scale Keyboard", juce::String(), 18, 36, 360, 74);
+                        addChildValue (layout, panelId, "Root", "mpScaleRoot", 402, 38, 70, 30);
+                        addChildValue (layout, panelId, "Scale", "mpScaleType", 488, 38, 82, 30);
+                        addChildValue (layout, panelId, "Chord", "mpChordMode", 402, 84, 70, 30);
+                        addChildValue (layout, panelId, "Size", "mpChordSize", 488, 84, 82, 30);
+                        addChildSurface (layout, panelId, ElementType::PadGrid, "Suggested Chords", "mpActiveBank", 18, 142, 190, 98);
+                        addChildKnob (layout, panelId, "Spread", "mpChordSpread", 238, 148);
+                        addChildKnob (layout, panelId, "Strum", "mpStrum", 320, 148);
+                        addChildKnob (layout, panelId, "Human", "mpHumanize", 402, 148);
+                        addChildToggle (layout, panelId, "Latch", "mpLatch", 486, 166, 82, 28);
+                    });
+            }
+            else if (moduleKey == "chordpadbank")
+            {
+                ensureProgressionBlock ("chord_pad_bank_module", "Chord Pad Bank",
+                                        { 8, 13, 14, 20, 21, 22, 27, 28 }, 1.0f, 0.12f, 0.16f, 0.06f, 0.62f);
+                addModulePanel ("Add Chord Pad Bank Module", "Chord Pad Bank", 580, 360,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::PadGrid, "Chord Pads", "mpActiveBank", 20, 36, 250, 250);
+                        addChildSurface (layout, panelId, ElementType::Keyboard, "Preview", juce::String(), 20, 304, 250, 42);
+                        addChildValue (layout, panelId, "Bank", "mpActiveBank", 302, 42, 72, 30);
+                        addChildValue (layout, panelId, "Preset", "mpProgressionPreset", 388, 42, 100, 30);
+                        addChildKnob (layout, panelId, "Spread", "mpChordSpread", 302, 102);
+                        addChildKnob (layout, panelId, "Strum", "mpStrum", 382, 102);
+                        addChildKnob (layout, panelId, "Human", "mpHumanize", 462, 102);
+                        addChildKnob (layout, panelId, "Chance", "mpProbability", 302, 190);
+                        addChildToggle (layout, panelId, "Latch", "mpLatch", 384, 208, 82, 28);
+                    });
+            }
+            else
+            {
+                ensureProgressionBlock ("voicing_humanize_module", "Voicing + Humanize",
+                                        { 7, 8, 13, 15, 20, 27, 28, 18 }, 1.0f, 0.06f, 0.18f, 0.06f, 0.70f);
+                addModulePanel ("Add Voicing Humanize Module", "Voicing + Humanize", 520, 210,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildKnob (layout, panelId, "Chord Size", "mpChordSize", 22, 46);
+                        addChildKnob (layout, panelId, "Spread", "mpChordSpread", 104, 46);
+                        addChildKnob (layout, panelId, "Strum", "mpStrum", 186, 46);
+                        addChildKnob (layout, panelId, "Human", "mpHumanize", 268, 46);
+                        addChildKnob (layout, panelId, "Variation", "mpMutation", 350, 46);
+                        addChildValue (layout, panelId, "Scale", "mpScaleType", 28, 142, 82, 30);
+                        addChildValue (layout, panelId, "Chord", "mpChordMode", 122, 142, 82, 30);
+                        addChildToggle (layout, panelId, "Latch", "mpLatch", 232, 142, 82, 28);
+                        addChildToggle (layout, panelId, "Retrig", "retrigger", 326, 142, 82, 28);
+                    });
+            }
+
+            finishModernModule();
+            return;
+        }
+
         if (moduleKey == "arplanemodule" || moduleKey == "lfo" || moduleKey == "steplfo" || moduleKey == "macrobank")
         {
             ensureParams ({ "arpLaneIndex", "arpLaneSteps", "arpLaneRate", "arpLaneGate", "arpLaneSwing",

@@ -550,6 +550,20 @@ namespace patchcraft
                               0.0f, 1.0f, step % 4 == 0 ? 0.92f : 0.68f, "",
                               "mod", "Arp Lane Steps"));
 
+            add (makeDef ("mpActiveBank", "Progression Bank", 0.0f, 7.0f, 0.0f, "", "mod", "Chord Assistant", "stepped", 1.0f));
+            add (makeDef ("mpProgressionPreset", "Progression Preset", 0.0f, 63.0f, 0.0f, "", "mod", "Chord Assistant", "stepped", 1.0f));
+            add (makeDef ("mpScaleRoot", "Scale Root", 0.0f, 11.0f, 0.0f, "", "mod", "Chord Assistant", "stepped", 1.0f));
+            add (makeDef ("mpScaleType", "Scale Type", 0.0f, 9.0f, 1.0f, "", "mod", "Chord Assistant", "stepped", 1.0f));
+            add (makeDef ("mpChordMode", "Chord Type", 0.0f, 32.0f, 1.0f, "", "mod", "Chord Assistant", "stepped", 1.0f));
+            add (makeDef ("mpChordSize", "Chord Size", 1.0f, 8.0f, 4.0f, "", "mod", "Chord Assistant", "stepped", 1.0f));
+            add (makeDef ("mpChordSpread", "Voicing Spread", 0.0f, 1.0f, 0.45f, "", "mod", "Chord Assistant"));
+            add (makeDef ("mpStrum", "Chord Strum", 0.0f, 1.0f, 0.08f, "", "mod", "Chord Assistant"));
+            add (makeDef ("mpHumanize", "Humanize", 0.0f, 1.0f, 0.03f, "", "mod", "Chord Assistant"));
+            add (makeDef ("mpMutation", "Variation", 0.0f, 1.0f, 0.0f, "", "mod", "Chord Assistant"));
+            add (makeDef ("mpProbability", "Chord Chance", 0.0f, 1.0f, 1.0f, "", "mod", "Chord Assistant"));
+            add (makeDef ("mpLatch", "Latch Chords", 0.0f, 1.0f, 0.0f, "", "mod", "Chord Assistant", "toggle", 1.0f));
+            add (makeDef ("mpSampleControl", "Drive Samples", 0.0f, 1.0f, 0.0f, "", "mod", "Chord Assistant", "toggle", 1.0f));
+
             auto modWheel = makeDef ("modWheel", "Mod Wheel", 0.0f, 1.0f, 0.0f, "", "mod", "MIDI", "continuous");
             modWheel.hostAutomatable = false;
             modWheel.modulatable = false;
