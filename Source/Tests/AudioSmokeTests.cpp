@@ -3201,8 +3201,15 @@ namespace
             { "slice_chop_module_test",      "source", "sliceChop",       "Slice Chop",         "sampleSlice",    "sampler", "source",     "stereo" },
             { "scratch_deck_module_test",    "source", "scratchDeck",     "Scratch Deck",       "sampleStart",    "sampler", "source",     "stereo" },
             { "granular_sampler_module_test","source", "granularSampler", "Granular Sampler",   "granularDensity","sampler", "source",     "stereo" },
+            { "multisample_keymap_test",     "source", "samplePlayer",    "Multisample Keymap", "sampleStart",    "sampler", "source",     "stereo" },
+            { "chop_grid_module_test",       "source", "sliceChop",       "Chop Grid",          "sampleSlice",    "sampler", "source",     "stereo" },
+            { "loop_slicer_module_test",     "source", "sliceChop",       "Loop Slicer",        "sampleSlice",    "sampler", "source",     "stereo" },
+            { "midi_loop_player_test",       "mod",    "midiPlayground",  "MIDI Loop Player",   "arpLaneRate",    "midi",    "sequencer",  "event" },
+            { "vinyl_texture_module_test",   "fx",     "vinyl",           "Vinyl Texture",      "vinylMix",       "creative","destruction","stereo" },
             { "drum_rack_module_test",       "source", "drumRack",        "Drum Rack",          "pad1Volume",     "drums",   "source",     "stereo" },
             { "drum_seq_module_test",        "mod",    "drumSequencer",   "Drum Sequencer",     "arpLaneRate",    "midi",    "sequencer",  "event" },
+            { "eight_oh_eight_module_test",  "source", "drumRack",        "808 Kit Builder",    "pad1Pitch",      "drums",   "source",     "stereo" },
+            { "boom_bap_module_test",         "source", "drumRack",        "Boom Bap Pad Bank",  "pad1Volume",     "drums",   "source",     "stereo" },
             { "arp_lane_module_test",        "mod",    "arp",             "Arp Lane",           "arpLaneRate",    "midi",    "arp",        "event" },
             { "step_lfo_module_test",        "mod",    "stepLfo",         "Step LFO",           "filterCutoff",   "midi",    "modulation", "modulation" },
             { "dynamic_eq_module_test",      "filter", "dynamicEq",       "Dynamic EQ",         "eqMix",          "studio",  "tone",       "stereo" },
@@ -3350,6 +3357,66 @@ namespace
         addStarterBlock (scratchStarter, "starter_scratch_output", "out", "limiter", "outputCeilingDb", "starter", "output",
                          { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f } });
         validateStarterGraph (scratchStarter, "sample", "Scratch Slice Starter");
+
+        patchcraft::DspGraph hipHopStarter;
+        addStarterBlock (hipHopStarter, "starter_hiphop_source", "source", "samplePlayer", "sampleStart", "starter", "source",
+                         { { "sampleStart", 0.0f }, { "sampleLength", 1.0f }, { "volume", 0.78f } });
+        addStarterBlock (hipHopStarter, "starter_hiphop_chop", "source", "sliceChop", "sampleSlice", "starter", "source",
+                         { { "sampleSlice", 0.0f }, { "sampleSliceCount", 16.0f }, { "sampleLength", 0.25f } });
+        addStarterBlock (hipHopStarter, "starter_hiphop_pads", "source", "drumRack", "pad1Volume", "starter", "source",
+                         { { "pad1Volume", 1.0f }, { "pad2Volume", 1.0f }, { "volume", 0.82f } });
+        addStarterBlock (hipHopStarter, "starter_hiphop_midi", "mod", "midiPlayground", "arpLaneRate", "starter", "sequencer",
+                         { { "arpLaneRate", 1.0f }, { "arpLaneSwing", 0.08f }, { "mpSampleControl", 1.0f }, { "sampleSliceCount", 16.0f } });
+        addStarterBlock (hipHopStarter, "starter_hiphop_vinyl", "fx", "vinyl", "vinylMix", "creative", "destruction",
+                         { { "vinylAge", 0.34f }, { "vinylDust", 0.05f }, { "vinylMix", 0.16f } });
+        addStarterBlock (hipHopStarter, "starter_hiphop_lofi", "fx", "lofi", "lofiMix", "creative", "destruction",
+                         { { "lofiBits", 13.0f }, { "lofiRate", 0.16f }, { "lofiMix", 0.10f } });
+        addStarterBlock (hipHopStarter, "starter_hiphop_output", "out", "limiter", "outputCeilingDb", "starter", "output",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f } });
+        validateStarterGraph (hipHopStarter, "sample", "Hip Hop Sampler Starter");
+
+        patchcraft::DspGraph chopLabStarter;
+        addStarterBlock (chopLabStarter, "starter_chop_source", "source", "sliceChop", "sampleSlice", "starter", "source",
+                         { { "sampleSlice", 0.0f }, { "sampleSliceCount", 32.0f }, { "sampleLength", 0.18f } });
+        addStarterBlock (chopLabStarter, "starter_chop_scratch", "source", "scratchDeck", "sampleStart", "starter", "source",
+                         { { "sampleStart", 0.0f }, { "sampleLength", 1.0f }, { "volume", 0.70f } });
+        addStarterBlock (chopLabStarter, "starter_chop_midi", "mod", "midiPlayground", "arpLaneRate", "starter", "sequencer",
+                         { { "arpLaneRate", 2.0f }, { "arpLaneSwing", 0.06f }, { "mpSampleControl", 1.0f }, { "sampleSliceCount", 32.0f } });
+        addStarterBlock (chopLabStarter, "starter_chop_tape", "fx", "tape", "tapeMix", "creative", "tone",
+                         { { "tapeDrive", 0.22f }, { "tapeTone", 0.50f }, { "tapeMix", 0.12f } });
+        addStarterBlock (chopLabStarter, "starter_chop_delay", "fx", "multiTapDelay", "multiTapMix", "creative", "space",
+                         { { "multiTapMix", 0.14f }, { "multiTapFeedback", 0.22f } });
+        addStarterBlock (chopLabStarter, "starter_chop_output", "out", "limiter", "outputCeilingDb", "starter", "output",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f } });
+        validateStarterGraph (chopLabStarter, "sample", "Chop Lab Starter");
+
+        patchcraft::DspGraph mpcStarter;
+        addStarterBlock (mpcStarter, "starter_mpc_rack", "source", "drumRack", "pad1Volume", "starter", "source",
+                         { { "pad1Volume", 1.0f }, { "pad2Volume", 1.0f }, { "volume", 0.86f } });
+        addStarterBlock (mpcStarter, "starter_mpc_seq", "mod", "drumSequencer", "arpLaneRate", "starter", "sequencer",
+                         { { "arpLaneRate", 1.0f }, { "arpLaneSwing", 0.08f } });
+        addStarterBlock (mpcStarter, "starter_mpc_tape", "fx", "tape", "tapeMix", "creative", "tone",
+                         { { "tapeDrive", 0.20f }, { "tapeMix", 0.10f } });
+        addStarterBlock (mpcStarter, "starter_mpc_lofi", "fx", "lofi", "lofiMix", "creative", "destruction",
+                         { { "lofiBits", 13.0f }, { "lofiMix", 0.08f } });
+        addStarterBlock (mpcStarter, "starter_mpc_mixer", "out", "drumMixer", "pad1Volume", "starter", "mix",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f } });
+        validateStarterGraph (mpcStarter, "sample", "MPC Pad Instrument Starter");
+
+        patchcraft::DspGraph loopRemixFxStarter;
+        addStarterBlock (loopRemixFxStarter, "starter_loopfx_input", "source", "liveInput", "drive", "starter", "source",
+                         { { "drive", 0.0f }, { "mix", 1.0f } });
+        addStarterBlock (loopRemixFxStarter, "starter_loopfx_delay", "fx", "multiTapDelay", "multiTapMix", "creative", "space",
+                         { { "multiTapMix", 0.24f }, { "multiTapFeedback", 0.28f } });
+        addStarterBlock (loopRemixFxStarter, "starter_loopfx_lofi", "fx", "lofi", "lofiMix", "creative", "destruction",
+                         { { "lofiBits", 13.0f }, { "lofiMix", 0.08f } });
+        addStarterBlock (loopRemixFxStarter, "starter_loopfx_tape", "fx", "tape", "tapeMix", "creative", "tone",
+                         { { "tapeDrive", 0.18f }, { "tapeMix", 0.10f } });
+        addStarterBlock (loopRemixFxStarter, "starter_loopfx_duck", "fx", "dynamics", "dynMix", "studio", "dynamics",
+                         { { "dynThresholdDb", -20.0f }, { "dynRatio", 2.0f }, { "dynMix", 0.18f } });
+        addStarterBlock (loopRemixFxStarter, "starter_loopfx_output", "out", "limiter", "outputCeilingDb", "starter", "output",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f } });
+        validateStarterGraph (loopRemixFxStarter, "fx", "Loop Remix FX Starter");
 
         patchcraft::DspGraph fxStarter;
         addStarterBlock (fxStarter, "starter_delay_input", "source", "liveInput", "drive", "starter", "source",

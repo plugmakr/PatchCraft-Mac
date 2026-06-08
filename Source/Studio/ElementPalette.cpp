@@ -450,6 +450,14 @@ namespace patchcraft
             [this] { owner.addModuleToCanvas ("StarterDrumMachine"); }));
         productStarterSection.addRow (std::make_unique<Row> ("Scratch / Slice Starter", "xy",
             [this] { owner.addModuleToCanvas ("StarterScratchSlice"); }));
+        productStarterSection.addRow (std::make_unique<Row> ("Hip Hop Sampler Starter", "drum",
+            [this] { owner.addModuleToCanvas ("StarterHipHopSampler"); }));
+        productStarterSection.addRow (std::make_unique<Row> ("Chop Lab Starter", "grid",
+            [this] { owner.addModuleToCanvas ("StarterChopLab"); }));
+        productStarterSection.addRow (std::make_unique<Row> ("MPC Pad Instrument Starter", "drum",
+            [this] { owner.addModuleToCanvas ("StarterMpcPads"); }));
+        productStarterSection.addRow (std::make_unique<Row> ("Loop Remix FX Starter", "fx",
+            [this] { owner.addModuleToCanvas ("StarterLoopRemixFx"); }));
         productStarterSection.addRow (std::make_unique<Row> ("Delay FX Starter", "fx",
             [this] { owner.addModuleToCanvas ("StarterDelayFx"); }));
         productStarterSection.addRow (std::make_unique<Row> ("Vocal / Master FX Starter", "meter",
@@ -474,6 +482,16 @@ namespace patchcraft
             [this] { owner.addModuleToCanvas ("ScratchDeck"); }));
         samplerModuleSection.addRow (std::make_unique<Row> ("Granular Sampler", "granular",
             [this] { owner.addModuleToCanvas ("GranularSampler"); }));
+        samplerModuleSection.addRow (std::make_unique<Row> ("Multisample Keymap", "keyboard",
+            [this] { owner.addModuleToCanvas ("MultisampleKeymap"); }));
+        samplerModuleSection.addRow (std::make_unique<Row> ("Chop Grid", "grid",
+            [this] { owner.addModuleToCanvas ("ChopGrid"); }));
+        samplerModuleSection.addRow (std::make_unique<Row> ("Loop Slicer", "grid",
+            [this] { owner.addModuleToCanvas ("LoopSlicer"); }));
+        samplerModuleSection.addRow (std::make_unique<Row> ("MIDI Loop Player", "grid",
+            [this] { owner.addModuleToCanvas ("MidiLoopPlayer"); }));
+        samplerModuleSection.addRow (std::make_unique<Row> ("Vinyl Texture Sampler", "waveform",
+            [this] { owner.addModuleToCanvas ("VinylTextureSampler"); }));
 
         drumModuleSection.addRow (std::make_unique<Row> ("Drum Rack", "drum",
             [this] { owner.addModuleToCanvas ("DrumRack"); }));
@@ -481,6 +499,10 @@ namespace patchcraft
             [this] { owner.addModuleToCanvas ("DrumSequencer"); }));
         drumModuleSection.addRow (std::make_unique<Row> ("Drum Mixer", "mixer",
             [this] { owner.addModuleToCanvas ("DrumMixer"); }));
+        drumModuleSection.addRow (std::make_unique<Row> ("808 Kit Builder", "drum",
+            [this] { owner.addModuleToCanvas ("EightOhEightKit"); }));
+        drumModuleSection.addRow (std::make_unique<Row> ("Boom Bap Pad Bank", "drum",
+            [this] { owner.addModuleToCanvas ("BoomBapPadBank"); }));
 
         midiModuleSection.addRow (std::make_unique<Row> ("Arp Lane", "grid",
             [this] { owner.addModuleToCanvas ("ArpLaneModule"); }));
