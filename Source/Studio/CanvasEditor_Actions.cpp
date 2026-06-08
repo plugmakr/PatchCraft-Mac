@@ -1234,6 +1234,275 @@
         };
 
         const auto moduleKey = moduleType.retainCharacters ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789").toLowerCase();
+        if (moduleKey == "startersynthplugin")
+        {
+            ensureParams ({ "oscType", "osc2Type", "oscBlend", "osc2Detune", "subBlend", "noiseBlend",
+                            "wtEnabled", "wtTable", "wtPosition", "wtMorph", "wtWarp", "wtUnison",
+                            "wtDetune", "wtSpread", "wtLevel", "filterCutoff", "filterResonance",
+                            "attack", "decay", "sustain", "release", "lfoRate", "lfoAmount",
+                            "delayTime", "delayFeedback", "delayMix", "reverbMix", "stereoWidth",
+                            "outputLimiter", "outputCeilingDb", "volume", "pan" }, "synth");
+            liveValues.setValue ("oscType", 1.0f);
+            liveValues.setValue ("osc2Type", 1.0f);
+            liveValues.setValue ("noiseBlend", 0.0f);
+            liveValues.setValue ("wtEnabled", 1.0f);
+            liveValues.setValue ("wtLevel", 0.62f);
+            liveValues.setValue ("outputLimiter", 1.0f);
+
+            ensureBlock ("starter_synth_osc", "source", "oscStack", "Starter OSC Stack", "oscBlend", "starter", "source", "stereo",
+                         { { "oscType", 1.0f }, { "osc2Type", 1.0f }, { "oscBlend", 0.22f }, { "osc2Detune", 7.0f },
+                           { "subBlend", 0.08f }, { "noiseBlend", 0.0f }, { "volume", 0.72f } });
+            ensureBlock ("starter_synth_wt", "source", "serumWavetable", "Starter Wavetable", "wtPosition", "starter", "source", "stereo",
+                         { { "wtEnabled", 1.0f }, { "wtTable", 4.0f }, { "wtPosition", 0.28f }, { "wtMorph", 0.22f },
+                           { "wtWarp", 0.18f }, { "wtUnison", 3.0f }, { "wtDetune", 12.0f }, { "wtSpread", 0.46f },
+                           { "wtLevel", 0.62f } });
+            ensureBlock ("starter_synth_filter", "filter", "stateVariable", "Starter Filter", "filterCutoff", "starter", "tone", "stereo",
+                         { { "cutoff", 4200.0f }, { "resonance", 0.18f }, { "filterCutoff", 4200.0f }, { "filterResonance", 0.18f } });
+            ensureBlock ("starter_synth_lfo", "mod", "lfo", "Starter Motion LFO", "filterCutoff", "starter", "modulation", "modulation",
+                         { { "lfoRate", 3.0f }, { "lfoAmount", 0.18f } });
+            ensureBlock ("starter_synth_delay", "fx", "delay", "Starter Delay", "delayMix", "starter", "space", "stereo",
+                         { { "delayTime", 0.25f }, { "delayFeedback", 0.28f }, { "delayMix", 0.12f } });
+            ensureBlock ("starter_synth_reverb", "fx", "reverb", "Starter Reverb", "reverbMix", "starter", "space", "stereo",
+                         { { "reverbMix", 0.18f } });
+            ensureBlock ("starter_synth_output", "out", "limiter", "Starter Output", "outputCeilingDb", "starter", "output", "stereo",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "volume", 0.78f } });
+
+            addModulePanel ("Add Synth Plugin Starter", "Synth Plugin Starter", 780, 430,
+                [&] (LayoutModel& layout, const juce::String& panelId)
+                {
+                    addChildSurface (layout, panelId, ElementType::Label, "SOURCE", juce::String(), 22, 28, 100, 24);
+                    addChildSurface (layout, panelId, ElementType::Waveform, "Wavetable", "wtPosition", 22, 58, 190, 82);
+                    addChildKnob (layout, panelId, "Wave", "oscType", 234, 58);
+                    addChildKnob (layout, panelId, "WT Pos", "wtPosition", 316, 58);
+                    addChildKnob (layout, panelId, "Blend", "oscBlend", 398, 58);
+                    addChildKnob (layout, panelId, "Sub", "subBlend", 480, 58);
+                    addChildValue (layout, panelId, "Noise Off", "noiseBlend", 566, 78, 78, 30);
+
+                    addChildSurface (layout, panelId, ElementType::Label, "SHAPE", juce::String(), 22, 158, 100, 24);
+                    addChildKnob (layout, panelId, "Cutoff", "filterCutoff", 22, 190);
+                    addChildKnob (layout, panelId, "Res", "filterResonance", 104, 190);
+                    addChildSlider (layout, panelId, "A", "attack", 206, 182);
+                    addChildSlider (layout, panelId, "D", "decay", 258, 182);
+                    addChildSlider (layout, panelId, "S", "sustain", 310, 182);
+                    addChildSlider (layout, panelId, "R", "release", 362, 182);
+
+                    addChildSurface (layout, panelId, ElementType::Label, "MOTION + FX", juce::String(), 454, 158, 150, 24);
+                    addChildKnob (layout, panelId, "LFO Rate", "lfoRate", 454, 190);
+                    addChildKnob (layout, panelId, "LFO Amt", "lfoAmount", 536, 190);
+                    addChildKnob (layout, panelId, "Delay", "delayMix", 618, 190);
+                    addChildKnob (layout, panelId, "Reverb", "reverbMix", 700, 190);
+
+                    addChildSurface (layout, panelId, ElementType::MacroControl, "Tone", "filterCutoff", 22, 326, 126, 74);
+                    addChildSurface (layout, panelId, ElementType::MacroControl, "Motion", "lfoAmount", 162, 326, 126, 74);
+                    addChildSurface (layout, panelId, ElementType::MacroControl, "Space", "delayMix", 302, 326, 126, 74);
+                    addChildSurface (layout, panelId, ElementType::Keyboard, "Keys", juce::String(), 452, 326, 236, 74);
+                    addChildKnob (layout, panelId, "Out", "volume", 704, 326, 58);
+                });
+            finishModernModule();
+            return;
+        }
+
+        if (moduleKey == "startersamplerinstrument")
+        {
+            ensureParams ({ "sampleStart", "sampleLength", "sampleSlice", "sampleSliceCount", "samplePitch",
+                            "sampleReverse", "sampleGlitch", "sampleGlitchGrid", "granularOn", "granularDensity",
+                            "granularSizeMs", "granularSpread", "granularScan", "filterCutoff", "filterResonance",
+                            "attack", "decay", "sustain", "release", "delayMix", "reverbMix", "volume", "pan",
+                            "outputLimiter", "outputCeilingDb" }, "sample");
+            liveValues.setValue ("granularOn", 0.0f);
+            liveValues.setValue ("outputLimiter", 1.0f);
+
+            ensureBlock ("starter_sampler_source", "source", "samplePlayer", "Starter Sample Player", "sampleStart", "starter", "source", "stereo",
+                         { { "sampleStart", 0.0f }, { "sampleLength", 1.0f }, { "samplePitch", 0.0f }, { "volume", 0.90f },
+                           { "granularOn", 0.0f } });
+            ensureBlock ("starter_sampler_filter", "filter", "stateVariable", "Starter Sampler Filter", "filterCutoff", "starter", "tone", "stereo",
+                         { { "filterCutoff", 5200.0f }, { "filterResonance", 0.14f } });
+            ensureBlock ("starter_sampler_granular", "source", "granularSampler", "Optional Granular Source", "granularDensity", "starter", "source", "stereo",
+                         { { "granularOn", 0.0f }, { "granularDensity", 28.0f }, { "granularSizeMs", 90.0f }, { "granularSpread", 0.18f } });
+            ensureBlock ("starter_sampler_fx", "fx", "reverb", "Starter Sampler Space", "reverbMix", "starter", "space", "stereo",
+                         { { "delayMix", 0.10f }, { "reverbMix", 0.18f } });
+            ensureBlock ("starter_sampler_output", "out", "limiter", "Starter Sampler Output", "outputCeilingDb", "starter", "output", "stereo",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "volume", 0.90f } });
+
+            addModulePanel ("Add Sampler Instrument Starter", "Sampler Instrument Starter", 760, 430,
+                [&] (LayoutModel& layout, const juce::String& panelId)
+                {
+                    addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Sample Library", juce::String(), 22, 42, 168, 156);
+                    addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Sample", "sampleStart", 208, 42, 164, 156);
+                    addChildSurface (layout, panelId, ElementType::Waveform, "Waveform", "sampleStart", 392, 42, 232, 78);
+                    addChildKnob (layout, panelId, "Start", "sampleStart", 392, 136);
+                    addChildKnob (layout, panelId, "Length", "sampleLength", 474, 136);
+                    addChildKnob (layout, panelId, "Pitch", "samplePitch", 556, 136);
+                    addChildToggle (layout, panelId, "Reverse", "sampleReverse", 640, 154, 82, 30);
+
+                    addChildSurface (layout, panelId, ElementType::Label, "MAP + PLAY", juce::String(), 22, 220, 120, 24);
+                    addChildSurface (layout, panelId, ElementType::PadGrid, "Pads", "padGrid", 22, 252, 160, 140);
+                    addChildSurface (layout, panelId, ElementType::Keyboard, "Keys", juce::String(), 204, 330, 250, 64);
+                    addChildKnob (layout, panelId, "Cutoff", "filterCutoff", 220, 236);
+                    addChildKnob (layout, panelId, "Grain", "granularDensity", 302, 236);
+                    addChildKnob (layout, panelId, "Delay", "delayMix", 384, 236);
+                    addChildKnob (layout, panelId, "Verb", "reverbMix", 466, 236);
+                    addChildSurface (layout, panelId, ElementType::GranularField, "Granular", "granularScan", 552, 236, 166, 118);
+                });
+            finishModernModule();
+            return;
+        }
+
+        if (moduleKey == "starterdrummachine")
+        {
+            juce::StringArray drumParams { "volume", "pan", "outputLimiter", "outputCeilingDb",
+                                           "arpLaneRate", "arpLaneSwing", "arpLaneProbability", "retrigger" };
+            for (int pad = 1; pad <= 16; ++pad)
+            {
+                const auto padText = juce::String (pad);
+                drumParams.add ("pad" + padText + "Volume");
+                drumParams.add ("pad" + padText + "Pitch");
+                drumParams.add ("pad" + padText + "Pan");
+            }
+            ensureParams (drumParams, "sample");
+            liveValues.setValue ("outputLimiter", 1.0f);
+            liveValues.setValue ("retrigger", 1.0f);
+
+            ensureBlock ("starter_drum_rack", "source", "drumRack", "Starter Drum Rack", "pad1Volume", "starter", "source", "stereo",
+                         { { "pad1Volume", 1.0f }, { "pad2Volume", 1.0f }, { "pad3Volume", 1.0f }, { "pad4Volume", 1.0f }, { "volume", 0.90f } });
+            ensureBlock ("starter_drum_seq", "mod", "drumSequencer", "Starter Drum Sequencer", "arpLaneRate", "starter", "sequencer", "event",
+                         { { "arpLaneRate", 1.0f }, { "arpLaneSwing", 0.04f }, { "arpLaneProbability", 1.0f }, { "retrigger", 1.0f } });
+            ensureBlock ("starter_drum_mixer", "out", "drumMixer", "Starter Drum Mixer", "pad1Volume", "starter", "mix", "stereo",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "volume", 0.90f } });
+
+            addModulePanel ("Add Drum Machine Starter", "Drum Machine Starter", 800, 460,
+                [&] (LayoutModel& layout, const juce::String& panelId)
+                {
+                    addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Sample Library", juce::String(), 22, 38, 160, 130);
+                    addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Drum Samples", "sampleStart", 202, 38, 164, 130);
+                    addChildSurface (layout, panelId, ElementType::PadGrid, "Pads", "padGrid", 386, 38, 220, 220);
+                    addChildSurface (layout, panelId, ElementType::DrumGrid, "Pattern Grid", "arpLaneRate", 22, 204, 484, 190);
+                    addChildKnob (layout, panelId, "Rate", "arpLaneRate", 536, 286);
+                    addChildKnob (layout, panelId, "Swing", "arpLaneSwing", 618, 286);
+                    addChildKnob (layout, panelId, "Chance", "arpLaneProbability", 700, 286);
+                    addChildSlider (layout, panelId, "Kick", "pad1Volume", 630, 48);
+                    addChildSlider (layout, panelId, "Snare", "pad2Volume", 676, 48);
+                    addChildSlider (layout, panelId, "Hat", "pad3Volume", 722, 48);
+                    addChildKnob (layout, panelId, "Out", "volume", 700, 372, 58);
+                });
+            finishModernModule();
+            return;
+        }
+
+        if (moduleKey == "starterscratchslice")
+        {
+            ensureParams ({ "sampleStart", "sampleLength", "sampleSlice", "sampleSliceCount", "samplePitch",
+                            "sampleReverse", "sampleGlitch", "sampleGlitchGrid", "multiTapTime", "multiTapFeedback",
+                            "multiTapSpread", "multiTapMix", "filterCutoff", "outputLimiter", "outputCeilingDb",
+                            "volume" }, "sample");
+            liveValues.setValue ("sampleSliceCount", 16.0f);
+            liveValues.setValue ("outputLimiter", 1.0f);
+
+            ensureBlock ("starter_scratch_deck", "source", "scratchDeck", "Starter Scratch Deck", "sampleStart", "starter", "source", "stereo",
+                         { { "sampleStart", 0.0f }, { "sampleLength", 1.0f }, { "sampleSliceCount", 16.0f }, { "samplePitch", 0.0f } });
+            ensureBlock ("starter_scratch_chop", "source", "sliceChop", "Starter Slice Engine", "sampleSlice", "starter", "source", "stereo",
+                         { { "sampleSlice", 0.0f }, { "sampleSliceCount", 16.0f }, { "sampleLength", 0.25f }, { "sampleGlitchGrid", 16.0f } });
+            ensureBlock ("starter_scratch_delay", "fx", "multiTapDelay", "Starter Performance Delay", "multiTapMix", "starter", "space", "stereo",
+                         { { "multiTapTime", 0.25f }, { "multiTapFeedback", 0.24f }, { "multiTapSpread", 0.42f }, { "multiTapMix", 0.18f } });
+            ensureBlock ("starter_scratch_output", "out", "limiter", "Starter Scratch Output", "outputCeilingDb", "starter", "output", "stereo",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "volume", 0.86f } });
+
+            addModulePanel ("Add Scratch Slice Starter", "Scratch / Slice Starter", 760, 390,
+                [&] (LayoutModel& layout, const juce::String& panelId)
+                {
+                    addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Sample Library", juce::String(), 22, 38, 150, 126);
+                    addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Loop", "sampleStart", 190, 38, 150, 126);
+                    addChildSurface (layout, panelId, ElementType::XYPad, "Scratch Pad", "sampleStart", 360, 38, 150, 126);
+                    addChildSurface (layout, panelId, ElementType::Waveform, "Slices", "sampleSlice", 532, 38, 190, 74);
+                    addChildKnob (layout, panelId, "Start", "sampleStart", 40, 204);
+                    addChildKnob (layout, panelId, "Slice", "sampleSlice", 122, 204);
+                    addChildKnob (layout, panelId, "Count", "sampleSliceCount", 204, 204);
+                    addChildKnob (layout, panelId, "Pitch", "samplePitch", 286, 204);
+                    addChildKnob (layout, panelId, "Glitch", "sampleGlitch", 368, 204);
+                    addChildKnob (layout, panelId, "Delay", "multiTapMix", 450, 204);
+                    addChildSurface (layout, panelId, ElementType::PadGrid, "Trigger Pads", "padGrid", 548, 174, 168, 150);
+                });
+            finishModernModule();
+            return;
+        }
+
+        if (moduleKey == "starterdelayfx" || moduleKey == "startervocalmasterfx")
+        {
+            ensureParams ({ "drive", "mix", "eqEnabled", "eqMix", "eqBand1On", "eqBand1Freq", "eqBand1GainDb",
+                            "eqBand1Q", "eqBand2On", "eqBand2Freq", "eqBand2GainDb", "eqBand2Q",
+                            "delayTime", "delayFeedback", "delayMix", "multiTapTime", "multiTapFeedback",
+                            "multiTapSpread", "multiTapMix", "dynThresholdDb", "dynRatio", "dynAttackMs",
+                            "dynReleaseMs", "dynMakeupDb", "dynMix", "vocalFormant", "vocalBody", "vocalMix",
+                            "stereoWidth", "monoMaker", "outputLimiter", "outputCeilingDb", "outputGainDb" }, "fx");
+            liveValues.setValue ("outputLimiter", 1.0f);
+            liveValues.setValue ("eqEnabled", 1.0f);
+
+            if (moduleKey == "starterdelayfx")
+            {
+                ensureBlock ("starter_delay_input", "source", "liveInput", "Starter FX Input", "drive", "starter", "source", "stereo",
+                             { { "drive", 0.0f }, { "mix", 1.0f } });
+                ensureBlock ("starter_delay_eq", "filter", "dynamicEq", "Starter Delay EQ", "eqMix", "starter", "tone", "stereo",
+                             { { "eqEnabled", 1.0f }, { "eqMix", 1.0f }, { "eqBand1On", 1.0f }, { "eqBand1Freq", 180.0f },
+                               { "eqBand1GainDb", -1.0f }, { "eqBand2On", 1.0f }, { "eqBand2Freq", 6500.0f }, { "eqBand2GainDb", -0.5f } });
+                ensureBlock ("starter_delay_main", "fx", "multiTapDelay", "Starter MultiTap Delay", "multiTapMix", "starter", "space", "stereo",
+                             { { "multiTapTime", 0.375f }, { "multiTapFeedback", 0.34f }, { "multiTapSpread", 0.55f }, { "multiTapMix", 0.32f } });
+                ensureBlock ("starter_delay_duck", "fx", "dynamics", "Starter Ducking", "dynMix", "starter", "dynamics", "stereo",
+                             { { "dynThresholdDb", -22.0f }, { "dynRatio", 2.0f }, { "dynAttackMs", 8.0f }, { "dynReleaseMs", 160.0f }, { "dynMix", 0.22f } });
+                ensureBlock ("starter_delay_output", "out", "limiter", "Starter Delay Output", "outputCeilingDb", "starter", "output", "stereo",
+                             { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "outputGainDb", 0.0f } });
+
+                addModulePanel ("Add Delay FX Starter", "Delay FX Starter", 800, 430,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::Meter, "Input", "drive", 22, 44, 68, 250);
+                        addChildSurface (layout, panelId, ElementType::EqCurve, "Tone EQ", "eqMix", 116, 44, 206, 112);
+                        addChildKnob (layout, panelId, "Time", "multiTapTime", 348, 58);
+                        addChildKnob (layout, panelId, "Feedback", "multiTapFeedback", 430, 58);
+                        addChildKnob (layout, panelId, "Spread", "multiTapSpread", 512, 58);
+                        addChildKnob (layout, panelId, "Mix", "multiTapMix", 594, 58);
+                        addChildSurface (layout, panelId, ElementType::Waveform, "Feedback Shape", "multiTapFeedback", 116, 188, 250, 90);
+                        addChildKnob (layout, panelId, "Duck", "dynMix", 392, 204);
+                        addChildKnob (layout, panelId, "Width", "stereoWidth", 474, 204);
+                        addChildKnob (layout, panelId, "Ceiling", "outputCeilingDb", 556, 204);
+                        addChildSurface (layout, panelId, ElementType::Meter, "Output", "outputGainDb", 704, 44, 68, 250);
+                        addChildToggle (layout, panelId, "Limiter", "outputLimiter", 616, 300, 88, 30);
+                    });
+            }
+            else
+            {
+                ensureBlock ("starter_vocal_input", "source", "liveInput", "Starter FX Input", "drive", "starter", "source", "stereo",
+                             { { "drive", 0.0f }, { "mix", 1.0f } });
+                ensureBlock ("starter_vocal_eq", "filter", "dynamicEq", "Starter Vocal EQ", "eqMix", "starter", "tone", "stereo",
+                             { { "eqEnabled", 1.0f }, { "eqMix", 1.0f }, { "eqBand1On", 1.0f }, { "eqBand1Freq", 120.0f },
+                               { "eqBand1GainDb", -1.2f }, { "eqBand2On", 1.0f }, { "eqBand2Freq", 3200.0f }, { "eqBand2GainDb", 1.4f } });
+                ensureBlock ("starter_vocal_dynamics", "fx", "dynamics", "Starter Vocal Dynamics", "dynMix", "starter", "dynamics", "stereo",
+                             { { "dynThresholdDb", -18.0f }, { "dynRatio", 2.4f }, { "dynAttackMs", 7.0f }, { "dynReleaseMs", 120.0f }, { "dynMix", 0.36f } });
+                ensureBlock ("starter_vocal_formant", "fx", "vocalFormant", "Starter Vocal Character", "vocalMix", "starter", "tone", "stereo",
+                             { { "vocalFormant", 0.40f }, { "vocalBody", 0.35f }, { "vocalMix", 0.12f } });
+                ensureBlock ("starter_vocal_output", "out", "limiter", "Starter Master Output", "outputCeilingDb", "starter", "output", "stereo",
+                             { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "outputGainDb", 0.0f } });
+
+                addModulePanel ("Add Vocal Master FX Starter", "Vocal / Master FX Starter", 800, 430,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::Meter, "Input", "drive", 22, 44, 68, 250);
+                        addChildSurface (layout, panelId, ElementType::SpectrumAnalyzer, "Analyzer", "eqMix", 116, 44, 220, 108);
+                        addChildSurface (layout, panelId, ElementType::EqCurve, "EQ", "eqMix", 116, 188, 220, 108);
+                        addChildKnob (layout, panelId, "Low Cut", "eqBand1Freq", 364, 58);
+                        addChildKnob (layout, panelId, "Presence", "eqBand2GainDb", 446, 58);
+                        addChildKnob (layout, panelId, "Comp", "dynMix", 528, 58);
+                        addChildKnob (layout, panelId, "Formant", "vocalFormant", 364, 188);
+                        addChildKnob (layout, panelId, "Body", "vocalBody", 446, 188);
+                        addChildKnob (layout, panelId, "Width", "stereoWidth", 528, 188);
+                        addChildKnob (layout, panelId, "Ceiling", "outputCeilingDb", 610, 188);
+                        addChildSurface (layout, panelId, ElementType::Meter, "Output", "outputGainDb", 704, 44, 68, 250);
+                        addChildToggle (layout, panelId, "Limiter", "outputLimiter", 610, 300, 88, 30);
+                    });
+            }
+            finishModernModule();
+            return;
+        }
+
         if (moduleKey == "oscstack")
         {
             ensureParams ({ "oscType", "osc2Type", "oscBlend", "osc2Detune", "subBlend", "noiseBlend", "volume", "outputLimiter" }, "synth");

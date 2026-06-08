@@ -3268,6 +3268,102 @@ namespace
             }
         }
 
+        auto addStarterBlock = [] (patchcraft::DspGraph& starterGraph,
+                                   const char* id,
+                                   const char* section,
+                                   const char* type,
+                                   const char* target,
+                                   const char* family,
+                                   const char* role,
+                                   std::initializer_list<std::pair<const char*, float>> values)
+        {
+            patchcraft::DspBlock block;
+            block.id = id;
+            block.section = section;
+            block.type = type;
+            block.name = juce::String (id).replaceCharacter ('_', ' ');
+            block.targetId = target;
+            block.enabled = true;
+            block.metadata["family"] = family;
+            block.metadata["role"] = role;
+            block.metadata["ioMode"] = juce::String (section) == "mod" ? "event" : "stereo";
+            for (const auto& value : values)
+                block.values[value.first] = value.second;
+            starterGraph.blocks.push_back (block);
+        };
+
+        auto validateStarterGraph = [] (const patchcraft::DspGraph& starterGraph,
+                                        const juce::String& engineId,
+                                        const juce::String& label)
+        {
+            for (const auto& issue : starterGraph.validateTypedGraph (engineId))
+            {
+                require (issue.severity != "error",
+                         ("starter graph validation error in " + label + ": " + issue.toString()).toRawUTF8());
+                require (! issue.message.containsIgnoreCase ("generic Player routing"),
+                         ("starter graph has a generic-routed block in " + label + ": " + issue.toString()).toRawUTF8());
+            }
+        };
+
+        patchcraft::DspGraph synthStarter;
+        addStarterBlock (synthStarter, "starter_synth_osc", "source", "oscStack", "oscBlend", "starter", "source",
+                         { { "oscType", 1.0f }, { "osc2Type", 1.0f }, { "noiseBlend", 0.0f }, { "volume", 0.72f } });
+        addStarterBlock (synthStarter, "starter_synth_wt", "source", "serumWavetable", "wtPosition", "starter", "source",
+                         { { "wtEnabled", 1.0f }, { "wtPosition", 0.28f }, { "wtLevel", 0.62f } });
+        addStarterBlock (synthStarter, "starter_synth_filter", "filter", "stateVariable", "filterCutoff", "starter", "tone",
+                         { { "filterCutoff", 4200.0f }, { "filterResonance", 0.18f } });
+        addStarterBlock (synthStarter, "starter_synth_lfo", "mod", "lfo", "filterCutoff", "starter", "modulation",
+                         { { "lfoRate", 3.0f }, { "lfoAmount", 0.18f } });
+        addStarterBlock (synthStarter, "starter_synth_delay", "fx", "delay", "delayMix", "starter", "space",
+                         { { "delayMix", 0.12f }, { "delayFeedback", 0.28f } });
+        addStarterBlock (synthStarter, "starter_synth_output", "out", "limiter", "outputCeilingDb", "starter", "output",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f } });
+        validateStarterGraph (synthStarter, "synth", "Synth Plugin Starter");
+
+        patchcraft::DspGraph samplerStarter;
+        addStarterBlock (samplerStarter, "starter_sampler_source", "source", "samplePlayer", "sampleStart", "starter", "source",
+                         { { "sampleStart", 0.0f }, { "sampleLength", 1.0f }, { "volume", 0.90f } });
+        addStarterBlock (samplerStarter, "starter_sampler_granular", "source", "granularSampler", "granularDensity", "starter", "source",
+                         { { "granularOn", 0.0f }, { "granularDensity", 28.0f } });
+        addStarterBlock (samplerStarter, "starter_sampler_filter", "filter", "stateVariable", "filterCutoff", "starter", "tone",
+                         { { "filterCutoff", 5200.0f }, { "filterResonance", 0.14f } });
+        addStarterBlock (samplerStarter, "starter_sampler_output", "out", "limiter", "outputCeilingDb", "starter", "output",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f } });
+        validateStarterGraph (samplerStarter, "sample", "Sampler Instrument Starter");
+
+        patchcraft::DspGraph drumStarter;
+        addStarterBlock (drumStarter, "starter_drum_rack", "source", "drumRack", "pad1Volume", "starter", "source",
+                         { { "pad1Volume", 1.0f }, { "pad2Volume", 1.0f }, { "volume", 0.90f } });
+        addStarterBlock (drumStarter, "starter_drum_seq", "mod", "drumSequencer", "arpLaneRate", "starter", "sequencer",
+                         { { "arpLaneRate", 1.0f }, { "arpLaneSwing", 0.04f } });
+        addStarterBlock (drumStarter, "starter_drum_mixer", "out", "drumMixer", "pad1Volume", "starter", "mix",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f } });
+        validateStarterGraph (drumStarter, "sample", "Drum Machine Starter");
+
+        patchcraft::DspGraph scratchStarter;
+        addStarterBlock (scratchStarter, "starter_scratch_deck", "source", "scratchDeck", "sampleStart", "starter", "source",
+                         { { "sampleStart", 0.0f }, { "sampleLength", 1.0f }, { "sampleSliceCount", 16.0f } });
+        addStarterBlock (scratchStarter, "starter_scratch_chop", "source", "sliceChop", "sampleSlice", "starter", "source",
+                         { { "sampleSlice", 0.0f }, { "sampleSliceCount", 16.0f } });
+        addStarterBlock (scratchStarter, "starter_scratch_delay", "fx", "multiTapDelay", "multiTapMix", "starter", "space",
+                         { { "multiTapMix", 0.18f }, { "multiTapFeedback", 0.24f } });
+        addStarterBlock (scratchStarter, "starter_scratch_output", "out", "limiter", "outputCeilingDb", "starter", "output",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f } });
+        validateStarterGraph (scratchStarter, "sample", "Scratch Slice Starter");
+
+        patchcraft::DspGraph fxStarter;
+        addStarterBlock (fxStarter, "starter_delay_input", "source", "liveInput", "drive", "starter", "source",
+                         { { "drive", 0.0f }, { "mix", 1.0f } });
+        addStarterBlock (fxStarter, "starter_delay_eq", "filter", "dynamicEq", "eqMix", "starter", "tone",
+                         { { "eqEnabled", 1.0f }, { "eqMix", 1.0f }, { "eqBand1On", 1.0f } });
+        addStarterBlock (fxStarter, "starter_delay_main", "fx", "multiTapDelay", "multiTapMix", "starter", "space",
+                         { { "multiTapMix", 0.32f }, { "multiTapFeedback", 0.34f } });
+        addStarterBlock (fxStarter, "starter_delay_duck", "fx", "dynamics", "dynMix", "starter", "dynamics",
+                         { { "dynThresholdDb", -22.0f }, { "dynRatio", 2.0f }, { "dynMix", 0.22f } });
+        addStarterBlock (fxStarter, "starter_delay_output", "out", "limiter", "outputCeilingDb", "starter", "output",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f } });
+        validateStarterGraph (fxStarter, "fx", "Delay FX Starter");
+
         pass ("expanded canvas module templates");
     }
 }

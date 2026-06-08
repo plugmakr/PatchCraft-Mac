@@ -337,6 +337,7 @@ namespace patchcraft
         scrollContent.addAndMakeVisible (proVisualSection);
         scrollContent.addAndMakeVisible (performanceSection);
         scrollContent.addAndMakeVisible (containerSection);
+        scrollContent.addAndMakeVisible (productStarterSection);
         scrollContent.addAndMakeVisible (synthModuleSection);
         scrollContent.addAndMakeVisible (samplerModuleSection);
         scrollContent.addAndMakeVisible (drumModuleSection);
@@ -346,6 +347,7 @@ namespace patchcraft
         scrollContent.addAndMakeVisible (outputModuleSection);
 
         for (auto* section : { &controlSection, &analysisSection, &uiSection, &motionSection, &proVisualSection, &performanceSection, &containerSection,
+                               &productStarterSection,
                                &synthModuleSection, &samplerModuleSection, &drumModuleSection, &midiModuleSection,
                                &eqDynamicsModuleSection, &fxModuleSection, &outputModuleSection })
             section->onToggle = [this] { resized(); repaint(); };
@@ -439,6 +441,19 @@ namespace patchcraft
             containerSection.addRow (std::make_unique<Row> (e.label, e.icon,
                 [this, type] { addElementOfType (type); }));
         }
+
+        productStarterSection.addRow (std::make_unique<Row> ("Synth Plugin Starter", "knob",
+            [this] { owner.addModuleToCanvas ("StarterSynthPlugin"); }));
+        productStarterSection.addRow (std::make_unique<Row> ("Sampler Instrument Starter", "waveform",
+            [this] { owner.addModuleToCanvas ("StarterSamplerInstrument"); }));
+        productStarterSection.addRow (std::make_unique<Row> ("Drum Machine Starter", "drum",
+            [this] { owner.addModuleToCanvas ("StarterDrumMachine"); }));
+        productStarterSection.addRow (std::make_unique<Row> ("Scratch / Slice Starter", "xy",
+            [this] { owner.addModuleToCanvas ("StarterScratchSlice"); }));
+        productStarterSection.addRow (std::make_unique<Row> ("Delay FX Starter", "fx",
+            [this] { owner.addModuleToCanvas ("StarterDelayFx"); }));
+        productStarterSection.addRow (std::make_unique<Row> ("Vocal / Master FX Starter", "meter",
+            [this] { owner.addModuleToCanvas ("StarterVocalMasterFx"); }));
 
         synthModuleSection.addRow (std::make_unique<Row> ("OSC Stack", "knob",
             [this] { owner.addModuleToCanvas ("OscStack"); }));
@@ -624,6 +639,8 @@ namespace patchcraft
         contentHeight += perfH + 8;
         const int containerH = containerSection.getNeededHeight();
         contentHeight += containerH + 8;
+        const int starterH = productStarterSection.getNeededHeight();
+        contentHeight += starterH + 8;
         const int synthModulesH = synthModuleSection.getNeededHeight();
         contentHeight += synthModulesH + 8;
         const int samplerModulesH = samplerModuleSection.getNeededHeight();
@@ -655,6 +672,8 @@ namespace patchcraft
         performanceSection.setBounds (r.removeFromTop (perfH));
         r.removeFromTop (8);
         containerSection.setBounds (r.removeFromTop (containerH));
+        r.removeFromTop (8);
+        productStarterSection.setBounds (r.removeFromTop (starterH));
         r.removeFromTop (8);
         synthModuleSection.setBounds (r.removeFromTop (synthModulesH));
         r.removeFromTop (8);

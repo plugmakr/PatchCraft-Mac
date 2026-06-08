@@ -61,6 +61,7 @@ namespace patchcraft
         Section proVisualSection { "Pro / AI Visuals" };
         Section performanceSection { "MIDI + Performance" };
         Section containerSection { "Containers + Layout" };
+        Section productStarterSection { "Plugin Starters" };
         Section synthModuleSection { "Synth / OSC Modules" };
         Section samplerModuleSection { "Sampler / Scratch Modules" };
         Section drumModuleSection { "Drum Modules" };
