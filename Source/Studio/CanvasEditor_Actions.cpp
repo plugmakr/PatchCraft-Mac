@@ -1242,9 +1242,12 @@
                                        "granularOn", "granularDensity", "granularSizeMs", "granularSpread", "granularScan",
                                        "filterCutoff", "filterResonance", "attack", "decay", "sustain", "release",
                                        "arpLaneRate", "arpLaneGate", "arpLaneSwing", "arpLaneProbability", "retrigger",
+                                       "projectBpm", "bpmSync",
+                                       "delayMix", "reverbMix",
                                        "multiTapTime", "multiTapFeedback", "multiTapSpread", "multiTapMix",
                                        "tapeDrive", "tapeTone", "tapeFlutter", "tapeMix",
                                        "vinylAge", "vinylDust", "vinylWarp", "vinylMix",
+                                       "vocalFormant", "vocalBody", "vocalMix",
                                        "lofiBits", "lofiRate", "lofiMix",
                                        "dynThresholdDb", "dynRatio", "dynAttackMs", "dynReleaseMs", "dynMix",
                                        "stereoWidth", "monoMaker", "volume", "pan", "outputLimiter", "outputCeilingDb" };
@@ -1262,6 +1265,7 @@
             ensureParams (params, "sample");
             liveValues.setValue ("outputLimiter", 1.0f);
             liveValues.setValue ("retrigger", 1.0f);
+            liveValues.setValue ("bpmSync", 1.0f);
         };
 
         auto ensureProducerFxParams = [&]
@@ -1462,6 +1466,161 @@
                     addChildKnob (layout, panelId, "Delay", "delayMix", 384, 236);
                     addChildKnob (layout, panelId, "Verb", "reverbMix", 466, 236);
                     addChildSurface (layout, panelId, ElementType::GranularField, "Granular", "granularScan", 552, 236, 166, 118);
+                });
+            finishModernModule();
+            return;
+        }
+
+        if (moduleKey == "startereasysamplerworkstation")
+        {
+            ensureProducerSamplerParams (true);
+            liveValues.setValue ("sampleSliceCount", 16.0f);
+            liveValues.setValue ("granularOn", 0.0f);
+            liveValues.setValue ("bpmSync", 1.0f);
+            liveValues.setValue ("multiTapMix", 0.08f);
+            liveValues.setValue ("reverbMix", 0.14f);
+
+            ensureBlock ("starter_easy_sampler_source", "source", "samplePlayer", "Easy Sampler Source", "sampleStart", "starter", "source", "stereo",
+                         { { "sampleStart", 0.0f }, { "sampleLength", 1.0f }, { "samplePitch", 0.0f }, { "volume", 0.86f },
+                           { "bpmSync", 1.0f }, { "granularOn", 0.0f } });
+            ensureBlock ("starter_easy_sampler_chop", "source", "sliceChop", "Easy Sampler Slices", "sampleSlice", "starter", "source", "stereo",
+                         { { "sampleSlice", 0.0f }, { "sampleSliceCount", 16.0f }, { "sampleLength", 0.25f }, { "sampleGlitchGrid", 16.0f } });
+            ensureBlock ("starter_easy_sampler_filter", "filter", "stateVariable", "Easy Sampler Filter", "filterCutoff", "starter", "tone", "stereo",
+                         { { "filterCutoff", 6800.0f }, { "filterResonance", 0.12f } });
+            ensureBlock ("starter_easy_sampler_midi", "mod", "midiPlayground", "Easy Sampler MIDI", "arpLaneRate", "starter", "sequencer", "event",
+                         { { "arpLaneRate", 1.0f }, { "arpLaneGate", 0.62f }, { "arpLaneSwing", 0.04f }, { "arpLaneProbability", 1.0f },
+                           { "mpSampleControl", 1.0f }, { "sampleSliceCount", 16.0f }, { "retrigger", 1.0f } });
+            ensureBlock ("starter_easy_sampler_space", "fx", "multiTapDelay", "Easy Sampler Space", "multiTapMix", "creative", "space", "stereo",
+                         { { "multiTapTime", 0.25f }, { "multiTapFeedback", 0.18f }, { "multiTapSpread", 0.30f }, { "multiTapMix", 0.08f } });
+            ensureBlock ("starter_easy_sampler_output", "out", "limiter", "Easy Sampler Output", "outputCeilingDb", "starter", "output", "stereo",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "volume", 0.86f } });
+
+            addModulePanel ("Add Easy Sampler Workstation", "Easy Sampler Workstation", 900, 520,
+                [&] (LayoutModel& layout, const juce::String& panelId)
+                {
+                    addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Sample Library", juce::String(), 20, 36, 166, 158);
+                    addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Audio", "sampleStart", 204, 36, 166, 158);
+                    addChildSurface (layout, panelId, ElementType::Waveform, "Edit Sample", "sampleStart", 390, 36, 302, 82);
+                    addChildSurface (layout, panelId, ElementType::PadGrid, "Pads", "padGrid", 714, 36, 152, 152);
+
+                    addChildKnob (layout, panelId, "Start", "sampleStart", 394, 136);
+                    addChildKnob (layout, panelId, "Length", "sampleLength", 476, 136);
+                    addChildKnob (layout, panelId, "Pitch", "samplePitch", 558, 136);
+                    addChildKnob (layout, panelId, "Cutoff", "filterCutoff", 640, 136);
+                    addChildToggle (layout, panelId, "Sync", "bpmSync", 722, 204, 74, 30);
+                    addChildToggle (layout, panelId, "Reverse", "sampleReverse", 804, 204, 76, 30);
+
+                    addChildSurface (layout, panelId, ElementType::DrumGrid, "Pattern / MIDI", "arpLaneRate", 20, 230, 446, 172);
+                    addChildSurface (layout, panelId, ElementType::Keyboard, "Keys", juce::String(), 20, 430, 360, 58);
+                    addChildKnob (layout, panelId, "Rate", "arpLaneRate", 500, 244);
+                    addChildKnob (layout, panelId, "Swing", "arpLaneSwing", 582, 244);
+                    addChildKnob (layout, panelId, "Chance", "arpLaneProbability", 664, 244);
+                    addChildKnob (layout, panelId, "Slice", "sampleSlice", 500, 336);
+                    addChildKnob (layout, panelId, "Count", "sampleSliceCount", 582, 336);
+                    addChildKnob (layout, panelId, "Echo", "multiTapMix", 664, 336);
+                    addChildKnob (layout, panelId, "Out", "volume", 768, 350, 58);
+                });
+            finishModernModule();
+            return;
+        }
+
+        if (moduleKey == "startervocalchopinstrument")
+        {
+            ensureProducerSamplerParams (true);
+            liveValues.setValue ("sampleSliceCount", 12.0f);
+            liveValues.setValue ("vocalMix", 0.10f);
+            liveValues.setValue ("multiTapMix", 0.10f);
+            liveValues.setValue ("dynMix", 0.18f);
+            liveValues.setValue ("bpmSync", 1.0f);
+
+            ensureBlock ("starter_vocal_chop_source", "source", "sliceChop", "Vocal Chop Slicer", "sampleSlice", "starter", "source", "stereo",
+                         { { "sampleSlice", 0.0f }, { "sampleSliceCount", 12.0f }, { "sampleLength", 0.20f }, { "samplePitch", 0.0f },
+                           { "sampleGlitchGrid", 12.0f }, { "bpmSync", 1.0f }, { "volume", 0.82f } });
+            ensureBlock ("starter_vocal_chop_midi", "mod", "midiPlayground", "Vocal Chop MIDI", "arpLaneRate", "starter", "sequencer", "event",
+                         { { "arpLaneRate", 1.0f }, { "arpLaneGate", 0.58f }, { "arpLaneSwing", 0.06f }, { "arpLaneProbability", 1.0f },
+                           { "mpSampleControl", 1.0f }, { "sampleSliceCount", 12.0f }, { "retrigger", 1.0f } });
+            ensureBlock ("starter_vocal_chop_formant", "fx", "vocalFormant", "Vocal Color", "vocalMix", "creative", "tone", "stereo",
+                         { { "vocalFormant", 0.42f }, { "vocalBody", 0.32f }, { "vocalMix", 0.10f } });
+            ensureBlock ("starter_vocal_chop_dynamics", "fx", "dynamics", "Vocal Chop Leveler", "dynMix", "studio", "dynamics", "stereo",
+                         { { "dynThresholdDb", -20.0f }, { "dynRatio", 2.0f }, { "dynAttackMs", 8.0f }, { "dynReleaseMs", 120.0f }, { "dynMix", 0.18f } });
+            ensureBlock ("starter_vocal_chop_delay", "fx", "multiTapDelay", "Vocal Chop Delay", "multiTapMix", "creative", "space", "stereo",
+                         { { "multiTapTime", 0.25f }, { "multiTapFeedback", 0.20f }, { "multiTapSpread", 0.38f }, { "multiTapMix", 0.10f } });
+            ensureBlock ("starter_vocal_chop_output", "out", "limiter", "Vocal Chop Output", "outputCeilingDb", "starter", "output", "stereo",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "volume", 0.82f } });
+
+            addModulePanel ("Add Vocal Chop Instrument Starter", "Vocal Chop Instrument", 880, 500,
+                [&] (LayoutModel& layout, const juce::String& panelId)
+                {
+                    addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Vocal Takes", juce::String(), 20, 36, 150, 150);
+                    addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Vocal", "sampleStart", 188, 36, 150, 150);
+                    addChildSurface (layout, panelId, ElementType::Waveform, "Chop Markers", "sampleSlice", 356, 36, 318, 80);
+                    addChildSurface (layout, panelId, ElementType::PadGrid, "Chops", "padGrid", 700, 36, 146, 146);
+
+                    addChildKnob (layout, panelId, "Slice", "sampleSlice", 362, 134);
+                    addChildKnob (layout, panelId, "Count", "sampleSliceCount", 444, 134);
+                    addChildKnob (layout, panelId, "Pitch", "samplePitch", 526, 134);
+                    addChildKnob (layout, panelId, "Formant", "vocalFormant", 608, 134);
+                    addChildToggle (layout, panelId, "Sync", "bpmSync", 704, 196, 70, 30);
+                    addChildToggle (layout, panelId, "Reverse", "sampleReverse", 784, 196, 76, 30);
+
+                    addChildSurface (layout, panelId, ElementType::DrumGrid, "Chop Performance", "arpLaneRate", 20, 230, 456, 164);
+                    addChildSurface (layout, panelId, ElementType::Keyboard, "Playable Range", juce::String(), 20, 422, 360, 56);
+                    addChildKnob (layout, panelId, "Rate", "arpLaneRate", 506, 242);
+                    addChildKnob (layout, panelId, "Gate", "arpLaneGate", 588, 242);
+                    addChildKnob (layout, panelId, "Swing", "arpLaneSwing", 670, 242);
+                    addChildKnob (layout, panelId, "Comp", "dynMix", 506, 334);
+                    addChildKnob (layout, panelId, "Delay", "multiTapMix", 588, 334);
+                    addChildKnob (layout, panelId, "Out", "volume", 670, 334, 58);
+                });
+            finishModernModule();
+            return;
+        }
+
+        if (moduleKey == "starterbeateditingsampler")
+        {
+            ensureProducerSamplerParams (true);
+            liveValues.setValue ("sampleSliceCount", 32.0f);
+            liveValues.setValue ("bpmSync", 1.0f);
+            liveValues.setValue ("tapeMix", 0.08f);
+            liveValues.setValue ("lofiMix", 0.05f);
+
+            ensureBlock ("starter_beat_editor_source", "source", "sliceChop", "Beat Editor Slicer", "sampleSlice", "starter", "source", "stereo",
+                         { { "sampleSlice", 0.0f }, { "sampleSliceCount", 32.0f }, { "sampleLength", 0.18f }, { "sampleGlitchGrid", 32.0f },
+                           { "bpmSync", 1.0f }, { "volume", 0.84f } });
+            ensureBlock ("starter_beat_editor_pads", "source", "drumRack", "Beat Editor Pad Rack", "pad1Volume", "starter", "source", "stereo",
+                         { { "pad1Volume", 1.0f }, { "pad2Volume", 0.92f }, { "pad3Volume", 0.86f }, { "pad4Volume", 0.86f }, { "volume", 0.82f } });
+            ensureBlock ("starter_beat_editor_midi", "mod", "drumSequencer", "Beat Editor Pattern", "arpLaneRate", "starter", "sequencer", "event",
+                         { { "arpLaneRate", 1.0f }, { "arpLaneSwing", 0.08f }, { "arpLaneProbability", 1.0f }, { "retrigger", 1.0f } });
+            ensureBlock ("starter_beat_editor_tape", "fx", "tape", "Beat Editor Tape", "tapeMix", "creative", "tone", "stereo",
+                         { { "tapeDrive", 0.16f }, { "tapeTone", 0.46f }, { "tapeFlutter", 0.04f }, { "tapeMix", 0.08f } });
+            ensureBlock ("starter_beat_editor_lofi", "fx", "lofi", "Beat Editor LoFi", "lofiMix", "creative", "destruction", "stereo",
+                         { { "lofiBits", 14.0f }, { "lofiRate", 0.10f }, { "lofiMix", 0.05f } });
+            ensureBlock ("starter_beat_editor_output", "out", "limiter", "Beat Editor Output", "outputCeilingDb", "starter", "output", "stereo",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "volume", 0.84f } });
+
+            addModulePanel ("Add Beat Editing Sampler Starter", "Beat Editing Sampler", 920, 520,
+                [&] (LayoutModel& layout, const juce::String& panelId)
+                {
+                    addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Beat Crate", juce::String(), 20, 36, 154, 150);
+                    addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Beat", "sampleStart", 192, 36, 154, 150);
+                    addChildSurface (layout, panelId, ElementType::Waveform, "Beat Slices", "sampleSlice", 366, 36, 332, 80);
+                    addChildSurface (layout, panelId, ElementType::PadGrid, "Slice Pads", "padGrid", 724, 36, 152, 152);
+
+                    addChildKnob (layout, panelId, "Slice", "sampleSlice", 372, 134);
+                    addChildKnob (layout, panelId, "Count", "sampleSliceCount", 454, 134);
+                    addChildKnob (layout, panelId, "Pitch", "samplePitch", 536, 134);
+                    addChildKnob (layout, panelId, "Glitch", "sampleGlitch", 618, 134);
+                    addChildToggle (layout, panelId, "Sync", "bpmSync", 724, 198, 70, 30);
+                    addChildToggle (layout, panelId, "Retrig", "retrigger", 804, 198, 76, 30);
+
+                    addChildSurface (layout, panelId, ElementType::DrumGrid, "Beat Pattern", "arpLaneRate", 20, 232, 520, 176);
+                    addChildSurface (layout, panelId, ElementType::Keyboard, "Keys", juce::String(), 20, 434, 364, 56);
+                    addChildKnob (layout, panelId, "Rate", "arpLaneRate", 574, 244);
+                    addChildKnob (layout, panelId, "Swing", "arpLaneSwing", 656, 244);
+                    addChildKnob (layout, panelId, "Chance", "arpLaneProbability", 738, 244);
+                    addChildKnob (layout, panelId, "Tape", "tapeMix", 574, 336);
+                    addChildKnob (layout, panelId, "LoFi", "lofiMix", 656, 336);
+                    addChildKnob (layout, panelId, "Out", "volume", 738, 336, 58);
                 });
             finishModernModule();
             return;
@@ -1907,6 +2066,156 @@
             finishModernModule();
             return;
         }
+
+        if (moduleKey == "recorddropzone" || moduleKey == "vocalchoppad"
+            || moduleKey == "beatsliceeditor" || moduleKey == "looptimestretch"
+            || moduleKey == "samplefxstrip")
+        {
+            ensureProducerSamplerParams (moduleKey != "samplefxstrip");
+
+            if (moduleKey == "recorddropzone")
+            {
+                ensureBlock ("record_drop_zone_source", "source", "samplePlayer", "Record / Drop Zone Source", "sampleStart", "sampler", "source", "stereo",
+                             { { "sampleStart", 0.0f }, { "sampleLength", 1.0f }, { "samplePitch", 0.0f }, { "bpmSync", 1.0f }, { "volume", 0.88f } });
+                ensureBlock ("record_drop_zone_output", "out", "limiter", "Record / Drop Zone Output", "outputCeilingDb", "sampler", "output", "stereo",
+                             { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "volume", 0.88f } });
+                addModulePanel ("Add Record Drop Zone Module", "Record / Drop Zone", 640, 300,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Recordings", juce::String(), 18, 36, 150, 128);
+                        addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop / Record", "sampleStart", 184, 36, 170, 128);
+                        addChildSurface (layout, panelId, ElementType::Waveform, "Captured Sample", "sampleStart", 374, 36, 218, 72);
+                        addChildKnob (layout, panelId, "Start", "sampleStart", 374, 132);
+                        addChildKnob (layout, panelId, "Length", "sampleLength", 456, 132);
+                        addChildKnob (layout, panelId, "Pitch", "samplePitch", 538, 132);
+                        addChildSurface (layout, panelId, ElementType::Keyboard, "Map To Keys", juce::String(), 18, 214, 360, 52);
+                        addChildToggle (layout, panelId, "Sync", "bpmSync", 408, 226, 72, 28);
+                        addChildKnob (layout, panelId, "Out", "volume", 514, 204, 58);
+                    });
+            }
+            else if (moduleKey == "vocalchoppad")
+            {
+                liveValues.setValue ("sampleSliceCount", 12.0f);
+                liveValues.setValue ("vocalMix", 0.10f);
+                ensureBlock ("vocal_chop_pad_source", "source", "sliceChop", "Vocal Chop Pad Source", "sampleSlice", "sampler", "source", "stereo",
+                             { { "sampleSlice", 0.0f }, { "sampleSliceCount", 12.0f }, { "sampleLength", 0.20f }, { "samplePitch", 0.0f },
+                               { "sampleGlitchGrid", 12.0f }, { "bpmSync", 1.0f }, { "volume", 0.82f } });
+                ensureBlock ("vocal_chop_pad_formant", "fx", "vocalFormant", "Vocal Chop Color", "vocalMix", "creative", "tone", "stereo",
+                             { { "vocalFormant", 0.42f }, { "vocalBody", 0.32f }, { "vocalMix", 0.10f } });
+                ensureBlock ("vocal_chop_pad_delay", "fx", "multiTapDelay", "Vocal Chop Echo", "multiTapMix", "creative", "space", "stereo",
+                             { { "multiTapTime", 0.25f }, { "multiTapFeedback", 0.18f }, { "multiTapSpread", 0.34f }, { "multiTapMix", 0.08f } });
+                ensureBlock ("vocal_chop_pad_output", "out", "limiter", "Vocal Chop Output", "outputCeilingDb", "sampler", "output", "stereo",
+                             { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "volume", 0.82f } });
+                addModulePanel ("Add Vocal Chop Pad Module", "Vocal Chop Pad", 700, 340,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Vocal", "sampleStart", 18, 36, 150, 124);
+                        addChildSurface (layout, panelId, ElementType::Waveform, "Chops", "sampleSlice", 184, 36, 250, 66);
+                        addChildSurface (layout, panelId, ElementType::PadGrid, "Trigger Pads", "padGrid", 460, 36, 150, 150);
+                        addChildKnob (layout, panelId, "Slice", "sampleSlice", 184, 126);
+                        addChildKnob (layout, panelId, "Count", "sampleSliceCount", 266, 126);
+                        addChildKnob (layout, panelId, "Pitch", "samplePitch", 348, 126);
+                        addChildKnob (layout, panelId, "Formant", "vocalFormant", 184, 222);
+                        addChildKnob (layout, panelId, "Body", "vocalBody", 266, 222);
+                        addChildKnob (layout, panelId, "Delay", "multiTapMix", 348, 222);
+                        addChildSurface (layout, panelId, ElementType::Keyboard, "Keys", juce::String(), 458, 218, 196, 46);
+                    });
+            }
+            else if (moduleKey == "beatsliceeditor")
+            {
+                liveValues.setValue ("sampleSliceCount", 32.0f);
+                ensureBlock ("beat_slice_editor_source", "source", "sliceChop", "Beat Slice Editor", "sampleSlice", "sampler", "source", "stereo",
+                             { { "sampleSlice", 0.0f }, { "sampleSliceCount", 32.0f }, { "sampleLength", 0.18f }, { "sampleGlitchGrid", 32.0f },
+                               { "bpmSync", 1.0f }, { "volume", 0.84f } });
+                ensureBlock ("beat_slice_editor_midi", "mod", "midiPlayground", "Beat Slice MIDI", "arpLaneRate", "midi", "sequencer", "event",
+                             { { "arpLaneRate", 1.0f }, { "arpLaneGate", 0.52f }, { "arpLaneSwing", 0.08f }, { "arpLaneProbability", 1.0f },
+                               { "mpSampleControl", 1.0f }, { "sampleSliceCount", 32.0f }, { "retrigger", 1.0f } });
+                ensureBlock ("beat_slice_editor_output", "out", "limiter", "Beat Slice Output", "outputCeilingDb", "sampler", "output", "stereo",
+                             { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "volume", 0.84f } });
+                addModulePanel ("Add Beat Slice Editor Module", "Beat Slice Editor", 760, 380,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Beat", "sampleStart", 18, 36, 150, 126);
+                        addChildSurface (layout, panelId, ElementType::Waveform, "Slice Editor", "sampleSlice", 186, 36, 330, 76);
+                        addChildSurface (layout, panelId, ElementType::PadGrid, "Slices", "padGrid", 540, 36, 150, 150);
+                        addChildKnob (layout, panelId, "Slice", "sampleSlice", 190, 132);
+                        addChildKnob (layout, panelId, "Count", "sampleSliceCount", 272, 132);
+                        addChildKnob (layout, panelId, "Length", "sampleLength", 354, 132);
+                        addChildKnob (layout, panelId, "Pitch", "samplePitch", 436, 132);
+                        addChildSurface (layout, panelId, ElementType::DrumGrid, "Trigger Pattern", "arpLaneRate", 18, 216, 436, 128);
+                        addChildKnob (layout, panelId, "Rate", "arpLaneRate", 478, 226);
+                        addChildKnob (layout, panelId, "Swing", "arpLaneSwing", 560, 226);
+                        addChildToggle (layout, panelId, "Sync", "bpmSync", 640, 244, 70, 28);
+                    });
+            }
+            else if (moduleKey == "looptimestretch")
+            {
+                liveValues.setValue ("bpmSync", 1.0f);
+                ensureBlock ("loop_time_stretch_source", "source", "samplePlayer", "Loop Time Stretch Source", "sampleStart", "sampler", "source", "stereo",
+                             { { "sampleStart", 0.0f }, { "sampleLength", 1.0f }, { "samplePitch", 0.0f }, { "bpmSync", 1.0f }, { "volume", 0.86f } });
+                ensureBlock ("loop_time_stretch_filter", "filter", "stateVariable", "Loop Tone", "filterCutoff", "sampler", "tone", "stereo",
+                             { { "filterCutoff", 7200.0f }, { "filterResonance", 0.10f } });
+                ensureBlock ("loop_time_stretch_output", "out", "limiter", "Loop Time Stretch Output", "outputCeilingDb", "sampler", "output", "stereo",
+                             { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "volume", 0.86f } });
+                addModulePanel ("Add Loop Time Stretch Module", "Loop Time Stretch", 660, 300,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Loop", "sampleStart", 18, 36, 150, 126);
+                        addChildSurface (layout, panelId, ElementType::Waveform, "Tempo Loop", "sampleStart", 186, 36, 290, 76);
+                        addChildKnob (layout, panelId, "Start", "sampleStart", 188, 134);
+                        addChildKnob (layout, panelId, "Length", "sampleLength", 270, 134);
+                        addChildKnob (layout, panelId, "Pitch", "samplePitch", 352, 134);
+                        addChildValue (layout, panelId, "BPM", "projectBpm", 462, 142, 70, 30);
+                        addChildToggle (layout, panelId, "Sync", "bpmSync", 548, 142, 70, 30);
+                        addChildSurface (layout, panelId, ElementType::Keyboard, "Trigger Keys", juce::String(), 18, 222, 350, 46);
+                        addChildKnob (layout, panelId, "Tone", "filterCutoff", 402, 204);
+                        addChildKnob (layout, panelId, "Out", "volume", 484, 204, 58);
+                    });
+            }
+            else
+            {
+                ensureParams ({ "eqEnabled", "eqMix", "eqBand1On", "eqBand1Freq", "eqBand1GainDb",
+                                "eqBand2On", "eqBand2Freq", "eqBand2GainDb", "outputGainDb" }, "fx");
+                liveValues.setValue ("eqEnabled", 1.0f);
+                liveValues.setValue ("eqMix", 1.0f);
+                liveValues.setValue ("dynMix", 0.18f);
+                liveValues.setValue ("multiTapMix", 0.08f);
+                liveValues.setValue ("tapeMix", 0.08f);
+                liveValues.setValue ("lofiMix", 0.05f);
+                ensureBlock ("sample_fx_strip_eq", "filter", "dynamicEq", "Sample Clean EQ", "eqMix", "studio", "tone", "stereo",
+                             { { "eqEnabled", 1.0f }, { "eqMix", 1.0f }, { "eqBand1On", 1.0f }, { "eqBand1Freq", 120.0f },
+                               { "eqBand1GainDb", -0.8f }, { "eqBand2On", 1.0f }, { "eqBand2Freq", 6200.0f }, { "eqBand2GainDb", -0.4f } });
+                ensureBlock ("sample_fx_strip_dynamics", "fx", "dynamics", "Sample Leveler", "dynMix", "studio", "dynamics", "stereo",
+                             { { "dynThresholdDb", -18.0f }, { "dynRatio", 2.0f }, { "dynAttackMs", 8.0f }, { "dynReleaseMs", 140.0f }, { "dynMix", 0.18f } });
+                ensureBlock ("sample_fx_strip_delay", "fx", "multiTapDelay", "Sample Delay", "multiTapMix", "creative", "space", "stereo",
+                             { { "multiTapTime", 0.25f }, { "multiTapFeedback", 0.18f }, { "multiTapSpread", 0.32f }, { "multiTapMix", 0.08f } });
+                ensureBlock ("sample_fx_strip_tape", "fx", "tape", "Sample Tape", "tapeMix", "creative", "tone", "stereo",
+                             { { "tapeDrive", 0.16f }, { "tapeTone", 0.46f }, { "tapeFlutter", 0.04f }, { "tapeMix", 0.08f } });
+                ensureBlock ("sample_fx_strip_lofi", "fx", "lofi", "Sample LoFi", "lofiMix", "creative", "destruction", "stereo",
+                             { { "lofiBits", 14.0f }, { "lofiRate", 0.10f }, { "lofiMix", 0.05f } });
+                ensureBlock ("sample_fx_strip_output", "out", "limiter", "Sample FX Output", "outputCeilingDb", "studio", "output", "stereo",
+                             { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "outputGainDb", 0.0f } });
+                addModulePanel ("Add Sample FX Strip Module", "Sample FX Strip", 780, 330,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::EqCurve, "Clean EQ", "eqMix", 18, 38, 230, 98);
+                        addChildSurface (layout, panelId, ElementType::Waveform, "Sample Motion", "multiTapMix", 18, 170, 230, 70);
+                        addChildKnob (layout, panelId, "Low Cut", "eqBand1Freq", 280, 44);
+                        addChildKnob (layout, panelId, "Presence", "eqBand2GainDb", 362, 44);
+                        addChildKnob (layout, panelId, "Comp", "dynMix", 444, 44);
+                        addChildKnob (layout, panelId, "Delay", "multiTapMix", 526, 44);
+                        addChildKnob (layout, panelId, "Tape", "tapeMix", 280, 172);
+                        addChildKnob (layout, panelId, "LoFi", "lofiMix", 362, 172);
+                        addChildKnob (layout, panelId, "Width", "stereoWidth", 444, 172);
+                        addChildKnob (layout, panelId, "Ceiling", "outputCeilingDb", 526, 172);
+                        addChildSurface (layout, panelId, ElementType::Meter, "Output", "outputGainDb", 682, 44, 48, 210);
+                    });
+            }
+
+            finishModernModule();
+            return;
+        }
+
         if (moduleKey == "sampleplayer" || moduleKey == "slicechop" || moduleKey == "scratchdeck" || moduleKey == "granularsampler")
         {
             ensureParams ({ "sampleStart", "sampleLength", "sampleSlice", "sampleSliceCount", "samplePitch",
@@ -2106,7 +2415,7 @@
             return;
         }
 
-        if (moduleKey == "eightoheightkit" || moduleKey == "boombappadbank")
+        if (moduleKey == "eightoheightkit" || moduleKey == "boombappadbank" || moduleKey == "quickdrumkit")
         {
             ensureProducerSamplerParams (true);
 
@@ -2141,7 +2450,7 @@
                         addChildKnob (layout, panelId, "Out", "volume", 590, 234, 58);
                     });
             }
-            else
+            else if (moduleKey == "boombappadbank")
             {
                 liveValues.setValue ("vinylMix", 0.18f);
                 liveValues.setValue ("lofiMix", 0.10f);
@@ -2168,6 +2477,33 @@
                         addChildKnob (layout, panelId, "Swing", "arpLaneSwing", 462, 244);
                         addChildKnob (layout, panelId, "Vinyl", "vinylMix", 544, 244);
                         addChildKnob (layout, panelId, "LoFi", "lofiMix", 626, 244);
+                    });
+            }
+            else
+            {
+                liveValues.setValue ("sampleSliceCount", 16.0f);
+                liveValues.setValue ("bpmSync", 1.0f);
+                ensureBlock ("quick_drum_kit_rack", "source", "drumRack", "Quick Drum Kit Rack", "pad1Volume", "drums", "source", "stereo",
+                             { { "pad1Volume", 1.0f }, { "pad2Volume", 0.95f }, { "pad3Volume", 0.86f }, { "pad4Volume", 0.88f },
+                               { "pad1Pitch", 0.0f }, { "pad2Pitch", 0.0f }, { "pad3Pitch", 0.0f }, { "pad4Pitch", 0.0f }, { "volume", 0.84f } });
+                ensureBlock ("quick_drum_kit_seq", "mod", "drumSequencer", "Quick Drum Pattern", "arpLaneRate", "midi", "sequencer", "event",
+                             { { "arpLaneRate", 1.0f }, { "arpLaneSwing", 0.06f }, { "arpLaneProbability", 1.0f }, { "retrigger", 1.0f } });
+                ensureBlock ("quick_drum_kit_mixer", "out", "drumMixer", "Quick Drum Mixer", "pad1Volume", "drums", "mix", "stereo",
+                             { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "volume", 0.84f } });
+
+                addModulePanel ("Add Quick Drum Kit Module", "Quick Drum Kit", 700, 390,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Drum Library", juce::String(), 18, 36, 148, 126);
+                        addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Drums", "sampleStart", 184, 36, 148, 126);
+                        addChildSurface (layout, panelId, ElementType::PadGrid, "Playable Pads", "padGrid", 356, 36, 190, 190);
+                        addChildKnob (layout, panelId, "Pad 1 Vol", "pad1Volume", 578, 42);
+                        addChildKnob (layout, panelId, "Pad 2 Vol", "pad2Volume", 578, 122);
+                        addChildKnob (layout, panelId, "Pad 1 Tune", "pad1Pitch", 496, 230);
+                        addChildKnob (layout, panelId, "Pad 2 Tune", "pad2Pitch", 578, 230);
+                        addChildSurface (layout, panelId, ElementType::DrumGrid, "Pattern", "arpLaneRate", 18, 214, 420, 132);
+                        addChildKnob (layout, panelId, "Swing", "arpLaneSwing", 496, 310);
+                        addChildKnob (layout, panelId, "Out", "volume", 578, 310, 58);
                     });
             }
 
