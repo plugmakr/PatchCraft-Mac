@@ -154,6 +154,8 @@ namespace patchcraft
         PadGrid,
         DrumGrid,
         ArpLane,
+        SequencerLane,
+        PianoRoll,
         Mixer,
         MacroControl,
         ModMatrix,
@@ -276,6 +278,22 @@ namespace patchcraft
         int arpLaneFillPulses = 0;
         float arpLaneFillProbability = 0.0f;
 
+        // Linear multi-lane sequencer UI (SequencerLane only).
+        int seqLaneIndex = 0;
+        int seqLaneSteps = 16;
+        juce::String seqLaneType { "gate" }; // gate, value, pitch, chance
+        juce::String seqLaneDirection { "forward" }; // forward, reverse, pingpong, random
+        juce::String seqLaneTarget { "" }; // What parameter this lane modulates
+        juce::Colour seqLaneColour { 0xff79c267 };
+
+        // Runtime piano-roll / MIDI clip editor (PianoRoll only).
+        // The note data itself lives in the "pianoRoll" DSP block; these fields
+        // describe the visible grid window and default editing resolution.
+        int pianoRollSteps = 16;        // number of step columns in the loop
+        int pianoRollStepsPerBeat = 4;  // grid resolution (4 = 16th notes)
+        int pianoRollLowNote = 48;      // bottom visible pitch (C3)
+        int pianoRollRows = 25;         // number of visible pitch rows (bottom..top)
+
         // Runtime mixer UI (Mixer only).
         // auto: multi-instrument layers when present, otherwise main output.
         // layers: force multi-layer mixer behaviour.
@@ -379,6 +397,18 @@ namespace patchcraft
         bool oneShot        = false;    // Ignore note-off and play until sample end
         int  triggerProbability = 100;  // Percent chance a note-on will trigger this zone
         float bpm           = 120.0f;   // BPM for sample playback (120 = default)
+
+        // Performance play mode (beatmaker pad behaviour). -1 = derive from the
+        // legacy oneShot / loopEnabled flags for backward compatibility.
+        //   0 = Gate    : sounds while the note is held, releases on note-off
+        //   1 = Trigger : one-shot, ignores note-off, plays to the end
+        //   2 = Hold    : latches on, ignores note-off (re-trigger restarts)
+        //   3 = Loop    : loops the sample/loop region while held
+        int  playMode       = -1;
+
+        // Editable hot-cue / slice markers (sample positions) used by the
+        // beatmaker chop workflow. Independent of key/velocity zone bounds.
+        std::vector<int> cuePoints;
 
         // Runtime MIDI-player assignment. A zone can carry a MIDI loop that
         // triggers, pitches, slices, or modulates this sample in the Player.

@@ -474,6 +474,7 @@ namespace patchcraft
             juce::dontSendNotification);
         textEndpointEditor.setText (config.textEndpoint, false);
         textModelEditor.setText (config.textModel, false);
+        textApiKeyEditor.setText (config.textApiKey, false);
         
         murekaApiKeyEditor.setText (config.murekaApiKey, false);
         pluginEndpointEditor.setText (config.pluginClubEndpoint, false);
@@ -498,6 +499,7 @@ namespace patchcraft
             : (textProviderBox.getSelectedId() == 2 ? AiAssistService::TextProviderMode::LocalLlamaServer : AiAssistService::TextProviderMode::BuiltInTemplates);
         config.textEndpoint = textEndpointEditor.getText().trim();
         config.textModel = textModelEditor.getText().trim();
+        config.textApiKey = textApiKeyEditor.getText().trim();
         
         config.murekaApiKey = murekaApiKeyEditor.getText().trim();
 #endif

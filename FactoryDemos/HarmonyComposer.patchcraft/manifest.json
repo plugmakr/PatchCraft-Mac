@@ -1,0 +1,33 @@
+{
+  "formatVersion": 1,
+  "instrumentName": "Harmonic Motion",
+  "creator": "AudiCode",
+  "description": "A focused Harmony Composer demo showing one clear path: harmony generates MIDI and the DSP synth generates sound.",
+  "category": "Harmony Instrument",
+  "engine": "synth",
+  "backgroundImage": "assets/background.png",
+  "libraryThumbnail": "assets/library-artwork.png",
+  "defaultPreset": "C Lydian Glass",
+  "createdWith": "PatchCraft Studio",
+  "version": "1.0.0",
+  "playerDisplayName": "Harmonic Motion",
+  "playerTagline": "Harmony-driven DSP instrument",
+  "playerAccentColour": "ff43e0c0",
+  "playerPanelColour": "ff0a1515",
+  "playerBackgroundColour": "ff06100f",
+  "playerTitleBannerImage": "assets/player-title-banner.png",
+  "playerTitleBarTheme": "minimal",
+  "playerTitleTextPlacement": "left",
+  "playerTitleButtonStyle": "outlined",
+  "playerTitleFontFamily": "Segoe UI",
+  "playerShowPatchCraftBranding": false,
+  "tags": [
+    "composer",
+    "harmony",
+    "midi",
+    "musical",
+    "synth",
+    "factory-demo",
+    "player-ready"
+  ]
+}

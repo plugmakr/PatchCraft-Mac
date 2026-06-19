@@ -41,14 +41,34 @@ namespace patchcraft
                              float pitchOffset, bool reverseOverride,
                              float tempoRatio,
                              float padGain,
-                             float padPanOffset)
+                             float padPanOffset,
+                             float extraGainIn,
+                             juce::uint32 voiceStartOrder)
     {
         PC_DBG("[SampleVoice::start] note=%d vel=%.2f", midiNote, velocity);
 
         sample      = s;
         note        = midiNote;
         oneShot     = s != nullptr && s->zone.oneShot;
+        loopForced  = false;
+        // Resolve the performance play mode. -1 falls back to the legacy flags.
+        if (s != nullptr)
+        {
+            switch (s->zone.playMode)
+            {
+                case 0: oneShot = false; break;               // Gate
+                case 1: oneShot = true;  break;               // Trigger (one-shot)
+                case 2: oneShot = true;  break;               // Hold / latch
+                case 3: oneShot = false; loopForced = true; break; // Loop
+                default: break;                               // -1 = legacy
+            }
+        }
         chokeGroup  = s != nullptr ? juce::jlimit (0, 127, s->zone.chokeGroup) : 0;
+        priority    = s != nullptr ? s->zone.priority : 0;
+        startOrder  = voiceStartOrder;
+        releasing   = false;
+        lastEnvLevel = 1.0f;
+        extraGain   = juce::jlimit (0.0f, 4.0f, extraGainIn);
         envParams   = adsr;
         env.setParameters (envParams);
         env.reset();
@@ -80,6 +100,22 @@ namespace patchcraft
             reversePlayback = s->zone.reverse || reverseOverride;
             position = reversePlayback ? (double) (playEnd - 1) : (double) playStart;
 
+            // Pre-compute an equal-power loop crossfade length to remove the
+            // click at the loop seam. Capped to a musically short window and to
+            // a fraction of the loop so very short loops stay clean.
+            loopCrossfade = 0;
+            if (s->zone.loopEnabled || loopForced)
+            {
+                const int loopStart = juce::jlimit (playStart, playEnd - 1, s->zone.loopStart);
+                const int loopEnd = s->zone.loopEnd > loopStart
+                    ? juce::jlimit (loopStart + 1, playEnd, s->zone.loopEnd)
+                    : playEnd;
+                const int loopLen = juce::jmax (1, loopEnd - loopStart);
+                const int maxXfade = juce::jmin (1024, loopLen / 4);
+                loopCrossfade = juce::jlimit (0, maxXfade,
+                                              juce::roundToInt (currentSampleRate * 0.004)); // ~4 ms
+            }
+
             active.store (true, std::memory_order_release);
 
             const auto trackedSemitones = (double) (midiNote - s->zone.rootNote)
@@ -106,7 +142,11 @@ namespace patchcraft
 
     void SampleVoice::release()
     {
-        if (active.load (std::memory_order_acquire)) env.noteOff();
+        if (active.load (std::memory_order_acquire))
+        {
+            env.noteOff();
+            releasing = true;
+        }
     }
 
     void SampleVoice::kill()
@@ -115,7 +155,10 @@ namespace patchcraft
         env.reset();
         sample = nullptr;
         oneShot = false;
+        loopForced = false;
         chokeGroup = 0;
+        releasing = false;
+        lastEnvLevel = 0.0f;
     }
 
     void SampleVoice::render (juce::AudioBuffer<float>& dest, int startSample, int numSamples)
@@ -146,25 +189,26 @@ namespace patchcraft
         auto* outR = dest.getNumChannels() > 1 ? dest.getWritePointer (1, startSample) : nullptr;
         if (! outL) { kill(); return; }
 
+        const int loopStartIdx = juce::jlimit (playStart, playEnd - 1, s->zone.loopStart);
+        const int loopEndIdx = s->zone.loopEnd > loopStartIdx
+            ? juce::jlimit (loopStartIdx + 1, playEnd, s->zone.loopEnd)
+            : playEnd;
+        const bool loopActive = (s->zone.loopEnabled || loopForced) && loopEndIdx > loopStartIdx + 1;
+        const double loopLenD = (double) (loopEndIdx - loopStartIdx);
+
         for (int i = 0; i < numSamples; ++i)
         {
             if ((! reversePlayback && position >= (double) (playEnd - 1))
                 || (reversePlayback && position <= (double) playStart))
             {
-                const int loopStart = juce::jlimit (playStart, playEnd - 1, s->zone.loopStart);
-                const int loopEnd = s->zone.loopEnd > loopStart
-                    ? juce::jlimit (loopStart + 1, playEnd, s->zone.loopEnd)
-                    : playEnd;
-
-                if (s->zone.loopEnabled && loopEnd > loopStart + 1)
+                if (loopActive)
                 {
-                    const double loopLen = loopEnd - loopStart;
                     if (reversePlayback)
-                        while (position <= loopStart)
-                            position += loopLen;
+                        while (position <= loopStartIdx)
+                            position += loopLenD;
                     else
-                        while (position >= loopEnd)
-                            position -= loopLen;
+                        while (position >= loopEndIdx)
+                            position -= loopLenD;
                 }
                 else
                 {
@@ -174,17 +218,38 @@ namespace patchcraft
             }
 
             const int idx0 = juce::jlimit (0, length - 1, (int) position);
-            const float sL = cubicSample (l, length, position);
-            const float sR = cubicSample (r, length, position);
+            float sL = cubicSample (l, length, position);
+            float sR = cubicSample (r, length, position);
+
+            // Equal-power loop crossfade: as the playhead approaches the loop
+            // end, fade in the matching position from just after the loop start
+            // so the seam is seamless instead of a hard jump/click.
+            if (loopActive && loopCrossfade > 0 && ! reversePlayback)
+            {
+                const double distToEnd = (double) loopEndIdx - position;
+                if (distToEnd >= 0.0 && distToEnd < (double) loopCrossfade)
+                {
+                    const double tailPos = position - loopLenD;
+                    if (tailPos >= 0.0)
+                    {
+                        const float t = (float) (distToEnd / (double) loopCrossfade); // 1->0 across fade
+                        const float wOut = std::sin (t * 0.5f * juce::MathConstants<float>::pi);
+                        const float wIn  = std::cos (t * 0.5f * juce::MathConstants<float>::pi);
+                        sL = sL * wOut + cubicSample (l, length, tailPos) * wIn;
+                        sR = sR * wOut + cubicSample (r, length, tailPos) * wIn;
+                    }
+                }
+            }
 
             const float ev = env.getNextSample();
+            lastEnvLevel = ev;
             if (! env.isActive())
             {
                 kill();
                 break;
             }
 
-            const float g = ev * velocityGain;
+            const float g = ev * velocityGain * extraGain;
             float fadeGain = 1.0f;
             if (s->zone.fadeInLength > 0)
             {

@@ -35,7 +35,8 @@ namespace patchcraft
             ExportChecklist,
             GenerateFaustDsp,
             GenerateMidiJson,
-            GeneratePresetBank
+            GeneratePresetBank,
+            GeneratePScript
         };
 
         struct ProjectContextPack
@@ -114,7 +115,7 @@ namespace patchcraft
             
             TextProviderMode textProvider = TextProviderMode::CloudOpenAICompatible;
             juce::String textEndpoint { "https://api.deepseek.com/v1/chat/completions" };
-            juce::String textModel { "deepseek-coder" };
+            juce::String textModel { "deepseek-chat" };
             juce::String textApiKey;
             
             int cloudTimeoutMs = 60000;

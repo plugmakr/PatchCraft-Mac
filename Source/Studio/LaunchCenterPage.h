@@ -42,6 +42,8 @@ namespace patchcraft
         juce::Label subtitle;
         juce::Label statusBadge;
         juce::Label summaryLabel;
+        juce::Label exportShipLabel;
+        juce::Label exportToolsLabel;
 
         juce::TextButton refreshButton { "Run Launch Doctor" };
         juce::TextButton outputFolderButton { "Output Folder" };
@@ -70,6 +72,15 @@ namespace patchcraft
         juce::Viewport demoViewport;
         juce::Component demoContent;
         std::vector<std::unique_ptr<DemoTile>> demoTiles;
+
+        enum class ContentTab { Overview, Create, Demos, Doctor };
+        ContentTab activeTab = ContentTab::Overview;
+        juce::TextButton tabOverview { "Overview" };
+        juce::TextButton tabCreate { "Create" };
+        juce::TextButton tabDemos { "Demos" };
+        juce::TextButton tabDoctor { "Launch Doctor" };
+        juce::Label doctorTitle;
+        juce::Label doctorBody;
 
         juce::Viewport checksViewport;
         juce::Component checksContent;
@@ -116,6 +127,7 @@ namespace patchcraft
         juce::String buildWindowsInstallerScript() const;
         juce::String buildMacInstallerNotes() const;
         juce::String buildActivationFlowMarkdown() const;
+        juce::var buildLaunchArtifactManifest (const juce::File& launchFolder) const;
         juce::var buildPluginClubMetadataPreview() const;
         juce::var buildWhiteLabelProductManifest() const;
         juce::var buildReleaseManifest() const;
@@ -129,6 +141,9 @@ namespace patchcraft
                           const juce::String& message,
                           juce::MessageBoxIconType icon) const;
         void styleActionButton (juce::TextButton& button, bool primary);
+        void setActiveTab (ContentTab tab);
+        void updateTabBar();
+        void applyTabVisibility();
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LaunchCenterPage)
     };

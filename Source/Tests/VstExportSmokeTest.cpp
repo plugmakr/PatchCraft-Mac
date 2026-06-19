@@ -163,6 +163,15 @@ int main (int argc, char** argv)
         std::cout << "  fx template: " << fxTemplateEnv.toStdString() << std::endl;
     }
 
+    const auto composerTemplateEnv = locateTemplate ("PATCHCRAFT_COMPOSER_TEMPLATE",
+                                                     "PatchCraftComposer_artefacts",
+                                                     "PatchCraft Composer.vst3");
+    if (composerTemplateEnv.isNotEmpty() && juce::File (composerTemplateEnv).exists())
+    {
+        setEnv ("PATCHCRAFT_COMPOSER_TEMPLATE", composerTemplateEnv);
+        std::cout << "  composer template: " << composerTemplateEnv.toStdString() << std::endl;
+    }
+
     // ------------------------------------------------------------------
     // Build a project with just enough state to exercise the export path
     // (manifest + a minimum layout). The default demo pack pulls in a lot
@@ -299,6 +308,20 @@ int main (int argc, char** argv)
 
     checkModuleInfoMetadata (resources, options, "PatchCraft Player",
                              "506372665063706C", "Instrument");
+
+    if (result.success)
+    {
+        const auto replaceResult = patchcraft::VstExportModule::exportPlugin (project, options);
+        check (replaceResult.success, "re-export over an existing VST3 bundle succeeds");
+        if (! replaceResult.success)
+            std::cout << "    message: " << replaceResult.message.toStdString() << std::endl;
+        if (replaceResult.success)
+        {
+            check (replaceResult.bundlePath.exists(), "re-exported bundle still exists");
+            check (replaceResult.bundlePath.getFileName() == "Smoke_Test_Plugin.vst3",
+                   "re-export keeps the expected bundle name when the old bundle is replaceable");
+        }
+    }
 
     // Real authoring projects can contain stale DSP-builder graph edges or
     // older template controls whose IDs imply performance parameters but do
@@ -446,6 +469,56 @@ int main (int argc, char** argv)
         const auto fxResources = fxContents.getChildFile ("Resources");
         checkModuleInfoMetadata (fxResources, fxOptions, "PatchCraft Player FX",
                                  "5063726650636678", "Fx");
+    }
+
+    if (composerTemplateEnv.isNotEmpty() && juce::File (composerTemplateEnv).exists())
+    {
+        patchcraft::PatchCraftProject composerProject;
+        composerProject.getManifest().instrumentName = "Smoke Test Composer";
+        composerProject.getManifest().creator = "PatchCraft QA";
+        stripProjectForExportSmoke (composerProject);
+
+        patchcraft::DspBlock composer;
+        composer.id = "smoke_harmony_composer";
+        composer.section = "mod";
+        composer.type = "harmonyComposer";
+        composer.name = "Harmony Composer";
+        composer.targetId = "composerRoot";
+        composer.enabled = true;
+        composer.values["composerRoot"] = 0.0f;
+        composer.values["composerScale"] = 1.0f;
+        composer.values["composerChordCount"] = 4.0f;
+        composerProject.getDspGraph().blocks.push_back (composer);
+
+        patchcraft::VstExportModule::ExportOptions composerOptions;
+        composerOptions.pluginName = "Smoke Test Composer";
+        composerOptions.fileSafeName = "Smoke_Test_Composer";
+        composerOptions.manufacturerName = "PatchCraft QA";
+        composerOptions.version = "0.0.3";
+        composerOptions.outputFolder = tempRoot.getChildFile ("composer-out");
+        composerOptions.exportAsMidiEffect = true;
+
+        const auto composerResult = patchcraft::VstExportModule::exportPlugin (composerProject, composerOptions);
+        check (composerResult.success, "Composer MIDI export reports success");
+        if (! composerResult.success)
+            std::cout << "    message: " << composerResult.message.toStdString() << std::endl;
+
+        const auto composerContents = composerResult.bundlePath.getChildFile ("Contents");
+        const auto composerArch = pickArchSubfolder (composerContents);
+        check (composerArch != juce::File(), "Composer export Contents/<arch>/ exists");
+        if (composerArch != juce::File())
+        {
+           #if JUCE_MAC
+            check (composerArch.getChildFile ("Smoke_Test_Composer").existsAsFile(),
+                   "Composer export renamed the inner VST3 binary");
+           #else
+            check (composerArch.getChildFile ("Smoke_Test_Composer.vst3").existsAsFile(),
+                   "Composer export renamed the inner VST3 binary");
+           #endif
+        }
+
+        checkModuleInfoMetadata (composerContents.getChildFile ("Resources"), composerOptions,
+                                 "PatchCraft Composer", "5063726650636D70", "Fx");
     }
 
     if (failures == 0)

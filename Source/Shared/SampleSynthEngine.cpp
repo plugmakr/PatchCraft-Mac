@@ -258,6 +258,8 @@ namespace patchcraft
 
     SampleSynthEngine::SampleSynthEngine()
     {
+        // registerBasicFormats registers every format the build enables: WAV/AIFF plus
+        // FLAC, Ogg, and (on Windows/Apple) MP3 via WindowsMedia/CoreAudio decoders.
         formatManager.registerBasicFormats();
         PC_DBG("SampleSynthEngine initialized");
     }
@@ -332,8 +334,7 @@ namespace patchcraft
 
     static juce::File resolvePackPath (const juce::File& root, const juce::String& rel)
     {
-        if (juce::File::isAbsolutePath (rel)) return juce::File (rel);
-        return root.getChildFile (rel);
+        return SampleMap::resolveSamplePath (root, rel);
     }
 
     namespace
@@ -499,10 +500,39 @@ namespace patchcraft
     {
         for (auto& v : voices)
             if (! v.isActive()) return &v;
-        // round-robin steal
-        nextVoiceIndex = (nextVoiceIndex + 1) % kMaxVoices;
-        voices[(size_t) nextVoiceIndex].kill();
-        return &voices[(size_t) nextVoiceIndex];
+
+        // No free voice - steal intelligently instead of blind round-robin.
+        // Preference order:
+        //   1. Lowest priority zone (priority field; higher = protect).
+        //   2. Voices already in their release tail (quietest first).
+        //   3. Oldest voice (smallest start order).
+        // This avoids cutting off a freshly played, high-priority note.
+        SampleVoice* best = nullptr;
+        float bestScore = std::numeric_limits<float>::max();
+        for (auto& v : voices)
+        {
+            // Lower score == better steal candidate.
+            float score = (float) v.getPriority() * 1000.0f;
+            if (v.isReleasing())
+                score -= 500.0f;
+            score += v.getEnvelopeLevel() * 250.0f;
+            // Tie-break toward the oldest voice.
+            score += (float) (v.getStartOrder() % 100000u) * 0.001f;
+
+            if (score < bestScore)
+            {
+                bestScore = score;
+                best = &v;
+            }
+        }
+
+        if (best == nullptr)
+        {
+            nextVoiceIndex = (nextVoiceIndex + 1) % kMaxVoices;
+            best = &voices[(size_t) nextVoiceIndex];
+        }
+        best->kill();
+        return best;
     }
 
     GranularVoice* SampleSynthEngine::findFreeGranularVoice()
@@ -600,6 +630,86 @@ namespace patchcraft
         return nullptr;
     }
 
+    float SampleSynthEngine::velocityCurveGain (float velocity01) const noexcept
+    {
+        const float v = juce::jlimit (0.0f, 1.0f, velocity01);
+        const float sensitivity = juce::jlimit (0.0f, 1.0f, atomics.velocitySensitivity.load());
+        // sensitivity 0.5 -> gamma 1.0 (linear, legacy). 0 -> 0.5 (compress),
+        // 1 -> 2.0 (expand). Returned as a multiplier relative to the linear
+        // velocity the voice already applies, so the default is exactly 1.0.
+        const float gamma = std::pow (4.0f, sensitivity - 0.5f);
+        if (std::abs (gamma - 1.0f) < 1.0e-4f || v <= 0.0f)
+            return 1.0f;
+        return std::pow (v, gamma - 1.0f);
+    }
+
+    int SampleSynthEngine::selectSamplesLayered (int note, int velocity, LayeredSample* out, int maxLayers)
+    {
+        if (out == nullptr || maxLayers <= 0)
+            return 0;
+
+        auto list = getSamples();
+        if (! list)
+            return 0;
+
+        // Equal-power velocity crossfade gain for a zone given its xfade edges.
+        auto velocityXFadeGain = [] (const SampleZoneDef& z, int vel) -> float
+        {
+            float t = 1.0f;
+            const float lowerXf = juce::jmax (0.0f, z.velocityLowerVelXFade);
+            const float upperXf = juce::jmax (0.0f, z.velocityUpperVelXFade);
+            if (lowerXf > 0.0f && vel < z.lowVelocity + (int) lowerXf)
+                t = juce::jmin (t, ((float) vel - (float) z.lowVelocity) / lowerXf);
+            if (upperXf > 0.0f && vel > z.highVelocity - (int) upperXf)
+                t = juce::jmin (t, ((float) z.highVelocity - (float) vel) / upperXf);
+            t = juce::jlimit (0.0f, 1.0f, t);
+            // Equal-power so two overlapping layers sum to constant power.
+            return std::sin (t * 0.5f * juce::MathConstants<float>::pi);
+        };
+
+        // Track which round-robin groups we have already resolved so each group
+        // contributes a single chosen zone per note.
+        std::array<bool, 128> rrGroupResolved {};
+        rrGroupResolved.fill (false);
+
+        int count = 0;
+        for (auto& s : *list)
+        {
+            if (count >= maxLayers)
+                break;
+
+            const auto& z = s->zone;
+            if (note < z.lowNote || note > z.highNote
+                || velocity < z.lowVelocity || velocity > z.highVelocity)
+                continue;
+
+            const int rrGroup = juce::jlimit (0, 127, z.roundRobinGroup);
+            if (rrGroup > 0)
+            {
+                if (rrGroupResolved[(size_t) rrGroup])
+                    continue;
+                rrGroupResolved[(size_t) rrGroup] = true;
+
+                auto chosen = selectSample (note, velocity); // advances RR counter
+                // selectSample returns the chosen RR member for the first group
+                // it finds; only accept it if it belongs to this group.
+                if (chosen != nullptr && juce::jlimit (0, 127, chosen->zone.roundRobinGroup) == rrGroup)
+                {
+                    out[count].sample = chosen;
+                    out[count].velocityGain = velocityXFadeGain (chosen->zone, velocity);
+                    ++count;
+                }
+                continue;
+            }
+
+            out[count].sample = s;
+            out[count].velocityGain = velocityXFadeGain (z, velocity);
+            ++count;
+        }
+
+        return count;
+    }
+
     void SampleSynthEngine::noteOn (int note, float velocity)
     {
         PC_DBG("[SampleSynthEngine::noteOn] note=%d vel=%.2f hasSamples=%d", note, velocity, hasUsableSamples());
@@ -622,145 +732,187 @@ namespace patchcraft
         if (hasUsableSamples())
         {
             const int velocityInt = juce::jlimit (1, 127, (int) (velocity * 127.0f));
-            auto s = selectSample (note, velocityInt);
-            PC_DBG("[SampleSynthEngine::noteOn] selectSample returned %p", s.get());
-            if (! s)
+
+            LayeredSample layers[kMaxLayersPerNote];
+            const int layerCount = selectSamplesLayered (note, velocityInt, layers, kMaxLayersPerNote);
+            if (layerCount <= 0)
             {
                 lastMissedNote.store (juce::jlimit (0, 127, note), std::memory_order_release);
                 lastMissedVelocity.store (velocityInt, std::memory_order_release);
                 missedNoteCount.fetch_add (1, std::memory_order_relaxed);
                 return;
             }
-            const auto triggerIndex = triggerCounter.fetch_add (1, std::memory_order_relaxed) + 1;
-            const auto triggerHash = makeTriggerHash (note, velocityInt, triggerIndex);
-            const int triggerChance = juce::jlimit (0, 100, s->zone.triggerProbability);
-            if (triggerChance <= 0 || (triggerChance < 100 && (int) (triggerHash % 100u) >= triggerChance))
-                return;
 
             lastMissedNote.store (-1, std::memory_order_release);
-            const int chokeGroup = juce::jlimit (0, 127, s->zone.chokeGroup);
-            if (chokeGroup > 0)
-            {
-                for (auto& voice : voices)
-                    if (voice.isActive() && voice.getChokeGroup() == chokeGroup)
-                        voice.kill();
-                for (auto& voice : granularVoices)
-                    if (voice.isActive() && voice.getChokeGroup() == chokeGroup)
-                        voice.kill();
-            }
 
-            float start01 = juce::jlimit (0.0f, 1.0f, atomics.sampleStart.load());
-            float length01 = juce::jlimit (0.01f, 1.0f, atomics.sampleLength.load());
-            int slice = juce::roundToInt (atomics.sampleSlice.load());
-            int sliceCount = juce::roundToInt (atomics.sampleSliceCount.load());
-            float pitchOffset = juce::jlimit (-48.0f, 48.0f, atomics.samplePitch.load());
-            bool reverse = atomics.sampleReverse.load() >= 0.5f;
-            int padIndex = s->zone.padIndex;
-            if (padIndex < 0 || padIndex >= 16)
-            {
-                const int notePadIndex = note - 36;
-                if (notePadIndex >= 0 && notePadIndex < 16)
-                    padIndex = notePadIndex;
-            }
+            // Global velocity-sensitivity curve (1.0 == legacy linear).
+            const float velocityCurve = velocityCurveGain (velocity);
 
-            float padGain = 1.0f;
-            float padPanOffset = 0.0f;
-            if (padIndex >= 0 && padIndex < 16)
+            // Trigger one zone as either a granular or a standard sample voice.
+            // layerGain carries the per-zone velocity-crossfade weight.
+            auto triggerLayer = [&] (const LoadedSamplePtr& s, float layerGain)
             {
-                padGain = juce::jlimit (0.0f, 2.0f, atomics.padVolume[(size_t) padIndex].load());
-                pitchOffset += juce::jlimit (-24.0f, 24.0f, atomics.padPitch[(size_t) padIndex].load());
-                padPanOffset = juce::jlimit (-1.0f, 1.0f, atomics.padPan[(size_t) padIndex].load());
-            }
+                if (s == nullptr)
+                    return;
 
-            float tempoRatio = 1.0f;
-            if (atomics.bpmSync.load() >= 0.5f && s->zone.bpm > 0.0f)
-            {
-                const float hostBpm = (float) RenderContext::sanitiseBpm (renderContext.bpm);
-                const float sampleBpm = (float) RenderContext::sanitiseBpm ((double) s->zone.bpm);
-                tempoRatio = juce::jlimit (0.25f, 4.0f, hostBpm / juce::jmax (1.0f, sampleBpm));
-            }
+                const auto triggerIndex = triggerCounter.fetch_add (1, std::memory_order_relaxed) + 1;
+                const auto triggerHash = makeTriggerHash (note, velocityInt, triggerIndex);
+                const int triggerChance = juce::jlimit (0, 100, s->zone.triggerProbability);
+                if (triggerChance <= 0 || (triggerChance < 100 && (int) (triggerHash % 100u) >= triggerChance))
+                    return;
 
-            const float glitchAmount = juce::jlimit (0.0f, 1.0f, atomics.sampleGlitch.load());
-            if (glitchAmount > 0.001f)
-            {
-                const bool shouldGlitch = (triggerHash % 10000u) < (juce::uint32) juce::roundToInt (glitchAmount * 10000.0f);
-                if (shouldGlitch)
+                const int chokeGroup = juce::jlimit (0, 127, s->zone.chokeGroup);
+                if (chokeGroup > 0)
                 {
-                    const int glitchGrid = juce::jlimit (2, 64, juce::roundToInt (atomics.sampleGlitchGrid.load()));
-                    sliceCount = juce::jmax (sliceCount, glitchGrid);
-                    slice = (int) ((triggerHash >> 8) % (juce::uint32) sliceCount);
-                    const float minLength = 1.0f / (float) juce::jmax (2, sliceCount);
-                    length01 = juce::jmin (length01, juce::jmap (glitchAmount, 0.0f, 1.0f, 0.35f, minLength));
-                    start01 = juce::jlimit (0.0f, 1.0f, start01 + ((triggerHash >> 16) % 1000u) / 1000.0f * glitchAmount * 0.08f);
-                    if (glitchAmount > 0.72f && ((triggerHash >> 4) & 1u) != 0)
-                        reverse = ! reverse;
+                    for (auto& voice : voices)
+                        if (voice.isActive() && voice.getChokeGroup() == chokeGroup)
+                            voice.kill();
+                    for (auto& voice : granularVoices)
+                        if (voice.isActive() && voice.getChokeGroup() == chokeGroup)
+                            voice.kill();
                 }
-            }
 
-            const double tempoRegionSeconds = selectedRegionSeconds (*s, start01, length01, slice, sliceCount);
-            const bool tempoStretchCandidate = atomics.bpmSync.load() >= 0.5f
-                                            && s->zone.bpm > 0.0f
-                                            && ! s->zone.oneShot
-                                            && tempoRegionSeconds >= 0.85
-                                            && std::abs (tempoRatio - 1.0f) > 0.015f;
-            if (atomics.granularOn.load() >= 0.5f || tempoStretchCandidate)
-            {
-                if (auto* v = findFreeGranularVoice())
+                float start01 = juce::jlimit (0.0f, 1.0f, atomics.sampleStart.load());
+                float length01 = juce::jlimit (0.01f, 1.0f, atomics.sampleLength.load());
+                int slice = juce::roundToInt (atomics.sampleSlice.load());
+                int sliceCount = juce::roundToInt (atomics.sampleSliceCount.load());
+                float pitchOffset = juce::jlimit (-48.0f, 48.0f, atomics.samplePitch.load());
+                bool reverse = atomics.sampleReverse.load() >= 0.5f;
+                int padIndex = s->zone.padIndex;
+                if (padIndex < 0 || padIndex >= 16)
                 {
-                    PC_DBG("[SampleSynthEngine::noteOn] Starting granular voice with sample %s", s->path.toStdString().c_str());
-                    auto params = currentGranularParams (tempoRatio);
-                    params.sampleStart = start01;
-                    params.sampleLength = length01;
-                    params.sampleSlice = slice;
-                    params.sampleSliceCount = sliceCount;
-                    params.pitchOffset = pitchOffset;
-                    params.padGain = padGain;
-                    params.padPanOffset = padPanOffset;
-                    if (tempoStretchCandidate)
+                    const int notePadIndex = note - 36;
+                    if (notePadIndex >= 0 && notePadIndex < 16)
+                        padIndex = notePadIndex;
+                }
+
+                float padGain = 1.0f;
+                float padPanOffset = 0.0f;
+                if (padIndex >= 0 && padIndex < 16)
+                {
+                    padGain = juce::jlimit (0.0f, 2.0f, atomics.padVolume[(size_t) padIndex].load());
+                    pitchOffset += juce::jlimit (-24.0f, 24.0f, atomics.padPitch[(size_t) padIndex].load());
+                    padPanOffset = juce::jlimit (-1.0f, 1.0f, atomics.padPan[(size_t) padIndex].load());
+                }
+
+                float tempoRatio = 1.0f;
+                if (atomics.bpmSync.load() >= 0.5f && s->zone.bpm > 0.0f)
+                {
+                    const float hostBpm = (float) RenderContext::sanitiseBpm (renderContext.bpm);
+                    const float sampleBpm = (float) RenderContext::sanitiseBpm ((double) s->zone.bpm);
+                    tempoRatio = juce::jlimit (0.25f, 4.0f, hostBpm / juce::jmax (1.0f, sampleBpm));
+                }
+
+                const float glitchAmount = juce::jlimit (0.0f, 1.0f, atomics.sampleGlitch.load());
+                if (glitchAmount > 0.001f)
+                {
+                    const bool shouldGlitch = (triggerHash % 10000u) < (juce::uint32) juce::roundToInt (glitchAmount * 10000.0f);
+                    if (shouldGlitch)
                     {
-                        params.density = juce::jmax (params.density, 42.0f);
-                        params.sizeMs = juce::jlimit (36.0f, 140.0f, (float) (tempoRegionSeconds * 1000.0 / 18.0));
-                        params.sizeRandom = juce::jmin (params.sizeRandom, 0.08f);
-                        params.positionSpread = juce::jmin (params.positionSpread, 0.035f);
-                        params.pitchSpread = 0.0f;
-                        params.panSpread = juce::jmin (params.panSpread, 0.12f);
-                        params.texture = juce::jmin (params.texture, 0.18f);
-                        params.maxGrains = juce::jmax (params.maxGrains, 20);
-                        params.windowShape = 3;
-                        params.directionMode = 0;
-                        params.scanRate = tempoRegionSeconds > 0.0
-                            ? (float) juce::jlimit (0.01, 12.0, (double) tempoRatio / tempoRegionSeconds)
-                            : tempoRatio;
+                        const int glitchGrid = juce::jlimit (2, 64, juce::roundToInt (atomics.sampleGlitchGrid.load()));
+                        sliceCount = juce::jmax (sliceCount, glitchGrid);
+                        slice = (int) ((triggerHash >> 8) % (juce::uint32) sliceCount);
+                        const float minLength = 1.0f / (float) juce::jmax (2, sliceCount);
+                        length01 = juce::jmin (length01, juce::jmap (glitchAmount, 0.0f, 1.0f, 0.35f, minLength));
+                        start01 = juce::jlimit (0.0f, 1.0f, start01 + ((triggerHash >> 16) % 1000u) / 1000.0f * glitchAmount * 0.08f);
+                        if (glitchAmount > 0.72f && ((triggerHash >> 4) & 1u) != 0)
+                            reverse = ! reverse;
                     }
-                    v->start (s, note, velocity, currentAdsr(), params, triggerHash);
                 }
-                return;
-            }
 
-            if (auto* v = findFreeVoice())
-            {
-                PC_DBG("[SampleSynthEngine::noteOn] Starting voice with sample %s", s->path.toStdString().c_str());
-                v->start (s, note, velocity, currentAdsr(), false,
-                          start01, length01, slice, sliceCount, pitchOffset, reverse, tempoRatio,
-                          padGain, padPanOffset);
-            }
-            else
-            {
-                PC_DBG("[SampleSynthEngine::noteOn] No free voice found!");
-            }
+                const float extraGain = juce::jlimit (0.0f, 4.0f, velocityCurve * layerGain);
+
+                const double tempoRegionSeconds = selectedRegionSeconds (*s, start01, length01, slice, sliceCount);
+                const bool tempoStretchCandidate = atomics.bpmSync.load() >= 0.5f
+                                                && s->zone.bpm > 0.0f
+                                                && ! s->zone.oneShot
+                                                && tempoRegionSeconds >= 0.85
+                                                && std::abs (tempoRatio - 1.0f) > 0.015f;
+                if (atomics.granularOn.load() >= 0.5f || tempoStretchCandidate)
+                {
+                    if (auto* v = findFreeGranularVoice())
+                    {
+                        auto params = currentGranularParams (tempoRatio);
+                        params.sampleStart = start01;
+                        params.sampleLength = length01;
+                        params.sampleSlice = slice;
+                        params.sampleSliceCount = sliceCount;
+                        params.pitchOffset = pitchOffset;
+                        params.padGain = padGain * extraGain;
+                        params.padPanOffset = padPanOffset;
+                        if (tempoStretchCandidate)
+                        {
+                            params.density = juce::jmax (params.density, 42.0f);
+                            params.sizeMs = juce::jlimit (36.0f, 140.0f, (float) (tempoRegionSeconds * 1000.0 / 18.0));
+                            params.sizeRandom = juce::jmin (params.sizeRandom, 0.08f);
+                            params.positionSpread = juce::jmin (params.positionSpread, 0.035f);
+                            params.pitchSpread = 0.0f;
+                            params.panSpread = juce::jmin (params.panSpread, 0.12f);
+                            params.texture = juce::jmin (params.texture, 0.18f);
+                            params.maxGrains = juce::jmax (params.maxGrains, 20);
+                            params.windowShape = 3;
+                            params.directionMode = 0;
+                            params.scanRate = tempoRegionSeconds > 0.0
+                                ? (float) juce::jlimit (0.01, 12.0, (double) tempoRatio / tempoRegionSeconds)
+                                : tempoRatio;
+                        }
+                        v->start (s, note, velocity, currentAdsr(), params, triggerHash);
+                    }
+                    return;
+                }
+
+                if (auto* v = findFreeVoice())
+                {
+                    const auto order = voiceStartCounter.fetch_add (1, std::memory_order_relaxed) + 1;
+                    v->start (s, note, velocity, currentAdsr(), false,
+                              start01, length01, slice, sliceCount, pitchOffset, reverse, tempoRatio,
+                              padGain, padPanOffset, extraGain, order);
+                }
+            };
+
+            for (int i = 0; i < layerCount; ++i)
+                triggerLayer (layers[i].sample, layers[i].velocityGain);
+
             return;
         }
 
-        // Sine fallback - keeps preview audible without imported samples.
+        // Fallback voice - keeps preview audible without imported samples.
+        // Notes in the GM percussion range synthesize a drum hit so drum grids
+        // and pads sound like drums; everything else stays a melodic sine.
         if (auto* sv = findFreeSineVoice())
         {
             sv->active   = true;
             sv->note     = note;
             sv->phase    = 0.0;
+            sv->phase2   = 0.0;
             sv->velocity = juce::jlimit (0.05f, 1.0f, velocity);
+            sv->drumType = drumTypeForNote (note);
+            sv->drumAgeSamples = 0.0;
+            sv->prevNoise = 0.0f;
+            sv->noiseState = 0x9e3779b9u ^ (juce::uint32) (note * 2654435761u);
             sv->env.setParameters (currentAdsr());
             sv->env.reset();
             sv->env.noteOn();
+        }
+    }
+
+    int SampleSynthEngine::drumTypeForNote (int note) noexcept
+    {
+        // Map the General-MIDI percussion range to our synth-drum voices.
+        switch (note)
+        {
+            case 35: case 36:           return 0; // kick
+            case 38: case 40:           return 1; // snare
+            case 37:                    return 6; // rim
+            case 39:                    return 4; // clap
+            case 42: case 44:           return 2; // closed hat
+            case 46:                    return 3; // open hat
+            case 49: case 52: case 55:
+            case 57:                    return 7; // crash
+            case 51: case 53: case 59:  return 8; // ride
+            case 41: case 43: case 45:
+            case 47: case 48: case 50:  return 5; // toms
+            default:                    return -1; // melodic
         }
     }
 
@@ -826,6 +978,7 @@ namespace patchcraft
         else if (id == "pan")           atomics.pan          = value;
         else if (id == "retrigger")     atomics.retrigger    = value;
         else if (id == "bpmSync")       atomics.bpmSync      = value;
+        else if (id == "velocitySensitivity") atomics.velocitySensitivity = value;
         else
         {
             const int padVolumeIndex = parsePadControlIndex (id, "Volume");
@@ -921,20 +1074,135 @@ namespace patchcraft
         {
             auto* L = tempBuffer.getWritePointer (0);
             auto* R = tempBuffer.getWritePointer (juce::jmin (1, tempBuffer.getNumChannels() - 1));
+            const double twoPi = juce::MathConstants<double>::twoPi;
+            auto nextNoise = [] (juce::uint32& s) -> float
+            {
+                s = s * 1664525u + 1013904223u;
+                return (float) ((int) (s >> 9) & 0x7fffff) / 4194304.0f - 1.0f;
+            };
+
             for (auto& sv : sineVoices)
             {
                 if (! sv.active) continue;
-                const double freq = 440.0 * std::pow (2.0, (sv.note - 69) / 12.0);
-                const double dPhase = juce::MathConstants<double>::twoPi * freq / sampleRate;
+
+                if (sv.drumType < 0)
+                {
+                    // Melodic sine preview.
+                    const double freq = 440.0 * std::pow (2.0, (sv.note - 69) / 12.0);
+                    const double dPhase = twoPi * freq / sampleRate;
+                    for (int i = 0; i < numSamples; ++i)
+                    {
+                        const float ev = sv.env.getNextSample();
+                        if (! sv.env.isActive()) { sv.active = false; break; }
+                        const float s = (float) std::sin (sv.phase) * sv.velocity * ev * 0.18f;
+                        L[i] += s;
+                        if (R != L) R[i] += s;
+                        sv.phase += dPhase;
+                        if (sv.phase > twoPi) sv.phase -= twoPi;
+                    }
+                    continue;
+                }
+
+                // Synthesized drum voice (one-shot, self-terminating).
                 for (int i = 0; i < numSamples; ++i)
                 {
-                    const float ev = sv.env.getNextSample();
-                    if (! sv.env.isActive()) { sv.active = false; break; }
-                    const float s = (float) std::sin (sv.phase) * sv.velocity * ev * 0.18f;
+                    const double t = sv.drumAgeSamples / sampleRate;
+                    float out = 0.0f;
+                    float decayTime = 0.2f;
+
+                    switch (sv.drumType)
+                    {
+                        case 0: // kick: pitch-swept sine + click
+                        {
+                            decayTime = 0.26f;
+                            const double freq = 45.0 + 95.0 * std::exp (-t / 0.028);
+                            sv.phase += twoPi * freq / sampleRate;
+                            const float body = (float) std::sin (sv.phase) * std::exp (-(float) t / 0.20f);
+                            const float click = t < 0.003 ? nextNoise (sv.noiseState) * 0.5f : 0.0f;
+                            out = body + click;
+                            break;
+                        }
+                        case 1: // snare: 185Hz tone + bright noise
+                        {
+                            decayTime = 0.19f;
+                            sv.phase += twoPi * 185.0 / sampleRate;
+                            const float tone = (float) std::sin (sv.phase) * std::exp (-(float) t / 0.075f) * 0.5f;
+                            const float n = nextNoise (sv.noiseState);
+                            const float hp = n - sv.prevNoise; sv.prevNoise = n;
+                            out = tone + hp * std::exp (-(float) t / 0.11f) * 0.9f;
+                            break;
+                        }
+                        case 2: // closed hat: very short high-passed noise
+                        {
+                            decayTime = 0.05f;
+                            const float n = nextNoise (sv.noiseState);
+                            const float hp = n - sv.prevNoise; sv.prevNoise = n;
+                            out = hp * std::exp (-(float) t / 0.022f) * 0.7f;
+                            break;
+                        }
+                        case 3: // open hat
+                        {
+                            decayTime = 0.34f;
+                            const float n = nextNoise (sv.noiseState);
+                            const float hp = n - sv.prevNoise; sv.prevNoise = n;
+                            out = hp * std::exp (-(float) t / 0.18f) * 0.6f;
+                            break;
+                        }
+                        case 4: // clap: noise with quick repeats
+                        {
+                            decayTime = 0.18f;
+                            const float n = nextNoise (sv.noiseState);
+                            const float hp = n - sv.prevNoise * 0.5f; sv.prevNoise = n;
+                            const float shape = (t < 0.01 || (t > 0.02 && t < 0.03)) ? 1.0f : std::exp (-(float) t / 0.09f);
+                            out = hp * shape * 0.8f;
+                            break;
+                        }
+                        case 5: // tom: pitched sine by note + slight sweep
+                        {
+                            decayTime = 0.30f;
+                            const double base = 90.0 + (double) (sv.note - 41) * 14.0;
+                            const double freq = base * (1.0 + 0.4 * std::exp (-t / 0.05));
+                            sv.phase += twoPi * juce::jmax (40.0, freq) / sampleRate;
+                            out = (float) std::sin (sv.phase) * std::exp (-(float) t / 0.22f);
+                            break;
+                        }
+                        case 7: // crash: long bright noise
+                        {
+                            decayTime = 1.1f;
+                            const float n = nextNoise (sv.noiseState);
+                            const float hp = n - sv.prevNoise; sv.prevNoise = n;
+                            out = hp * std::exp (-(float) t / 0.65f) * 0.5f;
+                            break;
+                        }
+                        case 8: // ride: brighter, medium decay with ping
+                        {
+                            decayTime = 0.7f;
+                            sv.phase += twoPi * 520.0 / sampleRate;
+                            const float ping = (float) std::sin (sv.phase) * std::exp (-(float) t / 0.10f) * 0.3f;
+                            const float n = nextNoise (sv.noiseState);
+                            const float hp = n - sv.prevNoise; sv.prevNoise = n;
+                            out = ping + hp * std::exp (-(float) t / 0.45f) * 0.35f;
+                            break;
+                        }
+                        default: // rim (6): short bright tick
+                        {
+                            decayTime = 0.06f;
+                            sv.phase += twoPi * 1700.0 / sampleRate;
+                            const float tick = (float) std::sin (sv.phase) * std::exp (-(float) t / 0.012f);
+                            const float n = nextNoise (sv.noiseState) * 0.4f;
+                            out = (tick + n) * std::exp (-(float) t / 0.03f);
+                            break;
+                        }
+                    }
+
+                    const float ampEnv = std::exp (-(float) t / decayTime);
+                    if (t > decayTime * 6.0) { sv.active = false; break; }
+
+                    if (sv.phase > twoPi) sv.phase -= twoPi;
+                    const float s = out * ampEnv * sv.velocity * 0.5f;
                     L[i] += s;
                     if (R != L) R[i] += s;
-                    sv.phase += dPhase;
-                    if (sv.phase > juce::MathConstants<double>::twoPi) sv.phase -= juce::MathConstants<double>::twoPi;
+                    sv.drumAgeSamples += 1.0;
                 }
             }
         }

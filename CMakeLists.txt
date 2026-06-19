@@ -69,12 +69,20 @@ add_library(PatchCraftCore STATIC
     Source/Shared/AudioUtilityProcessor.cpp
     Source/Shared/EffectEngine.cpp
     Source/Shared/DspRoutingEngine.cpp
+    Source/Shared/DspModuleRegistry.cpp
     Source/Shared/ArpeggiatorRuntime.cpp
     Source/Shared/MidiPlaygroundRuntime.cpp
     Source/Shared/MidiPlaygroundPattern.cpp
+    Source/Shared/PolyrhythmicSequencerRuntime.cpp
+    Source/Shared/ComposerRuntime.cpp
+    Source/Shared/PianoRollRuntime.cpp
+    Source/Shared/DrumMachineUtil.cpp
+    Source/Shared/ControlNodeAuthoring.cpp
+    Source/Shared/HarmonyEngine.cpp
     Source/Shared/EngineFactory.cpp
     Source/Shared/MultiInstrumentEngine.cpp
     Source/Shared/InstrumentTemplates.cpp
+    Source/Shared/ArpStepSequencerTemplate.cpp
     Source/Shared/ParameterModel.cpp
     Source/Shared/PresetGenerator.cpp
     Source/Shared/LayoutModel.cpp
@@ -108,6 +116,7 @@ target_link_libraries(PatchCraftCore
         juce::juce_graphics
         juce::juce_gui_basics
         juce::juce_gui_extra
+        juce::juce_cryptography
     PRIVATE
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
@@ -196,11 +205,11 @@ if(PATCHCRAFT_BUILD_STUDIO)
         Source/Studio/ExpansionLibraryPanel.cpp
         Source/Studio/LayersPanel.cpp
         Source/Studio/CanvasEditor.cpp
+        Source/Studio/ControlNodeEditor.cpp
         Source/Studio/WorkflowPage.cpp
         Source/Studio/LaunchCenterPage.cpp
         Source/Studio/InspectorPanel.cpp
         Source/Studio/BottomPanel.cpp
-        Source/Studio/SampleMapperComponent.cpp
         Source/Studio/KeyzonesComponent.cpp
         Source/Studio/ParametersComponent.cpp
         Source/Studio/KnobBuilderComponent.cpp
@@ -212,8 +221,6 @@ if(PATCHCRAFT_BUILD_STUDIO)
         Source/Studio/TestPage.cpp
         Source/Studio/OneShotMakerPage.cpp
         Source/Studio/MidiPlaygroundPage.cpp
-        Source/Studio/DspPage.cpp
-        Source/Studio/PromptToPluginComponent.cpp
         Source/Studio/CanvasToolbar.cpp
         Source/Studio/ControlBuilderComponent.cpp
         Source/Studio/StudioAudioService.cpp

@@ -6,6 +6,9 @@
 #include "IInstrumentEngine.h"
 #include "DspRoutingEngine.h"
 #include "MidiPlaygroundRuntime.h"
+#include "PolyrhythmicSequencerRuntime.h"
+#include "ComposerRuntime.h"
+#include "PianoRollRuntime.h"
 #include "SampleSynthEngine.h"
 #include "PScriptEngine.h"
 
@@ -44,16 +47,39 @@ namespace patchcraft
                 return pack.manifest.instrumentName;
             }
 
-           #if PATCHCRAFT_PLAYER_FX
+           #if PATCHCRAFT_PLAYER_MIDI
+            return "Composer";
+           #elif PATCHCRAFT_PLAYER_FX
             return "Player FX";
            #else
             return "Player";
            #endif
         }
         bool acceptsMidi() const override                         { return true; }
-        bool producesMidi() const override                         { return false; }
-        bool isMidiEffect() const override                         { return false; }
-        double getTailLengthSeconds() const override               { return 4.0; }
+        bool producesMidi() const override
+        {
+           #if PATCHCRAFT_PLAYER_MIDI
+            return true;
+           #else
+            return false;
+           #endif
+        }
+        bool isMidiEffect() const override
+        {
+           #if PATCHCRAFT_PLAYER_MIDI
+            return true;
+           #else
+            return false;
+           #endif
+        }
+        double getTailLengthSeconds() const override
+        {
+           #if PATCHCRAFT_PLAYER_MIDI
+            return 0.0;
+           #else
+            return 4.0;
+           #endif
+        }
 
         int  getNumPrograms() override                             { return 1; }
         int  getCurrentProgram() override                          { return 0; }
@@ -97,6 +123,18 @@ namespace patchcraft
         juce::String getPendingMidiLearnParameter() const;
         bool isParameterMidiLearnable (const juce::String& parameterId) const;
         float getOutputPeak() const noexcept                         { return outputPeak.load(); }
+        // Per-band audio analysis for runtime audio-reactive visuals (0..1, message-thread read).
+        float getAudioRms()       const noexcept { return analysisRms.load(); }
+        float getAudioLowBand()   const noexcept { return analysisLow.load(); }
+        float getAudioMidBand()   const noexcept { return analysisMid.load(); }
+        float getAudioHighBand()  const noexcept { return analysisHigh.load(); }
+        float getAudioTransient() const noexcept { return analysisTransient.load(); }
+        float getAudioCentroid()  const noexcept { return analysisCentroid.load(); }
+        // Returns the reactive level for an authored audioReactiveMode string.
+        float getAudioReactiveSignal (const juce::String& mode) const noexcept;
+        // Downsampled peaks (0..1) of the most recently dropped sample, for runtime
+        // waveform display. Populated and read on the message thread only.
+        const std::vector<float>& getUserWaveformPeaks() const noexcept { return userWaveformPeaks; }
         float getNoteHighlightLevel (int midiNote) const noexcept;
         bool decayNoteHighlightLevels() noexcept;
         bool isInternalTransportPlaying() const noexcept              { return internalTransportPlaying.load(); }
@@ -114,9 +152,21 @@ namespace patchcraft
                                        float velocity, float gate = 0.35f, float probability = 1.0f,
                                        int divisions = -1);
         bool setDrumActivePatternFromUi (int pattern);
+        bool setDrumTrackMutedFromUi (int track, bool muted);
+        bool setDrumTrackSoloFromUi (int track, bool solo);
+        bool setDrumTrackNoteFromUi (int track, int midiNote);
+        bool setDrumSongModeFromUi (bool songMode);
         bool setMidiPlaygroundActiveBankFromUi (int bank);
         bool setArpLaneStepFromUi (int lane, int step, float velocity, bool active);
+        bool setArpLaneStepsFromUi (int lane, int steps);
+        bool setSeqLaneStepFromUi (int laneIndex, int step, float value, bool active, const juce::String& laneType);
         bool setArpLaneMutedFromUi (int lane, bool muted);
+        bool setArpLaneSoloFromUi (int lane, bool solo);
+
+        // Runtime piano-roll editing. The encoded note list is "start,len,pitch,vel;..."
+        juce::String getPianoRollNotesEncoded() const;
+        bool setPianoRollNotesFromUi (const juce::String& encodedNotes);
+        double getPianoRollPlaybackPosition01() const;
         bool allowsExternalPackLoading() const;
         bool applyPresetByIndex (int presetIndex);
         int getPresetCount() const;
@@ -190,24 +240,29 @@ namespace patchcraft
             int tuneSemitones = 0;
             juce::String midiMode { "trigger" };
             float midiVelocityAmount = 1.0f;
+            bool midiStack = false;
         };
         std::vector<UserContentItem> getUserContentSnapshot() const;
         bool importUserContentFiles (const juce::StringArray& files,
                                      const juce::String& sampleMappingMode,
                                      juce::String& report,
                                      int targetNote = -1,
-                                     int targetPadIndex = -1);
+                                     int targetPadIndex = -1,
+                                     bool midiStack = false);
         bool clearUserContent();
-        bool applyUserMidiToPlayground (const juce::String& contentId);
+        bool applyUserMidiToPlayground (const juce::String& contentId, bool stack = false);
         bool setUserContentTuneSemitones (const juce::String& contentId, int semitones);
         juce::File getUserContentRoot() const;
+        double getHostBpm() const;
 
     private:
         juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
         void rebuildApvtsFromPack();
         void bindRoutingFromPack();
+        void applyPianoRollOverrideLocked();
+        // Translate ComposerRuntime-generated MIDI into engine note events.
+        void sendComposerMidiToEngine (juce::MidiBuffer& buffer);
         RenderContext makeRenderContext (int numSamples) const;
-        double getHostBpm() const;
         float getCurrentPackParameterValue (const juce::String& parameterId) const;
         int getParameterSlotIndex (const juce::String& parameterId) const;
         bool setEngineParameterIfPresent (const juce::String& parameterId, float value);
@@ -236,6 +291,8 @@ namespace patchcraft
         std::unique_ptr<IInstrumentEngine> engine;
         DspRoutingEngine routingEngine;
         MidiPlaygroundRuntime arpeggiator;
+        PolyrhythmicSequencerRuntime polySequencer;
+        PianoRollRuntime pianoRoll;
         SampleSynthEngine userSampleOverlay;
         mutable juce::SpinLock engineLock;
         double currentSampleRate = 44100.0;
@@ -258,10 +315,22 @@ namespace patchcraft
         std::array<bool, 128> heldNotes {};
         bool sustainPedalDown = false;
         std::atomic<float> outputPeak { 0.0f };
+        std::atomic<float> analysisRms { 0.0f };
+        std::atomic<float> analysisLow { 0.0f };
+        std::atomic<float> analysisMid { 0.0f };
+        std::atomic<float> analysisHigh { 0.0f };
+        std::atomic<float> analysisTransient { 0.0f };
+        std::atomic<float> analysisCentroid { 0.0f };
         std::array<std::atomic<float>, 128> noteHighlightLevels {};
         std::atomic<bool> internalTransportPlaying { false };
         std::atomic<double> internalTransportPpq { 0.0 };
+        ComposerRuntime composerRuntime;
+        juce::MidiBuffer composerMidi;          // scratch buffer for ComposerRuntime output
         juce::AudioBuffer<float> fxDryPassthroughBuffer;
+
+        // Runtime override of the authored piano-roll note list, persisted with
+        // the host session. Empty means "use the pack's authored notes".
+        juce::String runtimePianoRollNotes;
 
         // Persistent MIDI overrides. The pitch and mod wheels only emit
         // events when their value changes, so we have to remember the
@@ -298,6 +367,8 @@ namespace patchcraft
         mutable juce::CriticalSection userContentLock;
         std::vector<UserContentItem> userContent;
         bool userSampleOverlayEnabled = false;
+        std::vector<float> userWaveformPeaks;
+        void computeUserWaveformPeaks (const juce::File& file, int numBuckets = 256);
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PlayerProcessor)
     };

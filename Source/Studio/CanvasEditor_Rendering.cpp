@@ -46,12 +46,9 @@
                 ? juce::File (backgroundPath)
                 : owner.getProject().getProjectFolder().getChildFile (backgroundPath);
 
-            if (file.existsAsFile())
-            {
-                const auto image = owner.getAssets().loadImage (file);
-                if (image.isValid())
-                    g.drawImage (image, r.toFloat(), juce::RectanglePlacement::stretchToFit);
-            }
+            const auto image = owner.getAssets().loadImage (file);
+            if (image.isValid())
+                g.drawImage (image, r.toFloat(), juce::RectanglePlacement::stretchToFit);
         }
 
         // Grid
@@ -183,14 +180,14 @@
         const auto fontSize = e.labelSize > 0.0f ? e.labelSize : juce::jmax (9.0f, r.getHeight() * 0.13f);
         g.setColour (PatchCraftLookAndFeel::text());
         g.setFont (juce::Font (fontSize, juce::Font::bold));
-        g.drawText (label.toUpperCase(), labelArea, juce::Justification::centred, true);
+        g.drawFittedText (label.toUpperCase(), labelArea, juce::Justification::centred, 1, 0.6f);
 
         if (valueText.isNotEmpty())
         {
             auto valueArea = labelArea.translated (0, juce::roundToInt (fontSize + 2.0f));
             g.setColour (PatchCraftLookAndFeel::accent());
             g.setFont (juce::Font (juce::jmax (8.5f, fontSize * 0.85f)));
-            g.drawText (valueText, valueArea, juce::Justification::centred, true);
+            g.drawFittedText (valueText, valueArea, juce::Justification::centred, 1, 0.7f);
         }
     }
 
@@ -640,7 +637,8 @@
     }
 
     static void drawSpriteAnimatorPlaceholder (juce::Graphics& g, juce::Rectangle<int> r,
-                                               const LayoutElement& e, juce::Image img)
+                                               const LayoutElement& e, juce::Image img,
+                                               float driveVal)
     {
         const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
         g.setColour (e.backgroundColour.isTransparent() ? juce::Colour (0xaa080b10) : e.backgroundColour);
@@ -651,8 +649,16 @@
         if (img.isValid())
         {
             const int frames = juce::jmax (1, e.filmstripFrames > 0 ? e.filmstripFrames : 8);
-            const auto seconds = juce::Time::getMillisecondCounterHiRes() * 0.001;
-            const int frame = ((int) std::floor (seconds * juce::jmax (0.05f, e.animationRate))) % frames;
+            int frame = 0;
+            if (e.animationMode == "parameter")
+            {
+                frame = juce::jlimit (0, frames - 1, juce::roundToInt (driveVal * (float) (frames - 1)));
+            }
+            else
+            {
+                const auto seconds = juce::Time::getMillisecondCounterHiRes() * 0.001;
+                frame = ((int) std::floor (seconds * juce::jmax (0.05f, e.animationRate))) % frames;
+            }
             if (e.filmstripVertical)
             {
                 const int h = juce::jmax (1, img.getHeight() / frames);
@@ -673,7 +679,15 @@
         const int rows = 2;
         const int frameW = juce::jmax (1, area.getWidth() / cols);
         const int frameH = juce::jmax (1, area.getHeight() / rows);
-        const int active = ((int) (juce::Time::getMillisecondCounterHiRes() * 0.001 * juce::jmax (0.05f, e.animationRate))) % (cols * rows);
+        int active = 0;
+        if (e.animationMode == "parameter")
+        {
+            active = juce::jlimit (0, (cols * rows) - 1, juce::roundToInt (driveVal * (float) ((cols * rows) - 1)));
+        }
+        else
+        {
+            active = ((int) (juce::Time::getMillisecondCounterHiRes() * 0.001 * juce::jmax (0.05f, e.animationRate))) % (cols * rows);
+        }
         for (int i = 0; i < cols * rows; ++i)
         {
             auto cell = juce::Rectangle<int> (area.getX() + (i % cols) * frameW,
@@ -905,27 +919,65 @@
         juce::Graphics::ScopedSaveState save (g);
         g.setOpacity (juce::jlimit (0.0f, 1.0f, e.opacity));
 
+        float driveVal = 0.0f;
+        if (e.parameterId.isNotEmpty())
+        {
+            if (auto* def = owner.getProject().getParameters().find (e.parameterId))
+            {
+                const float rawVal = owner.getProject().getLiveValues().getValue (e.parameterId, def->defaultValue);
+                const float range = def->max - def->min;
+                driveVal = range > 0.0001f ? (rawVal - def->min) / range : 0.0f;
+            }
+        }
+        driveVal = juce::jlimit (0.0f, 1.0f, driveVal);
+
         if ((e.animationMode.isNotEmpty() && e.animationMode != "none") || e.audioReactive)
         {
             const auto seconds = juce::Time::getMillisecondCounterHiRes() * 0.001;
             const float rate = juce::jmax (0.05f, e.animationRate);
             const float wave = (float) ((std::sin (seconds * juce::MathConstants<double>::twoPi * rate) * 0.5) + 0.5);
-            const float animationAmount = e.animationMode == "none" ? 0.0f : wave;
+
+            float animationAmount = 0.0f;
+            if (e.animationMode == "parameter")
+            {
+                animationAmount = driveVal;
+            }
+            else if (e.animationMode == "bpmPulse")
+            {
+                const double bpm = owner.getProject().getLiveValues().getValue ("bpm", 120.0f);
+                const double bps = bpm / 60.0;
+                animationAmount = (float) ((std::sin (seconds * bps * juce::MathConstants<double>::twoPi) * 0.5) + 0.5);
+            }
+            else
+            {
+                animationAmount = wave;
+            }
+
             const float reactiveAmount = e.audioReactive ? juce::jmax (0.08f, e.audioReactiveAmount) * 0.55f : 0.0f;
             const float combined = juce::jlimit (0.0f, 1.0f, animationAmount * 0.8f + reactiveAmount);
+
+            const bool isScale = e.visualAction.equalsIgnoreCase ("Scale") || e.animationMode == "breathe" || e.animationMode == "pulse";
+            const bool isGlow = e.visualAction.equalsIgnoreCase ("Pulse Glow") || e.animationMode == "glow" || e.audioReactive;
+            const bool isOrbit = e.visualAction.equalsIgnoreCase ("Orbit") || e.visualAction.equalsIgnoreCase ("Sweep");
+
+            if (isOrbit)
+            {
+                const float angle = combined * juce::MathConstants<float>::twoPi;
+                g.addTransform (juce::AffineTransform::rotation (angle, (float) r.getCentreX(), (float) r.getCentreY()));
+            }
 
             if (e.animationMode == "shake")
             {
                 const int dx = juce::roundToInt ((wave - 0.5f) * 10.0f * juce::jmax (0.25f, e.audioReactiveAmount));
                 r.translate (dx, 0);
             }
-            else if (combined > 0.001f)
+            else if (isScale && combined > 0.001f)
             {
-                const int grow = juce::roundToInt (combined * 8.0f);
+                const int grow = juce::roundToInt (combined * 12.0f);
                 r = r.expanded (grow, grow);
             }
 
-            if (e.animationMode == "glow" || e.audioReactive)
+            if (isGlow)
             {
                 auto halo = r.expanded (juce::roundToInt (6.0f + combined * 16.0f)).toFloat();
                 g.setColour ((e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour)
@@ -954,8 +1006,7 @@
                 juce::File f = juce::File::isAbsolutePath (e.asset)
                     ? juce::File (e.asset)
                     : owner.getProject().getProjectFolder().getChildFile (e.asset);
-                if (f.existsAsFile())
-                    img = owner.getAssets().loadImage (f);
+                img = owner.getAssets().loadImage (f);
             }
 
             if (img.isValid())
@@ -977,10 +1028,9 @@
                 juce::File f = juce::File::isAbsolutePath (assetPath)
                     ? juce::File (assetPath)
                     : owner.getProject().getProjectFolder().getChildFile (assetPath);
-                if (f.existsAsFile())
-                    img = owner.getAssets().loadImage (f);
+                img = owner.getAssets().loadImage (f);
             }
-            drawSpriteAnimatorPlaceholder (g, r, e, img);
+            drawSpriteAnimatorPlaceholder (g, r, e, img, driveVal);
         }
         else if (e.type == ElementType::VisualFxLayer)
         {
@@ -1023,8 +1073,7 @@
                 juce::File f = juce::File::isAbsolutePath (relPath)
                     ? juce::File (relPath)
                     : owner.getProject().getProjectFolder().getChildFile (relPath);
-                if (f.existsAsFile())
-                    img = owner.getAssets().loadImage (f);
+                img = owner.getAssets().loadImage (f);
             }
 
             if (img.isValid())
@@ -1393,6 +1442,59 @@
         {
             drawTabPanel (g, e, r, selected);
         }
+        else if (e.type == ElementType::Waveform)
+        {
+            const auto bg = e.backgroundColour.isTransparent() ? juce::Colour (0xff15171b) : e.backgroundColour;
+            const auto border = e.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : e.borderColour;
+            const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
+            g.setColour (bg);
+            g.fillRoundedRectangle (r.toFloat(), juce::jmax (5.0f, e.cornerRadius));
+            g.setColour (border);
+            g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (5.0f, e.cornerRadius), 1.0f);
+            
+            auto area = r.reduced (8);
+            if (e.label.isNotEmpty() && e.labelPosition != "hidden")
+            {
+                auto header = area.removeFromTop (16);
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (juce::Font (10.0f, juce::Font::bold));
+                g.drawText (e.label.toUpperCase(), header, juce::Justification::centred);
+            }
+            
+            g.setColour (accent.withAlpha (0.75f));
+            juce::Path wave;
+            const bool isStep = e.label.containsIgnoreCase ("Step");
+            if (isStep)
+            {
+                const int numSteps = 12;
+                for (int i = 0; i <= numSteps; ++i)
+                {
+                    const float x = (float) area.getX() + (float) i / (float) numSteps * (float) area.getWidth();
+                    const int stepIndex = juce::jmin (i, numSteps - 1);
+                    const float phase = (float) stepIndex / (float) numSteps * juce::MathConstants<float>::twoPi * 3.0f;
+                    const float y = (float) area.getCentreY() + std::sin (phase) * (float) area.getHeight() * 0.35f;
+                    if (i == 0)
+                    {
+                        wave.startNewSubPath (x, y);
+                    }
+                    else
+                    {
+                        wave.lineTo (x, wave.getCurrentPosition().y);
+                        wave.lineTo (x, y);
+                    }
+                }
+            }
+            else
+            {
+                wave.startNewSubPath ((float) area.getX(), (float) area.getCentreY());
+                for (int x = 0; x < area.getWidth(); x += 4)
+                {
+                    const auto phase = (float) x / juce::jmax (1, area.getWidth()) * juce::MathConstants<float>::twoPi * 3.0f;
+                    wave.lineTo ((float) area.getX() + x, (float) area.getCentreY() + std::sin (phase) * (float) area.getHeight() * 0.35f);
+                }
+            }
+            g.strokePath (wave, juce::PathStrokeType (1.5f));
+        }
         else if (e.type == ElementType::GranularField)
         {
             const auto bg = e.backgroundColour.isTransparent() ? PatchCraftLookAndFeel::panelAlt() : e.backgroundColour;
@@ -1453,6 +1555,10 @@
         else if (e.type == ElementType::ArpLane)
         {
             drawArpLanePreview (g, r, e, owner.getProject().getDspGraph());
+        }
+        else if (e.type == ElementType::PianoRoll)
+        {
+            drawPianoRollPreview (g, r, e, owner.getProject().getDspGraph());
         }
         else if (e.type == ElementType::Mixer)
         {

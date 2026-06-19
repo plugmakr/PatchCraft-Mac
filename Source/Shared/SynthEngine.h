@@ -4,6 +4,7 @@
 #include "AdvancedFxProcessor.h"
 #include "AudioUtilityProcessor.h"
 #include "IInstrumentEngine.h"
+#include "DspRack.h"
 #include <juce_dsp/juce_dsp.h>
 
 #include <array>
@@ -152,6 +153,7 @@ namespace patchcraft
         juce::dsp::DelayLine<float> delayL { 96000 };
         juce::dsp::DelayLine<float> delayR { 96000 };
         juce::dsp::Reverb           reverb;
+        DspRack                     dspRack;
 
         juce::AudioBuffer<float> tempBuffer;
 

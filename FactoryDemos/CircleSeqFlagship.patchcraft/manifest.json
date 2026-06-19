@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "instrumentName": "CircleSEQ Flagship",
   "creator": "AudiCode",
-  "description": "A five-lane circular sequencer demo with lane roles, bypasses, and melodic pattern presets.",
+  "description": "Five-lane circular sequencer with lane roles, bypasses, and melodic orbit presets.",
   "category": "Circle Sequencer Demo",
   "engine": "synth",
   "backgroundImage": "assets/background-clean.png",

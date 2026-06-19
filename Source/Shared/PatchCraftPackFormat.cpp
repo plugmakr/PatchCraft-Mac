@@ -1,5 +1,7 @@
 #include "PatchCraftPackFormat.h"
 
+#include "ArpStepSequencerTemplate.h"
+
 #include <array>
 #include <cmath>
 
@@ -98,7 +100,13 @@ namespace patchcraft
         {
             for (auto& block : graph.blocks)
             {
+                if (block.id == "seq_arp")
+                    return block;
+
                 const auto type = block.type.trim().toLowerCase();
+                if (type == "midiplayground" && block.section == "mod")
+                    return block;
+
                 if (type == "arp" || type == "arpeggiator" || type == "arpsequencer"
                     || type == "arpstepsequencer" || type == "arp step sequencer")
                     return block;
@@ -133,14 +141,37 @@ namespace patchcraft
             auto& block = ensureArpBlock (graph);
             block.name = "Preset Step Arp - " + preset.name;
             block.enabled = true;
-            block.values["sync"] = 1.0f;
-            block.values["rate"] = rates[recipe];
-            block.values["arpSteps"] = 16.0f;
-            block.values["arpPattern"] = patternsId[recipe];
-            block.values["arpGate"] = gates[recipe];
-            block.values["arpOctaves"] = recipe == 5 ? 1.0f : 2.0f;
-            for (int step = 0; step < 16; ++step)
-                block.values["arpNote" + juce::String (step)] = patterns[(size_t) recipe][(size_t) step];
+
+            const bool stepSequencer = block.id == "seq_arp"
+                || block.type.containsIgnoreCase ("midiplayground");
+            if (stepSequencer)
+            {
+                seedArpStepPattern (block, recipe);
+                preset.values["arpLaneRate"] = block.values["rate"];
+                preset.values["arpLaneGate"] = block.values["arpGate"];
+            }
+            else
+            {
+                block.values["sync"] = 1.0f;
+                block.values["rate"] = rates[recipe];
+                block.values["arpSteps"] = 16.0f;
+                block.values["arpPattern"] = patternsId[recipe];
+                block.values["arpGate"] = gates[recipe];
+                block.values["arpOctaves"] = recipe == 5 ? 1.0f : 2.0f;
+                for (int step = 0; step < 16; ++step)
+                {
+                    const auto suffix = juce::String (step);
+                    const float note = patterns[(size_t) recipe][(size_t) step];
+                    block.values["arpNote" + suffix] = note;
+                    block.values["mpStep" + suffix + "On"] = note >= 0.0f ? 1.0f : 0.0f;
+                    block.values["mpVelocity" + suffix] = 0.62f + 0.28f * (float) (step % 3);
+                    block.values["mpGate" + suffix] = gates[recipe];
+                    block.values["mpStepProb" + suffix] = 1.0f;
+                }
+                block.values["mpProbability"] = 1.0f;
+                block.values["mpMultiLane"] = 1.0f;
+                block.values["mpActiveBank"] = 0.0f;
+            }
 
             preset.values["attack"] = 0.002f;
             preset.values["decay"] = 0.12f + 0.025f * (float) recipe;

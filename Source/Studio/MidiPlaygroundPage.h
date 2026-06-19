@@ -43,8 +43,8 @@ namespace patchcraft
         juce::Label title;
         juce::Label subtitle;
         juce::Label activeSummary;
-        juce::TextButton performanceViewButton { "Pattern Builder" };
-        juce::TextButton arpLaneViewButton { "Circle View" };
+        juce::TextButton performanceViewButton { "Steps" };
+        juce::TextButton arpLaneViewButton { "Circles" };
 
         juce::ComboBox sourceBox;
         juce::ComboBox modeBox;
@@ -59,6 +59,11 @@ namespace patchcraft
         juce::ComboBox rootBox;
         juce::ComboBox scaleBox;
         juce::ComboBox targetBox;
+        juce::ComboBox laneTargetBox;
+        juce::ComboBox laneSoundBox;
+
+        juce::ToggleButton multiLaneToggle { "Play All Slots" };
+        juce::ToggleButton retriggerToggle { "Retrigger" };
 
         juce::Slider stepsSlider;
         juce::Slider rateSlider;

@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "instrumentName": "EchoCraft",
   "creator": "AudiCode",
-  "description": "A delay workstation demo with four delay stages, feedback shaping, modulation, tone, and output controls.",
+  "description": "Four-stage delay workstation with feedback shaping, modulation, tone, and mix-safe presets.",
   "category": "Delay Workstation",
   "engine": "fx",
   "backgroundImage": "assets/background-clean.png",

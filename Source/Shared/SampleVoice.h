@@ -43,6 +43,12 @@ namespace patchcraft
         bool isOneShot() const noexcept                 { return oneShot; }
         int  getChokeGroup() const noexcept             { return chokeGroup; }
 
+        // Voice-stealing heuristics (audio-thread only).
+        int    getPriority() const noexcept             { return priority; }
+        juce::uint32 getStartOrder() const noexcept     { return startOrder; }
+        bool   isReleasing() const noexcept             { return releasing; }
+        float  getEnvelopeLevel() const noexcept        { return lastEnvLevel; }
+
         void start (const LoadedSamplePtr& sample, int midiNote, float velocity,
                     const juce::ADSR::Parameters& adsr,
                     bool legato,
@@ -54,7 +60,9 @@ namespace patchcraft
                     bool reverseOverride = false,
                     float tempoRatio = 1.0f,
                     float padGain = 1.0f,
-                    float padPanOffset = 0.0f);
+                    float padPanOffset = 0.0f,
+                    float extraGain = 1.0f,
+                    juce::uint32 voiceStartOrder = 0);
 
         // Begin release stage; voice will keep mixing until envelope finishes.
         void release();
@@ -78,7 +86,20 @@ namespace patchcraft
         int    chokeGroup = 0;
         float  leftGain = 1.0f, rightGain = 1.0f;
         float  velocityGain = 1.0f;
+        // Per-trigger multiplier carrying velocity curve + velocity-layer
+        // crossfade gain computed by the engine. 1.0 == legacy behaviour.
+        float  extraGain = 1.0f;
         double currentSampleRate = 44100.0;
+
+        // Voice-stealing metadata.
+        int          priority = 0;
+        juce::uint32 startOrder = 0;
+        bool         releasing = false;
+        float        lastEnvLevel = 0.0f;
+
+        // Equal-power loop crossfade length (samples), derived per-trigger.
+        int    loopCrossfade = 0;
+        bool   loopForced = false; // playMode == Loop forces full-region looping
 
         juce::ADSR env;
         juce::ADSR::Parameters envParams;

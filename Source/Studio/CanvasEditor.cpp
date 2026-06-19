@@ -3,7 +3,11 @@
 #include "PatchCraftLookAndFeel.h"
 #include "MidiPlaygroundPattern.h"
 #include "SampleMap.h"
+#include "PianoRollRuntime.h"
+#include "ArpLaneUi.h"
+#include "DrumMachineUtil.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <vector>
@@ -693,6 +697,7 @@ namespace patchcraft
                 block.values["dmTrack" + juce::String (track) + "Note"] = (float) defaultDrumTrackNote (track);
                 block.metadata["dmTrack" + juce::String (track) + "Label"] = defaultDrumTrackLabel (track);
             }
+            DrumMachineUtil::seedFactoryPatterns (block);
             graph.blocks.push_back (std::move (block));
             graph.userConfigured = true;
             return graph.blocks.back();
@@ -917,6 +922,103 @@ namespace patchcraft
             g.setFont (juce::FontOptions (9.5f).withStyle ("bold"));
             g.drawText (targetLabel, juce::Rectangle<int> ((int) centre.x - 46, (int) centre.y + 6, 92, 18),
                         juce::Justification::centred, true);
+        }
+
+        static void drawPianoRollPreview (juce::Graphics& g,
+                                          juce::Rectangle<int> r,
+                                          const LayoutElement& element,
+                                          const DspGraph& graph)
+        {
+            const int steps = juce::jlimit (1, 256, element.pianoRollSteps);
+            const int stepsPerBeat = juce::jlimit (1, 16, element.pianoRollStepsPerBeat);
+            const int rows = juce::jlimit (4, 88, element.pianoRollRows);
+            const int lowNote = juce::jlimit (0, 120, element.pianoRollLowNote);
+
+            std::vector<PianoRollRuntime::Note> notes;
+            for (const auto& block : graph.blocks)
+            {
+                if (PianoRollRuntime::isPianoRollBlock (block))
+                {
+                    const auto found = block.metadata.find ("notes");
+                    if (found != block.metadata.end())
+                        notes = PianoRollRuntime::decodeNotes (found->second);
+                    break;
+                }
+            }
+
+            const auto bg = element.backgroundColour.isTransparent() ? juce::Colour (0xff111722) : element.backgroundColour;
+            const auto border = element.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : element.borderColour;
+            const auto accent = element.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : element.accentColour;
+
+            g.setColour (bg);
+            g.fillRoundedRectangle (r.toFloat(), juce::jmax (4.0f, element.cornerRadius));
+            g.setColour (border);
+            g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (4.0f, element.cornerRadius), 1.0f);
+
+            auto area = r.reduced (8);
+            auto header = area.removeFromTop (20);
+            g.setColour (accent);
+            g.setFont (juce::Font (11.0f, juce::Font::bold));
+            g.drawText ((element.label.isNotEmpty() ? element.label.toUpperCase() : juce::String ("PIANO ROLL"))
+                            + "  " + juce::String (notes.size()) + " notes",
+                        header, juce::Justification::centredLeft, true);
+
+            area.removeFromTop (4);
+            if (area.getWidth() < 30 || area.getHeight() < 20)
+                return;
+
+            const int gutterW = juce::jlimit (24, 48, area.getWidth() / 12);
+            auto gutter = area.removeFromLeft (gutterW);
+            auto grid = area;
+            const float cellW = (float) grid.getWidth() / (float) steps;
+            const float cellH = (float) grid.getHeight() / (float) rows;
+            if (cellW <= 0.0f || cellH <= 0.0f)
+                return;
+
+            for (int row = 0; row < rows; ++row)
+            {
+                const int pitch = lowNote + (rows - 1 - row);
+                const int pc = pitch % 12;
+                const bool isBlack = (pc == 1 || pc == 3 || pc == 6 || pc == 8 || pc == 10);
+                const auto rowRect = juce::Rectangle<float> ((float) grid.getX(),
+                                                             (float) grid.getY() + (float) row * cellH,
+                                                             (float) grid.getWidth(), cellH);
+                g.setColour ((isBlack ? PatchCraftLookAndFeel::panelAlt().darker (0.20f)
+                                       : PatchCraftLookAndFeel::panelAlt()).withAlpha (0.50f));
+                g.fillRect (rowRect);
+                const auto keyRect = juce::Rectangle<float> ((float) gutter.getX(), rowRect.getY(),
+                                                             (float) gutter.getWidth(), cellH).reduced (1.0f, 0.5f);
+                g.setColour (isBlack ? juce::Colour (0xff141821) : juce::Colour (0xffe9ecf2));
+                g.fillRoundedRectangle (keyRect, 2.0f);
+            }
+
+            for (int step = 0; step <= steps; ++step)
+            {
+                const float x = (float) grid.getX() + (float) step * cellW;
+                const bool beat = step % stepsPerBeat == 0;
+                g.setColour (border.withAlpha (beat ? 0.6f : 0.25f));
+                g.drawVerticalLine (juce::roundToInt (x), (float) grid.getY(), (float) grid.getBottom());
+            }
+
+            const int highNote = lowNote + rows - 1;
+            for (const auto& note : notes)
+            {
+                if (note.pitch < lowNote || note.pitch > highNote)
+                    continue;
+                const int rowFromTop = highNote - note.pitch;
+                const int startStep = juce::jlimit (0, steps - 1, note.startStep);
+                const int endStep = juce::jlimit (1, steps, note.startStep + juce::jmax (1, note.lengthSteps));
+                const auto noteRect = juce::Rectangle<float> (
+                    (float) grid.getX() + (float) startStep * cellW + 1.0f,
+                    (float) grid.getY() + (float) rowFromTop * cellH + 1.0f,
+                    juce::jmax (2.0f, (float) (endStep - startStep) * cellW - 2.0f),
+                    juce::jmax (2.0f, cellH - 2.0f));
+                const float vel = juce::jlimit (0.1f, 1.0f, note.velocity);
+                g.setColour (accent.withAlpha (0.45f + vel * 0.45f));
+                g.fillRoundedRectangle (noteRect, 2.5f);
+                g.setColour (accent.brighter (0.4f).withAlpha (0.9f));
+                g.drawRoundedRectangle (noteRect.reduced (0.5f), 2.5f, 1.0f);
+            }
         }
 
         static void drawDrumGridPreview (juce::Graphics& g,
@@ -1689,6 +1791,7 @@ namespace patchcraft
             if (! e.visible) continue;
             if (e.type == ElementType::Group) continue;
             if (! isElementOnCurrentTab (e)) continue;
+            if (! designerModeActive && e.type == ElementType::Panel) continue;
             drawElement (g, e, elementScreenRect (e), owner.isElementSelected (e.id));
         }
 

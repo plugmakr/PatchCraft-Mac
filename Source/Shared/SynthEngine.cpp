@@ -143,6 +143,16 @@ namespace patchcraft
                 atomics.wtFrameShape[(size_t) frame][(size_t) i] = std::sin (framePhase);
             }
         }
+
+        // Initialize dynamic DspRack with default chain
+        dspRack.addAudioModule (std::make_unique<FilterModule> ("filter1"));
+        dspRack.addAudioModule (std::make_unique<DelayModule> ("delay1"));
+        dspRack.addAudioModule (std::make_unique<ReverbModule> ("reverb1"));
+        
+        dspRack.addModulator (std::make_unique<LfoModulator> ("lfo1"));
+        
+        // Connect LFO1 to modulate Filter1's cutoff
+        dspRack.addModulationRoute (ModulationRoute { "lfo1", "filter1", "cutoff", 4000.0f, true });
     }
 
     void SynthEngine::prepare (double sr, int maxBlockSize, int numChannels)
@@ -157,6 +167,7 @@ namespace patchcraft
         juce::dsp::ProcessSpec spec { sr, (juce::uint32) maxBlockSize,
                                       (juce::uint32) juce::jmax (1, numChannels) };
         filter.prepare (spec);
+        dspRack.prepare (spec);
         filter.setType (juce::dsp::StateVariableTPTFilterType::lowpass);
         eq.prepare (sr, maxBlockSize, numChannels);
         advancedFx.prepare (sr, maxBlockSize, numChannels);
@@ -186,6 +197,7 @@ namespace patchcraft
         delayL.reset();
         delayR.reset();
         reverb.reset();
+        dspRack.reset();
         lfoPhase = 0.0;
     }
 
@@ -323,14 +335,54 @@ namespace patchcraft
         else if (id == "decay")           atomics.decay          = v;
         else if (id == "sustain")         atomics.sustain        = v;
         else if (id == "release")         atomics.release        = v;
-        else if (id == "filterCutoff")    atomics.cutoff         = v;
-        else if (id == "filterResonance") atomics.resonance      = v;
-        else if (id == "lfoRate")         atomics.lfoRate        = v;
-        else if (id == "lfoAmount")       atomics.lfoAmount      = v;
-        else if (id == "delayTime")       atomics.delayTime      = v;
-        else if (id == "delayFeedback")   atomics.delayFeedback  = v;
-        else if (id == "delayMix")        atomics.delayMix       = v;
-        else if (id == "reverbMix")       atomics.reverbMix      = v;
+        else if (id == "filterCutoff")
+        {
+            atomics.cutoff = v;
+            for (auto& fx : dspRack.getAudioChain())
+                if (fx->getType() == "filter") fx->setParameter ("cutoff", v);
+        }
+        else if (id == "filterResonance")
+        {
+            atomics.resonance = v;
+            for (auto& fx : dspRack.getAudioChain())
+                if (fx->getType() == "filter") fx->setParameter ("resonance", v);
+        }
+        else if (id == "lfoRate")
+        {
+            atomics.lfoRate = v;
+            for (auto& m : dspRack.getModulators())
+                if (m->getType() == "lfo") m->setParameter ("rate", v);
+        }
+        else if (id == "lfoAmount")
+        {
+            atomics.lfoAmount = v;
+            for (auto& m : dspRack.getModulators())
+                if (m->getType() == "lfo") m->setParameter ("amount", v);
+        }
+        else if (id == "delayTime")
+        {
+            atomics.delayTime = v;
+            for (auto& fx : dspRack.getAudioChain())
+                if (fx->getType() == "delay") fx->setParameter ("time", v);
+        }
+        else if (id == "delayFeedback")
+        {
+            atomics.delayFeedback = v;
+            for (auto& fx : dspRack.getAudioChain())
+                if (fx->getType() == "delay") fx->setParameter ("feedback", v);
+        }
+        else if (id == "delayMix")
+        {
+            atomics.delayMix = v;
+            for (auto& fx : dspRack.getAudioChain())
+                if (fx->getType() == "delay") fx->setParameter ("mix", v);
+        }
+        else if (id == "reverbMix")
+        {
+            atomics.reverbMix = v;
+            for (auto& fx : dspRack.getAudioChain())
+                if (fx->getType() == "reverb") fx->setParameter ("mix", v);
+        }
         else if (id == "volume")          atomics.volume         = v;
         else if (id == "expression")      atomics.expression     = v;
         else if (id == "pan")             atomics.pan            = v;
@@ -451,9 +503,6 @@ namespace patchcraft
         const float wtDetune = juce::jlimit (0.0f, 80.0f, atomics.wtDetune.load());
         const float wtSpread = juce::jlimit (0.0f, 1.0f, atomics.wtSpread.load());
         const float wtLevel = juce::jlimit (0.0f, 1.5f, atomics.wtLevel.load());
-        const float lfoRateHz = juce::jmax (0.05f, atomics.lfoRate.load());
-        const float lfoAmt    = juce::jlimit (0.0f, 1.0f, atomics.lfoAmount.load());
-        const double lfoInc   = juce::MathConstants<double>::twoPi * lfoRateHz / sampleRate;
 
         auto* L = tempBuffer.getWritePointer (0);
         auto* R = tempBuffer.getWritePointer (juce::jmin (1, tempBuffer.getNumChannels() - 1));
@@ -541,55 +590,12 @@ namespace patchcraft
             }
         }
 
-        // Filter with LFO modulation of cutoff
-        const float baseCutoff = juce::jlimit (20.0f, 20000.0f, atomics.cutoff.load());
-        const float resonance  = juce::jlimit (0.05f, 1.5f, atomics.resonance.load() * 1.5f + 0.05f);
-        // For LFO: modulate cutoff by ratio; one LFO sample per block is fine
-        const double lfoSample = std::sin (lfoPhase);
-        lfoPhase += lfoInc * numSamples;
-        if (lfoPhase > juce::MathConstants<double>::twoPi)
-            lfoPhase = std::fmod (lfoPhase, juce::MathConstants<double>::twoPi);
-        const float modulatedCutoff = juce::jlimit (20.0f, 20000.0f,
-            baseCutoff * (float) std::pow (2.0, lfoSample * lfoAmt));
-
-        filter.setCutoffFrequency (modulatedCutoff);
-        filter.setResonance (resonance);
-
-        juce::dsp::AudioBlock<float> block (tempBuffer.getArrayOfWritePointers(),
-                                            (size_t) numChans, 0, (size_t) numSamples);
-        juce::dsp::ProcessContextReplacing<float> ctx (block);
-        filter.process (ctx);
+        // Run EQ and Advanced FX
         eq.process (tempBuffer, 0, numSamples);
         advancedFx.process (tempBuffer, 0, numSamples);
 
-        // Delay
-        const float dTime = juce::jlimit (0.0f, 2.0f, atomics.delayTime.load());
-        const float dFb   = juce::jlimit (0.0f, 0.95f, atomics.delayFeedback.load());
-        const float dMix  = juce::jlimit (0.0f, 1.0f, atomics.delayMix.load());
-        const int dSamps  = juce::jmax (1, (int) (dTime * sampleRate));
-        delayL.setDelay ((float) dSamps);
-        delayR.setDelay ((float) dSamps);
-
-        for (int i = 0; i < numSamples; ++i)
-        {
-            const float dl = delayL.popSample (0);
-            const float dr = delayR.popSample (0);
-            delayL.pushSample (0, L[i] + dr * dFb);
-            delayR.pushSample (0, R[i] + dl * dFb);
-            L[i] = L[i] * (1.0f - dMix * 0.5f) + dl * dMix;
-            if (R != L) R[i] = R[i] * (1.0f - dMix * 0.5f) + dr * dMix;
-        }
-
-        // Reverb
-        const float rvMix = juce::jlimit (0.0f, 1.0f, atomics.reverbMix.load());
-        juce::Reverb::Parameters rp;
-        rp.roomSize = 0.6f;
-        rp.damping  = 0.4f;
-        rp.wetLevel = rvMix * 0.6f;
-        rp.dryLevel = 1.0f - rvMix * 0.5f;
-        rp.width    = 1.0f;
-        reverb.setParameters (rp);
-        reverb.process (ctx);
+        // Run the dynamic modular DSP rack
+        dspRack.process (tempBuffer);
         utility.processOutput (tempBuffer, 0, numSamples);
 
         // Master volume + pan, mix into destination

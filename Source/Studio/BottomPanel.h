@@ -14,7 +14,6 @@ namespace patchcraft
     class PresetsComponent;
     class InstrumentPreviewComponent;
     class StudioInstrumentRenderer;
-    class DspPage;
     class MidiPlaygroundPage;
     class OneShotMakerPage;
     class WorkflowPage;
@@ -25,18 +24,19 @@ namespace patchcraft
     class IInstrumentEngine;
     class TestPage;
     class BrandingLabPage;
+    class ControlNodeEditor;
     struct SampleZoneDef;
 
     /**
         Bottom workspace - tabbed via the section tabs in the canvas toolbar.
         One Page is visible at a time:
             Workflow     - Guided instrument-building path and health checks.
-        Parameters   - Parameters list + Presets browser side-by-side.
-        Samples      - Mapper / Keyzones / Velocity sub-tabs.
-        MidiPlayground - Musical MIDI generation and sample-control tools.
-        ArpStudio    - Dedicated circular arpeggiator builder surface.
-        Test         - Embedded MIDI keyboard + preview engine.
-        Widgets      - Unified Knob / Slider / Meter builder.
+            Design       - Layout canvas bindings strip (CONTROL BINDINGS).
+            Samples      - Mapper / Keyzones / Velocity sub-tabs.
+            MidiPlayground / ArpStudio - Perform workspace (Steps + Circles share one page).
+            DSP          - Global typed graph editor (ControlNodeEditor).
+            Test         - Embedded MIDI keyboard + preview engine.
+            Widgets      - Unified Knob / Slider / Meter builder.
     */
     class BottomPanel : public juce::Component
     {
@@ -51,6 +51,8 @@ namespace patchcraft
 
         void setPage (Page);
         Page getPage() const                              { return currentPage; }
+        
+        void refreshDesignSelection();
 
         // Test page: start/stop the embedded preview audio.
         void setPreviewActive (bool active);
@@ -59,9 +61,7 @@ namespace patchcraft
         juce::String getDspPatchSectionId() const;
         juce::String getDspPatchSectionLabel() const;
         void showDspBuilderTutorial();
-        // Forwards to the underlying DspPage so the canvas right-click
-        // shortcut can drop in an arpeggiator without reaching into the
-        // bottom panel's private members.
+        // Canvas shortcut: ensure an arpeggiator block exists and open Graph.
         void addArpBlock();
 
         void refresh();
@@ -79,7 +79,6 @@ namespace patchcraft
         juce::Label                          designPresetsHeader;
         std::unique_ptr<ParametersComponent> parameters;
         std::unique_ptr<PresetsComponent>    presets;
-        std::unique_ptr<DspPage>             designDspPage;
 
         // ---- Sample Mapper page -------------------------------------------
         juce::TextButton btnMapperMain    { "Sample Mapper" };
@@ -99,11 +98,11 @@ namespace patchcraft
         // ---- Test page -----------------------------------------------------
         std::unique_ptr<TestPage> testPage;
 
-        // ---- DSP page -------------------------------------------------------
-        std::unique_ptr<DspPage> dspPage;
-
         // ---- Build page (unified Knob/Slider/Meter builder) ---------------
         std::unique_ptr<ControlBuilderComponent> builder;
+
+        // ---- Global Graph View ---------------------------------------------
+        std::unique_ptr<ControlNodeEditor> globalGraphView;
 
         // ---- Animation / reactive visual authoring ------------------------
         std::unique_ptr<AnimationLabPage> animationLab;

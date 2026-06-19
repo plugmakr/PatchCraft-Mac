@@ -65,11 +65,24 @@ namespace patchcraft
         exportJsonBtn.onClick = [this] { exportSliderSourceJson(); };
         addToProjectBtn.onClick = [this] { addSliderToLibrary(); };
 
+        importThumbBtn.onClick = [this] { importImage (0); };
+        importTrackBtn.onClick = [this] { importImage (1); };
+        importStripBtn.onClick = [this] { importImage (2); };
+        clearImageBtn.onClick = [this]
+        {
+            importedThumb = importedTrack = importedStrip = {};
+            importedSource = {};
+            repaint();
+        };
+        for (auto* button : { &importThumbBtn, &importTrackBtn, &importStripBtn, &clearImageBtn })
+            addAndMakeVisible (*button);
+
         styleSliderBuilderLabel (assetLbl, "SLIDER ASSET");
         styleSliderBuilderLabel (geometryLbl, "GEOMETRY");
         styleSliderBuilderLabel (paintLbl, "PAINT");
         styleSliderBuilderLabel (behaviorLbl, "OUTPUT / BEHAVIOR");
-        for (auto* label : { &assetLbl, &geometryLbl, &paintLbl, &behaviorLbl })
+        styleSliderBuilderLabel (imageLbl, "IMPORT IMAGE -> WORKING ASSET");
+        for (auto* label : { &assetLbl, &geometryLbl, &paintLbl, &behaviorLbl, &imageLbl })
             addAndMakeVisible (*label);
 
         cycleColour (trackColour, trackColourBtn);
@@ -139,16 +152,23 @@ namespace patchcraft
         auto rail = horizontal ? preview.withHeight ((float) trackSlider.getValue()).withCentre ({ preview.getCentreX(), preview.getCentreY() })
                                : preview.withWidth ((float) trackSlider.getValue()).withCentre ({ preview.getCentreX(), preview.getCentreY() });
         const float corner = capBox.getSelectedId() == 2 ? 1.0f : rail.getHeight() * 0.5f;
-        g.setColour (trackColour);
-        g.fillRoundedRectangle (rail, corner);
-
-        auto fill = rail;
-        if (horizontal)
-            fill.setRight (rail.getX() + rail.getWidth() * value);
+        if (importedTrack.isValid())
+        {
+            g.drawImage (importedTrack, preview, juce::RectanglePlacement::stretchToFit);
+        }
         else
-            fill.setTop (rail.getBottom() - rail.getHeight() * value);
-        g.setColour (fillColour);
-        g.fillRoundedRectangle (fill, corner);
+        {
+            g.setColour (trackColour);
+            g.fillRoundedRectangle (rail, corner);
+
+            auto fill = rail;
+            if (horizontal)
+                fill.setRight (rail.getX() + rail.getWidth() * value);
+            else
+                fill.setTop (rail.getBottom() - rail.getHeight() * value);
+            g.setColour (fillColour);
+            g.fillRoundedRectangle (fill, corner);
+        }
 
         if (scaleToggle.getToggleState())
         {
@@ -173,10 +193,22 @@ namespace patchcraft
         const auto thumbCentre = horizontal
             ? juce::Point<float> (rail.getX() + rail.getWidth() * value, rail.getCentreY())
             : juce::Point<float> (rail.getCentreX(), rail.getBottom() - rail.getHeight() * value);
-        g.setColour (thumbColour);
-        g.fillEllipse (thumbCentre.x - thumb * 0.5f, thumbCentre.y - thumb * 0.5f, thumb, thumb);
-        g.setColour (PatchCraftLookAndFeel::border());
-        g.drawEllipse (thumbCentre.x - thumb * 0.5f, thumbCentre.y - thumb * 0.5f, thumb, thumb, 1.2f);
+        if (importedThumb.isValid())
+        {
+            const float tw = thumb * 1.6f;
+            const float ar = (float) importedThumb.getHeight() / juce::jmax (1.0f, (float) importedThumb.getWidth());
+            const float th = tw * ar;
+            g.drawImage (importedThumb,
+                         juce::Rectangle<float> (thumbCentre.x - tw * 0.5f, thumbCentre.y - th * 0.5f, tw, th),
+                         juce::RectanglePlacement::centred);
+        }
+        else
+        {
+            g.setColour (thumbColour);
+            g.fillEllipse (thumbCentre.x - thumb * 0.5f, thumbCentre.y - thumb * 0.5f, thumb, thumb);
+            g.setColour (PatchCraftLookAndFeel::border());
+            g.drawEllipse (thumbCentre.x - thumb * 0.5f, thumbCentre.y - thumb * 0.5f, thumb, thumb, 1.2f);
+        }
     }
 
     void SliderBuilderComponent::resized()
@@ -211,6 +243,13 @@ namespace patchcraft
         trackColourBtn.setBounds (colours.removeFromLeft (92).reduced (2));
         fillColourBtn.setBounds (colours.removeFromLeft (92).reduced (2));
         thumbColourBtn.setBounds (colours.removeFromLeft (92).reduced (2));
+        right.removeFromTop (6);
+        header (imageLbl);
+        auto imgRow = right.removeFromTop (28);
+        importThumbBtn.setBounds (imgRow.removeFromLeft (68).reduced (2));
+        importTrackBtn.setBounds (imgRow.removeFromLeft (68).reduced (2));
+        importStripBtn.setBounds (imgRow.removeFromLeft (68).reduced (2));
+        clearImageBtn.setBounds (imgRow.reduced (2));
         right.removeFromTop (6);
         header (behaviorLbl);
         scaleToggle.setBounds (right.removeFromTop (24));
@@ -257,6 +296,10 @@ namespace patchcraft
 
     juce::Image SliderBuilderComponent::renderSliderFilmstrip (bool verticalStrip)
     {
+        // A ready-made imported filmstrip is the working asset as-is.
+        if (importedStrip.isValid())
+            return importedStrip;
+
         const int total = juce::jlimit (1, 256, juce::roundToInt (framesSlider.getValue()));
         auto first = renderSliderFrame (0, total);
         juce::Image strip (juce::Image::ARGB,
@@ -375,6 +418,39 @@ namespace patchcraft
                             .withButton ("OK")
                             .withIconType (juce::MessageBoxIconType::WarningIcon),
                         nullptr);
+            });
+    }
+
+    void SliderBuilderComponent::importImage (int slot)
+    {
+        auto chooser = std::make_shared<juce::FileChooser> (
+            slot == 2 ? "Import Slider Filmstrip" : (slot == 0 ? "Import Thumb Image" : "Import Track Image"),
+            juce::File::getSpecialLocation (juce::File::userPicturesDirectory),
+            "*.png;*.jpg;*.jpeg");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode
+                              | juce::FileBrowserComponent::canSelectFiles,
+            [this, chooser, slot] (const juce::FileChooser& fc)
+            {
+                auto file = fc.getResult();
+                if (file == juce::File())
+                    return;
+                auto image = juce::ImageFileFormat::loadFrom (file);
+                if (! image.isValid())
+                    return;
+
+                importedSource = file;
+                if (slot == 0)      importedThumb = image;
+                else if (slot == 1) importedTrack = image;
+                else
+                {
+                    importedStrip = image;
+                    // Best-effort frame count: assume square frames along the long axis.
+                    const int w = image.getWidth(), h = image.getHeight();
+                    const int inferred = h >= w ? (w > 0 ? h / w : 1) : (h > 0 ? w / h : 1);
+                    if (inferred > 1)
+                        framesSlider.setValue (juce::jlimit (1, 256, inferred), juce::sendNotificationSync);
+                }
+                repaint();
             });
     }
 

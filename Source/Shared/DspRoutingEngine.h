@@ -21,6 +21,22 @@ namespace patchcraft
         void processToEngine (IInstrumentEngine& engine, const RenderContext& context);
         void captureAudioAnalysis (const juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
 
+        struct AudioAnalysisState
+        {
+            float peak = 0.0f;
+            float rms = 0.0f;
+            float envelope = 0.0f;
+            float transient = 0.0f;
+            float spectralCentroid = 0.0f;
+            float lowEnergy = 0.0f;
+            float midEnergy = 0.0f;
+            float highEnergy = 0.0f;
+            float lowState = 0.0f;
+            float midState = 0.0f;
+        };
+
+        const AudioAnalysisState& getAudioAnalysis() const noexcept { return audioAnalysis; }
+
     private:
         struct ParamSlot
         {
@@ -43,20 +59,6 @@ namespace patchcraft
         {
             AutomationLane lane;
             double phase = 0.0;
-        };
-
-        struct AudioAnalysisState
-        {
-            float peak = 0.0f;
-            float rms = 0.0f;
-            float envelope = 0.0f;
-            float transient = 0.0f;
-            float spectralCentroid = 0.0f;
-            float lowEnergy = 0.0f;
-            float midEnergy = 0.0f;
-            float highEnergy = 0.0f;
-            float lowState = 0.0f;
-            float midState = 0.0f;
         };
 
         std::vector<ParamSlot> params;

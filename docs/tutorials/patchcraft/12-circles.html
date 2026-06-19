@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Circles — PatchCraft Documentation</title>
+  <meta name="description" content="Complete guide to PatchCraft Circles (Circle View / Arp Studio): orbit lanes, ring editing, FX groups, CircleSEQ templates, and Player export.">
+  <link rel="stylesheet" href="css/patchcraft-docs.css">
+</head>
+<body data-page="12-circles">
+
+<header class="doc-topbar">
+  <a class="doc-brand" href="index.html">
+    <span class="doc-brand-mark">P</span>
+    PatchCraft Docs
+  </a>
+  <nav class="doc-topbar-links">
+    <a href="https://audicode.com/products/patchcraft" target="_blank" rel="noopener">Product</a>
+    <a href="index.html">Tutorial bundle</a>
+    <a href="11-patterns.html">← Patterns</a>
+  </nav>
+  <button class="menu-toggle" type="button" aria-label="Open navigation">Menu</button>
+</header>
+
+<div class="doc-shell">
+  <aside class="doc-sidebar">
+    <h2>Tutorial bundle</h2>
+    <ul class="doc-nav">
+      <li><a href="index.html" data-page="index"><span class="nav-num">—</span> Index</a></li>
+      <li><a href="05-midi-playground.html" data-page="05"><span class="nav-num">05</span> MIDI Playground (overview)</a></li>
+      <li><a href="11-patterns.html" data-page="11-patterns"><span class="nav-num">11</span> Patterns</a></li>
+      <li><a href="12-circles.html" data-page="12-circles"><span class="nav-num">12</span> Circles</a></li>
+    </ul>
+
+    <h2>On this page</h2>
+    <ul class="doc-nav doc-toc">
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#opening">Opening Circles</a></li>
+      <li><a href="#workflow">Circle workflow</a></li>
+      <li><a href="#lanes">Lanes &amp; slots</a></li>
+      <li><a href="#ring-editor">Ring step editor</a></li>
+      <li><a href="#macros">Performance macros</a></li>
+      <li><a href="#fx-groups">FX group routing</a></li>
+      <li><a href="#orbit">Orbit &amp; multi-ring modes</a></li>
+      <li><a href="#canvas">Design canvas elements</a></li>
+      <li><a href="#templates">CircleSEQ templates</a></li>
+      <li><a href="#midi-drag">MIDI drag to DAW</a></li>
+      <li><a href="#export">Export contract</a></li>
+      <li><a href="#patterns-link">Patterns ↔ Circles</a></li>
+      <li><a href="#troubleshooting">Troubleshooting</a></li>
+    </ul>
+  </aside>
+
+  <main class="doc-main">
+    <header class="doc-hero">
+      <div class="doc-eyebrow">PatchCraft · Workspace 03b · Circles</div>
+      <h1>Circles (Circle View)</h1>
+      <p class="doc-lead">
+        Edit the same five phrase slots as Patterns — but with a <strong>Patterning-inspired circular interface</strong>:
+        orbit lanes, ring steps, velocity/gate/chance bands, and FX group mutes for live performance.
+      </p>
+      <div class="doc-meta">
+        <span class="doc-pill accent">Studio toolbar tab: Circles</span>
+        <span class="doc-pill">Arp Studio mode</span>
+        <span class="doc-pill">CircleSEQ Player templates</span>
+      </div>
+    </header>
+
+    <section class="doc-section" id="overview">
+      <div class="doc-section-header">
+        <span class="doc-section-num">01</span>
+        <h2>Overview</h2>
+      </div>
+      <p>
+        <strong>Circles</strong> is the second face of the MIDI Playground workspace. Where
+        <a href="11-patterns.html">Patterns</a> emphasises linear grids and piano-roll editing,
+        Circles emphasises <strong>radial step editing</strong>, <strong>lane selection</strong>, and
+        <strong>performance-oriented routing</strong> (FX throws, harmonic mutes, filter motion).
+      </p>
+      <p>
+        The header reads <strong>CIRCLE PATTERN VIEW</strong>. Subtitle reminder: sound still comes from DSP, Sample Mapper, or FX input —
+        Circles shapes <em>when</em> and <em>how hard</em> notes or slices fire, not the raw timbre.
+      </p>
+
+      <div class="card-grid">
+        <div class="info-card">
+          <h4>Same data model</h4>
+          <p>Five slots (<code>mpBank1</code>…<code>mpBank5</code>) shared with Patterns. Edit in either view.</p>
+        </div>
+        <div class="info-card teal">
+          <h4>Circle-native UX</h4>
+          <p>Ring step matrix, lane list, step inspector, and mini orbit previews per lane.</p>
+        </div>
+        <div class="info-card green">
+          <h4>Player-ready</h4>
+          <p>CircleSEQ templates drop Arp Lane widgets on the canvas with multi-ring orbit display.</p>
+        </div>
+      </div>
+
+      <div class="callout note">
+        <div class="callout-title">Naming map</div>
+        <p style="margin:0">
+          UI labels: <strong>Circles</strong> tab · <strong>Circle View</strong> toggle · internal block type <code>arpSequencer</code> ·
+          canvas element <strong>Arp Lane</strong> / <strong>CircleSEQ</strong> · research name <em>Orbit Lane</em>.
+        </p>
+      </div>
+    </section>
+
+    <section class="doc-section" id="opening">
+      <div class="doc-section-header">
+        <span class="doc-section-num">02</span>
+        <h2>Opening Circles</h2>
+      </div>
+      <ol>
+        <li>Click the <strong>Circles</strong> tab in the canvas toolbar (after Patterns).</li>
+        <li>Or open Patterns and toggle <strong>Circle View</strong> in the header (same page, different mode).</li>
+        <li>Confirm title <strong>CIRCLE PATTERN VIEW</strong> and <strong>Circle View</strong> toggle is active.</li>
+      </ol>
+      <p>From Design:</p>
+      <ul>
+        <li>Right-click canvas → <strong>Add Arp Studio Lane</strong> or <strong>Add CircleSEQ Musical Surface</strong>.</li>
+        <li>Select an Arp Lane element → Inspector → jump to Circles to edit its pattern ring.</li>
+        <li>Menu item <strong>Build Ring</strong> (Inspector) writes Patterning-style lane metadata into the active phrase bank.</li>
+      </ul>
+    </section>
+
+    <section class="doc-section" id="workflow">
+      <div class="doc-section-header">
+        <span class="doc-section-num">03</span>
+        <h2>Circle workflow</h2>
+      </div>
+      <p>The active summary strip describes the intended path:</p>
+
+      <ol class="workflow-steps">
+        <li>
+          <strong>Build Sound in DSP</strong>
+          Finish your instrument chain first. Circles triggers notes/slices into that engine.
+        </li>
+        <li>
+          <strong>Pick a Slot</strong>
+          Use the Slot dropdown (phrase bank 1–5) or click a lane in the left column. Each slot is an independent circle pattern.
+        </li>
+        <li>
+          <strong>Edit the ring / steps</strong>
+          Use the step editor matrix (Note, Velocity, Gate, Chance) or click steps on the large ring for the selected lane type.
+        </li>
+        <li>
+          <strong>Assign lane target</strong>
+          Per-lane Source and Target (filter cutoff, volume, sample slice, etc.) define what the lane modulates or triggers.
+        </li>
+        <li>
+          <strong>Make Circle Pattern</strong>
+          Writes all five slot runtimes into the DSP graph — equivalent to Patterns’ “Use This Pattern” but for the CircleSEQ data shape.
+        </li>
+        <li>
+          <strong>Update Player Controls</strong>
+          Applies the CircleSEQ Flagship Player layout (or refreshes existing Arp Lane widgets).
+        </li>
+      </ol>
+    </section>
+
+    <section class="doc-section" id="lanes">
+      <div class="doc-section-header">
+        <span class="doc-section-num">04</span>
+        <h2>Lanes &amp; slots</h2>
+      </div>
+      <p>
+        The left column lists <strong>five lanes</strong>, each mapped 1:1 to a phrase slot. Click a lane row to select it;
+        the step editor and orbit preview update to that slot’s data.
+      </p>
+
+      <h3>Lane names (default roles)</h3>
+      <div class="doc-table-wrap">
+        <table class="doc-table">
+          <thead><tr><th>Lane</th><th>Default role</th><th>Typical target</th></tr></thead>
+          <tbody>
+            <tr><td>1 · Lead</td><td>Melodic/arpeggiated lead line</td><td>Synth pitch / sampler notes</td></tr>
+            <tr><td>2 · Harmony</td><td>Chord tones or pad movement</td><td>Voiced notes or filter</td></tr>
+            <tr><td>3 · Bass</td><td>Low-end rhythm</td><td>Monophonic bass notes</td></tr>
+            <tr><td>4 · Drums</td><td>Percussion triggers</td><td>Drum pad notes / samples</td></tr>
+            <tr><td>5 · FX</td><td>Throws, fills, modulation</td><td>Slice index, FX send, mute groups</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Selected lane source panel</h3>
+      <p>Bottom-left card:</p>
+      <ul>
+        <li><strong>DSP</strong> — which engine section the lane feeds (stored in lane metadata for export).</li>
+        <li><strong>Target</strong> — parameter or trigger type (Filter Cutoff, Volume, Sample Slice, Sample Start/Length, Wavetable Position).</li>
+      </ul>
+      <p>
+        Player preview currently auditions <strong>one active slot</strong> at a time; lane source choices are persisted for builder/export either way.
+      </p>
+    </section>
+
+    <section class="doc-section" id="ring-editor">
+      <div class="doc-section-header">
+        <span class="doc-section-num">05</span>
+        <h2>Ring step editor</h2>
+      </div>
+      <p>
+        The central <strong>Step Editor</strong> shows up to 64 steps in four horizontal bands:
+        <strong>Note</strong>, <strong>Velocity</strong>, <strong>Gate</strong>, and <strong>Chance</strong> (probability).
+      </p>
+
+      <h3>Mouse editing</h3>
+      <ul>
+        <li><strong>Click / drag</strong> in a band to set value for that step (vertical position = amount).</li>
+        <li><strong>Ctrl-click</strong> or <strong>right-click</strong> toggles step on/off without changing values.</li>
+        <li>Active steps use brighter fill; inactive steps appear dimmed but retain stored values.</li>
+        <li>Playback highlights the current step when <strong>Play Pattern</strong> is running.</li>
+      </ul>
+
+      <h3>Step Inspector (right column)</h3>
+      <p>When a step is selected, the inspector shows:</p>
+      <ul>
+        <li>Lane name and index</li>
+        <li>Step number (1-based display)</li>
+        <li>Velocity (0–127)</li>
+        <li>Gate length (percentage of step)</li>
+      </ul>
+
+      <h3>Large orbit preview</h3>
+      <p>
+        The main canvas ring visualises the selected lane’s active steps as dots around a circle.
+        Playhead motion during preview rotates through steps clockwise — matching how the Player renders Arp Lane widgets.
+      </p>
+    </section>
+
+    <section class="doc-section" id="macros">
+      <div class="doc-section-header">
+        <span class="doc-section-num">06</span>
+        <h2>Performance macros</h2>
+      </div>
+      <p>Lower-left <strong>Performance / Modulation</strong> panel mirrors Patterns rhythm controls, scoped to the active slot:</p>
+      <div class="doc-table-wrap">
+        <table class="doc-table">
+          <thead><tr><th>Control</th><th>Circle-specific usage</th></tr></thead>
+          <tbody>
+            <tr><td>Steps</td><td>Loop length for this lane (1–128); enables polymeter when lanes differ</td></tr>
+            <tr><td>Rate</td><td>Speed relative to project tempo</td></tr>
+            <tr><td>Gate</td><td>Default note length for active steps</td></tr>
+            <tr><td>Swing</td><td>Off-beat push for even-numbered steps</td></tr>
+            <tr><td>Probability</td><td>Lane-wide hit chance baseline</td></tr>
+            <tr><td>Humanize</td><td>Micro timing/velocity variation (deterministic)</td></tr>
+            <tr><td>Mutation</td><td>Controlled phrase variation depth</td></tr>
+            <tr><td>Ratchet</td><td>Retriggers per step — classic drum-machine fills</td></tr>
+            <tr><td>Strum</td><td>Spread chord triggers across micro-delays</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Project strip above the editor also exposes <strong>Slot</strong>, <strong>Key</strong>, <strong>Scale</strong>, and <strong>UI template</strong> in one row for fast context switches.</p>
+    </section>
+
+    <section class="doc-section" id="fx-groups">
+      <div class="doc-section-header">
+        <span class="doc-section-num">07</span>
+        <h2>FX group routing</h2>
+      </div>
+      <p>
+        The <strong>FX Group Routing</strong> panel defines five performance mute/throw groups used in CircleSEQ layouts:
+      </p>
+      <ol>
+        <li><strong>Group 1 — Harmonic mute</strong> — silence or duck harmonic content</li>
+        <li><strong>Group 2 — Delay throw</strong> — send bursts to delay line</li>
+        <li><strong>Group 3 — Reverb space</strong> — widen or wash the tail</li>
+        <li><strong>Group 4 — Filter motion</strong> — sweep cutoff or brightness</li>
+        <li><strong>Group 5 — Gate/pulse</strong> — rhythmic chopping or tremolo</li>
+      </ol>
+      <p>
+        Each group displays its routing mode and accent colour in the panel. Map these to macros or pScript in Brand Lab for custom performance behaviour.
+      </p>
+    </section>
+
+    <section class="doc-section" id="orbit">
+      <div class="doc-section-header">
+        <span class="doc-section-num">08</span>
+        <h2>Orbit &amp; multi-ring modes</h2>
+      </div>
+      <p>
+        On the Design canvas, <strong>Arp Lane</strong> elements support advanced orbit display modes via Inspector:
+      </p>
+      <ul>
+        <li><strong>Single ring</strong> — one note/slice per step around the circle.</li>
+        <li><strong>Multi-ring / Orbit</strong> — concentric rings show sample slots, drum voices, or pitch layers simultaneously.</li>
+        <li><strong>Direction</strong> — clockwise / counter-clockwise step advance.</li>
+        <li><strong>Rotation</strong> — phase offset for the pattern start point.</li>
+        <li><strong>Euclidean pulses</strong> — evenly spaced hits independent of manual step toggles.</li>
+        <li><strong>Fill pulses / fill probability</strong> — secondary layer for variation fills (Patterning-style).</li>
+      </ul>
+
+      <div class="callout tip">
+        <div class="callout-title">Sample &amp; drum lanes</div>
+        <p style="margin:0">
+          When a lane targets samples or drums, orbit view draws <strong>multiple concentric rings</strong> so you can see which slice or pad each step triggers.
+          Set per-step slice index in the Note band or bind to Sample Mapper pad layout.
+        </p>
+      </div>
+    </section>
+
+    <section class="doc-section" id="canvas">
+      <div class="doc-section-header">
+        <span class="doc-section-num">09</span>
+        <h2>Design canvas elements</h2>
+      </div>
+
+      <h3>Arp Studio Lane</h3>
+      <p>
+        Compact circular widget for the Player. Binds to one phrase slot index (<code>arpLaneIndex</code>).
+        Supports click-to-toggle steps, drag for velocity, and MIDI drag-out in Studio preview.
+      </p>
+
+      <h3>CircleSEQ Musical Surface</h3>
+      <p>
+        Full flagship layout: multiple lanes, orbit rings, transport, and slot switching — generated by
+        <strong>Update Player Controls</strong> with the CircleSEQ GUI template.
+      </p>
+
+      <h3>Context menu pattern clipboard</h3>
+      <p>Right-click a selected Arp Lane in Design:</p>
+      <ul>
+        <li><strong>Copy Circle Pattern</strong></li>
+        <li><strong>Paste Pattern To This Circle</strong></li>
+        <li><strong>Reset Circle To No Sound</strong></li>
+      </ul>
+    </section>
+
+    <section class="doc-section" id="templates">
+      <div class="doc-section-header">
+        <span class="doc-section-num">10</span>
+        <h2>CircleSEQ templates</h2>
+      </div>
+      <p>Circles mode auto-selects the flagship templates when you switch tabs:</p>
+
+      <div class="doc-table-wrap">
+        <table class="doc-table">
+          <thead><tr><th>Template</th><th>Action button</th><th>Result</th></tr></thead>
+          <tbody>
+            <tr><td>CircleSEQ Flagship Instrument</td><td>Make Circle Pattern</td><td>Creates <code>arpSequencer</code> block with five populated banks + demo lane metadata</td></tr>
+            <tr><td>CircleSEQ Flagship Player</td><td>Update Player Controls</td><td>Layouts CircleSEQ surface, orbit lanes, macros, and slot switches on the 1280×800 canvas</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="code-block">
+        <div class="code-block-header">
+          <span>Demo lane metadata (Inspector / export)</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+        <pre>arpLaneMode: orbit | multiRing | single
+arpLaneSteps: 16
+arpLaneDirection: forward | reverse
+arpLaneRotation: 0..steps-1
+arpLaneEuclideanPulses / Rotate
+arpLaneFillPulses / FillProbability
+sampleTarget / baseNote / slot indices per step</pre>
+      </div>
+    </section>
+
+    <section class="doc-section" id="midi-drag">
+      <div class="doc-section-header">
+        <span class="doc-section-num">11</span>
+        <h2>MIDI drag to DAW</h2>
+      </div>
+      <p>
+        Each lane row exposes a <strong>MIDI drag handle</strong>. Click and drag from that region into your DAW to drop a MIDI clip
+        representing the selected slot’s pattern (notes, velocities, and step timing).
+      </p>
+      <ol>
+        <li>Select the lane / slot you want to export.</li>
+        <li>Press and hold on the lane’s MIDI drag zone until the drag threshold is met.</li>
+        <li>Drop onto a DAW MIDI track for further editing or layering.</li>
+      </ol>
+      <p>Alternatively use <strong>Export MIDI</strong> in the header action row for a file-based export of the active slot.</p>
+    </section>
+
+    <section class="doc-section" id="export">
+      <div class="doc-section-header">
+        <span class="doc-section-num">12</span>
+        <h2>Output contract</h2>
+      </div>
+      <p>The <strong>Output Contract</strong> panel summarises what Circles commits to disk:</p>
+      <ul>
+        <li><strong>Make Circle Pattern</strong> — serialises all five slot runtimes (<code>mpBank*</code> keys) into the DSP block.</li>
+        <li><strong>Update Player Controls</strong> — writes/updates layout elements bound to lane parameters.</li>
+        <li><strong>Export MIDI</strong> — standard MIDI file for external DAWs.</li>
+        <li><strong>Export Center</strong> — packages block + layout + manifest into the shippable <code>.patchcraft</code> folder.</li>
+      </ul>
+
+      <div class="callout note">
+        <div class="callout-title">Runtime behaviour in Player</div>
+        <p style="margin:0">
+          The Player’s <code>MidiPlaygroundRuntime</code> reads the same bank keys as Studio.
+          Circle widgets show live playheads; hardware MIDI and host transport advance steps at the synced project BPM.
+        </p>
+      </div>
+    </section>
+
+    <section class="doc-section" id="patterns-link">
+      <div class="doc-section-header">
+        <span class="doc-section-num">13</span>
+        <h2>Patterns ↔ Circles sync</h2>
+      </div>
+      <p>Both tabs edit one shared MIDI Playground block. Rules of thumb:</p>
+      <ul>
+        <li>Switching tabs does not duplicate data — it changes the editing UI only.</li>
+        <li>Phrase slot N in Patterns equals Lane N in Circles.</li>
+        <li>Linear piano-roll edits in Patterns appear in the Circle step matrix after refresh.</li>
+        <li>Drum Machine mode is Patterns-first; use Circles for melodic/sample orbit lanes.</li>
+        <li>Always press <strong>Make Circle Pattern</strong> or <strong>Use This Pattern</strong> before export — whichever view you edited last still needs an explicit commit if you changed data.</li>
+      </ul>
+    </section>
+
+    <section class="doc-section" id="troubleshooting">
+      <div class="doc-section-header">
+        <span class="doc-section-num">14</span>
+        <h2>Troubleshooting</h2>
+      </div>
+      <div class="doc-table-wrap">
+        <table class="doc-table">
+          <thead><tr><th>Symptom</th><th>Fix</th></tr></thead>
+          <tbody>
+            <tr><td>Circles tab missing</td><td>Update Studio — restored in canvas toolbar after Patterns tab.</td></tr>
+            <tr><td>Ring empty but Patterns has notes</td><td>Select correct slot; press Make Circle Pattern; check step On flags (Ctrl-click toggles).</td></tr>
+            <tr><td>Lane clicks don’t change sound</td><td>Preview plays active slot only — switch Slot dropdown or assign lane in Player UI.</td></tr>
+            <tr><td>Orbit rings not visible in Player</td><td>Set Arp Lane mode to Orbit/Multi-ring in Inspector; Update Player Controls.</td></tr>
+            <tr><td>MIDI drag doesn’t start</td><td>Drag from the lane’s MIDI zone (not the step matrix); hold until cursor changes.</td></tr>
+            <tr><td>FX groups do nothing</td><td>Map group macros to real DSP parameters; verify pScript or mod matrix routing in Graph.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="doc-footer">
+      <a href="11-patterns.html">← Patterns</a>
+      <a href="index.html">Tutorial index</a>
+      <a href="https://audicode.com/products/patchcraft">PatchCraft product page</a>
+      <p style="margin-top:16px">© AudiCode · PatchCraft Studio documentation</p>
+    </footer>
+  </main>
+</div>
+
+<script src="js/patchcraft-docs.js"></script>
+</body>
+</html>

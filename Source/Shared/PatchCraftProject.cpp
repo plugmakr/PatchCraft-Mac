@@ -1,6 +1,7 @@
 #include "PatchCraftProject.h"
 #include "InstrumentTemplates.h"
 #include "PatchCraftPackReader.h"
+#include "ArpStepSequencerTemplate.h"
 
 #include <algorithm>
 
@@ -265,6 +266,60 @@ namespace patchcraft
         layout.clear();
         backgroundImageRelative.clear();
         manifest.backgroundImage.clear();
+        notifyChanged();
+    }
+
+    void PatchCraftProject::resetToArpStepSequencerTemplate()
+    {
+        const auto pack = buildArpStepSequencerPack();
+
+        manifest = pack.manifest;
+        canvasSize = pack.canvasSize;
+        parameters = pack.parameters;
+        parameters.ensureRegistryMetadata (manifest.engine);
+        layout = pack.layout;
+        sampleMap.clear();
+        presets = pack.presets;
+        patches = pack.patches;
+        sectionPresets = pack.sectionPresets;
+        expansions = pack.expansions;
+        midiMappings = pack.midiMappings;
+        dspGraph = pack.dspGraph;
+        sanitisePlaybackGraph (dspGraph);
+        backgroundImageRelative = pack.backgroundImageRelative;
+        projectFolder = {};
+
+        ensurePerformanceParameters (parameters, liveValues);
+        ensureGraphMacroParameters (parameters, liveValues, dspGraph);
+        resetLiveValuesToDefaults();
+
+        const auto defaultName = manifest.defaultPreset;
+        auto presetToApply = std::find_if (presets.begin(), presets.end(),
+            [&] (const Preset& preset)
+            {
+                return (defaultName.isNotEmpty() && preset.name == defaultName) || preset.isDefault;
+            });
+
+        if (presetToApply != presets.end())
+        {
+            for (const auto& value : presetToApply->values)
+                liveValues.setValue (value.first, sanitisePresetPlaybackValue (value.first, value.second));
+            sanitiseMusicalLiveValues (parameters, liveValues);
+            syncPlaybackGraphFromLiveValues (dspGraph, parameters, liveValues);
+            manifest.defaultPreset = presetToApply->name;
+            for (auto& preset : presets)
+                preset.isDefault = preset.name == presetToApply->name;
+        }
+
+        auto defaultPatch = captureCurrentPatch (manifest.defaultPreset.isNotEmpty()
+            ? manifest.defaultPreset : manifest.instrumentName + " Patch");
+        defaultPatch.isDefault = true;
+        if (patches.empty())
+            patches.push_back (std::move (defaultPatch));
+        else
+            patches.front() = std::move (defaultPatch);
+
+        dirty = false;
         notifyChanged();
     }
 
@@ -792,7 +847,8 @@ namespace patchcraft
     }
 
     void PatchCraftProject::performLayoutEdit (const juce::String& actionName,
-                                               std::function<void (LayoutModel&)> mutator)
+                                               std::function<void (LayoutModel&)> mutator,
+                                               bool structuralChange)
     {
         if (! mutator) return;
         const auto before = layout.getAll();
@@ -804,7 +860,7 @@ namespace patchcraft
         // re-apply for redo-after-undo.
         undoManager.perform (new LayoutSnapshotAction (
             *this, before, after, juce::String(), juce::String()));
-        notifyChanged();
+        notifyChanged (structuralChange ? ChangeScope::structural : ChangeScope::layout);
     }
 
     void PatchCraftProject::performSampleMapEdit (const juce::String& actionName,

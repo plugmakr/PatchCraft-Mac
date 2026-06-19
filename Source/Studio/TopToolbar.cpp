@@ -1,6 +1,7 @@
 #include "TopToolbar.h"
 #include "StudioMainComponent.h"
 #include "PatchCraftLookAndFeel.h"
+#include "../Shared/ControlNodeAuthoring.h"
 
 namespace patchcraft
 {
@@ -158,13 +159,21 @@ namespace patchcraft
             ? juce::Colour (0xff15110b)
             : (over ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::text());
 
-        auto iconArea = r.withTrimmedBottom (16.0f).reduced (10.0f);
-        drawIcon (g, iconArea, iconKey, col);
+        if (getWidth() < 60)
+        {
+            auto iconArea = r.reduced (8.0f);
+            drawIcon (g, iconArea, iconKey, col);
+        }
+        else
+        {
+            auto iconArea = r.withTrimmedBottom (16.0f).reduced (10.0f);
+            drawIcon (g, iconArea, iconKey, col);
 
-        g.setColour (col);
-        g.setFont (juce::Font (11.0f, juce::Font::plain));
-        g.drawText (label, getLocalBounds().removeFromBottom (18),
-                    juce::Justification::centred);
+            g.setColour (col);
+            g.setFont (juce::Font (11.0f, juce::Font::plain));
+            g.drawText (label, getLocalBounds().removeFromBottom (18),
+                        juce::Justification::centred);
+        }
     }
 
     // ----------------------------------------------------------------------
@@ -181,6 +190,13 @@ namespace patchcraft
             addAndMakeVisible (*b);
         };
 
+        addBtn (btnNew,           "New",            "new",
+            [this]
+            {
+                owner.getProject().getLayout().clear();
+                owner.getProject().getManifest().backgroundImage = juce::String();
+                owner.getProject().notifyChanged (PatchCraftProject::ChangeScope::layout);
+            });
         addBtn (btnImportSamples, "Import Samples", "importSamples",  [this] { owner.importSamples(); });
         addBtn (btnImportBg,      "Import BG",      "importBg",       [this] { owner.importBackground(); });
         addBtn (btnPacks,         "Packs",          "importSamples",  [this] { owner.togglePacksPanel(); });
@@ -221,23 +237,19 @@ namespace patchcraft
         projectStatusLabel.setJustificationType (juce::Justification::centredRight);
         addAndMakeVisible (projectStatusLabel);
 
-        bpmLabel.setText ("BPM", juce::dontSendNotification);
-        bpmLabel.setFont (juce::Font (10.0f, juce::Font::bold));
-        bpmLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
-        bpmLabel.setJustificationType (juce::Justification::centredRight);
-        addAndMakeVisible (bpmLabel);
-
-        bpmSlider.setRange (40.0, 220.0, 1.0);
-        bpmSlider.setValue (owner.getProject().getLiveValues().getValue ("projectBpm", 120.0f),
-                            juce::dontSendNotification);
-        bpmSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-        bpmSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 42, 18);
-        bpmSlider.setTooltip ("Global project BPM for Studio preview, Brand Lab playback, MIDI patterns, synced FX, and exported standalone fallback tempo. DAWs still provide host tempo when available.");
-        bpmSlider.onValueChange = [this]
+        presetBox.addItemList (ControlNodeAuthoring::getPresetNames(), 1);
+        presetBox.setTextWhenNothingSelected ("Graph Templates...");
+        presetBox.onChange = [this]
         {
-            owner.getProject().getLiveValues().setValue ("projectBpm", (float) bpmSlider.getValue());
+            if (presetBox.getSelectedId() == 0) return;
+            juce::String message;
+            if (ControlNodeAuthoring::applyPreset (owner.getProject(), presetBox.getText(), message))
+            {
+                presetBox.setSelectedId (0, juce::dontSendNotification);
+                presetBox.setTextWhenNothingSelected ("Graph Templates...");
+            }
         };
-        addAndMakeVisible (bpmSlider);
+        addAndMakeVisible (presetBox);
 
         settingsBtn.setButtonText ("Settings");
         settingsBtn.getProperties().set ("fontSize", 11.0);
@@ -256,8 +268,6 @@ namespace patchcraft
         projectStatusLabel.setColour (juce::Label::textColourId,
             dirty ? PatchCraftLookAndFeel::accent()
                   : PatchCraftLookAndFeel::textDim());
-        bpmSlider.setValue (owner.getProject().getLiveValues().getValue ("projectBpm", 120.0f),
-                            juce::dontSendNotification);
     }
 
     void TopToolbar::setPreviewActive (bool active)
@@ -328,60 +338,63 @@ namespace patchcraft
         {
             auto cluster = btnPreview->getBounds()
                 .getUnion (btnExport->getBounds())
-                .getUnion (bpmLabel.getBounds())
-                .getUnion (bpmSlider.getBounds())
+                .getUnion (presetBox.getBounds())
                 .getUnion (projectNameLabel.getBounds())
                 .getUnion (projectStatusLabel.getBounds())
-                .getUnion (settingsBtn.getBounds())
-                .expanded (8, 7)
-                .toFloat();
+                .getUnion (settingsBtn.getBounds());
+
+            auto clusterF = cluster.expanded (8, 7).toFloat();
+
             g.setColour (PatchCraftLookAndFeel::panelAlt().withAlpha (0.58f));
-            g.fillRoundedRectangle (cluster, 9.0f);
+            g.fillRoundedRectangle (clusterF, 9.0f);
             g.setColour (PatchCraftLookAndFeel::border().withAlpha (0.7f));
-            g.drawRoundedRectangle (cluster.reduced (0.5f), 9.0f, 1.0f);
+            g.drawRoundedRectangle (clusterF.reduced (0.5f), 9.0f, 1.0f);
 
             auto drawSep = [&] (int x)
             {
                 g.setColour (PatchCraftLookAndFeel::border().withAlpha (0.62f));
                 g.fillRect (x, 13, 1, getHeight() - 26);
             };
-            drawSep ((btnExport->getRight() + bpmLabel.getX()) / 2);
-            drawSep ((bpmSlider.getRight() + projectNameLabel.getX()) / 2);
+            drawSep ((btnExport->getRight() + presetBox.getX()) / 2);
+            drawSep ((presetBox.getRight() + projectNameLabel.getX()) / 2);
             drawSep ((projectNameLabel.getRight() + settingsBtn.getX()) / 2);
         }
     }
 
     void TopToolbar::resized()
     {
-        const bool compact = getWidth() < 1500;
+        const bool compact = getWidth() < 1300;
+        const bool ultraCompact = getWidth() < 1100;
+        
         const int logoW = compact ? 248 : 280;
-        const int btnW = compact ? 70 : 84;
+        const int btnW = ultraCompact ? 44 : (compact ? 70 : 84);
         const int top  = 6;
         const int height = getHeight() - 12;
 
-        // right cluster
-        const int settingsW = compact ? 64 : 70;
-        const int projectW = compact ? 150 : 220;
-        const int bpmW = compact ? 90 : 104;
-        const int bpmLabelW = 28;
-        const int exportW = compact ? 92 : btnW + 20;
-        const int previewW = compact ? 76 : btnW;
+        // Right cluster calculation
+        const int settingsW = ultraCompact ? 40 : (compact ? 64 : 70);
+        const int projectW = ultraCompact ? 100 : (compact ? 130 : 220);
+        const int presetW = ultraCompact ? 80 : (compact ? 100 : 160);
+        const int exportW = ultraCompact ? 60 : (compact ? 92 : btnW + 20);
+        const int previewW = ultraCompact ? 44 : (compact ? 76 : btnW);
 
         int rightX = getWidth() - 8;
+        
         settingsBtn.setBounds (rightX - settingsW, (getHeight() - 26) / 2, settingsW, 26);
+        settingsBtn.setButtonText (ultraCompact ? "" : "Settings");
         rightX = settingsBtn.getX() - 10;
 
         projectNameLabel.setBounds (rightX - projectW, 8, projectW, 22);
         projectStatusLabel.setBounds (rightX - projectW, 30, projectW, 18);
-
         rightX = projectNameLabel.getX() - 10;
-        bpmSlider.setBounds (rightX - bpmW, (getHeight() - 24) / 2, bpmW, 24);
-        bpmLabel.setBounds (bpmSlider.getX() - bpmLabelW - 4, bpmSlider.getY(), bpmLabelW, bpmSlider.getHeight());
 
-        rightX = bpmLabel.getX() - 12;
+        presetBox.setBounds (rightX - presetW, (getHeight() - 24) / 2, presetW, 24);
+        rightX = presetBox.getX() - 12;
+
         btnExport->setBounds  (rightX - exportW, top, exportW, height);
         btnPreview->setBounds (btnExport->getX() - previewW - 6, top, previewW, height);
 
+        // Left cluster
         int x = logoW + 16;
 
         auto setMenuButton = [&] (IconLabelButton* b, int width)
@@ -391,13 +404,14 @@ namespace patchcraft
             x += width + 4;
         };
 
-        setMenuButton (btnImportSamples.get(), compact ? 88 : btnW + 16);
-        setMenuButton (btnImportBg.get(),      compact ? 82 : btnW + 16);
-        setMenuButton (btnPacks.get(),         compact ? 72 : btnW + 16);
-        setMenuButton (btnDashboard.get(),     compact ? 90 : btnW + 16);
-        setMenuButton (btnProjects.get(),      compact ? 78 : btnW + 12);
+        setMenuButton (btnNew.get(),           ultraCompact ? 44 : (compact ? 64 : btnW));
+        setMenuButton (btnImportSamples.get(), ultraCompact ? 44 : (compact ? 88 : btnW + 16));
+        setMenuButton (btnImportBg.get(),      ultraCompact ? 44 : (compact ? 82 : btnW + 16));
+        setMenuButton (btnPacks.get(),         ultraCompact ? 44 : (compact ? 72 : btnW + 16));
+        setMenuButton (btnDashboard.get(),     ultraCompact ? 44 : (compact ? 90 : btnW + 16));
+        setMenuButton (btnProjects.get(),      ultraCompact ? 44 : (compact ? 78 : btnW + 12));
 #if PATCHCRAFT_ENABLE_AI_STUDIO
-        setMenuButton (btnAiAssist.get(),      compact ? 82 : btnW + 16);
+        setMenuButton (btnAiAssist.get(),      ultraCompact ? 44 : (compact ? 82 : btnW + 16));
 #endif
     }
 

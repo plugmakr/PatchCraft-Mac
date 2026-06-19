@@ -4,7 +4,11 @@
 #include "InstrumentTemplates.h"
 #include "LibraryScanner.h"
 #include "../Shared/MultiInstrumentEngine.h"
+#include "ArpLaneUi.h"
+#include "DrumMachineUtil.h"
+#include "ParameterModel.h"
 
+#include <algorithm>
 #include <algorithm>
 #include <cmath>
 
@@ -310,6 +314,7 @@ namespace patchcraft
             if (engine)
             {
                 arpeggiator.allNotesOff (*engine);
+                polySequencer.allNotesOff (*engine);
                 engine->reset();
             }
             userSampleOverlay.reset();
@@ -535,6 +540,14 @@ namespace patchcraft
                 routingEngine.processToEngine (*engine, context);
 
             arpeggiator.process (*engine, context, userSampleOverlayEnabled ? &userSampleOverlay : nullptr);
+            polySequencer.process (*engine, context);
+            pianoRoll.process (*engine, context);
+            if (composerRuntime.isEnabled())
+            {
+                composerMidi.clear();
+                composerRuntime.process (context, composerMidi);
+                sendComposerMidiToEngine (composerMidi);
+            }
             engine->process (buffer, 0, buffer.getNumSamples());
             if (userSampleOverlayEnabled)
             {
@@ -560,6 +573,15 @@ namespace patchcraft
                 peak = juce::jmax (peak, buffer.getMagnitude (ch, 0, buffer.getNumSamples()));
             const auto previous = outputPeak.load();
             outputPeak.store (juce::jmax (peak, previous * 0.82f));
+
+            // Publish per-band analysis to the GUI for audio-reactive visuals.
+            const auto& an = routingEngine.getAudioAnalysis();
+            analysisRms.store (an.rms);
+            analysisLow.store (an.lowEnergy);
+            analysisMid.store (an.midEnergy);
+            analysisHigh.store (an.highEnergy);
+            analysisTransient.store (juce::jmax (an.transient, analysisTransient.load() * 0.55f));
+            analysisCentroid.store (an.spectralCentroid);
         }
         catch (...)
         {
@@ -588,6 +610,19 @@ namespace patchcraft
         if (midiNote < 0 || midiNote >= (int) noteHighlightLevels.size())
             return 0.0f;
         return juce::jlimit (0.0f, 1.0f, noteHighlightLevels[(size_t) midiNote].load());
+    }
+
+    float PlayerProcessor::getAudioReactiveSignal (const juce::String& mode) const noexcept
+    {
+        const auto m = mode.trim().toLowerCase();
+        if (m == "lowband"  || m == "low"  || m == "bass")   return juce::jlimit (0.0f, 1.0f, getAudioLowBand());
+        if (m == "midband"  || m == "mid")                   return juce::jlimit (0.0f, 1.0f, getAudioMidBand());
+        if (m == "highband" || m == "high" || m == "treble") return juce::jlimit (0.0f, 1.0f, getAudioHighBand());
+        if (m == "transient" || m == "attack")               return juce::jlimit (0.0f, 1.0f, getAudioTransient());
+        if (m == "rms" || m == "loudness")                   return juce::jlimit (0.0f, 1.0f, getAudioRms() * 2.0f);
+        if (m == "centroid" || m == "brightness")            return juce::jlimit (0.0f, 1.0f, getAudioCentroid());
+        // Default: smoothed output peak ("level"/"peak").
+        return juce::jlimit (0.0f, 1.0f, getOutputPeak());
     }
 
     bool PlayerProcessor::decayNoteHighlightLevels() noexcept
@@ -664,6 +699,7 @@ namespace patchcraft
             state.setProperty ("userSnapshotsJson", userSnapshotsToJson(), nullptr);
             state.setProperty ("multiLayerRackJson", multiLayerRackToJson(), nullptr);
             state.setProperty ("userContentJson", userContentToJson(), nullptr);
+            state.setProperty ("pianoRollNotes", runtimePianoRollNotes, nullptr);
             if (auto xml = std::unique_ptr<juce::XmlElement> (state.createXml()))
                 copyXmlToBinary (*xml, dest);
         }
@@ -711,6 +747,15 @@ namespace patchcraft
             midiMappingsFromJson (userMidiMappingsJson);
             defaultPresetValues = floatMapFromJson (defaultPresetValuesJson);
             multiLayerRackFromJson (multiLayerRackJson);
+
+            const auto pianoRollNotes = state.getProperty ("pianoRollNotes").toString();
+            if (pianoRollNotes.isNotEmpty())
+            {
+                const juce::SpinLock::ScopedLockType lk (engineLock);
+                runtimePianoRollNotes = pianoRollNotes;
+                applyPianoRollOverrideLocked();
+                pianoRoll.bind (pack.dspGraph);
+            }
         }
         catch (...) { jassertfalse; }
     }
@@ -843,11 +888,56 @@ namespace patchcraft
         return it != hostSlotByParameterId.end() ? it->second : -1;
     }
 
+    void PlayerProcessor::computeUserWaveformPeaks (const juce::File& file, int numBuckets)
+    {
+        userWaveformPeaks.clear();
+        if (! file.existsAsFile())
+            return;
+
+        juce::AudioFormatManager formats;
+        formats.registerBasicFormats();
+        std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
+        if (reader == nullptr || reader->lengthInSamples <= 0)
+            return;
+
+        numBuckets = juce::jlimit (32, 1024, numBuckets);
+        const auto totalSamples = reader->lengthInSamples;
+        const int channels = juce::jmax (1, (int) reader->numChannels);
+        // Read in chunks so large files stay light on memory.
+        const int chunk = 1 << 15;
+        juce::AudioBuffer<float> buffer (channels, chunk);
+        std::vector<float> peaks ((size_t) numBuckets, 0.0f);
+        juce::int64 pos = 0;
+        while (pos < totalSamples)
+        {
+            const int toRead = (int) juce::jmin ((juce::int64) chunk, totalSamples - pos);
+            if (! reader->read (&buffer, 0, toRead, pos, true, channels > 1))
+                break;
+            for (int i = 0; i < toRead; ++i)
+            {
+                float mag = 0.0f;
+                for (int ch = 0; ch < channels; ++ch)
+                    mag = juce::jmax (mag, std::abs (buffer.getSample (ch, i)));
+                const auto bucket = (size_t) juce::jlimit (0, numBuckets - 1,
+                    (int) (((pos + i) * (juce::int64) numBuckets) / totalSamples));
+                peaks[bucket] = juce::jmax (peaks[bucket], mag);
+            }
+            pos += toRead;
+        }
+
+        float maxPeak = 0.0f;
+        for (auto v : peaks) maxPeak = juce::jmax (maxPeak, v);
+        if (maxPeak > 0.0001f)
+            for (auto& v : peaks) v = juce::jlimit (0.0f, 1.0f, v / maxPeak);
+
+        userWaveformPeaks = std::move (peaks);
+    }
+
     bool PlayerProcessor::isSupportedUserSampleFile (const juce::File& file)
     {
         const auto ext = file.getFileExtension().toLowerCase();
         return file.existsAsFile()
-            && (ext == ".wav" || ext == ".aif" || ext == ".aiff" || ext == ".flac");
+            && (ext == ".wav" || ext == ".aif" || ext == ".aiff" || ext == ".flac" || ext == ".mp3" || ext == ".ogg");
     }
 
     bool PlayerProcessor::isSupportedUserMidiFile (const juce::File& file)
@@ -927,6 +1017,7 @@ namespace patchcraft
                 object->setProperty ("tuneSemitones", item.tuneSemitones);
                 object->setProperty ("midiMode", item.midiMode);
                 object->setProperty ("midiVelocityAmount", (double) item.midiVelocityAmount);
+                object->setProperty ("midiStack", item.midiStack);
                 items.add (juce::var (object));
             }
         }
@@ -976,6 +1067,8 @@ namespace patchcraft
                         if (object->hasProperty ("midiVelocityAmount"))
                             item.midiVelocityAmount = juce::jlimit (0.0f, 1.0f,
                                 (float) (double) object->getProperty ("midiVelocityAmount"));
+                        if (object->hasProperty ("midiStack"))
+                            item.midiStack = (bool) object->getProperty ("midiStack");
                         if (item.id.isNotEmpty() && item.kind.isNotEmpty() && juce::File (item.filePath).existsAsFile())
                             restored.push_back (std::move (item));
                     }
@@ -1006,6 +1099,51 @@ namespace patchcraft
         if (! midiFile.readFrom (input) || midiFile.getNumTracks() <= 0)
             return false;
 
+        const bool targetZoneMidi = item.role.equalsIgnoreCase ("zoneMidi")
+                                 && item.rootNote >= 0
+                                 && item.rootNote <= 127;
+
+        if (! targetZoneMidi
+            && (item.role.isEmpty() || item.role.equalsIgnoreCase ("playground")))
+        {
+            for (auto& block : pack.dspGraph.blocks)
+            {
+                if (! PianoRollRuntime::isPianoRollBlock (block))
+                    continue;
+
+                const int steps = juce::jlimit (1, 256, juce::roundToInt (
+                    block.values.count ("prSteps") != 0 ? block.values.at ("prSteps") : 16.0f));
+                const int defaultLength = juce::jmax (1, juce::roundToInt (
+                    block.values.count ("prStepsPerBeat") != 0 ? block.values.at ("prStepsPerBeat") : 4.0f));
+                auto imported = PianoRollRuntime::notesFromMidiFile (midiFile, steps, defaultLength);
+                if (imported.empty())
+                    return false;
+
+                std::vector<PianoRollRuntime::Note> merged = imported;
+                if (item.midiStack)
+                {
+                    const auto existingEncoded = runtimePianoRollNotes.isNotEmpty()
+                        ? runtimePianoRollNotes
+                        : (block.metadata.count ("notes") != 0 ? block.metadata.at ("notes") : juce::String());
+                    const auto existing = PianoRollRuntime::decodeNotes (existingEncoded);
+                    merged.insert (merged.begin(), existing.begin(), existing.end());
+                }
+
+                const auto encoded = PianoRollRuntime::encodeNotes (merged);
+                block.metadata["notes"] = encoded;
+                runtimePianoRollNotes = encoded;
+
+                for (auto& candidate : pack.dspGraph.blocks)
+                    if (candidate.id == "user_midi_playground")
+                        candidate.enabled = false;
+
+                pianoRoll.bind (pack.dspGraph);
+                pack.dspGraph.userConfigured = true;
+                bindRoutingFromPack();
+                return true;
+            }
+        }
+
         struct NoteEvent { double time = 0.0; int note = 60; float velocity = 1.0f; };
         std::vector<NoteEvent> notes;
         for (int trackIndex = 0; trackIndex < midiFile.getNumTracks(); ++trackIndex)
@@ -1030,9 +1168,6 @@ namespace patchcraft
         std::stable_sort (notes.begin(), notes.end(),
             [] (const NoteEvent& a, const NoteEvent& b) { return a.time < b.time; });
 
-        const bool targetZoneMidi = item.role.equalsIgnoreCase ("zoneMidi")
-                                 && item.rootNote >= 0
-                                 && item.rootNote <= 127;
         if (targetZoneMidi)
         {
             auto safeBlockSuffix = item.id.retainCharacters ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-");
@@ -1402,8 +1537,12 @@ namespace patchcraft
         {
             engine->allNotesOff();
             userSampleOverlay.allNotesOff();
+            // The main engine only ever plays the pack's authored zones. User-dropped
+            // samples are played exclusively by userSampleOverlay, so we must NOT feed the
+            // merged map back into the main engine or every dropped sample would trigger
+            // twice (once per engine).
             if (loadedPath.isDirectory())
-                engine->loadFromPack (loadedPath, pack.sampleMap);
+                engine->loadFromPack (loadedPath, authoredSampleMap);
         }
 
         applyAuthoredZoneMidiToGraphLocked();
@@ -1412,7 +1551,10 @@ namespace patchcraft
             if (item.kind == "midi" && (item.role == "playground" || item.role == "zoneMidi"))
                 applyMidiContentToGraphLocked (item);
 
+        applyPianoRollOverrideLocked();
         arpeggiator.bind (pack.dspGraph);
+        polySequencer.bind (pack.dspGraph);
+        pianoRoll.bind (pack.dspGraph);
         routingEngine.bind (pack.dspGraph, pack.parameters);
         routingEngine.prepare (makeRenderContext (currentBlockSize));
     }
@@ -1421,7 +1563,8 @@ namespace patchcraft
                                                   const juce::String& sampleMappingMode,
                                                   juce::String& report,
                                                   int targetNote,
-                                                  int targetPadIndex)
+                                                  int targetPadIndex,
+                                                  bool midiStack)
     {
         targetNote = juce::jlimit (-1, 127, targetNote);
         targetPadIndex = juce::jlimit (-1, 63, targetPadIndex);
@@ -1539,6 +1682,7 @@ namespace patchcraft
                 item.highNote = item.rootNote;
                 item.padIndex = hasTargetPad ? targetPadIndex : -1;
                 item.midiMode = hasTargetPad ? "drum" : "trigger";
+                item.midiStack = midiStack && ! hasTargetNote && ! hasTargetPad;
                 juce::FileInputStream input (destination);
                 juce::MidiFile midiFile;
                 if (input.openedOk() && midiFile.readFrom (input))
@@ -1557,7 +1701,8 @@ namespace patchcraft
                     item.summary = hasTargetNote
                         ? juce::String (noteCount) + " notes / drives "
                             + juce::MidiMessage::getMidiNoteName (item.rootNote, true, true, 4)
-                        : juce::String (noteCount) + " notes / sent to MIDI Pattern";
+                        : juce::String (noteCount) + " notes / "
+                            + (item.midiStack ? "stacked on piano roll" : "replaces piano roll");
                 }
                 else
                 {
@@ -1577,11 +1722,23 @@ namespace patchcraft
 
         {
             const juce::ScopedLock lock (userContentLock);
-            if (hasTargetPad || hasTargetNote)
+            // Dropping a new melodic sample onto a zone replaces the previous one so a
+            // single-zone instrument stays one playable sample rather than stacking layers.
+            const bool replaceKeyboard = keyboardMode;
+            const bool importingPlaygroundMidi = ! midiStack
+                && std::any_of (imported.begin(), imported.end(),
+                    [] (const UserContentItem& item)
+                    {
+                        return item.kind == "midi" && item.role == "playground";
+                    });
+            if (hasTargetPad || hasTargetNote || replaceKeyboard || importingPlaygroundMidi)
             {
                 userContent.erase (std::remove_if (userContent.begin(), userContent.end(),
-                    [&imported, hasTargetPad, hasTargetNote, targetPadIndex, targetNote] (const UserContentItem& existing)
+                    [&imported, hasTargetPad, hasTargetNote, replaceKeyboard, importingPlaygroundMidi, targetPadIndex, targetNote] (const UserContentItem& existing)
                     {
+                        if (existing.kind == "sample" && replaceKeyboard && existing.role == "keyboard")
+                            return true;
+
                         if (existing.kind == "sample" && hasTargetPad && existing.role == "pads")
                             for (const auto& item : imported)
                                 if (item.kind == "sample" && item.role == "pads" && existing.padIndex == item.padIndex)
@@ -1593,11 +1750,24 @@ namespace patchcraft
                             && existing.rootNote == targetNote)
                             return true;
 
+                        if (importingPlaygroundMidi
+                            && existing.kind == "midi"
+                            && existing.role == "playground")
+                            return true;
+
                         return false;
                     }), userContent.end());
             }
             userContent.insert (userContent.end(), imported.begin(), imported.end());
         }
+
+        // Cache a waveform of the most recent dropped sample for runtime display.
+        for (auto it = imported.rbegin(); it != imported.rend(); ++it)
+            if (it->kind == "sample")
+            {
+                computeUserWaveformPeaks (juce::File (it->filePath));
+                break;
+            }
 
         {
             const juce::SpinLock::ScopedLockType engineGuard (engineLock);
@@ -1630,6 +1800,8 @@ namespace patchcraft
             userContent.clear();
         }
 
+        userWaveformPeaks.clear();
+
         {
             const juce::SpinLock::ScopedLockType engineGuard (engineLock);
             rebuildRuntimeUserContentLocked (true);
@@ -1640,15 +1812,16 @@ namespace patchcraft
         return true;
     }
 
-    bool PlayerProcessor::applyUserMidiToPlayground (const juce::String& contentId)
+    bool PlayerProcessor::applyUserMidiToPlayground (const juce::String& contentId, bool stack)
     {
         UserContentItem target;
         {
             const juce::ScopedLock lock (userContentLock);
-            for (const auto& item : userContent)
+            for (auto& item : userContent)
             {
                 if (item.id == contentId && item.kind == "midi")
                 {
+                    item.midiStack = stack;
                     target = item;
                     break;
                 }
@@ -1707,6 +1880,7 @@ namespace patchcraft
                 userSampleOverlay.allNotesOff();
                 heldNotes.fill (false);
                 sustainPedalDown = false;
+                runtimePianoRollNotes.clear();
                 applyAuthoredZoneMidiToGraphLocked();
             }
             if (libraryScanner != nullptr)
@@ -1839,13 +2013,94 @@ namespace patchcraft
         }
     }
 
+    static void ensureDrumMachinePatternsSeeded (DspGraph& graph)
+    {
+        for (auto& block : graph.blocks)
+        {
+            if (! block.enabled)
+                continue;
+            if (! block.type.containsIgnoreCase ("drum") && block.values.find ("dmTracks") == block.values.end())
+                continue;
+            if (block.values.find ("dmP0T0S0On") != block.values.end())
+                continue;
+
+            DrumMachineUtil::seedEmptyPatterns (block);
+            graph.userConfigured = true;
+            break;
+        }
+    }
+
     void PlayerProcessor::bindRoutingFromPack()
     {
+        ensureDrumMachinePatternsSeeded (pack.dspGraph);
+
         if (engine)
+        {
             arpeggiator.allNotesOff (*engine);
+            pianoRoll.allNotesOff (*engine);
+            if (composerRuntime.isEnabled())
+            {
+                composerMidi.clear();
+                composerRuntime.releaseAll (composerMidi);
+                sendComposerMidiToEngine (composerMidi);
+            }
+        }
+        applyPianoRollOverrideLocked();
         arpeggiator.bind (pack.dspGraph);
+        polySequencer.bind (pack.dspGraph);
+        pianoRoll.bind (pack.dspGraph);
+        composerRuntime.bind (pack.dspGraph);
+        composerRuntime.reset();
         routingEngine.bind (pack.dspGraph, pack.parameters);
         routingEngine.prepare (makeRenderContext (currentBlockSize));
+    }
+
+    void PlayerProcessor::sendComposerMidiToEngine (juce::MidiBuffer& buffer)
+    {
+        if (engine == nullptr)
+            return;
+
+        auto* multi = dynamic_cast<MultiInstrumentEngine*> (engine.get());
+        for (const auto meta : buffer)
+        {
+            const auto m = meta.getMessage();
+            if (m.isNoteOn())
+            {
+                const int note = juce::jlimit (0, 127, m.getNoteNumber());
+                if (multi != nullptr)
+                    multi->noteOnForChannel (note, m.getFloatVelocity(), m.getChannel());
+                else
+                    engine->noteOn (note, m.getFloatVelocity());
+                if (userSampleOverlayEnabled)
+                    userSampleOverlay.noteOn (note, m.getFloatVelocity());
+            }
+            else if (m.isNoteOff())
+            {
+                const int note = juce::jlimit (0, 127, m.getNoteNumber());
+                if (multi != nullptr)
+                    multi->noteOffForChannel (note, m.getChannel());
+                else
+                    engine->noteOff (note);
+                if (userSampleOverlayEnabled)
+                    userSampleOverlay.noteOff (note);
+            }
+        }
+        buffer.clear();
+    }
+
+    void PlayerProcessor::applyPianoRollOverrideLocked()
+    {
+        if (runtimePianoRollNotes.isEmpty())
+            return;
+
+        for (auto& block : pack.dspGraph.blocks)
+        {
+            if (PianoRollRuntime::isPianoRollBlock (block))
+            {
+                block.metadata["notes"] = runtimePianoRollNotes;
+                break;
+            }
+        }
     }
 
     RenderContext PlayerProcessor::makeRenderContext (int numSamples) const
@@ -1903,6 +2158,13 @@ namespace patchcraft
         }
 
         const auto* def = pack.parameters.find (parameterId);
+        ParameterDef registryDef;
+        if (def == nullptr
+            && ParameterModel::getRegistryDefinition (parameterId, pack.manifest.engine, registryDef))
+        {
+            def = &registryDef;
+        }
+
         const int slotIndex = getParameterSlotIndex (parameterId);
         if (def != nullptr && slotIndex >= 0 && slotIndex < (int) paramSlots.size())
         {
@@ -1939,6 +2201,12 @@ namespace patchcraft
     {
         const int slotIndex = getParameterSlotIndex (parameterId);
         const auto* defPtr = pack.parameters.find (parameterId);
+        ParameterDef registryDef;
+        if (defPtr == nullptr
+            && ParameterModel::getRegistryDefinition (parameterId, pack.manifest.engine, registryDef))
+        {
+            defPtr = &registryDef;
+        }
         if (defPtr == nullptr)
             return false;
 
@@ -1973,6 +2241,22 @@ namespace patchcraft
         updateFxBlockValue (pack.dspGraph, parameterId, limited);
         routingEngine.setFxBlockParameterValue (parameterId, limited);
 
+        if (parameterId == "retrigger" || parameterId == "arpLaneMultiLane")
+        {
+            if (auto* block = findMidiPlaygroundBlock (pack.dspGraph))
+            {
+                if (parameterId == "retrigger")
+                    block->values["retrigger"] = limited >= 0.5f ? 1.0f : 0.0f;
+                else
+                    block->values["mpMultiLane"] = limited >= 0.5f ? 1.0f : 0.0f;
+
+                arpeggiator.bind (pack.dspGraph);
+                polySequencer.bind (pack.dspGraph);
+                routingEngine.bind (pack.dspGraph, pack.parameters);
+                routingEngine.prepare (makeRenderContext (currentBlockSize));
+            }
+        }
+
         if (parameterId.startsWith ("arpLane"))
         {
             if (auto* block = findMidiPlaygroundBlock (pack.dspGraph))
@@ -1997,7 +2281,7 @@ namespace patchcraft
                 juce::ignoreUnused (rootNote);
 
                 block->values["mpActiveBank"] = (float) lane;
-                block->values["mpMultiLane"] = 1.0f;
+                block->values["mpMultiLane"] = value ("arpLaneMultiLane", 0.0f) >= 0.5f ? 1.0f : 0.0f;
                 setArpLaneValue (*block, lane, "arpSteps", (float) steps);
                 setArpLaneValue (*block, lane, "arpPattern", direction == 1 ? 1.0f : direction == 2 ? 2.0f : direction == 3 ? 7.0f : 0.0f);
                 setArpLaneValue (*block, lane, "arpGate", juce::jlimit (0.05f, 1.0f, value ("arpLaneGate", 0.58f)));
@@ -2034,33 +2318,67 @@ namespace patchcraft
                         setArpLaneValue (*block, lane, "mpAutoFxSend" + suffix, laneFxAmount);
                 }
 
-                for (int step = 0; step < 16; ++step)
+                if (parameterId == "arpLaneControlBank" || parameterId == "arpLaneSliderRole")
                 {
-                    const float v = juce::jlimit (0.0f, 1.0f, value ("arpLaneStep" + juce::String (step + 1),
-                                                                     step % 4 == 0 ? 0.92f : 0.68f));
-                    const auto suffix = juce::String (step);
-                    if (sliderRole == 0)
-                        setArpLaneValue (*block, controlLane, "mpVelocity" + suffix, v);
-                    else if (sliderRole == 1)
-                        setArpLaneValue (*block, controlLane, "mpGate" + suffix, juce::jlimit (0.05f, 1.0f, 0.05f + v * 0.95f));
-                    else if (sliderRole == 2)
-                        setArpLaneValue (*block, controlLane, "mpStepProb" + suffix, v);
-                    else if (sliderRole == 3)
-                        setArpLaneValue (*block, controlLane, "mpStepDiv" + suffix, (float) juce::jlimit (1, 8, 1 + juce::roundToInt (v * 7.0f)));
-                    else if (sliderRole == 4)
-                        setArpLaneValue (*block, controlLane, "mpStep" + suffix + "On", v >= 0.5f ? 1.0f : 0.0f);
-                    else if (sliderRole == 5)
-                        setArpLaneValue (*block, controlLane, "mpStepDelay" + suffix, juce::jlimit (0.0f, 0.85f, v * 0.85f));
-                    else if (sliderRole == 6)
-                        setArpLaneValue (*block, controlLane, "mpSampleSlice" + suffix, (float) juce::jlimit (0, slots - 1, juce::roundToInt (v * (float) juce::jmax (1, slots - 1))));
-                    else if (sliderRole == 7)
-                        setArpLaneValue (*block, controlLane, "mpStepTranspose" + suffix, (float) juce::jlimit (-24, 24, juce::roundToInt (v * 48.0f - 24.0f)));
-                    else if (sliderRole == 8)
-                        setArpLaneValue (*block, controlLane, "mpAutoFilter" + suffix, v);
-                    else if (sliderRole == 9)
-                        setArpLaneValue (*block, controlLane, "mpAutoPan" + suffix, juce::jlimit (-1.0f, 1.0f, v * 2.0f - 1.0f));
-                    else if (sliderRole == 10)
-                        setArpLaneValue (*block, controlLane, "mpAutoFxSend" + suffix, v);
+                    for (int step = 0; step < 16; ++step)
+                    {
+                        const float v = juce::jlimit (0.0f, 1.0f, value ("arpLaneStep" + juce::String (step + 1),
+                                                                         step % 4 == 0 ? 0.92f : 0.68f));
+                        const auto suffix = juce::String (step);
+                        if (sliderRole == 0)
+                            setArpLaneValue (*block, controlLane, "mpVelocity" + suffix, v);
+                        else if (sliderRole == 1)
+                            setArpLaneValue (*block, controlLane, "mpGate" + suffix, juce::jlimit (0.05f, 1.0f, 0.05f + v * 0.95f));
+                        else if (sliderRole == 2)
+                            setArpLaneValue (*block, controlLane, "mpStepProb" + suffix, v);
+                        else if (sliderRole == 3)
+                            setArpLaneValue (*block, controlLane, "mpStepDiv" + suffix, (float) juce::jlimit (1, 8, 1 + juce::roundToInt (v * 7.0f)));
+                        else if (sliderRole == 4)
+                            setArpLaneValue (*block, controlLane, "mpStep" + suffix + "On", v >= 0.5f ? 1.0f : 0.0f);
+                        else if (sliderRole == 5)
+                            setArpLaneValue (*block, controlLane, "mpStepDelay" + suffix, juce::jlimit (0.0f, 0.85f, v * 0.85f));
+                        else if (sliderRole == 6)
+                            setArpLaneValue (*block, controlLane, "mpSampleSlice" + suffix, (float) juce::jlimit (0, slots - 1, juce::roundToInt (v * (float) juce::jmax (1, slots - 1))));
+                        else if (sliderRole == 7)
+                            setArpLaneValue (*block, controlLane, "mpStepTranspose" + suffix, (float) juce::jlimit (-24, 24, juce::roundToInt (v * 48.0f - 24.0f)));
+                        else if (sliderRole == 8)
+                            setArpLaneValue (*block, controlLane, "mpAutoFilter" + suffix, v);
+                        else if (sliderRole == 9)
+                            setArpLaneValue (*block, controlLane, "mpAutoPan" + suffix, juce::jlimit (-1.0f, 1.0f, v * 2.0f - 1.0f));
+                        else if (sliderRole == 10)
+                            setArpLaneValue (*block, controlLane, "mpAutoFxSend" + suffix, v);
+                    }
+                }
+                else if (parameterId.startsWith ("arpLaneStep"))
+                {
+                    const int changedStep = parameterId.fromLastOccurrenceOf ("arpLaneStep", false, false).getIntValue() - 1;
+                    if (changedStep >= 0 && changedStep < 16)
+                    {
+                        const float v = juce::jlimit (0.0f, 1.0f, value (parameterId, 0.68f));
+                        const auto suffix = juce::String (changedStep);
+                        if (sliderRole == 0)
+                            setArpLaneValue (*block, controlLane, "mpVelocity" + suffix, v);
+                        else if (sliderRole == 1)
+                            setArpLaneValue (*block, controlLane, "mpGate" + suffix, juce::jlimit (0.05f, 1.0f, 0.05f + v * 0.95f));
+                        else if (sliderRole == 2)
+                            setArpLaneValue (*block, controlLane, "mpStepProb" + suffix, v);
+                        else if (sliderRole == 3)
+                            setArpLaneValue (*block, controlLane, "mpStepDiv" + suffix, (float) juce::jlimit (1, 8, 1 + juce::roundToInt (v * 7.0f)));
+                        else if (sliderRole == 4)
+                            setArpLaneValue (*block, controlLane, "mpStep" + suffix + "On", v >= 0.5f ? 1.0f : 0.0f);
+                        else if (sliderRole == 5)
+                            setArpLaneValue (*block, controlLane, "mpStepDelay" + suffix, juce::jlimit (0.0f, 0.85f, v * 0.85f));
+                        else if (sliderRole == 6)
+                            setArpLaneValue (*block, controlLane, "mpSampleSlice" + suffix, (float) juce::jlimit (0, slots - 1, juce::roundToInt (v * (float) juce::jmax (1, slots - 1))));
+                        else if (sliderRole == 7)
+                            setArpLaneValue (*block, controlLane, "mpStepTranspose" + suffix, (float) juce::jlimit (-24, 24, juce::roundToInt (v * 48.0f - 24.0f)));
+                        else if (sliderRole == 8)
+                            setArpLaneValue (*block, controlLane, "mpAutoFilter" + suffix, v);
+                        else if (sliderRole == 9)
+                            setArpLaneValue (*block, controlLane, "mpAutoPan" + suffix, juce::jlimit (-1.0f, 1.0f, v * 2.0f - 1.0f));
+                        else if (sliderRole == 10)
+                            setArpLaneValue (*block, controlLane, "mpAutoFxSend" + suffix, v);
+                    }
                 }
 
                 setArpLaneMetadata (*block, lane, "Target", targetName);
@@ -2081,7 +2399,10 @@ namespace patchcraft
                     : sliderRole == 8 ? "filter" : sliderRole == 9 ? "pan" : "fxSend");
 
                 if (engine != nullptr)
+                {
                     arpeggiator.bind (pack.dspGraph);
+                    polySequencer.bind (pack.dspGraph);
+                }
                 routingEngine.bind (pack.dspGraph, pack.parameters);
                 routingEngine.prepare (makeRenderContext (currentBlockSize));
             }
@@ -2142,6 +2463,7 @@ namespace patchcraft
         if (engine != nullptr)
             arpeggiator.allNotesOff (*engine);
         arpeggiator.bind (pack.dspGraph);
+        polySequencer.bind (pack.dspGraph);
         routingEngine.bind (pack.dspGraph, pack.parameters);
         routingEngine.prepare (makeRenderContext (currentBlockSize));
         return true;
@@ -2169,8 +2491,87 @@ namespace patchcraft
 
         drumBlock->values["dmPattern"] = (float) juce::jlimit (0, 7, pattern);
         arpeggiator.bind (pack.dspGraph);
+        polySequencer.bind (pack.dspGraph);
         routingEngine.bind (pack.dspGraph, pack.parameters);
         routingEngine.prepare (makeRenderContext (currentBlockSize));
+        return true;
+    }
+
+    static DspBlock* findMutableDrumBlock (DspGraph& graph)
+    {
+        for (auto& block : graph.blocks)
+            if (block.type.containsIgnoreCase ("drum") || block.values.find ("dmTracks") != block.values.end())
+                return &block;
+        return nullptr;
+    }
+
+    bool PlayerProcessor::setDrumTrackMutedFromUi (int track, bool muted)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (! loaded)
+            return false;
+        auto* drumBlock = findMutableDrumBlock (pack.dspGraph);
+        if (drumBlock == nullptr)
+            return false;
+        track = juce::jlimit (0, 15, track);
+        drumBlock->values["dmTrack" + juce::String (track) + "Mute"] = muted ? 1.0f : 0.0f;
+        arpeggiator.bind (pack.dspGraph);
+        return true;
+    }
+
+    bool PlayerProcessor::setDrumTrackSoloFromUi (int track, bool solo)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (! loaded)
+            return false;
+        auto* drumBlock = findMutableDrumBlock (pack.dspGraph);
+        if (drumBlock == nullptr)
+            return false;
+        track = juce::jlimit (0, 15, track);
+        if (solo)
+        {
+            const int tracks = juce::jlimit (1, 16, juce::roundToInt (
+                drumBlock->values.count ("dmTracks") != 0 ? drumBlock->values.at ("dmTracks") : 8.0f));
+            for (int other = 0; other < tracks; ++other)
+                drumBlock->values["dmTrack" + juce::String (other) + "Solo"] = other == track ? 1.0f : 0.0f;
+        }
+        else
+        {
+            drumBlock->values["dmTrack" + juce::String (track) + "Solo"] = 0.0f;
+        }
+        arpeggiator.bind (pack.dspGraph);
+        return true;
+    }
+
+    bool PlayerProcessor::setDrumTrackNoteFromUi (int track, int midiNote)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (! loaded)
+            return false;
+        auto* drumBlock = findMutableDrumBlock (pack.dspGraph);
+        if (drumBlock == nullptr)
+            return false;
+        track = juce::jlimit (0, 15, track);
+        midiNote = juce::jlimit (0, 127, midiNote);
+        drumBlock->values["dmTriggerPadSlots"] = 0.0f;
+        drumBlock->values["dmTrack" + juce::String (track) + "Note"] = (float) midiNote;
+        drumBlock->metadata["dmTrack" + juce::String (track) + "Label"] =
+            juce::MidiMessage::getMidiNoteName (midiNote, true, true, 4);
+        arpeggiator.bind (pack.dspGraph);
+        editorListeners.call ([] (EditorListener& listener) { listener.packChanged(); });
+        return true;
+    }
+
+    bool PlayerProcessor::setDrumSongModeFromUi (bool songMode)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (! loaded)
+            return false;
+        auto* drumBlock = findMutableDrumBlock (pack.dspGraph);
+        if (drumBlock == nullptr)
+            return false;
+        drumBlock->values["dmSongMode"] = songMode ? 1.0f : 0.0f;
+        arpeggiator.bind (pack.dspGraph);
         return true;
     }
 
@@ -2197,6 +2598,7 @@ namespace patchcraft
 
         midiBlock->values["mpActiveBank"] = (float) juce::jlimit (0, 4, bank);
         arpeggiator.bind (pack.dspGraph);
+        polySequencer.bind (pack.dspGraph);
         routingEngine.bind (pack.dspGraph, pack.parameters);
         routingEngine.prepare (makeRenderContext (currentBlockSize));
         return true;
@@ -2217,16 +2619,120 @@ namespace patchcraft
         const float limitedVelocity = juce::jlimit (0.0f, 1.0f, velocity);
         setArpLaneValue (*midiBlock, lane, "mpVelocity" + juce::String (step), limitedVelocity);
         setArpLaneValue (*midiBlock, lane, "mpStep" + juce::String (step) + "On", active ? 1.0f : 0.0f);
-        midiBlock->values["mpActiveBank"] = (float) lane;
-        midiBlock->values["mpMultiLane"] = 1.0f;
-        runtimeParameterValues["arpLaneControlBank"] = (float) juce::jlimit (0, 4, lane);
-        if (step < 16)
-            runtimeParameterValues["arpLaneStep" + juce::String (step + 1)] = limitedVelocity;
 
         arpeggiator.bind (pack.dspGraph);
+        polySequencer.bind (pack.dspGraph);
         routingEngine.bind (pack.dspGraph, pack.parameters);
         routingEngine.prepare (makeRenderContext (currentBlockSize));
         return true;
+    }
+
+    bool PlayerProcessor::setArpLaneStepsFromUi (int lane, int steps)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (! loaded)
+            return false;
+
+        auto* midiBlock = findMidiPlaygroundBlock (pack.dspGraph);
+        if (midiBlock == nullptr)
+            return false;
+
+        lane = juce::jlimit (0, 15, lane);
+        steps = juce::jlimit (1, 128, steps);
+        setArpLaneValue (*midiBlock, lane, "arpSteps", (float) steps);
+
+        arpeggiator.bind (pack.dspGraph);
+        polySequencer.bind (pack.dspGraph);
+        routingEngine.bind (pack.dspGraph, pack.parameters);
+        routingEngine.prepare (makeRenderContext (currentBlockSize));
+        return true;
+    }
+
+    bool PlayerProcessor::setSeqLaneStepFromUi (int laneIndex, int step, float value, bool active, const juce::String& laneType)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (! loaded)
+            return false;
+
+        auto* midiBlock = findMidiPlaygroundBlock (pack.dspGraph);
+        if (midiBlock == nullptr)
+            return false;
+
+        laneIndex = juce::jlimit (0, 15, laneIndex);
+        step = juce::jlimit (0, 127, step);
+        const auto suffix = juce::String (step);
+
+        if (laneType == "pitch")
+        {
+            setArpLaneValue (*midiBlock, laneIndex, "arpNote" + suffix, juce::jmap (value, -24.0f, 24.0f, -24.0f, 24.0f));
+            setArpLaneValue (*midiBlock, laneIndex, "mpStep" + suffix + "On", active ? 1.0f : 0.0f);
+        }
+        else if (laneType == "chance")
+        {
+            setArpLaneValue (*midiBlock, laneIndex, "mpStepProb" + suffix, juce::jlimit (0.0f, 1.0f, value));
+            setArpLaneValue (*midiBlock, laneIndex, "mpStep" + suffix + "On", active ? 1.0f : 0.0f);
+        }
+        else if (laneType == "gate")
+        {
+            const float velocity = juce::jlimit (0.05f, 1.0f,
+                ArpLaneUi::readLaneValue (midiBlock, laneIndex, "mpVelocity" + suffix, 0.72f));
+            return setArpLaneStepFromUi (laneIndex, step, velocity, active);
+        }
+        else
+        {
+            return setArpLaneStepFromUi (laneIndex, step, juce::jlimit (0.0f, 1.0f, value), active);
+        }
+
+        arpeggiator.bind (pack.dspGraph);
+        polySequencer.bind (pack.dspGraph);
+        routingEngine.bind (pack.dspGraph, pack.parameters);
+        routingEngine.prepare (makeRenderContext (currentBlockSize));
+        return true;
+    }
+
+    juce::String PlayerProcessor::getPianoRollNotesEncoded() const
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (runtimePianoRollNotes.isNotEmpty())
+            return runtimePianoRollNotes;
+        for (const auto& block : pack.dspGraph.blocks)
+            if (PianoRollRuntime::isPianoRollBlock (block))
+                if (const auto found = block.metadata.find ("notes"); found != block.metadata.end())
+                    return found->second;
+        return {};
+    }
+
+    bool PlayerProcessor::setPianoRollNotesFromUi (const juce::String& encodedNotes)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (! loaded)
+            return false;
+
+        bool hasBlock = false;
+        for (auto& block : pack.dspGraph.blocks)
+        {
+            if (PianoRollRuntime::isPianoRollBlock (block))
+            {
+                block.metadata["notes"] = encodedNotes;
+                hasBlock = true;
+                break;
+            }
+        }
+        if (! hasBlock)
+            return false;
+
+        runtimePianoRollNotes = encodedNotes;
+        if (engine)
+            pianoRoll.allNotesOff (*engine);
+        pianoRoll.bind (pack.dspGraph);
+        return true;
+    }
+
+    double PlayerProcessor::getPianoRollPlaybackPosition01() const
+    {
+        if (! isAnyTransportPlaying())
+            return -1.0;
+        return pianoRoll.getPlaybackPosition01();
     }
 
     bool PlayerProcessor::allowsExternalPackLoading() const
@@ -2876,7 +3382,7 @@ namespace patchcraft
 
             scriptEngine.triggerEvent ("note starts", {{"velocity", message.getFloatVelocity() * 127.0f}});
 
-            if (! arpeggiator.handleNoteOn (*engine, note, message.getFloatVelocity()))
+            if (! polySequencer.handleNoteOn (*engine, note, message.getFloatVelocity()) && ! arpeggiator.handleNoteOn (*engine, note, message.getFloatVelocity()))
             {
                 if (auto* multi = dynamic_cast<MultiInstrumentEngine*> (engine.get()))
                     multi->noteOnForChannel (note, message.getFloatVelocity(), message.getChannel());
@@ -2896,7 +3402,7 @@ namespace patchcraft
 
             if (sustainPedalDown)
                 heldNotes[(size_t) note] = true;
-            else if (! arpeggiator.handleNoteOff (*engine, note))
+            else if (! polySequencer.handleNoteOff (*engine, note) && ! arpeggiator.handleNoteOff (*engine, note))
             {
                 if (auto* multi = dynamic_cast<MultiInstrumentEngine*> (engine.get()))
                     multi->noteOffForChannel (note, message.getChannel());
@@ -3018,7 +3524,7 @@ namespace patchcraft
             {
                 if (heldNotes[(size_t) note])
                 {
-                    if (! arpeggiator.handleNoteOff (*engine, note))
+                    if (! polySequencer.handleNoteOff (*engine, note) && ! arpeggiator.handleNoteOff (*engine, note))
                         engine->noteOff (note);
                     if (userSampleOverlayEnabled)
                         userSampleOverlay.noteOff (note);
@@ -3260,6 +3766,27 @@ namespace patchcraft
         setArpLaneValue (*midiBlock, lane, "mpLaneMute", muted ? 1.0f : 0.0f);
         
         arpeggiator.bind (pack.dspGraph);
+        polySequencer.bind (pack.dspGraph);
+        routingEngine.bind (pack.dspGraph, pack.parameters);
+        routingEngine.prepare (makeRenderContext (currentBlockSize));
+        return true;
+    }
+
+    bool PlayerProcessor::setArpLaneSoloFromUi (int lane, bool solo)
+    {
+        const juce::SpinLock::ScopedLockType lk (engineLock);
+        if (! loaded)
+            return false;
+
+        auto* midiBlock = findMidiPlaygroundBlock (pack.dspGraph);
+        if (midiBlock == nullptr)
+            return false;
+
+        lane = juce::jlimit (0, 15, lane);
+        setArpLaneValue (*midiBlock, lane, "mpLaneSolo", solo ? 1.0f : 0.0f);
+        
+        arpeggiator.bind (pack.dspGraph);
+        polySequencer.bind (pack.dspGraph);
         routingEngine.bind (pack.dspGraph, pack.parameters);
         routingEngine.prepare (makeRenderContext (currentBlockSize));
         return true;

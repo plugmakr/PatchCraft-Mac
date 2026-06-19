@@ -1,7 +1,20 @@
 # Build files
 build/
+build-codex/
 *.xcodeproj/
 *.xcworkspace/
+
+# Local agent worktrees / scratch
+.claude/
+smoke-output.txt
+
+# Large local-only content (not tracked in git)
+Tutorial/
+FactoryDemosBacklog/
+HouseDemos/
+
+# Stale partial app bundles / local scratch
+mac/
 
 # IDE files
 .vscode/

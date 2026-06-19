@@ -29,25 +29,26 @@ namespace patchcraft
         createBtn.getProperties().set ("primaryAction", true);
         createBtn.getProperties().set ("fontSize", 12.0);
         createBtn.getProperties().set ("bold", true);
-        createBtn.setTooltip ("Create a playable starter instrument or effect from the Design page.");
+        createBtn.setTooltip ("Create a playable starter instrument or effect from the Layout page.");
         createBtn.onClick = [this] { showQuickCreateMenu(); };
         addAndMakeVisible (createBtn);
 
         // Section tab strip - styled as flat toggle buttons. Each tab maps
         // explicitly to its BottomPanel::Page so removing/reordering tabs
         // doesn't break the wiring.
-        struct TabSpec { juce::TextButton* btn; int pageIndex; };
-        const TabSpec specs[] = {
-            { &tabDesign,   (int) BottomPanel::Page::Design },
+        struct TabMap { juce::Button* btn; int page; };
+        const TabMap tabs[] = {
             { &tabMapper,   (int) BottomPanel::Page::Samples },
+            { &tabGraph,    (int) BottomPanel::Page::DSP },
+            { &tabMidi,     (int) BottomPanel::Page::MidiPlayground },
+            { &tabDesign,   (int) BottomPanel::Page::Design },
             { &tabOneShot,  (int) BottomPanel::Page::OneShotMaker },
-            { &tabDSP,      (int) BottomPanel::Page::DSP },
             { &tabBuild,    (int) BottomPanel::Page::Widgets },
             { &tabAnimation,(int) BottomPanel::Page::Animation },
             { &tabBranding, (int) BottomPanel::Page::Branding },
             { &tabLaunch,   (int) BottomPanel::Page::Export }
         };
-        for (const auto& s : specs)
+        for (const auto& s : tabs)
         {
             auto* b = s.btn;
             b->setClickingTogglesState (true);
@@ -55,13 +56,25 @@ namespace patchcraft
             b->getProperties().set ("flatTab", true);
             b->getProperties().set ("fontSize", 12.0);
             b->getProperties().set ("bold", true);
-            const int captured = s.pageIndex;
+            const int captured = s.page;
             b->onClick = [this, captured] { onSectionTabClick (captured); };
             addAndMakeVisible (*b);
         }
+        tabArp.setVisible (false);
         tabDesign.setToggleState (true, juce::dontSendNotification);
-        tabMidi.setTooltip ("Advanced pattern tools are kept for project compatibility, but PatchCraft Standard starts from DSP, Samples, Design, and Export.");
-        tabArp.setTooltip ("Circle sequencer editing is a Pro/advanced workflow. Standard keeps it out of the primary instrument-building path.");
+
+        designerModeToggle.setClickingTogglesState (true);
+        designerModeToggle.setToggleState (true, juce::dontSendNotification);
+        designerModeToggle.getProperties().set ("flatTab", true);
+        designerModeToggle.getProperties().set ("fontSize", 12.0);
+        designerModeToggle.getProperties().set ("bold", true);
+        designerModeToggle.onClick = [this]
+        {
+            const bool active = designerModeToggle.getToggleState();
+            canvas.setDesignerModeActive (active);
+            designerModeToggle.setButtonText (active ? "Designer Mode" : "Player Mode");
+        };
+        addAndMakeVisible (designerModeToggle);
 
         patchSeparator.setText ("|", juce::dontSendNotification);
         patchSeparator.setJustificationType (juce::Justification::centred);
@@ -238,23 +251,20 @@ namespace patchcraft
             // Custom size - add a transient entry.
             const auto label = juce::String (cs.width) + " x " + juce::String (cs.height) + "  -  Custom";
             const int customId = (int) sizePresets.size() + 1;
-            if (sizeBox.getItemId (sizeBox.getNumItems() - 1) != customId)
-                sizeBox.addItem (label, customId);
             sizeBox.setSelectedId (customId, juce::dontSendNotification);
         }
 
-        const bool dspActive = owner.getBottomTab() == BottomPanel::Page::DSP;
+        const bool designActive = owner.getBottomTab() == BottomPanel::Page::Design;
         savePatchBtn.setButtonText ("Save Patch");
         savePatchAsBtn.setButtonText ("Save Patch As");
-        savePatchBtn.setVisible (dspActive);
-        savePatchAsBtn.setVisible (dspActive);
-        patchSeparator.setVisible (dspActive);
-        savePatchBtn.setEnabled (dspActive);
-        savePatchAsBtn.setEnabled (dspActive);
+        savePatchBtn.setVisible (designActive);
+        savePatchAsBtn.setVisible (designActive);
+        patchSeparator.setVisible (designActive);
+        savePatchBtn.setEnabled (designActive);
+        savePatchAsBtn.setEnabled (designActive);
 
         // Alignment cluster: only meaningful on the Design page, and the
         // distribute / order ops need 2+ or 3+ selected to do anything.
-        const bool designActive = owner.getBottomTab() == BottomPanel::Page::Design;
         const int selectionCount = owner.getSelectedElementIds().size();
 
         if (canvas.isAutoFitEnabled())
@@ -293,6 +303,7 @@ namespace patchcraft
         repaint();
     }
 
+
     void CanvasToolbar::onSectionTabClick (int index)
     {
         owner.setBottomTab (static_cast<BottomPanel::Page> (index));
@@ -301,17 +312,15 @@ namespace patchcraft
     void CanvasToolbar::syncSectionTabFromOwner()
     {
         const auto p = owner.getBottomTab();
-
-        tabDesign.setToggleState   (p == BottomPanel::Page::Design,         juce::dontSendNotification);
-        tabMapper.setToggleState   (p == BottomPanel::Page::Samples,   juce::dontSendNotification);
+        tabDesign.setToggleState   (p == BottomPanel::Page::Design,        juce::dontSendNotification);
+        tabGraph.setToggleState    (p == BottomPanel::Page::DSP,           juce::dontSendNotification);
+        tabMapper.setToggleState   (p == BottomPanel::Page::Samples,        juce::dontSendNotification);
         tabOneShot.setToggleState  (p == BottomPanel::Page::OneShotMaker,   juce::dontSendNotification);
-        tabMidi  .setToggleState   (false, juce::dontSendNotification);
-        tabArp   .setToggleState   (false, juce::dontSendNotification);
-        tabDSP   .setToggleState   (p == BottomPanel::Page::DSP,            juce::dontSendNotification);
-        tabBuild .setToggleState   (p == BottomPanel::Page::Widgets,          juce::dontSendNotification);
+        tabMidi  .setToggleState   (p == BottomPanel::Page::MidiPlayground
+                                    || p == BottomPanel::Page::ArpStudio,  juce::dontSendNotification);
+        tabBuild .setToggleState   (p == BottomPanel::Page::Widgets,        juce::dontSendNotification);
         tabAnimation.setToggleState (p == BottomPanel::Page::Animation,      juce::dontSendNotification);
-        tabBranding.setToggleState (p == BottomPanel::Page::Branding
-                                  || p == BottomPanel::Page::Test,         juce::dontSendNotification);
+        tabBranding.setToggleState (p == BottomPanel::Page::Branding || p == BottomPanel::Page::Test, juce::dontSendNotification);
         tabLaunch.setToggleState   (p == BottomPanel::Page::Export,         juce::dontSendNotification);
         refresh();
     }
@@ -325,16 +334,12 @@ namespace patchcraft
         else if (idx == 4) e = "drum";
         else               e = "sample";
 
-        // Detect current "drum mode" by layout content: drum mode keeps the
-        // manifest engine as "sample" but adds a PadGrid element. Skip the
-        // early-out only when the dropdown choice differs from the visible
-        // selection.
         const auto currentEng = owner.getProject().getEngineType();
         bool currentHasPadGrid = false;
         for (const auto& el : owner.getProject().getLayout().getAll())
             if (el.type == ElementType::PadGrid) { currentHasPadGrid = true; break; }
         const juce::String currentVisible = currentHasPadGrid && currentEng == "sample"
-                                          ? juce::String ("drum") : currentEng;
+                                           ? juce::String ("drum") : currentEng;
         if (e == currentVisible) return;
 
         // Confirm with user before wiping the layout.
@@ -719,16 +724,19 @@ namespace patchcraft
         createBtn.setBounds   (r.removeFromLeft (82));
         r.removeFromLeft (12);
 
-        // Section tabs (left of right cluster)
-        tabDesign.setBounds (r.removeFromLeft (66));
-        tabMapper.setBounds (r.removeFromLeft (62));
+        // Section tabs (left of right cluster) — workflow order: Sound → Graph → Perform → Layout …
+        tabMapper.setBounds (r.removeFromLeft (58));
+        tabGraph.setBounds (r.removeFromLeft (58));
+        tabMidi.setBounds (r.removeFromLeft (62));
+        tabDesign.setBounds (r.removeFromLeft (58));
         tabOneShot.setBounds (r.removeFromLeft (70));
-        tabDSP   .setBounds (r.removeFromLeft (42));
         tabBuild .setBounds (r.removeFromLeft (58));
         tabAnimation.setBounds (r.removeFromLeft (48));
-        tabBranding.setBounds (r.removeFromLeft (62));
-        tabLaunch.setBounds (r.removeFromLeft (52));
-        if (owner.getBottomTab() == BottomPanel::Page::DSP)
+        tabBranding.setBounds (r.removeFromLeft (52));
+        tabLaunch.setBounds (r.removeFromLeft (46));
+        designerModeToggle.setBounds (r.removeFromLeft (110));
+
+        if (owner.getBottomTab() == BottomPanel::Page::Design)
         {
             patchSeparator.setBounds (r.removeFromLeft (14));
             savePatchBtn.setBounds (r.removeFromLeft (130).reduced (2));

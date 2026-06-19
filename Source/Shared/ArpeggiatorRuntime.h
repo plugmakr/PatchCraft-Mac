@@ -22,6 +22,8 @@ namespace patchcraft
         bool handleNoteOff (IInstrumentEngine&, int midiNote);
         void process (IInstrumentEngine&, const RenderContext&);
 
+        static bool isArpBlock (const DspBlock&);
+
     private:
         struct Settings
         {
@@ -44,7 +46,6 @@ namespace patchcraft
         float activeVelocity = 0.0f;
         bool gateOpen = false;
 
-        static bool isArpBlock (const DspBlock&);
         static float valueForKey (const DspBlock&, const juce::String&, float fallback);
 
         int sequenceIndexForStep (int step) const;

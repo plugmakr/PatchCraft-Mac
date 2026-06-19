@@ -147,126 +147,80 @@
                                       float& velocity) const
     {
         const auto* block = findArpBlock (owner.getProject().getDspGraph());
-        lane = juce::jlimit (0, 15, element.arpLaneIndex);
-        const bool orbitMultiRing = element.arpLaneMode.equalsIgnoreCase ("multiRing")
-                                 || element.arpLaneMode.equalsIgnoreCase ("orbit")
-                                 || element.arpLaneMode.equalsIgnoreCase ("orbitMulti");
-        int steps = block != nullptr
-            ? juce::jlimit (1, 128, juce::roundToInt (arpLaneValue (*block, lane, "arpSteps", (float) element.arpLaneSteps)))
-            : juce::jlimit (1, 128, element.arpLaneSteps);
-
-        auto area = r.reduced (12);
-        area.removeFromTop (24);
-        const float size = (float) juce::jmin (area.getWidth(), area.getHeight() - 34);
-        if (size <= 24.0f)
+        const auto layout = ArpLaneUi::layout (r, element, block, false);
+        if (! ArpLaneUi::hitTestStep (layout, element, p, lane, step))
             return false;
 
-        const juce::Point<float> centre ((float) area.getCentreX(), (float) area.getY() + size * 0.52f);
-        const auto delta = p.toFloat() - centre;
-        const float distance = delta.getDistanceFromOrigin();
-
-        if (orbitMultiRing)
-        {
-            const int laneCount = 5;
-            const float multiRadius = size * 0.42f;
-            const float innerRadius = multiRadius * 0.25f;
-            const float outerRadius = multiRadius * 0.94f;
-            if (distance < innerRadius - 4.0f || distance > outerRadius + 8.0f)
-                return false;
-
-            const float lanePos = juce::jmap (distance, innerRadius, outerRadius, 0.0f, (float) laneCount);
-            lane = juce::jlimit (0, laneCount - 1, (int) std::floor (lanePos));
-            steps = block != nullptr
-                ? juce::jlimit (1, 128, juce::roundToInt (arpLaneValue (*block, lane, "arpSteps", (float) element.arpLaneSteps)))
-                : juce::jlimit (1, 128, element.arpLaneSteps);
-            const float band = (outerRadius - innerRadius) / (float) laneCount;
-            const float laneCentre = innerRadius + band * ((float) lane + 0.5f);
-            velocity = juce::jlimit (0.05f, 1.0f,
-                juce::jmap (distance - laneCentre, -band * 0.45f, band * 0.45f, 0.05f, 1.0f));
-        }
-        else
-        {
-            const float radius = size * 0.40f;
-            if (distance < radius * 0.16f || distance > radius * 1.22f)
-                return false;
-            velocity = juce::jlimit (0.05f, 1.0f,
-                juce::jmap (distance, radius * 0.25f, radius * 0.93f, 0.05f, 1.0f));
-        }
-
-        float angle01 = (std::atan2 (delta.y, delta.x) + juce::MathConstants<float>::halfPi)
-            / juce::MathConstants<float>::twoPi;
-        while (angle01 < 0.0f) angle01 += 1.0f;
-        while (angle01 >= 1.0f) angle01 -= 1.0f;
-
-        const int maxDrawSteps = juce::jmin (steps, 64);
-        step = juce::jlimit (0, maxDrawSteps - 1, juce::roundToInt (angle01 * (float) maxDrawSteps) % maxDrawSteps);
+        velocity = ArpLaneUi::storedStepVelocity (block, lane, step);
         return true;
     }
 
     bool CanvasEditor::editArpLaneStepAt (const LayoutElement& element, juce::Rectangle<int> r,
                                           juce::Point<int> p, bool startGesture)
     {
+        const auto* block = findArpBlock (owner.getProject().getDspGraph());
+        const auto layout = ArpLaneUi::layout (r, element, block, false);
+
+        if (! startGesture && layout.stepsMinusBtn.contains (p))
+        {
+            const int lane = juce::jlimit (0, 15, element.arpLaneIndex);
+            auto& graph = owner.getProject().getDspGraph();
+            auto& blockMut = ensureArpBlock (graph);
+            setArpLaneValue (blockMut, lane, "arpSteps", (float) juce::jmax (1, layout.steps - 1));
+            owner.getProject().markDirty();
+            owner.getProject().notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
+            repaint (r.expanded (8));
+            return true;
+        }
+
+        if (! startGesture && layout.stepsPlusBtn.contains (p))
+        {
+            const int lane = juce::jlimit (0, 15, element.arpLaneIndex);
+            auto& graph = owner.getProject().getDspGraph();
+            auto& blockMut = ensureArpBlock (graph);
+            setArpLaneValue (blockMut, lane, "arpSteps", (float) juce::jmin (128, layout.steps + 1));
+            owner.getProject().markDirty();
+            owner.getProject().notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
+            repaint (r.expanded (8));
+            return true;
+        }
+
         int lane = -1;
         int step = -1;
-        float velocity = 0.8f;
-        auto velocityForLockedLane = [&] (int lockedLane, float& v)
-        {
-            auto area = r.reduced (12);
-            area.removeFromTop (24);
-            const float size = (float) juce::jmin (area.getWidth(), area.getHeight() - 34);
-            if (size <= 24.0f)
-                return false;
-
-            const juce::Point<float> centre ((float) area.getCentreX(), (float) area.getY() + size * 0.52f);
-            const float distance = (p.toFloat() - centre).getDistanceFromOrigin();
-            const bool orbitMultiRing = element.arpLaneMode.equalsIgnoreCase ("multiRing")
-                                     || element.arpLaneMode.equalsIgnoreCase ("orbit")
-                                     || element.arpLaneMode.equalsIgnoreCase ("orbitMulti");
-            if (orbitMultiRing)
-            {
-                const int laneCount = 5;
-                const float multiRadius = size * 0.42f;
-                const float innerRadius = multiRadius * 0.25f;
-                const float outerRadius = multiRadius * 0.94f;
-                const float band = (outerRadius - innerRadius) / (float) laneCount;
-                const float laneCentre = innerRadius + band * ((float) juce::jlimit (0, laneCount - 1, lockedLane) + 0.5f);
-                v = juce::jlimit (0.05f, 1.0f,
-                    juce::jmap (distance - laneCentre, -band * 0.50f, band * 0.50f, 0.05f, 1.0f));
-            }
-            else
-            {
-                const float radius = size * 0.40f;
-                v = juce::jlimit (0.05f, 1.0f,
-                    juce::jmap (distance, radius * 0.25f, radius * 0.93f, 0.05f, 1.0f));
-            }
-            return true;
-        };
-
         if (! startGesture && lastArpLane >= 0 && lastArpStep >= 0)
         {
             lane = lastArpLane;
             step = lastArpStep;
-            if (! velocityForLockedLane (lane, velocity))
-                return false;
         }
-        else if (! arpLaneStepAt (element, r, p, lane, step, velocity))
+        else if (! ArpLaneUi::hitTestStep (layout, element, p, lane, step))
         {
             return false;
         }
 
         auto& graph = owner.getProject().getDspGraph();
-        auto& block = ensureArpBlock (graph);
-        block.values["mpActiveBank"] = (float) lane;
-        block.values["mpMultiLane"] = 1.0f;
+        auto& blockMut = ensureArpBlock (graph);
         const auto suffix = juce::String (step);
-        setArpLaneValue (block, lane, "mpStep" + suffix + "On", 1.0f);
-        setArpLaneValue (block, lane, "mpVelocity" + suffix, juce::jlimit (0.05f, 1.0f, velocity));
-        setArpLaneValue (block, lane, "mpGate" + suffix, arpLaneValue (block, lane, "mpGate" + suffix, 0.72f));
-        setArpLaneValue (block, lane, "mpStepProb" + suffix, arpLaneValue (block, lane, "mpStepProb" + suffix, 1.0f));
-        setArpLaneValue (block, lane, "mpStepDiv" + suffix, arpLaneValue (block, lane, "mpStepDiv" + suffix, 1.0f));
-        owner.getProject().getLiveValues().setValue ("arpLaneControlBank", (float) juce::jlimit (0, 4, lane));
+        const bool wasActive = ArpLaneUi::storedStepActive (&blockMut, lane, step, false);
+
+        if (startGesture)
+        {
+            setArpLaneValue (blockMut, lane, "mpStep" + suffix + "On", wasActive ? 0.0f : 1.0f);
+            setArpLaneValue (blockMut, lane, "mpVelocity" + suffix,
+                             ArpLaneUi::storedStepVelocity (&blockMut, lane, step));
+        }
+        else
+        {
+            const float velocity = ArpLaneUi::velocityFromVerticalDrag (layout.content, p.y);
+            setArpLaneValue (blockMut, lane, "mpStep" + suffix + "On", 1.0f);
+            setArpLaneValue (blockMut, lane, "mpVelocity" + suffix, juce::jlimit (0.05f, 1.0f, velocity));
+        }
+
+        setArpLaneValue (blockMut, lane, "mpGate" + suffix, arpLaneValue (blockMut, lane, "mpGate" + suffix, 0.72f));
+        setArpLaneValue (blockMut, lane, "mpStepProb" + suffix, arpLaneValue (blockMut, lane, "mpStepProb" + suffix, 1.0f));
+        setArpLaneValue (blockMut, lane, "mpStepDiv" + suffix, arpLaneValue (blockMut, lane, "mpStepDiv" + suffix, 1.0f));
         if (step < 16)
-            owner.getProject().getLiveValues().setValue ("arpLaneStep" + juce::String (step + 1), juce::jlimit (0.05f, 1.0f, velocity));
+            owner.getProject().getLiveValues().setValue ("arpLaneStep" + juce::String (step + 1),
+                juce::jlimit (0.05f, 1.0f, arpLaneValue (blockMut, lane, "mpVelocity" + suffix, 0.72f)));
 
         graph.userConfigured = true;
         owner.getProject().markDirty();
@@ -809,13 +763,33 @@
         {
             if (el == nullptr) return;
             const auto selectedIds = owner.getSelectedElementIds();
-            if (selectedIds.size() > 1 && ! dragLayoutBefore.empty())
+            juce::StringArray scalableIds;
+            auto addWithChildren = [&] (auto& self, const juce::String& id) -> void
+            {
+                if (id.isEmpty() || scalableIds.contains (id))
+                    return;
+
+                const auto original = std::find_if (dragLayoutBefore.begin(), dragLayoutBefore.end(),
+                    [&] (const LayoutElement& candidate) { return candidate.id == id; });
+                if (original == dragLayoutBefore.end() || original->locked || original->type == ElementType::Group)
+                    return;
+
+                scalableIds.add (id);
+                for (const auto& child : dragLayoutBefore)
+                    if (child.containerId == id)
+                        self (self, child.id);
+            };
+
+            for (const auto& id : selectedIds)
+                addWithChildren (addWithChildren, id);
+
+            if (scalableIds.size() > 1 && ! dragLayoutBefore.empty())
             {
                 juce::Rectangle<int> originalBounds;
                 bool hasBounds = false;
                 for (const auto& original : dragLayoutBefore)
                 {
-                    if (! selectedIds.contains (original.id) || original.locked || original.type == ElementType::Group)
+                    if (! scalableIds.contains (original.id) || original.locked || original.type == ElementType::Group)
                         continue;
                     const juce::Rectangle<int> itemBounds (original.x, original.y,
                                                            juce::jmax (1, original.width),
@@ -851,7 +825,7 @@
 
                     for (const auto& original : dragLayoutBefore)
                     {
-                        if (! selectedIds.contains (original.id) || original.locked || original.type == ElementType::Group)
+                        if (! scalableIds.contains (original.id) || original.locked || original.type == ElementType::Group)
                             continue;
                         if (auto* selected = owner.getProject().getLayout().find (original.id))
                         {
@@ -973,11 +947,10 @@
                 [afterLayout] (LayoutModel& m)
                 {
                     m.getAll() = afterLayout;
-                });
-            owner.refreshAllPanels();
+                }, false); // structuralChange = false
         }
         else if (shouldNotify)
-            owner.getProject().notifyChanged();
+            owner.getProject().notifyChanged (PatchCraftProject::ChangeScope::layout);
 
         if (wasMarquee)
             repaint (previousMarquee.expanded (3));

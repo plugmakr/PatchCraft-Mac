@@ -1157,6 +1157,18 @@ namespace patchcraft
             }
         }
 
+        // -- pScript -----------------------------------------------------------
+        // The Player loads <pack>/pscript.txt at preset-load time, so the
+        // authored instrument script must ship inside the exported pack.
+        {
+            const auto script = project.getPscriptSource();
+            auto scriptFile = packFolder.getChildFile ("pscript.txt");
+            if (script.isNotEmpty())
+                scriptFile.replaceWithText (script);
+            else if (scriptFile.existsAsFile())
+                scriptFile.deleteFile();
+        }
+
         // -- Generate default hero image if not present ------------------------
         auto heroDst = packFolder.getChildFile ("assets/hero.png");
         if (! heroDst.existsAsFile())

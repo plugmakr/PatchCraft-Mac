@@ -20,11 +20,12 @@ namespace patchcraft
         styleLabel (workflowBody, "Add visuals here, place and bind them in Design, then prove motion, audio reaction, low-power fallback, and layout in Brand Lab before shipping.", 12.0f, false, PatchCraftLookAndFeel::textDim());
         styleLabel (stepsHeader, "HOW TO USE ANIMATION LAB", 12.0f, true, PatchCraftLookAndFeel::accent());
         styleLabel (stepsBody,
-                    "1. Pick what drives the motion: audio, BPM, MIDI, or a parameter.\n"
-                    "2. Pick the visual source and motion type.\n"
-                    "3. Click Add Animation. PatchCraft creates a bound visual on the Design canvas.\n"
-                    "4. In Inspector, fine-tune reactivity amount, animation mode, speed, and fallback.\n"
-                    "5. Test it in Brand Lab before export.",
+                    "1. Pick a DRIVER: output level, a frequency band (bass / mids / highs), "
+                    "transients, RMS, BPM sync, MIDI, or a parameter.\n"
+                    "2. Pick an EFFECT: spectrum bars, waveform scope, orbit, sweep, particle burst, glow, or sprite.\n"
+                    "3. Click Add Bound Visual - it lands on the Design canvas already wired to that driver.\n"
+                    "4. In Inspector, fine-tune reactivity amount and speed.\n"
+                    "5. The effect runs live in the Player, reacting to real audio.",
                     11.0f, false, PatchCraftLookAndFeel::text());
         styleLabel (proofHeader, "SHIP CHECK", 12.0f, true, juce::Colour (0xffc9a4ff));
         styleLabel (proofBody,
@@ -50,19 +51,30 @@ namespace patchcraft
             addAndMakeVisible (*button);
         }
 
-        sourceBox.addItem ("Audio Level", 1);
-        sourceBox.addItem ("BPM", 2);
-        sourceBox.addItem ("MIDI Notes", 3);
-        sourceBox.addItem ("Selected Parameter", 4);
+        sourceBox.addItem ("Output Level", 1);
+        sourceBox.addItem ("Bass (Low Band)", 2);
+        sourceBox.addItem ("Mids (Mid Band)", 3);
+        sourceBox.addItem ("Highs (High Band)", 4);
+        sourceBox.addItem ("Transient / Attack", 5);
+        sourceBox.addItem ("RMS Loudness", 6);
+        sourceBox.addItem ("BPM Sync", 7);
+        sourceBox.addItem ("MIDI Notes", 8);
+        sourceBox.addItem ("Selected Parameter", 9);
         sourceBox.setSelectedId (1, juce::dontSendNotification);
+        sourceBox.onChange = [this] { repaint(); };
         addAndMakeVisible (sourceBox);
 
-        actionBox.addItem ("Pulse Glow", 1);
-        actionBox.addItem ("Scale", 2);
-        actionBox.addItem ("Orbit", 3);
-        actionBox.addItem ("Sweep", 4);
-        actionBox.addItem ("Sprite Frame", 5);
+        actionBox.addItem ("Spectrum Bars", 1);
+        actionBox.addItem ("Waveform Scope", 2);
+        actionBox.addItem ("Pulse Glow", 3);
+        actionBox.addItem ("Orbit", 4);
+        actionBox.addItem ("Sweep", 5);
+        actionBox.addItem ("Particle Burst", 6);
+        actionBox.addItem ("Sprite Frame", 7);
+        actionBox.addItem ("Scale", 8);
+        actionBox.addItem ("Shake", 9);
         actionBox.setSelectedId (1, juce::dontSendNotification);
+        actionBox.onChange = [this] { repaint(); };
         addAndMakeVisible (actionBox);
         addAndMakeVisible (targetBox);
         refreshParameterChoices();
@@ -114,19 +126,61 @@ namespace patchcraft
 
     void AnimationLabPage::refreshParameterChoices()
     {
-        const auto currentId = targetBox.getSelectedId();
+        juce::String currentParamId;
+        const auto currentComboId = targetBox.getSelectedId();
+        if (currentComboId > 0)
+            currentParamId = targetBox.getProperties()["param_" + juce::String (currentComboId)].toString();
+
         targetBox.clear (juce::dontSendNotification);
-        int id = 1;
+        targetBox.getProperties().clear();
+
+        // Group visible parameters by category
+        std::map<juce::String, std::vector<ParameterDef>> grouped;
         for (const auto& param : owner.getProject().getParameters().getAll())
         {
             if (! param.visible)
                 continue;
-            targetBox.addItem (param.name.isNotEmpty() ? param.name + "  (" + param.id + ")" : param.id, id++);
-            targetBox.getProperties().set ("param_" + juce::String (id - 1), param.id);
+            juce::String cat = param.category.isNotEmpty() ? param.category : "General";
+            grouped[cat].push_back (param);
         }
+
+        int pid = 1;
+        int matchId = 1;
+        for (const auto& pair : grouped)
+        {
+            targetBox.addSectionHeading (pair.first);
+            for (const auto& param : pair.second)
+            {
+                targetBox.addItem (param.name.isNotEmpty() ? param.name + "  (" + param.id + ")" : param.id, pid);
+                targetBox.getProperties().set ("param_" + juce::String (pid), param.id);
+                if (param.id == currentParamId)
+                    matchId = pid;
+                pid++;
+            }
+        }
+
         if (targetBox.getNumItems() > 0)
-            targetBox.setSelectedId (currentId > 0 ? juce::jmin (currentId, targetBox.getNumItems()) : 1,
-                                     juce::dontSendNotification);
+            targetBox.setSelectedId (matchId, juce::dontSendNotification);
+    }
+
+    juce::String AnimationLabPage::reactiveModeForSource (const juce::String& source)
+    {
+        if (source.startsWithIgnoreCase ("Bass"))      return "lowBand";
+        if (source.startsWithIgnoreCase ("Mids"))      return "midBand";
+        if (source.startsWithIgnoreCase ("Highs"))     return "highBand";
+        if (source.startsWithIgnoreCase ("Transient")) return "transient";
+        if (source.startsWithIgnoreCase ("RMS"))       return "rms";
+        return "level";
+    }
+
+    juce::String AnimationLabPage::fxPresetForAction (const juce::String& action)
+    {
+        if (action.equalsIgnoreCase ("Spectrum Bars"))   return "spectrumBars";
+        if (action.equalsIgnoreCase ("Waveform Scope"))  return "waveform";
+        if (action.equalsIgnoreCase ("Orbit"))           return "orbit";
+        if (action.equalsIgnoreCase ("Sweep"))           return "sweep";
+        if (action.equalsIgnoreCase ("Particle Burst"))  return "particles";
+        return "glow";
     }
 
     void AnimationLabPage::addBoundVisualToCanvas()
@@ -136,6 +190,12 @@ namespace patchcraft
         auto parameterId = targetBox.getProperties()["param_" + juce::String (targetBox.getSelectedId())].toString();
         if (parameterId.isEmpty())
             parameterId = "macro1";
+
+        const bool isBpm   = source.startsWithIgnoreCase ("BPM");
+        const bool isParam = source.startsWithIgnoreCase ("Selected");
+        const bool isMidi  = source.startsWithIgnoreCase ("MIDI");
+        const bool isAudio = ! (isBpm || isParam || isMidi);
+        const auto fxPreset = fxPresetForAction (action);
 
         owner.getProject().performLayoutEdit ("Add bound animation visual", [&] (LayoutModel& layout)
         {
@@ -149,21 +209,19 @@ namespace patchcraft
             visual.y = juce::jmax (40, canvas.height / 2 - 130);
             visual.width = 360;
             visual.height = 220;
-            visual.audioReactive = source.equalsIgnoreCase ("Audio Level");
-            visual.audioReactiveMode = "level";
-            visual.audioReactiveAmount = source.equalsIgnoreCase ("Audio Level") ? 0.65f : 0.25f;
-            visual.animationMode = source.equalsIgnoreCase ("BPM") ? "bpmPulse" : "parameter";
-            visual.animationRate = source.equalsIgnoreCase ("BPM") ? 1.0f : 0.5f;
-            visual.visualSource = source.equalsIgnoreCase ("Selected Parameter") ? parameterId
-                                : source.equalsIgnoreCase ("MIDI Notes") ? "midiNotes"
-                                : source.equalsIgnoreCase ("BPM") ? "bpm"
-                                : "audioLevel";
-            visual.visualAction = action.removeCharacters (" ").toLowerCase();
-            visual.visualPreset = action.equalsIgnoreCase ("Orbit") ? "orbitAura"
-                                : action.equalsIgnoreCase ("Sweep") ? "spectrumSweep"
-                                : "pulseGlow";
+            visual.audioReactive = isAudio;
+            visual.audioReactiveMode = reactiveModeForSource (source);
+            visual.audioReactiveAmount = isAudio ? 0.7f : 0.3f;
+            visual.animationMode = isBpm ? "bpmPulse" : (isParam ? "parameter" : "none");
+            visual.animationRate = isBpm ? 1.0f : (fxPreset == "spectrumBars" ? 2.0f : 0.6f);
+            visual.visualSource = isParam ? parameterId
+                                : isMidi  ? "midiNotes"
+                                : isBpm   ? "bpm"
+                                : reactiveModeForSource (source);
+            visual.visualAction = fxPreset;
+            visual.visualPreset = fxPreset;
             visual.visualLowPowerFallback = true;
-            visual.opacity = 0.85f;
+            visual.opacity = 0.9f;
             visual.cornerRadius = 12.0f;
             visual.accentColour = PatchCraftLookAndFeel::accent();
             layout.add (visual);
@@ -209,17 +267,107 @@ namespace patchcraft
         auto preview = getLocalBounds().reduced (40);
         preview.removeFromTop (178);
         preview = preview.removeFromRight (preview.getWidth() / 2 - 24).removeFromTop (162);
-        const float pulse = previewActive ? (0.35f + 0.65f * std::sin (previewPhase * juce::MathConstants<float>::twoPi) * 0.5f + 0.35f) : 0.45f;
         auto p = preview.toFloat();
-        g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.12f + 0.24f * pulse));
+        g.setColour (juce::Colour (0xff05060a));
         g.fillRoundedRectangle (p, 12.0f);
-        g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.6f + 0.3f * pulse));
-        g.drawRoundedRectangle (p.reduced (1.0f), 12.0f, 1.4f + 2.2f * pulse);
-        auto centre = p.getCentre();
-        const float radius = 34.0f + 26.0f * pulse;
-        g.drawEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f, 2.0f);
+        g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.5f));
+        g.drawRoundedRectangle (p.reduced (1.0f), 12.0f, 1.2f);
+
+        {
+            juce::Graphics::ScopedSaveState clip (g);
+            g.reduceClipRegion (preview.reduced (3));
+            drawPreviewEffect (g, p.reduced (10));
+        }
+
+        g.setColour (PatchCraftLookAndFeel::textBright());
         g.setFont (juce::Font (12.0f, juce::Font::bold));
-        g.drawFittedText (sourceBox.getText() + " -> " + actionBox.getText(), preview.reduced (14).removeFromBottom (24), juce::Justification::centred, 1);
+        g.drawFittedText (sourceBox.getText() + "  ->  " + actionBox.getText(),
+                          preview.reduced (14).removeFromBottom (22), juce::Justification::centred, 1);
+    }
+
+    void AnimationLabPage::drawPreviewEffect (juce::Graphics& g, juce::Rectangle<float> area)
+    {
+        const auto accent = PatchCraftLookAndFeel::accent();
+        const float t = previewPhase;                       // 0..1 loop
+        const float seconds = previewPhase * 6.2831853f;
+        // Synthetic "audio" so the preview moves even without playback.
+        const float level = previewActive
+            ? juce::jlimit (0.0f, 1.0f, 0.45f + 0.45f * std::sin (seconds * 1.7f))
+            : 0.5f;
+        const auto fx = fxPresetForAction (actionBox.getText().trim());
+        const auto centre = area.getCentre();
+
+        if (fx == "spectrumBars")
+        {
+            const int bars = 22;
+            const float bw = area.getWidth() / (float) bars;
+            for (int i = 0; i < bars; ++i)
+            {
+                const float ph = seconds * 2.0f + (float) i * 0.5f;
+                const float h = juce::jlimit (0.06f, 1.0f, 0.2f + 0.8f * std::abs (std::sin (ph)) * (0.4f + level)) * area.getHeight();
+                g.setColour (accent.withRotatedHue ((float) i / (float) bars * 0.12f - 0.06f).withAlpha (0.85f));
+                g.fillRoundedRectangle (area.getX() + (float) i * bw + 1.0f, area.getBottom() - h, bw - 2.0f, h, 1.5f);
+            }
+            return;
+        }
+        if (fx == "waveform")
+        {
+            juce::Path path;
+            const int n = 80;
+            for (int i = 0; i < n; ++i)
+            {
+                const float x = area.getX() + area.getWidth() * ((float) i / (float) (n - 1));
+                const float y = centre.y - std::sin ((float) i * 0.35f + seconds * 3.0f) * area.getHeight() * 0.4f * (0.4f + level);
+                if (i == 0) path.startNewSubPath (x, y); else path.lineTo (x, y);
+            }
+            g.setColour (accent.withAlpha (0.95f));
+            g.strokePath (path, juce::PathStrokeType (2.0f));
+            return;
+        }
+        if (fx == "orbit")
+        {
+            for (int i = 0; i < 24; ++i)
+            {
+                const float ph = seconds * 1.6f + (float) i * juce::MathConstants<float>::twoPi / 24.0f;
+                const float rad = area.getHeight() * 0.18f * (1.0f + level * 1.3f) + (float) (i % 4) * 4.0f;
+                const float sz = 3.0f + level * 5.0f;
+                g.setColour (accent.withRotatedHue ((float) i / 24.0f * 0.1f).withAlpha (0.7f));
+                g.fillEllipse (centre.x + std::cos (ph) * rad - sz * 0.5f, centre.y + std::sin (ph) * rad * 0.78f - sz * 0.5f, sz, sz);
+            }
+            return;
+        }
+        if (fx == "sweep")
+        {
+            const float x = area.getX() + area.getWidth() * t;
+            const float w = juce::jmax (16.0f, area.getWidth() * (0.12f + level * 0.18f));
+            juce::ColourGradient grad (accent.withAlpha (0.0f), x - w, centre.y, accent.withAlpha (0.0f), x + w, centre.y, false);
+            grad.addColour (0.5, accent.withAlpha (0.8f));
+            g.setGradientFill (grad);
+            g.fillRect (juce::Rectangle<float> (x - w, area.getY(), w * 2.0f, area.getHeight()));
+            return;
+        }
+        if (fx == "particles")
+        {
+            for (int i = 0; i < 30; ++i)
+            {
+                const float ph = (float) i * 0.61f;
+                const float tt = std::fmod (t + (float) i * 0.13f, 1.0f);
+                const float rad = tt * area.getHeight() * 0.5f * (0.6f + level);
+                const float sz = (1.0f - tt) * (3.0f + level * 6.0f);
+                if (sz <= 0.3f) continue;
+                g.setColour (accent.withRotatedHue ((float) i / 30.0f * 0.15f).withAlpha ((1.0f - tt) * 0.8f));
+                g.fillEllipse (centre.x + std::cos (ph) * rad - sz * 0.5f, centre.y + std::sin (ph) * rad - sz * 0.5f, sz, sz);
+            }
+            return;
+        }
+        // glow
+        for (int ring = 4; ring >= 0; --ring)
+        {
+            const float pulse = 0.5f + 0.5f * std::sin (seconds * 2.0f);
+            const float rr = area.getHeight() * 0.5f * (0.35f + 0.16f * (float) ring) * (0.8f + level * 0.6f + pulse * 0.1f);
+            g.setColour (accent.withAlpha ((0.10f + level * 0.30f) * (1.0f - (float) ring * 0.16f)));
+            g.fillEllipse (centre.x - rr, centre.y - rr, rr * 2.0f, rr * 2.0f);
+        }
     }
 
     void AnimationLabPage::resized()

@@ -289,13 +289,34 @@ namespace patchcraft
 
     void ElementPalette::Section::resized()
     {
+        const bool filtering = activeFilter.isNotEmpty();
         int y = 24;
         for (auto* row : rows)
         {
-            row->setVisible (open);
-            row->setBounds (4, y, getWidth() - 8, 28);
-            y += 30;
+            const bool show = filtering ? row->matchesFilter : open;
+            row->setVisible (show);
+            if (show)
+            {
+                row->setBounds (4, y, getWidth() - 8, 28);
+                y += 30;
+            }
         }
+    }
+
+    int ElementPalette::Section::applyFilter (const juce::String& query)
+    {
+        activeFilter = query;
+        int visible = 0;
+        for (auto* row : rows)
+        {
+            row->matchesFilter = query.isEmpty()
+                              || row->text.containsIgnoreCase (query)
+                              || title.containsIgnoreCase (query);
+            if (row->matchesFilter)
+                ++visible;
+        }
+        resized();
+        return visible;
     }
 
     void ElementPalette::Section::mouseUp (const juce::MouseEvent& e)
@@ -318,12 +339,32 @@ namespace patchcraft
 
     int ElementPalette::Section::getNeededHeight() const
     {
+        if (activeFilter.isNotEmpty())
+        {
+            int visible = 0;
+            for (auto* row : rows)
+                if (row->matchesFilter)
+                    ++visible;
+            return visible > 0 ? 24 + visible * 30 + 4 : 0;
+        }
         return 24 + (open ? (int) rows.size() * 30 : 0) + 4;
     }
 
     // ---------------------------------------------------------------------
     ElementPalette::ElementPalette (StudioMainComponent& o) : owner (o)
     {
+        searchBox.setTextToShowWhenEmpty ("Search elements & modules...",
+                                          PatchCraftLookAndFeel::textDim());
+        searchBox.setColour (juce::TextEditor::backgroundColourId, PatchCraftLookAndFeel::raised());
+        searchBox.setColour (juce::TextEditor::outlineColourId, PatchCraftLookAndFeel::border());
+        searchBox.setColour (juce::TextEditor::focusedOutlineColourId, PatchCraftLookAndFeel::accent());
+        searchBox.setColour (juce::TextEditor::textColourId, PatchCraftLookAndFeel::text());
+        searchBox.setFont (juce::Font (13.0f));
+        searchBox.setJustification (juce::Justification::centredLeft);
+        searchBox.onTextChange = [this] { applySearchFilter(); };
+        searchBox.onEscapeKey   = [this] { searchBox.clear(); applySearchFilter(); };
+        addAndMakeVisible (searchBox);
+
         addAndMakeVisible (viewport);
         viewport.setViewedComponent (&scrollContent, false);
         viewport.setScrollBarsShown (true, false);
@@ -390,7 +431,10 @@ namespace patchcraft
         const Entry performance[] = {
             { ElementType::DrumPad,      "Drum Pad",     "drum" },
             { ElementType::PadGrid,      "Pad Grid",     "grid" },
-            { ElementType::DrumGrid,     "Drum Grid",    "grid" }
+            { ElementType::DrumGrid,     "Drum Grid",    "grid" },
+            { ElementType::PianoRoll,    "Piano Roll",   "grid" },
+            { ElementType::ArpLane,      "Arp Lane",     "grid" },
+            { ElementType::SequencerLane,"Seq Lane",     "grid" }
         };
         const Entry containers[] = {
             { ElementType::TabPanel,    "Tab Panel",    "tabs" },
@@ -526,6 +570,10 @@ namespace patchcraft
 
         midiModuleSection.addRow (std::make_unique<Row> ("Arp Lane", "grid",
             [this] { owner.addModuleToCanvas ("ArpLaneModule"); }));
+        midiModuleSection.addRow (std::make_unique<Row> ("Step Sequencer", "grid",
+            [this] { owner.addModuleToCanvas ("SeqSequencerModule"); }));
+        midiModuleSection.addRow (std::make_unique<Row> ("Harmony Composer", "keyboard",
+            [this] { owner.addModuleToCanvas ("HarmonyComposer"); }));
         midiModuleSection.addRow (std::make_unique<Row> ("Chord Progression Builder", "grid",
             [this] { owner.addModuleToCanvas ("ChordProgressionBuilder"); }));
         midiModuleSection.addRow (std::make_unique<Row> ("Scale + Chord Assistant", "keyboard",
@@ -645,6 +693,8 @@ namespace patchcraft
         else if (type == ElementType::DrumPad)    parameterId = "drumTrigger";
         else if (type == ElementType::PadGrid)    parameterId = "padGrid";
         else if (type == ElementType::DrumGrid)   parameterId = {};
+        else if (type == ElementType::ArpLane)    parameterId = {};
+        else if (type == ElementType::SequencerLane) parameterId = {};
         else if (type == ElementType::TabPanel)   parameterId = {};
         else if (type == ElementType::MacroControl) parameterId = "filterCutoff";
         else if (type == ElementType::ModMatrix)    parameterId = {};
@@ -665,79 +715,59 @@ namespace patchcraft
         g.fillAll (PatchCraftLookAndFeel::panel());
     }
 
+    void ElementPalette::applySearchFilter()
+    {
+        const auto query = searchBox.getText().trim();
+        for (auto* section : { &controlSection, &analysisSection, &uiSection, &motionSection, &proVisualSection,
+                               &performanceSection, &containerSection, &productStarterSection,
+                               &synthModuleSection, &samplerModuleSection, &drumModuleSection, &midiModuleSection,
+                               &eqDynamicsModuleSection, &fxModuleSection, &outputModuleSection })
+            section->applyFilter (query);
+
+        resized();
+        repaint();
+    }
+
     void ElementPalette::resized()
     {
         auto outer = getLocalBounds();
         auto bottom = outer.removeFromBottom (36).reduced (8, 4);
+        searchBox.setBounds (outer.removeFromTop (34).reduced (8, 6));
         viewport.setBounds (outer);
 
-        auto r = juce::Rectangle<int> (0, 0, juce::jmax (1, viewport.getWidth() - 10), 1).reduced (8, 8);
         const int contentWidth = juce::jmax (1, viewport.getWidth() - 10);
-        int contentHeight = 16;
 
-        const int controlH = controlSection.getNeededHeight();
-        contentHeight += controlH + 8;
-        const int analysisH = analysisSection.getNeededHeight();
-        contentHeight += analysisH + 8;
-        const int uiH = uiSection.getNeededHeight();
-        contentHeight += uiH + 8;
-        const int motionH = motionSection.getNeededHeight();
-        contentHeight += motionH + 8;
-        const int proVisualH = proVisualSection.getNeededHeight();
-        contentHeight += proVisualH + 8;
-        const int perfH = performanceSection.getNeededHeight();
-        contentHeight += perfH + 8;
-        const int containerH = containerSection.getNeededHeight();
-        contentHeight += containerH + 8;
-        const int starterH = productStarterSection.getNeededHeight();
-        contentHeight += starterH + 8;
-        const int synthModulesH = synthModuleSection.getNeededHeight();
-        contentHeight += synthModulesH + 8;
-        const int samplerModulesH = samplerModuleSection.getNeededHeight();
-        contentHeight += samplerModulesH + 8;
-        const int drumModulesH = drumModuleSection.getNeededHeight();
-        contentHeight += drumModulesH + 8;
-        const int midiModulesH = midiModuleSection.getNeededHeight();
-        contentHeight += midiModulesH + 8;
-        const int eqDynamicsModulesH = eqDynamicsModuleSection.getNeededHeight();
-        contentHeight += eqDynamicsModulesH + 8;
-        const int fxModulesH = fxModuleSection.getNeededHeight();
-        contentHeight += fxModulesH + 8;
-        const int outputModulesH = outputModuleSection.getNeededHeight();
-        contentHeight += outputModulesH + 16;
+        // Display order. Filtered-out sections report 0 height and are skipped
+        // entirely (no header, no spacer gap) so a search shows a tight list.
+        Section* ordered[] = {
+            &controlSection, &analysisSection, &uiSection, &motionSection, &proVisualSection,
+            &performanceSection, &containerSection, &productStarterSection,
+            &synthModuleSection, &samplerModuleSection, &drumModuleSection, &midiModuleSection,
+            &eqDynamicsModuleSection, &fxModuleSection, &outputModuleSection
+        };
+
+        int contentHeight = 16;
+        for (auto* section : ordered)
+        {
+            const int h = section->getNeededHeight();
+            if (h > 0)
+                contentHeight += h + 8;
+        }
+        contentHeight += 8;
 
         scrollContent.setBounds (0, 0, contentWidth, juce::jmax (viewport.getHeight(), contentHeight));
 
-        r = scrollContent.getLocalBounds().reduced (8);
-        controlSection.setBounds (r.removeFromTop (controlH));
-        r.removeFromTop (8);
-        analysisSection.setBounds (r.removeFromTop (analysisH));
-        r.removeFromTop (8);
-        uiSection.setBounds (r.removeFromTop (uiH));
-        r.removeFromTop (8);
-        motionSection.setBounds (r.removeFromTop (motionH));
-        r.removeFromTop (8);
-        proVisualSection.setBounds (r.removeFromTop (proVisualH));
-        r.removeFromTop (8);
-        performanceSection.setBounds (r.removeFromTop (perfH));
-        r.removeFromTop (8);
-        containerSection.setBounds (r.removeFromTop (containerH));
-        r.removeFromTop (8);
-        productStarterSection.setBounds (r.removeFromTop (starterH));
-        r.removeFromTop (8);
-        synthModuleSection.setBounds (r.removeFromTop (synthModulesH));
-        r.removeFromTop (8);
-        samplerModuleSection.setBounds (r.removeFromTop (samplerModulesH));
-        r.removeFromTop (8);
-        drumModuleSection.setBounds (r.removeFromTop (drumModulesH));
-        r.removeFromTop (8);
-        midiModuleSection.setBounds (r.removeFromTop (midiModulesH));
-        r.removeFromTop (8);
-        eqDynamicsModuleSection.setBounds (r.removeFromTop (eqDynamicsModulesH));
-        r.removeFromTop (8);
-        fxModuleSection.setBounds (r.removeFromTop (fxModulesH));
-        r.removeFromTop (8);
-        outputModuleSection.setBounds (r.removeFromTop (outputModulesH));
+        auto r = scrollContent.getLocalBounds().reduced (8);
+        for (auto* section : ordered)
+        {
+            const int h = section->getNeededHeight();
+            const bool show = h > 0;
+            section->setVisible (show);
+            if (! show)
+                continue;
+            section->setBounds (r.removeFromTop (h));
+            r.removeFromTop (8);
+        }
 
         // bottom action icons
         const int iw = bottom.getHeight();

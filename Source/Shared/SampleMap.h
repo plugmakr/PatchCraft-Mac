@@ -61,6 +61,41 @@ namespace patchcraft
                                                          bool* usedAudioPitch = nullptr,
                                                          bool* usedVelocityRange = nullptr);
         static int detectRootNoteFromAudioFile (const juce::File& file);
+
+        // --- Beatmaker analysis (Serato-style) --------------------------------
+        // Result of analysing an audio clip for tempo + musical key.
+        struct ClipAnalysis
+        {
+            double bpm = 0.0;          // 0 == not detected
+            int    keyPitchClass = -1; // 0..11 (C..B), -1 == not detected
+            bool   keyIsMinor = false;
+            float  confidence = 0.0f;  // 0..1 rough confidence in the key result
+            juce::String keyName() const; // e.g. "F# min", or "" if undetected
+        };
+
+        // Estimate tempo (BPM) from an onset-strength envelope via autocorrelation.
+        // Returns 0.0 when no stable tempo is found. searchMin/Max bound the result.
+        static double detectTempoBpm (const juce::AudioBuffer<float>& buffer, double sampleRate,
+                                      double searchMinBpm = 70.0, double searchMaxBpm = 180.0);
+
+        // Estimate musical key using a chroma profile + Krumhansl-Schmuckler
+        // key-finding. keyIsMinor is set true for minor keys.
+        static int detectMusicalKey (const juce::AudioBuffer<float>& buffer, double sampleRate,
+                                     bool& keyIsMinor, float* confidenceOut = nullptr);
+
+        // Convenience: load a file and run both tempo + key detection.
+        static ClipAnalysis analyseClipFile (const juce::File& file);
+
+        // Onset detection: returns sample positions of detected attacks within
+        // [startSample, endSample), capped at maxOnsets. Used for transient chop.
+        static std::vector<int> detectOnsets (const juce::AudioBuffer<float>& buffer, double sampleRate,
+                                              int startSample, int endSample, int maxOnsets);
+
+        // Beat-grid slice points across [startSample, endSample) for a given BPM.
+        // Produces slicesPerBeat divisions per quarter note (e.g. 1 = beats,
+        // 4 = sixteenths). Returns boundary positions (count = slices + 1).
+        static std::vector<int> sliceByBeatGrid (int startSample, int endSample, double sampleRate,
+                                                 double bpm, int slicesPerBeat);
         static SampleMapHealthStatus evaluateHealth (const SampleMap& map,
                                                      const juce::File& projectFolder,
                                                      const juce::String& engineId);

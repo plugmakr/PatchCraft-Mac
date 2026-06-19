@@ -316,6 +316,7 @@ namespace patchcraft
         juce::File selectedRecordingTakeFile() const;
         int findZoneForRecordingFile (const juce::File& file) const;
         void importSampleFiles (const juce::Array<juce::File>& files, bool spanMappedRoots = true);
+        void activateSamplerEngineForMap();
         void importDroppedSampleFiles (const juce::Array<juce::File>& files,
                                        juce::Point<int> localPosition);
         void assignMidiToSelectedZone();
@@ -363,6 +364,17 @@ namespace patchcraft
         void splitSelectedZoneVelocity();
         void chopSelectedZoneIntoSlices (int sliceCount);
         void chopSelectedZoneAtTransients (int maxSlices);
+
+        // Beatmaker (Serato-style) actions wired to SampleMap analysis.
+        void detectTempoAndKeyForSelected();
+        void sliceSelectedZoneToGrid (int slicesPerBeat);
+        void setPlayModeForSelected (int playMode);
+        void showChopStudio();
+        // Replace the selected zone with a 4x4 pad bank built from absolute
+        // slice boundaries (sorted, includes start + end). Shared by the
+        // Slice-to-grid action and the visual Chop Studio's Apply.
+        void commitSliceBoundariesAsPadBank (const std::vector<int>& boundaries,
+                                             double bpm, const juce::String& label);
         void mergeSelectedZoneWithNext();
         void showPrecisionSampleEditor();
         void copySelectedZoneToClipboard();
@@ -395,6 +407,12 @@ namespace patchcraft
         juce::uint32 voiceRecordCountInStartMs = 0;
         juce::StringArray recordingTakePaths;
         juce::File lastRecordingFile;
+
+        // Hardware MIDI arrives on the MIDI thread; stage note events for the
+        // audio callback so auditionEngine noteOn/noteOff stay RT-safe.
+        juce::CriticalSection hardwareMidiLock;
+        juce::MidiBuffer       hardwareMidiBuffer;
+
         bool playModeEnabled = false;
         int mousePreviewNote = -1;
         SampleZoneDef zoneClipboard;

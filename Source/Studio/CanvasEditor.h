@@ -58,6 +58,8 @@ namespace patchcraft
         void setRulersVisible (bool shouldShow);
         void setGridColour (juce::Colour c) { gridColour = c; repaint(); }
         void setSnapColour (juce::Colour c) { snapColour = c; repaint(); }
+        void setDesignerModeActive (bool active) { designerModeActive = active; repaint(); }
+        bool isDesignerModeActive() const { return designerModeActive; }
         juce::Colour getGridColour() const  { return gridColour; }
         juce::Colour getSnapColour() const  { return snapColour; }
 
@@ -158,6 +160,7 @@ namespace patchcraft
         int lastArpLane = -1;
         int lastArpStep = -1;
         std::map<juce::String, float> copiedArpLanePattern;
+        bool designerModeActive = true;
 
         // Active tab page. Default is "main" so the seeded macro-knob group
         // shows up out of the box.

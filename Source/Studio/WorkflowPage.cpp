@@ -87,7 +87,7 @@ namespace patchcraft
         title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
         addAndMakeVisible (title);
 
-        subtitle.setText ("A guided path from sound idea to sellable instrument: sound, UI, presets, Player test, export.",
+        subtitle.setText ("A guided path from sound idea to sellable instrument: sound, perform, layout, presets, brand, ship.",
                           juce::dontSendNotification);
         subtitle.setFont (juce::Font (13.0f));
         subtitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
@@ -121,7 +121,7 @@ namespace patchcraft
         addAndMakeVisible (truthTitle);
 
         styleCardLabel (truthBody, 12.0f, false, PatchCraftLookAndFeel::textDim());
-        truthBody.setText ("DSP and Sample Mapper own the sound. Design, Brand Lab, presets, and Export must all use that same playable Patch.",
+        truthBody.setText ("Sound (Graph + Sample Mapper) owns the playable patch. Perform adds optional pattern layers. Layout, Brand, presets, and Ship all read from that same source.",
                            juce::dontSendNotification);
         addAndMakeVisible (truthBody);
 
@@ -161,6 +161,32 @@ namespace patchcraft
         drumButton.onClick = [this] { switchTemplate ("drum", "Drum Machine"); };
         fxButton.onClick = [this] { switchTemplate ("fx", "FX Plugin"); };
 
+        stylePrimary (arpSequencerButton);
+        arpSequencerButton.setButtonText ("Arp Step Sequencer\n16-step orbit UI, macros, and musical presets");
+        arpSequencerButton.getProperties().set ("workflowProduct", true);
+        arpSequencerButton.getProperties().set ("headlineSize", 12.2);
+        arpSequencerButton.getProperties().set ("detailSize", 10.5);
+        arpSequencerButton.setTooltip ("Load the aligned arp/step-sequencer studio template with DSP graph and preset bank.");
+        arpSequencerButton.onClick = [this]
+        {
+            juce::Component::SafePointer<WorkflowPage> self (this);
+            juce::AlertWindow::showAsync (
+                juce::MessageBoxOptions()
+                    .withTitle ("Load Arp Step Sequencer")
+                    .withMessage ("This replaces the current project with the Arp Step Sequencer studio template: aligned orbit UI, transport macros, DSP graph, and six musical presets.")
+                    .withButton ("Load Template")
+                    .withButton ("Cancel")
+                    .withIconType (juce::MessageBoxIconType::QuestionIcon),
+                [self] (int result)
+                {
+                    if (result != 1)
+                        return;
+                    if (auto* page = self.getComponent())
+                        page->owner.loadArpStepSequencerTemplate();
+                });
+        };
+        addAndMakeVisible (arpSequencerButton);
+
         styleCardLabel (factoryDemoLabel, 12.0f, true, PatchCraftLookAndFeel::accent());
         factoryDemoLabel.setText ("Ship-Ready Starting Points", juce::dontSendNotification);
         addAndMakeVisible (factoryDemoLabel);
@@ -179,7 +205,7 @@ namespace patchcraft
         loadFactoryDemoButton.onClick = [this] { showFactoryDemoMenu(); };
         addAndMakeVisible (loadFactoryDemoButton);
 
-        for (auto* button : { &designButton, &soundButton, &presetsButton, &testButton, &exportButton })
+        for (auto* button : { &soundButton, &designButton, &presetsButton, &testButton, &exportButton })
         {
             stylePrimary (*button);
             button->getProperties().set ("workflowStep", true);
@@ -187,22 +213,22 @@ namespace patchcraft
             addAndMakeVisible (*button);
         }
 
-        designButton.setButtonText ("1  Design Player\nStart with the customer-facing instrument surface");
-        soundButton.setButtonText ("2  Connect Sound\nCreate or attach the real playable source and routing");
+        soundButton.setButtonText ("1  Connect Sound\nCreate or attach the real playable source and routing");
+        designButton.setButtonText ("2  Layout Player\nBuild the customer-facing surface and bind controls");
         presetsButton.setButtonText ("3  Save Presets\nCapture full playable patches and packs");
-        testButton.setButtonText ("4  Test Player\nVerify the exact exported Player behavior");
-        exportButton.setButtonText ("5  Export\nBuild pack, VST3, or Plugin.club draft");
+        testButton.setButtonText ("4  Brand & Preview\nPolish Player chrome and verify behavior");
+        exportButton.setButtonText ("5  Ship\nBuild pack, VST3, or Plugin.club draft");
 
-        designButton.setTooltip ("Start the creation flow on the Player canvas, then bind controls to real sound.");
-        soundButton.setTooltip ("Create or connect the actual sound source: DSP graph for synth/FX, Sample Mapper for samples/drums.");
+        soundButton.setTooltip ("Create or connect the actual sound source: Graph for synth/FX, Sound tab for samples/drums.");
+        designButton.setTooltip ("Open the Layout canvas, place controls, and wire bindings to the sound patch.");
         presetsButton.setTooltip ("Save playable patches and organize them into sellable expansion packs.");
-        testButton.setTooltip ("Open the runtime Player surface and verify sound, UI interactions, MIDI, and presets.");
+        testButton.setTooltip ("Open Brand Lab and preview the exported Player surface with sound, UI, MIDI, and presets.");
         exportButton.setTooltip ("Export a .patchcraft pack or a standalone VST3 bundle.");
 
         soundButton.onClick = [this] { showModuleTutorial (TutorialModule::BuildSound); };
         designButton.onClick = [this] { showModuleTutorial (TutorialModule::DesignPlayer); };
         presetsButton.onClick = [this] { showModuleTutorial (TutorialModule::PresetsPacks); };
-        testButton.onClick = [this] { showModuleTutorial (TutorialModule::TestRuntime); };
+        testButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Branding); };
         exportButton.onClick = [this] { showModuleTutorial (TutorialModule::Export); };
 
         for (auto* button : { &advDspButton, &advMapperButton, &advOneShotButton,
@@ -212,13 +238,13 @@ namespace patchcraft
             button->getProperties().set ("workflowStep", true);
             addAndMakeVisible (*button);
         }
-        advDspButton.setButtonText ("DSP Builder\nAdvanced sound graph and modulation");
+        advDspButton.setButtonText ("Graph\nSound routing, blocks, and modulation");
         advMapperButton.setButtonText ("Sample Mapper\nZones, velocity, pads, sample playback");
         advOneShotButton.setButtonText ("One Shot Maker\nRender VST3 notes into sample packs");
         advBuildButton.setButtonText ("Asset Builder\nKnobs, sliders, meters, filmstrips");
         advAnimationButton.setButtonText ("Animation Lab\nReactive imagery, sprite sheets, visual FX, AI briefs");
-        advDesignButton.setButtonText ("Design Surface\nPlayer UI, bindings, containers");
-        advBrandButton.setButtonText ("Brand / Runtime Lab\nPlayer polish, testing, white-label");
+        advDesignButton.setButtonText ("Layout\nPlayer UI, bindings, containers");
+        advBrandButton.setButtonText ("Brand Lab\nPlayer polish, preview, white-label");
         advDspButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::DSP); };
         advMapperButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Samples); };
         advOneShotButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::OneShotMaker); };
@@ -261,7 +287,7 @@ namespace patchcraft
         if (sameEngine)
         {
             owner.setBottomTab (engineId == "sample" || engineId == "drum"
-                ? BottomPanel::Page::Samples : BottomPanel::Page::DSP);
+                ? BottomPanel::Page::Samples : BottomPanel::Page::Design);
             return;
         }
 
@@ -283,7 +309,7 @@ namespace patchcraft
                     page->owner.getProject().setEngineType (engineId);
                     page->owner.refreshAllPanels();
                     page->owner.setBottomTab (engineId == "sample" || engineId == "drum"
-                        ? BottomPanel::Page::Samples : BottomPanel::Page::DSP);
+                        ? BottomPanel::Page::Samples : BottomPanel::Page::Design);
                 }
             });
     }
@@ -419,7 +445,7 @@ namespace patchcraft
             case TutorialModule::BuildSound:
                 return owner.getProject().getEngineType() == "sample"
                     ? BottomPanel::Page::Samples
-                    : BottomPanel::Page::DSP;
+                    : BottomPanel::Page::Design;
             case TutorialModule::DesignPlayer:
             case TutorialModule::PresetsPacks:
                 return BottomPanel::Page::Design;
@@ -644,7 +670,7 @@ namespace patchcraft
     void WorkflowPage::updateModeVisibility()
     {
         const bool advanced = advancedMode.getToggleState();
-        for (auto* button : { &designButton, &soundButton, &presetsButton, &testButton, &exportButton })
+        for (auto* button : { &soundButton, &designButton, &presetsButton, &testButton, &exportButton })
             button->setVisible (! advanced);
         for (auto* button : { &advDspButton, &advMapperButton, &advOneShotButton,
                               &advBuildButton, &advAnimationButton, &advDesignButton, &advBrandButton })
@@ -734,7 +760,8 @@ namespace patchcraft
             button->setBounds (modeCard.removeFromTop (58));
             modeCard.removeFromTop (6);
         }
-        modeCard.removeFromTop (4);
+        arpSequencerButton.setBounds (modeCard.removeFromTop (58));
+        modeCard.removeFromTop (10);
         factoryDemoLabel.setBounds (modeCard.removeFromTop (22));
         factoryDemoBox.setBounds (modeCard.removeFromTop (34));
         modeCard.removeFromTop (8);
@@ -783,7 +810,7 @@ namespace patchcraft
             placeButtons ({ &advDspButton, &advMapperButton, &advOneShotButton,
                             &advBuildButton, &advAnimationButton, &advDesignButton, &advBrandButton });
         else
-            placeButtons ({ &designButton, &soundButton, &presetsButton, &testButton, &exportButton });
+            placeButtons ({ &soundButton, &designButton, &presetsButton, &testButton, &exportButton });
 
         auto healthCard = healthCardOuter.reduced (22, 16);
         truthTitle.setBounds (healthCard.removeFromTop (24));

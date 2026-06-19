@@ -249,15 +249,16 @@ namespace patchcraft
             {
                 // Generate actual arpeggio patterns instead of random patches
                 setNorm (preset, model, "attack", 0.02f);
-                setNorm (preset, model, "decay", 0.16f);
-                setNorm (preset, model, "sustain", 0.18f);
-                setNorm (preset, model, "release", 0.16f);
-                setNorm (preset, model, "filterCutoff", 0.45f);
-                setNorm (preset, model, "filterResonance", 0.38f);
+                setNorm (preset, model, "decay", 0.28f);     // was 0.16f
+                setNorm (preset, model, "sustain", 0.32f);    // was 0.18f
+                setNorm (preset, model, "release", 0.24f);    // was 0.16f
+                setNorm (preset, model, "filterCutoff", 0.50f);
+                setNorm (preset, model, "filterResonance", 0.32f);
                 setNorm (preset, model, "lfoRate", (index % 4) + 1.0f);
-                setNorm (preset, model, "lfoAmount", 0.28f);
-                setNorm (preset, model, "delayMix", 0.28f);
+                setNorm (preset, model, "lfoAmount", 0.22f);
+                setNorm (preset, model, "delayMix", 0.24f);
                 setNorm (preset, model, "delayFeedback", 0.38f);
+                setNorm (preset, model, "delayTime", 0.25f);
                 setNorm (preset, model, "reverbMix", 0.20f);
                 
                 // Set arpeggio-specific parameters
@@ -276,12 +277,14 @@ namespace patchcraft
             else if (lower.contains ("pluck"))
             {
                 setNorm (preset, model, "attack", 0.0f);
-                setNorm (preset, model, "decay", value01 (rng, 0.12f, 0.08f));
-                setNorm (preset, model, "sustain", value01 (rng, 0.06f, 0.05f));
-                setNorm (preset, model, "release", value01 (rng, 0.22f, 0.10f));
-                setNorm (preset, model, "filterCutoff", value01 (rng, 0.38f, 0.20f));
-                setNorm (preset, model, "filterResonance", value01 (rng, 0.30f, 0.18f));
+                setNorm (preset, model, "decay", value01 (rng, 0.32f, 0.10f)); // was 0.12f
+                setNorm (preset, model, "sustain", value01 (rng, 0.26f, 0.08f)); // was 0.06f
+                setNorm (preset, model, "release", value01 (rng, 0.35f, 0.12f)); // was 0.22f
+                setNorm (preset, model, "filterCutoff", value01 (rng, 0.45f, 0.15f));
+                setNorm (preset, model, "filterResonance", value01 (rng, 0.25f, 0.12f));
                 setNorm (preset, model, "delayMix", value01 (rng, 0.18f, 0.14f));
+                setNorm (preset, model, "delayFeedback", value01 (rng, 0.28f, 0.08f));
+                setNorm (preset, model, "delayTime", 0.25f);
                 setNorm (preset, model, "reverbMix", value01 (rng, 0.24f, 0.16f));
             }
             else if (lower.contains ("string"))
@@ -294,6 +297,8 @@ namespace patchcraft
                 setNorm (preset, model, "filterResonance", value01 (rng, 0.12f, 0.08f));
                 setNorm (preset, model, "reverbMix", value01 (rng, 0.50f, 0.22f));
                 setNorm (preset, model, "delayMix", value01 (rng, 0.08f, 0.08f));
+                setNorm (preset, model, "delayFeedback", value01 (rng, 0.45f, 0.10f));
+                setNorm (preset, model, "delayTime", 0.375f);
             }
             else if (lower.contains ("lfo") || lower.contains ("motion"))
             {
@@ -318,13 +323,15 @@ namespace patchcraft
                 const int variant = index % 4;
                 setNorm (preset, model, "attack",          0.45f + 0.15f * variant);
                 setNorm (preset, model, "decay",           value01 (rng, 0.55f, 0.20f));
-                setNorm (preset, model, "sustain",         value01 (rng, 0.82f, 0.10f));
+                setNorm (preset, model, "sustain",         0.85f);                       // was 0.82f
                 setNorm (preset, model, "release",         0.55f + 0.20f * variant);
                 setNorm (preset, model, "filterCutoff",    variant == 1 ? 0.28f
                                                           : variant == 3 ? 0.65f
                                                           : value01 (rng, 0.45f, 0.18f));
                 setNorm (preset, model, "filterResonance", value01 (rng, 0.10f, 0.10f));
                 setNorm (preset, model, "delayMix",        value01 (rng, 0.22f, 0.14f));
+                setNorm (preset, model, "delayFeedback",   value01 (rng, 0.48f, 0.10f));
+                setNorm (preset, model, "delayTime",       0.375f);
                 setNorm (preset, model, "reverbMix",       0.55f + 0.10f * variant);
             }
             else if (lower.contains ("bass"))
@@ -339,6 +346,8 @@ namespace patchcraft
                 setNorm (preset, model, "filterCutoff",    variant == 3 ? 0.55f : 0.22f + 0.10f * variant);
                 setNorm (preset, model, "filterResonance", variant == 3 ? 0.55f : value01 (rng, 0.25f, 0.15f));
                 setNorm (preset, model, "delayMix",        variant == 3 ? value01 (rng, 0.20f, 0.10f) : 0.05f);
+                setNorm (preset, model, "delayFeedback",   0.20f);
+                setNorm (preset, model, "delayTime",       0.25f);
                 setNorm (preset, model, "reverbMix",       value01 (rng, 0.12f, 0.08f));
             }
             else if (lower.contains ("choir") || lower.contains ("vocal"))

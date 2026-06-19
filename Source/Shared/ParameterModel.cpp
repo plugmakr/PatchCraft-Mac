@@ -1,4 +1,5 @@
 #include "ParameterModel.h"
+#include "HarmonyEngine.h"
 
 #include <array>
 #include <cmath>
@@ -179,6 +180,10 @@ namespace patchcraft
                     auto sampleGlitchGrid = makeDef ("sampleGlitchGrid", "Glitch Grid", 2.0f, 64.0f, 16.0f, "", "source", "Sample Performance", "stepped", 1.0f);
                     sampleGlitchGrid.enableHint = "Set the slice grid used by Glitch Chance. Higher values create tighter stutters.";
                     add (sampleGlitchGrid);
+
+                    auto velocitySensitivity = makeDef ("velocitySensitivity", "Velocity Sensitivity", 0.0f, 1.0f, 0.5f, "", "source", "Sample Control");
+                    velocitySensitivity.enableHint = "Shapes how hard you must play for full volume. 0.5 is linear; lower evens out dynamics, higher exaggerates them.";
+                    add (velocitySensitivity);
 
                     for (int pad = 1; pad <= 16; ++pad)
                     {
@@ -543,6 +548,7 @@ namespace patchcraft
             add (makeDef ("arpLaneMute", "Lane Mute", 0.0f, 1.0f, 0.0f, "", "mod", "Arp Lane"));
             add (makeDef ("arpLaneSolo", "Lane Solo", 0.0f, 1.0f, 0.0f, "", "mod", "Arp Lane"));
             add (makeDef ("arpLaneRetrigger", "Lane Retrigger", 0.0f, 1.0f, 1.0f, "", "mod", "Arp Lane", "toggle", 1.0f));
+            add (makeDef ("arpLaneMultiLane", "Multi Lane Play", 0.0f, 1.0f, 0.0f, "", "mod", "Arp Lane", "toggle", 1.0f));
             add (makeDef ("arpLanePatternLaunch", "Pattern Launch", 0.0f, 7.0f, 0.0f, "", "mod", "Arp Lane", "stepped", 1.0f));
             for (int step = 0; step < 16; ++step)
                 add (makeDef ("arpLaneStep" + juce::String (step + 1),
@@ -563,6 +569,30 @@ namespace patchcraft
             add (makeDef ("mpProbability", "Chord Chance", 0.0f, 1.0f, 1.0f, "", "mod", "Chord Assistant"));
             add (makeDef ("mpLatch", "Latch Chords", 0.0f, 1.0f, 0.0f, "", "mod", "Chord Assistant", "toggle", 1.0f));
             add (makeDef ("mpSampleControl", "Drive Samples", 0.0f, 1.0f, 0.0f, "", "mod", "Chord Assistant", "toggle", 1.0f));
+
+            add (makeDef ("composerRoot", "Composer Root", 0.0f, 11.0f, 0.0f, "", "mod", "Harmony Composer", "stepped", 1.0f));
+            add (makeDef ("composerScale", "Composer Scale", 0.0f,
+                          (float) HarmonyEngine::scales().size() - 1.0f, 1.0f, "", "mod", "Harmony Composer", "stepped", 1.0f));
+            add (makeDef ("composerChordCount", "Chord Count", 1.0f, 16.0f, 4.0f, "", "mod", "Harmony Composer", "stepped", 1.0f));
+            add (makeDef ("composerRate", "Beats Per Chord", 0.125f, 16.0f, 1.0f, "beat", "mod", "Harmony Composer"));
+            add (makeDef ("composerGate", "Chord Gate", 0.05f, 1.0f, 0.82f, "", "mod", "Harmony Composer"));
+            add (makeDef ("composerVelocity", "Chord Velocity", 0.01f, 1.0f, 0.82f, "", "mod", "Harmony Composer"));
+            add (makeDef ("composerVoices", "Voices", 1.0f, 8.0f, 4.0f, "", "mod", "Harmony Composer", "stepped", 1.0f));
+            add (makeDef ("composerOctave", "Register", 1.0f, 7.0f, 4.0f, "oct", "mod", "Harmony Composer", "stepped", 1.0f));
+            add (makeDef ("composerSpread", "Voicing Spread", 0.0f, 1.0f, 0.38f, "", "mod", "Harmony Composer"));
+            add (makeDef ("composerOutputChannel", "MIDI Channel", 1.0f, 16.0f, 1.0f, "", "mod", "Harmony Composer", "stepped", 1.0f));
+            add (makeDef ("composerMidiThru", "MIDI Thru", 0.0f, 1.0f, 1.0f, "", "mod", "Harmony Composer", "toggle", 1.0f));
+            for (int chord = 1; chord <= 16; ++chord)
+            {
+                const auto suffix = juce::String (chord);
+                const float defaultDegree = chord == 1 ? 0.0f : (chord == 2 ? 5.0f : (chord == 3 ? 3.0f : (chord == 4 ? 4.0f : (float) ((chord - 1) % 7))));
+                add (makeDef ("composerDegree" + suffix, "Chord " + suffix + " Degree", 0.0f, 6.0f,
+                              defaultDegree, "", "mod", "Harmony Composer Chords", "stepped", 1.0f));
+                add (makeDef ("composerInversion" + suffix, "Chord " + suffix + " Inversion", -1.0f, 7.0f,
+                              -1.0f, "", "mod", "Harmony Composer Chords", "stepped", 1.0f));
+                add (makeDef ("composerChord" + suffix + "On", "Chord " + suffix + " Enabled", 0.0f, 1.0f,
+                              chord <= 4 ? 1.0f : 0.0f, "", "mod", "Harmony Composer Chords", "toggle", 1.0f));
+            }
 
             auto modWheel = makeDef ("modWheel", "Mod Wheel", 0.0f, 1.0f, 0.0f, "", "mod", "MIDI", "continuous");
             modWheel.hostAutomatable = false;

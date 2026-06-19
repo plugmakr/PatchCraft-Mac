@@ -285,12 +285,12 @@ namespace patchcraft
     {
         setOpaque (true);
 
-        title.setText ("PATTERN PLAYER", juce::dontSendNotification);
+        title.setText ("PERFORM", juce::dontSendNotification);
         title.setFont (juce::Font (17.0f, juce::Font::bold));
         title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
         addAndMakeVisible (title);
 
-        subtitle.setText ("Build the playable pattern layer for the current DSP sound: notes, chops, drums, gates, and modulation.",
+        subtitle.setText ("Optional pattern layer on top of the sound patch — step grid, piano roll, drums, or circle lanes.",
                           juce::dontSendNotification);
         subtitle.setFont (juce::Font (12.0f));
         subtitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
@@ -437,6 +437,26 @@ namespace patchcraft
         targetBox.setSelectedId (1, juce::dontSendNotification);
         addAndMakeVisible (targetBox);
 
+        laneTargetBox.addItem ("Notes / synth", 1);
+        laneTargetBox.addItem ("Drum pads", 2);
+        laneTargetBox.addItem ("One-shots", 3);
+        laneTargetBox.addItem ("Loop slices", 4);
+        laneTargetBox.addItem ("Pitched samples", 5);
+        laneTargetBox.setTooltip ("What this slot triggers: synth notes, drum pads, one-shots, loop slices, or pitched samples.");
+        laneTargetBox.setSelectedId (1, juce::dontSendNotification);
+        addAndMakeVisible (laneTargetBox);
+
+        for (int slot = 0; slot < 16; ++slot)
+            laneSoundBox.addItem ("DSP Slot " + juce::String (slot + 1), slot + 1);
+        laneSoundBox.setTooltip ("Which DSP/sample slot this circle lane uses.");
+        laneSoundBox.setSelectedId (1, juce::dontSendNotification);
+        addAndMakeVisible (laneSoundBox);
+
+        multiLaneToggle.setTooltip ("When on, all five slots play together. Leave off to audition one slot at a time.");
+        addAndMakeVisible (multiLaneToggle);
+        retriggerToggle.setTooltip ("When off, held notes do not restart the sequence from step 1.");
+        addAndMakeVisible (retriggerToggle);
+
         styleSlider (stepsSlider, 1.0, (double) kAdvancedMidiMaxSteps, 1.0);
         styleSlider (rateSlider, 0.0625, 16.0, 0.0625);
         styleSlider (gateSlider, 0.05, 1.0, 0.01);
@@ -509,6 +529,72 @@ namespace patchcraft
                 switchPhraseBank (phraseBankBox.getSelectedId() - 1);
         };
 
+        laneTargetBox.onChange = [this]
+        {
+            if (syncingControls)
+                return;
+            auto* block = ensureMidiBlock();
+            if (block == nullptr)
+                return;
+
+            const int bank = juce::jlimit (0, MidiPlaygroundPattern::kPhraseBankCount - 1,
+                                           phraseBankBox.getSelectedId() - 1);
+            const juce::String target = laneTargetBox.getSelectedId() == 2 ? "drums"
+                                      : laneTargetBox.getSelectedId() == 3 ? "oneShots"
+                                      : laneTargetBox.getSelectedId() == 4 ? "loops"
+                                      : laneTargetBox.getSelectedId() == 5 ? "samples" : "notes";
+            block->metadata["arpLane" + juce::String (bank + 1) + "Target"] = target;
+            block->values["mpSampleControl"] = target == "notes" ? 0.0f : 1.0f;
+            owner.getProject().getLiveValues().setValue ("arpLaneTarget",
+                (float) juce::jlimit (0, 4, laneTargetBox.getSelectedId() - 1));
+            notifyGraphChanged (true);
+            repaint();
+        };
+
+        laneSoundBox.onChange = [this]
+        {
+            if (syncingControls)
+                return;
+            auto* block = ensureMidiBlock();
+            if (block == nullptr)
+                return;
+
+            const int bank = juce::jlimit (0, MidiPlaygroundPattern::kPhraseBankCount - 1,
+                                           phraseBankBox.getSelectedId() - 1);
+            const int sound = laneSoundBox.getSelectedId() - 1;
+            block->metadata["arpLane" + juce::String (bank + 1) + "Sound"] = juce::String (sound);
+            block->metadata["arpLane" + juce::String (bank + 1) + "SoundName"] = "DSP Slot " + juce::String (sound + 1);
+            owner.getProject().getLiveValues().setValue ("arpLaneSound", (float) sound);
+            notifyGraphChanged (true);
+            repaint();
+        };
+
+        multiLaneToggle.onClick = [this]
+        {
+            if (syncingControls)
+                return;
+            auto* block = ensureMidiBlock();
+            if (block == nullptr)
+                return;
+
+            block->values["mpMultiLane"] = multiLaneToggle.getToggleState() ? 1.0f : 0.0f;
+            owner.getProject().getLiveValues().setValue ("arpLaneMultiLane", multiLaneToggle.getToggleState() ? 1.0f : 0.0f);
+            notifyGraphChanged (true);
+        };
+
+        retriggerToggle.onClick = [this]
+        {
+            if (syncingControls)
+                return;
+            auto* block = ensureMidiBlock();
+            if (block == nullptr)
+                return;
+
+            block->values["retrigger"] = retriggerToggle.getToggleState() ? 1.0f : 0.0f;
+            owner.getProject().getLiveValues().setValue ("retrigger", retriggerToggle.getToggleState() ? 1.0f : 0.0f);
+            notifyGraphChanged (true);
+        };
+
         drumPatternBox.onChange = [this]
         {
             if (syncingControls)
@@ -571,10 +657,10 @@ namespace patchcraft
         arpLaneViewButton.setClickingTogglesState (true);
         performanceViewButton.setRadioGroupId (8822);
         arpLaneViewButton.setRadioGroupId (8822);
-        performanceViewButton.setTooltip ("Build the instrument's playable pattern with piano roll, step grid, drum grid, sample chops, and modulation lanes.");
-        arpLaneViewButton.setTooltip ("See and edit the same pattern slots as circles for Player-facing sequencer instruments.");
-        performanceViewButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::MidiPlayground); };
-        arpLaneViewButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::ArpStudio); };
+        performanceViewButton.setTooltip ("Step grid, piano roll, drum grid, sample chops, and modulation lanes.");
+        arpLaneViewButton.setTooltip ("Circle lanes and ring editor — same pattern slots as Steps, Player-facing orbit UI.");
+        performanceViewButton.onClick = [this] { showPlaygroundMode(); resized(); };
+        arpLaneViewButton.onClick = [this] { showArpStudioMode(); resized(); };
         performanceViewButton.setToggleState (true, juce::dontSendNotification);
 
         for (auto* button : { &performanceViewButton, &arpLaneViewButton,
@@ -609,13 +695,15 @@ namespace patchcraft
         applyProgressionButton.onClick = [this] { applySelectedProgression(); };
         applyMidiTemplateButton.onClick = [this] { applySelectedMidiTemplate(); };
         applyGuiTemplateButton.onClick = [this] { applySelectedGuiTemplate(); };
+        applyMidiTemplateButton.setTooltip ("Writes pattern data (cells, steps, phrases) into the dspGraph block — not the Player layout.");
+        applyGuiTemplateButton.setTooltip ("Generates or replaces generated Player layout controls — does not change pattern data.");
         exportMidiButton.onClick = [this] { exportMidiClip(); };
         playPatternButton.onClick = [this] { startPatternPreview(); };
         stopPatternButton.onClick = [this] { stopPatternPreview(); };
         playPatternButton.getProperties().set ("primaryAction", true);
         sourceBuilderButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::DSP); };
         sampleMapperButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Samples); };
-        testButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Test); };
+        testButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Branding); };
 
         addAndMakeVisible (midiOutputLane);
         addAndMakeVisible (pianoRollEditor);
@@ -634,8 +722,8 @@ namespace patchcraft
     {
         setArpStudioHardwarePreviewActive (false);
         arpStudioMode = false;
-        title.setText ("PATTERN PLAYER", juce::dontSendNotification);
-        subtitle.setText ("Build the playable pattern layer for the current DSP sound: notes, chops, drums, gates, and modulation.",
+        title.setText ("PERFORM", juce::dontSendNotification);
+        subtitle.setText ("Steps view — build the playable pattern layer: notes, chops, drums, gates, and modulation.",
                           juce::dontSendNotification);
         performanceViewButton.setToggleState (true, juce::dontSendNotification);
         arpLaneViewButton.setToggleState (false, juce::dontSendNotification);
@@ -645,6 +733,8 @@ namespace patchcraft
             guiTemplateBox.setSelectedId (1, juce::dontSendNotification);
         applyMidiTemplateButton.setButtonText ("Make Pattern");
         applyGuiTemplateButton.setButtonText ("Add Player Controls");
+        applyMidiTemplateButton.setTooltip ("Writes pattern data (cells, steps, phrases) into the dspGraph block — not the Player layout.");
+        applyGuiTemplateButton.setTooltip ("Generates or replaces generated Player layout controls — does not change pattern data.");
         activeSummary.setText (activeMidiBlock() != nullptr
             ? blockSummary()
             : "Start here: 1 Build Sound in DSP  2 Choose or drag in a pattern  3 Use This Pattern  4 Add Player Controls  5 Test in Player.",
@@ -656,8 +746,8 @@ namespace patchcraft
     {
         arpStudioMode = true;
         setArpStudioHardwarePreviewActive (isShowing());
-        title.setText ("CIRCLE PATTERN VIEW", juce::dontSendNotification);
-        subtitle.setText ("Patterning-style circle editor for the same slots. Sound still comes from DSP, Sample Mapper, or the selected FX input.",
+        title.setText ("PERFORM", juce::dontSendNotification);
+        subtitle.setText ("Circles view — orbit lanes and ring editor for the same pattern slots as Steps.",
                           juce::dontSendNotification);
         performanceViewButton.setToggleState (false, juce::dontSendNotification);
         arpLaneViewButton.setToggleState (true, juce::dontSendNotification);
@@ -669,6 +759,8 @@ namespace patchcraft
         phraseBankBox.setSelectedId (1, juce::dontSendNotification);
         applyMidiTemplateButton.setButtonText ("Make Circle Pattern");
         applyGuiTemplateButton.setButtonText ("Update Player Controls");
+        applyMidiTemplateButton.setTooltip ("Writes circle pattern data into the dspGraph block — not the Player layout.");
+        applyGuiTemplateButton.setTooltip ("Generates or replaces generated Player layout controls — does not change pattern data.");
         activeSummary.setText ("Circle workflow: Build Sound in DSP, pick a Slot, edit the ring/steps, assign the lane target, then update the Player controls.",
                                juce::dontSendNotification);
         repaint();
@@ -2618,6 +2710,24 @@ namespace patchcraft
 
         project.performLayoutEdit ("Apply MIDI GUI template", [&] (LayoutModel& layout)
         {
+            static const char* generatedGuiPrefixes[] =
+            {
+                "arp_studio_", "drum_gui_", "drum_song_", "sample_gui_",
+                "midi_macro_", "xy_perf_", "perf_gui_"
+            };
+            for (int i = (int) layout.getAll().size() - 1; i >= 0; --i)
+            {
+                const auto& id = layout.getAll()[(size_t) i].id;
+                for (auto* prefix : generatedGuiPrefixes)
+                {
+                    if (id.startsWith (prefix))
+                    {
+                        layout.remove (id);
+                        break;
+                    }
+                }
+            }
+
             auto addElement = [&] (LayoutElement element, const juce::String& prefix)
             {
                 element.id = layout.generateUniqueId (prefix);
@@ -3279,6 +3389,22 @@ namespace patchcraft
                 else if (block->targetId == "sampleLength") targetBox.setSelectedId (5, juce::dontSendNotification);
                 else if (block->targetId == "wtPosition") targetBox.setSelectedId (6, juce::dontSendNotification);
                 else targetBox.setSelectedId (1, juce::dontSendNotification);
+
+                const int bank = MidiPlaygroundPattern::getActiveBank (*block);
+                const juce::String targetKey = "arpLane" + juce::String (bank + 1) + "Target";
+                const juce::String soundKey = "arpLane" + juce::String (bank + 1) + "Sound";
+                const auto targetIt = block->metadata.find (targetKey);
+                const juce::String laneTarget = targetIt != block->metadata.end() ? targetIt->second : "notes";
+                laneTargetBox.setSelectedId (laneTarget == "drums" ? 2
+                                             : laneTarget == "oneShots" ? 3
+                                             : laneTarget == "loops" ? 4
+                                             : laneTarget == "samples" ? 5 : 1,
+                                             juce::dontSendNotification);
+                const auto soundIt = block->metadata.find (soundKey);
+                const int laneSound = soundIt != block->metadata.end() ? soundIt->second.getIntValue() : 0;
+                laneSoundBox.setSelectedId (juce::jlimit (1, 16, laneSound + 1), juce::dontSendNotification);
+                multiLaneToggle.setToggleState (valueFor (*block, "mpMultiLane", 0.0f) >= 0.5f, juce::dontSendNotification);
+                retriggerToggle.setToggleState (valueFor (*block, "retrigger", 1.0f) >= 0.5f, juce::dontSendNotification);
             }
         }
         else
@@ -4560,19 +4686,6 @@ namespace patchcraft
             }
         }
 
-        owner.getProject().getLiveValues().setValue ("arpLaneControlBank", (float) lane);
-        if (! toggleStep && step < 16)
-        {
-            const int sliderRole = band == 0 ? 7 : band == 1 ? 0 : band == 2 ? 1 : 2;
-            float sliderValue = value;
-            if (band == 0)
-                sliderValue = juce::jlimit (0.0f, 1.0f, (block->values["arpNote" + suffix] + 24.0f) / 48.0f);
-
-            owner.getProject().getLiveValues().setValue ("arpLaneSliderRole", (float) sliderRole);
-            owner.getProject().getLiveValues().setValue ("arpLaneStep" + juce::String (step + 1),
-                                                         juce::jlimit (0.0f, 1.0f, sliderValue));
-        }
-
         MidiPlaygroundPattern::storeActiveBank (*block, lane);
         arpStudioEditingLane = lane;
         arpStudioEditingStep = step;
@@ -4804,13 +4917,20 @@ namespace patchcraft
             juce::Component* visible[] =
             {
                 &performanceViewButton, &arpLaneViewButton,
-                &sourceBox, &midiTemplateBox, &guiTemplateBox, &rootBox, &scaleBox, &targetBox,
-                &phraseBankBox, &stepsSlider, &rateSlider, &gateSlider, &swingSlider,
+                &sourceBox, &midiTemplateBox, &guiTemplateBox,
+                &phraseBankBox, &laneTargetBox, &laneSoundBox, &multiLaneToggle, &retriggerToggle,
+                &stepsSlider, &rateSlider, &gateSlider, &swingSlider,
                 &probabilitySlider, &humanizeSlider, &mutationSlider, &ratchetSlider,
                 &velocityCurveSlider, &strumSlider, &applyMidiTemplateButton, &applyGuiTemplateButton,
                 &exportMidiButton, &playPatternButton, &stopPatternButton, &sourceBuilderButton,
                 &sampleMapperButton, &testButton
             };
+            juce::Component* arpStudioHidden[] =
+            {
+                &rootBox, &scaleBox, &targetBox
+            };
+            for (auto* component : arpStudioHidden)
+                component->setVisible (false);
             for (auto* component : visible)
                 component->setVisible (true);
 
@@ -4914,25 +5034,47 @@ namespace patchcraft
             g.drawText ("Player preview currently plays one active slot. Lane source choices are stored for builder/export work.",
                         sourceInner, juce::Justification::centredLeft, true);
 
-            auto projectStrip = main.removeFromTop (46);
+            auto projectStrip = main.removeFromTop (arpStudioMode ? 78 : 46);
             PatchCraftLookAndFeel::drawPanel (g, projectStrip, 8.0f);
             auto strip = projectStrip.reduced (10, 8);
-            auto placeBox = [&] (const juce::String& label, juce::Component& component, int w)
+            auto controlRow = strip.removeFromTop (28);
+            auto helpRow = strip;
+            auto placeBox = [&] (juce::Rectangle<int>& row, const juce::String& label, juce::Component& component, int w)
             {
                 g.setColour (PatchCraftLookAndFeel::textDim());
                 g.setFont (juce::Font (10.0f, juce::Font::bold));
-                g.drawText (label, strip.removeFromLeft (54), juce::Justification::centredLeft, true);
-                component.setBounds (strip.removeFromLeft (w).reduced (2));
-                strip.removeFromLeft (10);
+                g.drawText (label, row.removeFromLeft (54), juce::Justification::centredLeft, true);
+                component.setBounds (row.removeFromLeft (w).reduced (2));
+                row.removeFromLeft (10);
             };
-            placeBox ("Slot", phraseBankBox, 92);
-            placeBox ("Key", rootBox, 82);
-            placeBox ("Scale", scaleBox, 140);
-            placeBox ("UI", guiTemplateBox, 178);
+            placeBox (controlRow, "Slot", phraseBankBox, 92);
+            if (arpStudioMode)
+            {
+                placeBox (controlRow, "Target", laneTargetBox, 128);
+                placeBox (controlRow, "Sound", laneSoundBox, 108);
+                g.setColour (PatchCraftLookAndFeel::textDim());
+                g.setFont (juce::Font (10.0f, juce::Font::bold));
+                g.drawText ("All", controlRow.removeFromLeft (54), juce::Justification::centredLeft, true);
+                multiLaneToggle.setBounds (controlRow.removeFromLeft (118).reduced (2));
+                controlRow.removeFromLeft (8);
+                g.drawText ("Rtrg", controlRow.removeFromLeft (36), juce::Justification::centredLeft, true);
+                retriggerToggle.setBounds (controlRow.removeFromLeft (96).reduced (2));
+                controlRow.removeFromLeft (10);
+            }
+            else
+            {
+                placeBox (controlRow, "Key", rootBox, 82);
+                placeBox (controlRow, "Scale", scaleBox, 140);
+            }
+            placeBox (controlRow, "UI", guiTemplateBox, 178);
             g.setColour (PatchCraftLookAndFeel::textDim());
-            g.setFont (juce::Font (10.5f, juce::Font::bold));
-            g.drawText ("DSP owns the sound. Lane buttons choose which pattern slot you are editing and playing.",
-                        strip, juce::Justification::centredLeft, true);
+            g.setFont (10.0f);
+            g.drawFittedText (arpStudioMode
+                                 ? "Pick a slot, set target and sound, then edit the circle. Turn on Play All Slots to layer circles."
+                                 : "DSP owns the sound. Lane buttons choose which pattern slot you are editing and playing.",
+                             helpRow,
+                             juce::Justification::centredLeft,
+                             2);
 
             main.removeFromTop (8);
             auto stepPanel = main.removeFromTop (282);
@@ -5195,9 +5337,13 @@ namespace patchcraft
         phraseBankBox.setVisible (! drumMode);
         drumPatternBox.setVisible (drumMode);
         progressionBox.setVisible (! drumMode);
-        rootBox.setVisible (! drumMode);
-        scaleBox.setVisible (! drumMode);
-        targetBox.setVisible (! drumMode);
+        targetBox.setVisible (! drumMode && ! arpStudioMode);
+        laneTargetBox.setVisible (! drumMode && arpStudioMode);
+        laneSoundBox.setVisible (! drumMode && arpStudioMode);
+        multiLaneToggle.setVisible (! drumMode && arpStudioMode);
+        retriggerToggle.setVisible (! drumMode && arpStudioMode);
+        rootBox.setVisible (! drumMode && ! arpStudioMode);
+        scaleBox.setVisible (! drumMode && ! arpStudioMode);
         chordSizeSlider.setVisible (! drumMode);
         chordSpreadSlider.setVisible (! drumMode);
         octaveSlider.setVisible (! drumMode);

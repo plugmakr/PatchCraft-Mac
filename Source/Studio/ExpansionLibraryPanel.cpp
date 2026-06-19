@@ -230,9 +230,9 @@ namespace patchcraft
 
         if (doubleClick)
         {
-            // Switch to the DSP page so the user lands in the editor for
+            // Switch to the Design page so the user lands in the editor for
             // this expansion's patches.
-            owner.setBottomTab (BottomPanel::Page::DSP);
+            owner.setBottomTab (BottomPanel::Page::Design);
         }
     }
 }

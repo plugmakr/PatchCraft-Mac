@@ -149,6 +149,11 @@ namespace patchcraft
         deviceManager.removeMidiInputDeviceCallback ({}, this);
         deviceManager.removeAudioCallback (this);
         stopTimer();
+        {
+            const juce::ScopedLock guard (hardwareMidiLock);
+            hardwareMidiBuffer.clear();
+        }
+        keyboardState.allNotesOff (0);
         // Don't close the device - keep it warm for the next preview, and the
         // settings dialog needs it open to display the current configuration.
         if (engine)
@@ -294,6 +299,15 @@ namespace patchcraft
 
     void InstrumentPreviewComponent::timerCallback()
     {
+        // Auto-enable MIDI inputs that appeared after the preview started so a
+        // keyboard connected mid-session begins triggering without a restart.
+        if (active)
+        {
+            for (auto& src : juce::MidiInput::getAvailableDevices())
+                if (! deviceManager.isMidiInputDeviceEnabled (src.identifier))
+                    deviceManager.setMidiInputDeviceEnabled (src.identifier, true);
+        }
+
         refreshPlaybackStatus();
     }
 
@@ -322,6 +336,13 @@ namespace patchcraft
         // Drain MIDI events from the on-screen keyboard / external MIDI input.
         juce::MidiBuffer midi;
         keyboardState.processNextMidiBuffer (midi, 0, numSamples, true);
+        {
+            // Merge hardware MIDI staged on the MIDI thread (see
+            // handleIncomingMidiMessage) so external keyboards trigger the engine.
+            const juce::ScopedLock guard (hardwareMidiLock);
+            midi.addEvents (hardwareMidiBuffer, 0, numSamples, 0);
+            hardwareMidiBuffer.clear();
+        }
         int midiCount = 0;
         for (auto md : midi)
         {
@@ -338,6 +359,11 @@ namespace patchcraft
                 PC_DBG("[AUDIO] NoteOff from keyboardState: note=%d", m.getNoteNumber());
                 if (! arpeggiator.handleNoteOff (*engine, m.getNoteNumber()))
                     engine->noteOff (m.getNoteNumber());
+            }
+            if (m.isAllNotesOff() || m.isAllSoundOff())
+            {
+                arpeggiator.allNotesOff (*engine);
+                engine->allNotesOff();
             }
         }
 
@@ -358,8 +384,19 @@ namespace patchcraft
         PC_DBG("[MIDI IN] from %s: %s", 
                source ? source->getName().toStdString().c_str() : "unknown",
                m.getDescription().toStdString().c_str());
+
+        // Update the on-screen keyboard's visual state (reflects held notes).
         keyboardState.processNextMidiEvent (m);
-        
+
+        // Stage note events for the audio thread. processNextMidiEvent does NOT
+        // forward these to processNextMidiBuffer, so without this the engine
+        // never hears the hardware keyboard.
+        if (m.isNoteOn() || m.isNoteOff() || m.isAllNotesOff() || m.isAllSoundOff())
+        {
+            const juce::ScopedLock guard (hardwareMidiLock);
+            hardwareMidiBuffer.addEvent (m, 0);
+        }
+
         refreshPlaybackStatus();
     }
 

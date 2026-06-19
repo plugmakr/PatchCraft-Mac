@@ -37,6 +37,8 @@ namespace patchcraft
             audioReactiveLevel.store (juce::jlimit (0.0f, 1.0f, level), std::memory_order_relaxed);
         }
 
+        void setCustomerPreviewMode (bool shouldUse) { customerPreviewMode = shouldUse; }
+
         void paint (juce::Graphics&) override;
         void resized() override;
         void mouseDown (const juce::MouseEvent&) override;
@@ -54,7 +56,20 @@ namespace patchcraft
         std::function<bool(int pattern, int track, int step, bool active,
                            float velocity, float gate, float probability, int divisions)> onSetDrumPatternCell;
         std::function<bool(int lane, int step, float velocity, bool active)> onSetArpLaneStep;
+        std::function<bool(int lane, int steps)> onSetArpLaneSteps;
+        std::function<bool(int laneIndex, int step, float value, bool active, const juce::String& laneType)> onSetSeqLaneStep;
         std::function<void(const juce::String&)> onRuntimeStatus;
+        std::function<juce::String()> onGetPianoRollNotes;
+        std::function<bool(const juce::String& encodedNotes)> onSetPianoRollNotes;
+
+        struct RuntimeDropTarget
+        {
+            juce::String mappingMode { "pads" };
+            int note = -1;
+            int padIndex = -1;
+            bool targeted = false;
+        };
+        RuntimeDropTarget runtimeDropTargetAt (juce::Point<int>) const;
 
     private:
         StudioMainComponent& owner;
@@ -65,6 +80,7 @@ namespace patchcraft
         std::vector<juce::String> knobParamIds;
         std::map<juce::String, std::vector<int>> knobIndicesByParam;
         std::atomic<float> audioReactiveLevel { 0.0f };
+        bool customerPreviewMode = false;
         double lastGranularAdvanceSeconds = 0.0;
 
         juce::Image background;
@@ -81,8 +97,15 @@ namespace patchcraft
         int lastDrumGridStep = -1;
         bool arpLaneDragActive = false;
         bool arpMidiDragArmed = false;
+        bool pianoRollDragActive = false;
+        juce::String pianoRollDragElementId;
+        int pianoRollDragPitch = -1;
+        int pianoRollDragStartStep = -1;
         int lastArpLane = -1;
         int lastArpStep = -1;
+        bool seqLaneDragActive = false;
+        int lastSeqStep = -1;
+        juce::String lastSeqElementId;
         juce::Point<int> arpMidiDragStart;
         juce::String arpMidiDragElementId;
         juce::String activeMomentaryParameter;
@@ -106,7 +129,7 @@ namespace patchcraft
 
         // Per-type drawing
         void drawHeroPlaceholder (juce::Graphics&, juce::Rectangle<int>) const;
-        void drawMeter   (juce::Graphics&, juce::Rectangle<int>) const;
+        void drawMeter   (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
         void drawPanel   (juce::Graphics&, juce::Rectangle<int>, const juce::String& label) const;
         void drawDropdown(juce::Graphics&, juce::Rectangle<int>, const juce::String& display) const;
         void drawKeyboard(juce::Graphics&, juce::Rectangle<int>) const;
@@ -122,6 +145,17 @@ namespace patchcraft
         bool handleGranularGesture (const juce::MouseEvent&);
         bool handleDrumGridGesture (const juce::MouseEvent&, bool drag);
         bool handleArpLaneGesture (const juce::MouseEvent&, bool drag);
+        bool handleSequencerLaneGesture (const juce::MouseEvent&, bool drag);
+        bool handlePianoRollGesture (const juce::MouseEvent&, bool drag);
+        struct PianoRollGeometry
+        {
+            juce::Rectangle<int> header, playButton, gutter, grid;
+            int steps = 16, stepsPerBeat = 4, rows = 25, lowNote = 48;
+            float cellW = 0.0f, cellH = 0.0f;
+            bool valid = false;
+        };
+        PianoRollGeometry pianoRollGeometry (const LayoutElement&, juce::Rectangle<int>) const;
+        bool pianoRollCellAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>, int& pitch, int& step) const;
         bool startArpLaneMidiDrag (const LayoutElement&);
         bool drumCellAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>,
                          int& pattern, int& track, int& step, float& velocity,
@@ -129,6 +163,7 @@ namespace patchcraft
                          int& note, int& divisions) const;
         bool arpLaneStepAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>,
                             int& lane, int& step, float& velocity) const;
+        int padNoteAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>) const;
         const LayoutElement* findElementAt (juce::Point<int>) const;
         void showElementAnimationMenu (const LayoutElement&, const juce::Point<int>& screenPos);
         bool advanceGranularFields();

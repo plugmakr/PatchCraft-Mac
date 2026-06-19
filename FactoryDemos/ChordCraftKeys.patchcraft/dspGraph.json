@@ -1,0 +1,82 @@
+{
+  "blocks": [
+    {
+      "id": "source",
+      "section": "source",
+      "type": "oscillator",
+      "name": "ChordCraft Keys Source",
+      "enabled": true,
+      "targetId": "volume",
+      "values": {
+        "oscType": 0.0,
+        "osc2Type": 1.0,
+        "oscBlend": 0.1,
+        "subBlend": 0.08,
+        "noiseBlend": 0.0,
+        "sampleStart": 0.0,
+        "sampleLength": 1.0
+      }
+    },
+    {
+      "id": "shape",
+      "section": "shape",
+      "type": "filter",
+      "name": "Tone Shape",
+      "enabled": true,
+      "targetId": "filterCutoff",
+      "values": {
+        "filterCutoff": 4200.0,
+        "filterResonance": 0.16,
+        "attack": 0.012,
+        "decay": 0.4,
+        "sustain": 0.55,
+        "release": 0.5
+      }
+    },
+    {
+      "id": "fx",
+      "section": "fx",
+      "type": "fxChain",
+      "name": "Factory FX",
+      "enabled": true,
+      "targetId": "delayMix",
+      "values": {
+        "drive": 0.0,
+        "mix": 1.0,
+        "delayTime": 0.375,
+        "delayFeedback": 0.24,
+        "delayMix": 0.18,
+        "reverbMix": 0.34,
+        "tapeMix": 0.0,
+        "chorusMix": 0.0,
+        "multiTapMix": 0.0
+      }
+    },
+    {
+      "id": "piano_roll",
+      "section": "modulation",
+      "type": "pianoRoll",
+      "name": "Piano Roll Clip",
+      "enabled": true,
+      "targetId": "filterCutoff",
+      "values": {
+        "prSteps": 16.0,
+        "prStepsPerBeat": 4.0,
+        "prLowNote": 48.0,
+        "prRows": 27.0,
+        "prRate": 1.0,
+        "prGate": 0.92,
+        "prVelocity": 1.0,
+        "prSync": 1.0,
+        "prLoop": 1.0
+      },
+      "metadata": {
+        "notes": "0,4,60,0.78;0,4,64,0.78;0,4,67,0.78;0,4,71,0.86;4,4,57,0.78;4,4,60,0.78;4,4,64,0.78;4,4,67,0.86;8,4,53,0.78;8,4,57,0.78;8,4,60,0.78;8,4,64,0.86;12,4,55,0.78;12,4,59,0.78;12,4,62,0.78;12,4,65,0.86"
+      }
+    }
+  ],
+  "edges": [],
+  "macros": [],
+  "modulation": [],
+  "automation": []
+}

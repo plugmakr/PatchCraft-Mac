@@ -60,7 +60,9 @@ namespace patchcraft
 
     OneShotMakerPage::OneShotMakerPage (StudioMainComponent& o) : owner (o)
     {
-        juce::addDefaultFormatsToManager (pluginFormatManager);
+       #if JUCE_PLUGINHOST_VST3 && (JUCE_MAC || JUCE_WINDOWS || JUCE_LINUX || JUCE_BSD)
+        pluginFormatManager.addFormat (new juce::VST3PluginFormat());
+       #endif
         audioFormatManager.registerBasicFormats();
 
         outputBaseFolder = defaultOutputFolder();

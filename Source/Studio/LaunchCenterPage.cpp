@@ -5,6 +5,7 @@
 #include "StudioMainComponent.h"
 
 #include "AiAssistService.h"
+#include "LicenseValidator.h"
 #include "ParameterModel.h"
 #include "PatchCraftPackWriter.h"
 #include "PluginClubPublisher.h"
@@ -13,12 +14,13 @@
 
 #include <algorithm>
 #include <map>
+#include <juce_cryptography/juce_cryptography.h>
 
 namespace patchcraft
 {
     namespace
     {
-        constexpr int kApprovedFactoryDemoCount = 6;
+        constexpr int kApprovedFactoryDemoCount = 10;
 
         static juce::String safeSlug (juce::String text)
         {
@@ -218,7 +220,7 @@ namespace patchcraft
                 && ! appDir.getChildFile ("PatchCraftStudio").existsAsFile())
                 missing.add ("PatchCraft Studio executable");
             if (countRuntimeFactoryDemos() < kApprovedFactoryDemoCount)
-                missing.add ("FactoryDemos with the approved six-demo RC set");
+                missing.add ("FactoryDemos with the approved factory demo set");
             if (! appDir.getChildFile ("Library").isDirectory())
                 missing.add ("Library folder");
             if (! appDir.getChildFile ("Library").getChildFile ("Assets").isDirectory())
@@ -342,14 +344,36 @@ namespace patchcraft
 
         static juce::String whiteLabelInstallerId (const Manifest& manifest)
         {
-            if (manifest.whiteLabelInstallerId.trim().isNotEmpty())
-                return manifest.whiteLabelInstallerId.trim();
-            return safeSlug (whiteLabelProductName (manifest)) + "-installer";
+            const auto configured = manifest.whiteLabelInstallerId.trim();
+            const auto seed = configured.isNotEmpty()
+                ? configured
+                : whiteLabelBundleId (manifest) + "|" + whiteLabelProductCode (manifest);
+
+            const auto hash = juce::SHA256 (seed.toUTF8()).toHexString().toUpperCase();
+            return "{" + hash.substring (0, 8) + "-" + hash.substring (8, 12)
+                 + "-" + hash.substring (12, 16) + "-" + hash.substring (16, 20)
+                 + "-" + hash.substring (20, 32) + "}";
         }
 
         static juce::String innoString (juce::String text)
         {
             return text.replace ("\"", "\"\"");
+        }
+
+        static juce::String sha256ForFile (const juce::File& file)
+        {
+            if (! file.existsAsFile())
+                return {};
+
+            return juce::SHA256 (file).toHexString().toLowerCase();
+        }
+
+        static juce::String relativePackagePath (const juce::File& root, const juce::File& file)
+        {
+            auto path = file.getRelativePathFrom (root)
+                .replaceCharacter ('\\', '/')
+                .trimCharactersAtStart ("/");
+            return path.isNotEmpty() ? path : file.getFileName();
         }
     }
 
@@ -530,16 +554,26 @@ namespace patchcraft
 
     LaunchCenterPage::LaunchCenterPage (StudioMainComponent& ownerIn) : owner (ownerIn)
     {
-        title.setText ("PatchCraft Studio", juce::dontSendNotification);
+        title.setText ("Export Center", juce::dontSendNotification);
         title.setFont (juce::Font (28.0f, juce::Font::bold));
         title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
         addAndMakeVisible (title);
 
-        subtitle.setText ("Create a playable instrument or effect, customize the Player, then export.",
+        subtitle.setText ("Validate your instrument, ship packs and plugins, and prepare launch assets.",
                           juce::dontSendNotification);
         subtitle.setFont (juce::Font (13.0f));
         subtitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
         addAndMakeVisible (subtitle);
+
+        exportShipLabel.setText ("Ship", juce::dontSendNotification);
+        exportShipLabel.setFont (juce::Font (11.0f, juce::Font::bold));
+        exportShipLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+        addAndMakeVisible (exportShipLabel);
+
+        exportToolsLabel.setText ("Launch Tools", juce::dontSendNotification);
+        exportToolsLabel.setFont (juce::Font (11.0f, juce::Font::bold));
+        exportToolsLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+        addAndMakeVisible (exportToolsLabel);
 
         statusBadge.setJustificationType (juce::Justification::centred);
         statusBadge.setFont (juce::Font (13.0f, juce::Font::bold));
@@ -590,6 +624,29 @@ namespace patchcraft
         demoBody.setFont (juce::Font (12.0f));
         demoBody.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
         addAndMakeVisible (demoBody);
+
+        doctorTitle.setText ("Launch Doctor", juce::dontSendNotification);
+        doctorTitle.setFont (juce::Font (16.0f, juce::Font::bold));
+        doctorTitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
+        addAndMakeVisible (doctorTitle);
+
+        doctorBody.setText ("Run checks before you ship. Fix blockers first, then review warnings.",
+                            juce::dontSendNotification);
+        doctorBody.setFont (juce::Font (12.0f));
+        doctorBody.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+        addAndMakeVisible (doctorBody);
+
+        for (auto* tab : { &tabOverview, &tabCreate, &tabDemos, &tabDoctor })
+        {
+            tab->setClickingTogglesState (true);
+            tab->setRadioGroupId (88421);
+            styleActionButton (*tab, false);
+            addAndMakeVisible (*tab);
+        }
+        tabOverview.onClick = [this] { setActiveTab (ContentTab::Overview); };
+        tabCreate.onClick = [this] { setActiveTab (ContentTab::Create); };
+        tabDemos.onClick = [this] { setActiveTab (ContentTab::Demos); };
+        tabDoctor.onClick = [this] { setActiveTab (ContentTab::Doctor); };
 
         styleActionButton (refreshButton, true);
         styleActionButton (outputFolderButton, false);
@@ -657,6 +714,70 @@ namespace patchcraft
         rebuildDemoTiles();
         refresh();
         updateOutputFolderLabel();
+        setActiveTab (ContentTab::Overview);
+    }
+
+    void LaunchCenterPage::setActiveTab (ContentTab tab)
+    {
+        activeTab = tab;
+        updateTabBar();
+        applyTabVisibility();
+        resized();
+        repaint();
+    }
+
+    void LaunchCenterPage::updateTabBar()
+    {
+        tabOverview.setToggleState (activeTab == ContentTab::Overview, juce::dontSendNotification);
+        tabCreate.setToggleState (activeTab == ContentTab::Create, juce::dontSendNotification);
+        tabDemos.setToggleState (activeTab == ContentTab::Demos, juce::dontSendNotification);
+        tabDoctor.setToggleState (activeTab == ContentTab::Doctor, juce::dontSendNotification);
+
+        const bool primary = true;
+        for (auto* tab : { &tabOverview, &tabCreate, &tabDemos, &tabDoctor })
+        {
+            const bool selected = tab->getToggleState();
+            tab->getProperties().set ("primaryAction", selected);
+            tab->getProperties().set ("bold", selected);
+        }
+        juce::ignoreUnused (primary);
+    }
+
+    void LaunchCenterPage::applyTabVisibility()
+    {
+        const bool overview = activeTab == ContentTab::Overview;
+        const bool create = activeTab == ContentTab::Create;
+        const bool demos = activeTab == ContentTab::Demos;
+        const bool doctor = activeTab == ContentTab::Doctor;
+
+        statusBadge.setVisible (overview);
+        summaryLabel.setVisible (overview);
+        exportShipLabel.setVisible (overview);
+        exportToolsLabel.setVisible (overview);
+        outputFolderLabel.setVisible (overview || create);
+
+        for (auto* button : { &exportPackButton, &exportVstButton, &publishButton, &bundleButton,
+                              &refreshButton, &outputFolderButton, &testButton, &customerWizardButton, &productPageButton })
+            button->setVisible (overview);
+
+        creatorTitle.setVisible (create);
+        creatorBody.setVisible (create);
+        recipePrompt.setVisible (create);
+        recipeTypeBox.setVisible (create);
+        createFromPromptButton.setVisible (create);
+        blankProjectButton.setVisible (create);
+        synthStarterButton.setVisible (create);
+        sampleStarterButton.setVisible (create);
+        drumStarterButton.setVisible (create);
+        fxStarterButton.setVisible (create);
+
+        demoTitle.setVisible (demos);
+        demoBody.setVisible (demos);
+        demoViewport.setVisible (demos);
+
+        doctorTitle.setVisible (doctor);
+        doctorBody.setVisible (doctor);
+        checksViewport.setVisible (doctor);
     }
 
     LaunchCenterPage::~LaunchCenterPage() = default;
@@ -1006,7 +1127,7 @@ namespace patchcraft
             add (Severity::Error,
                  "DSP graph has blocking errors",
                  graphDetails.joinIntoString ("  |  "),
-                 "Open DSP",
+                 "Graph",
                  [this] { owner.setBottomTab (BottomPanel::Page::DSP); });
         }
         else if (project.getDspGraph().blocks.empty())
@@ -1014,7 +1135,7 @@ namespace patchcraft
             add (Severity::Warning,
                  "DSP graph is using defaults",
                  "No author blocks exist. The sound may play, but it will not feel like a crafted sellable patch.",
-                 "Build Sound",
+                 "Graph",
                  [this] { owner.setBottomTab (BottomPanel::Page::DSP); });
         }
         else
@@ -1028,7 +1149,7 @@ namespace patchcraft
                     + ", FX " + juce::String (fxBlocks)
                     + ", Out " + juce::String (outBlocks)
                     + (graphWarnings > 0 ? ". Review graph warnings before launch." : "."),
-                 graphWarnings > 0 ? juce::String ("Review DSP") : juce::String(),
+                 graphWarnings > 0 ? juce::String ("Graph") : juce::String(),
                  graphWarnings > 0 ? std::function<void()> ([this] { owner.setBottomTab (BottomPanel::Page::DSP); }) : std::function<void()>());
         }
 
@@ -1121,16 +1242,16 @@ namespace patchcraft
                 add (Severity::Error,
                      "CircleSEQ surface is not connected to a performance engine",
                      "The Design canvas has CircleSEQ/Arp Lane elements, but no MIDI Playground engine is present. Add the CircleSEQ surface or open Performance Builder.",
-                     "Fix CircleSEQ",
-                     [this] { owner.setBottomTab (BottomPanel::Page::Design); });
+                     "Perform",
+                     [this] { owner.setBottomTab (BottomPanel::Page::MidiPlayground); });
             }
             else if (multiRingOrbitElements == 0 || ! hasFillControls || ! hasRoleControl)
             {
                 add (Severity::Warning,
                      "CircleSEQ workflow is missing performance controls",
                      "For a Patterning-style instrument, use a multi-ring CircleSEQ element plus Role, Fill, and lane controls so players can edit sources, timing, automation, and fills without returning to Studio.",
-                     "Add CircleSEQ Surface",
-                     [this] { owner.setBottomTab (BottomPanel::Page::Design); });
+                     "Perform",
+                     [this] { owner.setBottomTab (BottomPanel::Page::MidiPlayground); });
             }
             else
             {
@@ -1222,13 +1343,11 @@ namespace patchcraft
                                        "4. Mixer: layer balance, mute/solo, output routing, and buyer-facing mix control.\n"
                                        "5. Audio-Reactive Motion: UI elements that respond to the actual instrument output.")
                          .withButton ("Open Design")
-                         .withButton ("Open DSP")
                          .withButton ("Close");
                      juce::AlertWindow::showAsync (options,
                          [this] (int result)
                          {
                              if (result == 1) owner.setBottomTab (BottomPanel::Page::Design);
-                             if (result == 2) owner.setBottomTab (BottomPanel::Page::DSP);
                          });
                  });
         }
@@ -1860,7 +1979,7 @@ namespace patchcraft
         lines.add ("## Required Payload");
         lines.add ("");
         lines.add ("- `PatchCraftStudio.exe`");
-        lines.add ("- `FactoryDemos/` with the approved six `.patchcraft` factory products");
+        lines.add ("- `FactoryDemos/` with the approved `.patchcraft` factory products");
         lines.add ("- `Library/Backgrounds`, `Library/Templates`, and `Library/Assets`");
         lines.add ("- `PlayerPlugins/PatchCraft Player.vst3`");
         lines.add ("- `PlayerPlugins/PatchCraft Player FX.vst3`");
@@ -2176,9 +2295,11 @@ namespace patchcraft
         lines.add ("## Files Generated");
         lines.add ("");
         lines.add ("- `white-label-product.json`: canonical product, payload, licensing, support, and install metadata.");
+        lines.add ("- `license-activation.json`: activation request template for Plugin.club/AudiLock integration.");
         lines.add ("- `windows-inno-setup.iss`: starter Inno Setup script for Windows VST3 delivery.");
         lines.add ("- `macos-pkgbuild-notes.md`: macOS pkgbuild/productbuild packaging notes.");
         lines.add ("- `activation-flow.md`: buyer-facing activation and trial behavior.");
+        lines.add ("- `artifact-manifest.json`: SHA256 checksums for the generated payload and handoff files.");
         lines.add ("- `installer-readme.md`: this implementation guide.");
         lines.add ("");
         lines.add ("## Expected Build Input");
@@ -2188,6 +2309,7 @@ namespace patchcraft
         lines.add ("- If the customer purchased a dedicated plugin, export the standalone VST3 with the VST Expansion addon and place it in `payload/StandaloneVST3`.");
         lines.add ("- Add EULA, privacy policy, icon, and code-signing material before public release.");
         lines.add ("- Keep product identity in Brand Lab consistent with this generated manifest.");
+        lines.add ("- Do not expose PatchCraft authoring metadata to buyers; use white-label product names and support links.");
         lines.add ("");
         lines.add ("## Non-Negotiable QA");
         lines.add ("");
@@ -2195,6 +2317,7 @@ namespace patchcraft
         lines.add ("- Rescan in FL Studio, Ableton Live, Studio One/Reaper, and at least one DAW the client uses.");
         lines.add ("- Confirm license activation, offline grace, support links, About panel, presets, MIDI learn, tab switching, and audio output.");
         lines.add ("- Confirm uninstall removes plugin files but never deletes user-created presets or imported samples.");
+        lines.add ("- Compare shipped files against `artifact-manifest.json` before uploading to Plugin.club or sending beta installers.");
         return lines.joinIntoString ("\n");
     }
 
@@ -2235,9 +2358,9 @@ namespace patchcraft
         lines.add ("ArchitecturesInstallIn64BitMode=x64");
         lines.add ("PrivilegesRequired=lowest");
         if (manifest.whiteLabelInstallerIcon.isNotEmpty())
-            lines.add ("SetupIconFile=" + manifest.whiteLabelInstallerIcon);
+            lines.add ("SetupIconFile=\"" + innoString (manifest.whiteLabelInstallerIcon) + "\"");
         if (manifest.whiteLabelEulaPath.isNotEmpty())
-            lines.add ("LicenseFile=" + manifest.whiteLabelEulaPath);
+            lines.add ("LicenseFile=\"" + innoString (manifest.whiteLabelEulaPath) + "\"");
         lines.add ("");
         lines.add ("[Files]");
         lines.add ("Source: \"{#SourceDir}\\Packs\\" + safeSlug (manifest.instrumentName) + ".patchcraft\\*\"; DestDir: \"{userappdata}\\{#ProductPublisher}\\{#ProductName}\\Packs\\" + safeSlug (manifest.instrumentName) + ".patchcraft\"; Flags: recursesubdirs ignoreversion");
@@ -2248,14 +2371,16 @@ namespace patchcraft
         if (manifest.whiteLabelIncludeStandalone)
             lines.add ("; Source: \"{#SourceDir}\\" + fileSafe + ".exe\"; DestDir: \"{app}\"; Flags: ignoreversion");
         lines.add ("Source: \"white-label-product.json\"; DestDir: \"{app}\"; Flags: ignoreversion");
+        lines.add ("Source: \"license-activation.json\"; DestDir: \"{app}\"; Flags: ignoreversion skipifsourcedoesntexist");
+        lines.add ("Source: \"artifact-manifest.json\"; DestDir: \"{app}\"; Flags: ignoreversion skipifsourcedoesntexist");
         lines.add ("");
         lines.add ("[Icons]");
         if (manifest.whiteLabelIncludeStandalone)
             lines.add ("; Name: \"{group}\\{#ProductName}\"; Filename: \"{app}\\" + fileSafe + ".exe\"");
         lines.add ("Name: \"{group}\\Support\"; Filename: \"" + (manifest.playerSupportUrl.isNotEmpty() ? manifest.playerSupportUrl : manifest.website) + "\"");
         lines.add ("");
-        lines.add ("[Run]");
-        lines.add ("Filename: \"{app}\\white-label-product.json\"; Description: \"Show installed product metadata\"; Flags: shellexec postinstall skipifsilent");
+        lines.add ("[UninstallDelete]");
+        lines.add ("; Preserve buyer-created presets, imported samples, MIDI files, license cache, and user recordings.");
         return lines.joinIntoString ("\n");
     }
 
@@ -2330,6 +2455,46 @@ namespace patchcraft
         return lines.joinIntoString ("\n");
     }
 
+    juce::var LaunchCenterPage::buildLaunchArtifactManifest (const juce::File& launchFolder) const
+    {
+        const auto& project = owner.getProject();
+        const auto& manifest = project.getManifest();
+
+        juce::Array<juce::var> fileEntries;
+        juce::int64 totalBytes = 0;
+
+        juce::Array<juce::File> files;
+        launchFolder.findChildFiles (files, juce::File::findFiles, true);
+        for (const auto& file : files)
+        {
+            if (file.getFileName().equalsIgnoreCase ("artifact-manifest.json"))
+                continue;
+
+            auto* entry = new juce::DynamicObject();
+            entry->setProperty ("path", relativePackagePath (launchFolder, file));
+            entry->setProperty ("bytes", (double) file.getSize());
+            entry->setProperty ("sha256", sha256ForFile (file));
+            entry->setProperty ("modified", file.getLastModificationTime().toISO8601 (true));
+            fileEntries.add (juce::var (entry));
+            totalBytes += file.getSize();
+        }
+
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty ("schema", "patchcraft.launch_artifacts.v1");
+        obj->setProperty ("generated_at", juce::Time::getCurrentTime().toISO8601 (true));
+        obj->setProperty ("product", whiteLabelProductName (manifest));
+        obj->setProperty ("publisher", whiteLabelPublisher (manifest));
+        obj->setProperty ("engine", project.getEngineType());
+        obj->setProperty ("installer_id", whiteLabelInstallerId (manifest));
+        obj->setProperty ("file_count", fileEntries.size());
+        obj->setProperty ("total_bytes", (double) totalBytes);
+        obj->setProperty ("release_manifest", "release-manifest.json");
+        obj->setProperty ("white_label_product_manifest", "installer/white-label-product.json");
+        obj->setProperty ("activation_request_template", "installer/license-activation.json");
+        obj->setProperty ("files", juce::var (fileEntries));
+        return juce::var (obj);
+    }
+
     juce::var LaunchCenterPage::buildWhiteLabelProductManifest() const
     {
         const auto& project = owner.getProject();
@@ -2374,12 +2539,16 @@ namespace patchcraft
         licensing->setProperty ("required", manifest.licenseRequired);
         licensing->setProperty ("require_on_first_run", manifest.whiteLabelRequireLicenseOnFirstRun);
         licensing->setProperty ("product_id", manifest.licenseProductId);
+        licensing->setProperty ("instrument_id", LicenseValidator::hashInstrumentId (manifest.instrumentName,
+                                                                                      manifest.creator));
         licensing->setProperty ("server_url", manifest.licenseServerUrl);
         licensing->setProperty ("public_key_configured", manifest.licensePublicKey.isNotEmpty());
         licensing->setProperty ("policy", manifest.licensePolicy);
         licensing->setProperty ("trial_days", manifest.trialDays);
         licensing->setProperty ("offline_grace_days", manifest.licenseOfflineGraceDays);
         licensing->setProperty ("bind_to_machine", manifest.licenseBindToMachine);
+        licensing->setProperty ("allow_trial_conversion", manifest.licenseAllowTrialConversion);
+        licensing->setProperty ("activation_template", "license-activation.json");
 
         auto* support = new juce::DynamicObject();
         support->setProperty ("email", manifest.playerSupportEmail);
@@ -2516,6 +2685,10 @@ namespace patchcraft
         obj->setProperty ("factory_demo_count", countRuntimeFactoryDemos());
         obj->setProperty ("runtime_folder", appDir.getFullPathName());
         obj->setProperty ("pluginclub_endpoint", "https://plugin.club/functions/sellerImport");
+        obj->setProperty ("installer_id", whiteLabelInstallerId (manifest));
+        obj->setProperty ("installer_manifest", "installer/white-label-product.json");
+        obj->setProperty ("artifact_manifest", "artifact-manifest.json");
+        obj->setProperty ("license_activation_template", "installer/license-activation.json");
         obj->setProperty ("white_label_product", buildWhiteLabelProductManifest());
         obj->setProperty ("missing_distribution_items", juce::var (missingItems));
         obj->setProperty ("manual_qa_required", juce::var (manualQa));
@@ -2570,6 +2743,23 @@ namespace patchcraft
             return;
         }
 
+        LicenseValidator::LicenseInfo licenseInfo;
+        licenseInfo.licenseKey = manifest.licenseKey;
+        licenseInfo.instrumentName = manifest.instrumentName;
+        licenseInfo.creator = manifest.creator;
+        licenseInfo.instrumentId = LicenseValidator::hashInstrumentId (manifest.instrumentName,
+                                                                       manifest.creator);
+        licenseInfo.productId = manifest.licenseProductId;
+        licenseInfo.licenseServerUrl = manifest.licenseServerUrl;
+        licenseInfo.policy = manifest.licensePolicy;
+        licenseInfo.trialDays = manifest.trialDays;
+        licenseInfo.isTrial = manifest.isTrial || manifest.trialDays > 0;
+        licenseInfo.expiryDate = manifest.trialExpiryDate;
+        licenseInfo.offlineGraceDays = manifest.licenseOfflineGraceDays;
+        licenseInfo.bindToMachine = manifest.licenseBindToMachine;
+        const auto activationTemplate = LicenseValidator::buildActivationRequest (
+            licenseInfo, "RUNTIME_MACHINE_ID");
+
         if (! writeTextFile (folder.getChildFile ("launch-readiness.md"), buildReadinessMarkdown(), error)
             || ! writeTextFile (folder.getChildFile ("product-page.md"), buildProductPageMarkdown(), error)
             || ! writeTextFile (folder.getChildFile ("sales-page.md"), buildSalesPageMarkdown(), error)
@@ -2583,6 +2773,8 @@ namespace patchcraft
             || ! writeTextFile (folder.getChildFile ("marketplace-asset-checklist.md"), buildMarketplaceAssetChecklistMarkdown(), error)
             || ! writeTextFile (installerFolder.getChildFile ("white-label-product.json"),
                                 juce::JSON::toString (buildWhiteLabelProductManifest(), true), error)
+            || ! writeTextFile (installerFolder.getChildFile ("license-activation.json"),
+                                juce::JSON::toString (activationTemplate, true), error)
             || ! writeTextFile (installerFolder.getChildFile ("windows-inno-setup.iss"), buildWindowsInstallerScript(), error)
             || ! writeTextFile (installerFolder.getChildFile ("macos-pkgbuild-notes.md"), buildMacInstallerNotes(), error)
             || ! writeTextFile (installerFolder.getChildFile ("activation-flow.md"), buildActivationFlowMarkdown(), error)
@@ -2609,9 +2801,17 @@ namespace patchcraft
         copyAsset (manifest.playerLogoImage, "logo");
         copyAsset (manifest.playerTitleBannerImage, "title-banner");
 
+        const auto artifactManifestText = juce::JSON::toString (buildLaunchArtifactManifest (folder), true);
+        if (! writeTextFile (folder.getChildFile ("artifact-manifest.json"), artifactManifestText, error)
+            || ! writeTextFile (installerFolder.getChildFile ("artifact-manifest.json"), artifactManifestText, error))
+        {
+            showMessage ("Create Launch Bundle", error, juce::MessageBoxIconType::WarningIcon);
+            return;
+        }
+
         showMessage ("Launch Bundle Created",
                      "Created launch materials:\n" + folder.getFullPathName()
-                        + "\n\nIncludes readiness report, sales page Markdown/HTML, product copy, runtime test plan, installer checklist, customer package wizard, seller launch playbook, buyer quick-start, marketplace asset checklist, client delivery guide, installer templates, activation flow, release manifest, Plugin.club metadata preview, and resolved artwork.",
+                        + "\n\nIncludes readiness report, sales page Markdown/HTML, product copy, runtime test plan, installer checklist, customer package wizard, seller launch playbook, buyer quick-start, marketplace asset checklist, client delivery guide, installer templates, activation flow, release manifest, artifact checksums, Plugin.club metadata preview, and resolved artwork.",
                      juce::MessageBoxIconType::InfoIcon);
     }
 
@@ -3281,137 +3481,147 @@ namespace patchcraft
         g.setGradientFill (bg);
         g.fillAll();
 
-        g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.06f));
-        for (int x = 0; x < getWidth(); x += 56)
+        g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.025f));
+        for (int x = 0; x < getWidth(); x += 72)
             g.drawVerticalLine (x, 0.0f, (float) getHeight());
-        for (int y = 0; y < getHeight(); y += 56)
-            g.drawHorizontalLine (y, 0.0f, (float) getWidth());
 
         auto bounds = getLocalBounds().reduced (24);
-        auto header = bounds.removeFromTop (124);
-        auto cards = header.removeFromBottom (52);
-        auto creator = bounds.removeFromTop (172);
-        bounds.removeFromTop (12);
-        auto demos = bounds.removeFromTop (218);
-        bounds.removeFromTop (12);
+        bounds.removeFromTop (34 + 24 + 8 + 36 + 12);
 
-        auto drawHeaderCard = [&] (juce::Rectangle<int> area, juce::Colour colour)
-        {
-            auto r = area.toFloat();
-            g.setColour (PatchCraftLookAndFeel::panelAlt().withAlpha (0.88f));
-            g.fillRoundedRectangle (r, 12.0f);
-            g.setColour (PatchCraftLookAndFeel::border().brighter (0.12f));
-            g.drawRoundedRectangle (r, 12.0f, 1.0f);
-            g.setColour (colour.withAlpha (0.9f));
-            g.fillRoundedRectangle (r.withHeight (3.0f), 2.0f);
-        };
+        auto panel = bounds.toFloat();
+        g.setColour (PatchCraftLookAndFeel::panel().withAlpha (0.9f));
+        g.fillRoundedRectangle (panel, 12.0f);
+        g.setColour (PatchCraftLookAndFeel::border().withAlpha (0.9f));
+        g.drawRoundedRectangle (panel, 12.0f, 1.0f);
 
-        drawHeaderCard (cards.removeFromLeft (juce::jmax (320, getWidth() / 3)), errorCount > 0 ? juce::Colour (0xffff5f5f)
-                                                                          : (warningCount > 0 ? PatchCraftLookAndFeel::accent()
-                                                                                              : juce::Colour (0xff64d88a)));
-        cards.removeFromLeft (14);
-        drawHeaderCard (cards, juce::Colour (0xff58b7ff));
+        juce::Colour accent = PatchCraftLookAndFeel::accent();
+        if (activeTab == ContentTab::Overview)
+            accent = errorCount > 0 ? juce::Colour (0xffff5f5f)
+                  : (warningCount > 0 ? PatchCraftLookAndFeel::accent() : juce::Colour (0xff64d88a));
+        else if (activeTab == ContentTab::Create)
+            accent = PatchCraftLookAndFeel::accent();
+        else if (activeTab == ContentTab::Demos)
+            accent = juce::Colour (0xff58b7ff);
+        else
+            accent = juce::Colour (0xff79c267);
 
-        auto drawSection = [&] (juce::Rectangle<int> area, juce::Colour colour)
-        {
-            auto r = area.toFloat();
-            g.setColour (PatchCraftLookAndFeel::panel().withAlpha (0.9f));
-            g.fillRoundedRectangle (r, 12.0f);
-            g.setColour (PatchCraftLookAndFeel::border().withAlpha (0.9f));
-            g.drawRoundedRectangle (r, 12.0f, 1.0f);
-            g.setColour (colour.withAlpha (0.9f));
-            g.fillRoundedRectangle (r.withHeight (3.0f), 2.0f);
-        };
-
-        drawSection (creator, PatchCraftLookAndFeel::accent());
-        drawSection (demos, juce::Colour (0xff58b7ff));
-
-        auto list = bounds.reduced (0, 8).toFloat();
-        g.setColour (PatchCraftLookAndFeel::panel().withAlpha (0.88f));
-        g.fillRoundedRectangle (list, 12.0f);
-        g.setColour (PatchCraftLookAndFeel::border());
-        g.drawRoundedRectangle (list, 12.0f, 1.0f);
+        g.setColour (accent.withAlpha (0.9f));
+        g.fillRoundedRectangle (panel.withHeight (3.0f), 2.0f);
     }
 
     void LaunchCenterPage::resized()
     {
         auto bounds = getLocalBounds().reduced (24);
-        auto header = bounds.removeFromTop (124);
-        title.setBounds (header.removeFromTop (34));
-        subtitle.setBounds (header.removeFromTop (24));
-        header.removeFromTop (6);
+        title.setBounds (bounds.removeFromTop (34));
+        subtitle.setBounds (bounds.removeFromTop (24));
+        bounds.removeFromTop (8);
 
-        auto cards = header.removeFromTop (52);
-        auto summaryCard = cards.removeFromLeft (juce::jmax (320, getWidth() / 3)).reduced (14, 6);
-        statusBadge.setBounds (summaryCard.removeFromLeft (120).reduced (2));
-        summaryCard.removeFromLeft (8);
-        summaryLabel.setBounds (summaryCard);
-
-        cards.removeFromLeft (14);
-        auto actions = cards.reduced (14, 7);
-        const int gap = 8;
-        const int buttonW = juce::jmax (78, (actions.getWidth() - gap * 8) / 9);
-        for (auto* button : { &refreshButton, &outputFolderButton, &bundleButton, &customerWizardButton, &productPageButton, &testButton,
-                              &exportPackButton, &exportVstButton, &publishButton })
+        auto tabRow = bounds.removeFromTop (36);
+        const int tabGap = 8;
+        const int tabW = juce::jmax (108, (tabRow.getWidth() - tabGap * 3) / 4);
+        for (auto* tab : { &tabOverview, &tabCreate, &tabDemos, &tabDoctor })
         {
-            button->setBounds (actions.removeFromLeft (buttonW));
-            actions.removeFromLeft (gap);
+            tab->setBounds (tabRow.removeFromLeft (tabW).reduced (1));
+            tabRow.removeFromLeft (tabGap);
         }
-
-        bounds.removeFromTop (10);
-        auto creator = bounds.removeFromTop (172).reduced (16, 12);
-        auto creatorLeft = creator.removeFromLeft (juce::jmax (340, creator.getWidth() / 2));
-        creatorLeft.removeFromRight (14);
-        creatorTitle.setBounds (creatorLeft.removeFromTop (24));
-        creatorBody.setBounds (creatorLeft.removeFromTop (38));
-        recipePrompt.setBounds (creatorLeft.removeFromTop (72));
-
-        auto creatorRight = creator;
-        auto top = creatorRight.removeFromTop (32);
-        recipeTypeBox.setBounds (top.removeFromLeft (128));
-        top.removeFromLeft (8);
-        createFromPromptButton.setBounds (top.removeFromLeft (150));
-        top.removeFromLeft (8);
-        blankProjectButton.setBounds (top.removeFromLeft (128));
-        creatorRight.removeFromTop (22);
-        auto quick = creatorRight.removeFromTop (36);
-        for (auto* button : { &synthStarterButton, &sampleStarterButton, &drumStarterButton, &fxStarterButton })
-        {
-            button->setBounds (quick.removeFromLeft (juce::jmax (82, quick.getWidth() / 4 - 8)));
-            quick.removeFromLeft (8);
-        }
-        outputFolderLabel.setBounds (creatorRight.removeFromTop (24));
 
         bounds.removeFromTop (12);
-        auto demos = bounds.removeFromTop (218).reduced (16, 12);
-        auto demoHeader = demos.removeFromTop (42);
-        demoTitle.setBounds (demoHeader.removeFromTop (22));
-        demoBody.setBounds (demoHeader);
-        demoViewport.setBounds (demos);
+        auto content = bounds.reduced (10, 14);
 
-        const int tileW = 238;
-        const int tileH = juce::jmax (132, demoViewport.getHeight() - demoViewport.getScrollBarThickness() - 4);
-        const int tileGap = 10;
-        int x = 0;
-        for (auto& tile : demoTiles)
+        if (activeTab == ContentTab::Overview)
         {
-            tile->setBounds (x, 0, tileW, tileH);
-            x += tileW + tileGap;
+            auto summaryCard = content.removeFromTop (juce::jmax (120, content.getHeight() / 3)).reduced (4, 2);
+            statusBadge.setBounds (summaryCard.removeFromTop (28).reduced (2));
+            summaryCard.removeFromTop (6);
+            summaryLabel.setBounds (summaryCard);
+
+            content.removeFromTop (14);
+            exportShipLabel.setBounds (content.removeFromTop (18));
+            content.removeFromTop (4);
+            auto shipRow = content.removeFromTop (36);
+            const int shipGap = 8;
+            const int shipW = juce::jmax (120, (shipRow.getWidth() - shipGap * 3) / 4);
+            for (auto* button : { &exportPackButton, &exportVstButton, &publishButton, &bundleButton })
+            {
+                button->setBounds (shipRow.removeFromLeft (shipW).reduced (1));
+                shipRow.removeFromLeft (shipGap);
+            }
+
+            content.removeFromTop (12);
+            exportToolsLabel.setBounds (content.removeFromTop (18));
+            content.removeFromTop (4);
+            auto toolsRow = content.removeFromTop (36);
+            const int toolGap = 8;
+            const int toolW = juce::jmax (108, (toolsRow.getWidth() - toolGap * 4) / 5);
+            for (auto* button : { &refreshButton, &outputFolderButton, &testButton, &customerWizardButton, &productPageButton })
+            {
+                button->setBounds (toolsRow.removeFromLeft (toolW).reduced (1));
+                toolsRow.removeFromLeft (toolGap);
+            }
+
+            outputFolderLabel.setBounds (content.removeFromBottom (24));
         }
-        demoContent.setSize (juce::jmax (demoViewport.getWidth(), x + 4), tileH);
-
-        bounds.removeFromTop (8);
-        checksViewport.setBounds (bounds.reduced (10));
-
-        const int width = juce::jmax (360, checksViewport.getWidth() - checksViewport.getScrollBarThickness() - 6);
-        const int rowH = 86;
-        const int gapY = 8;
-        int y = 0;
-        for (auto& row : checkRows)
+        else if (activeTab == ContentTab::Create)
         {
-            row->setBounds (0, y, width, rowH);
-            y += rowH + gapY;
+            creatorTitle.setBounds (content.removeFromTop (24));
+            creatorBody.setBounds (content.removeFromTop (38));
+            content.removeFromTop (8);
+
+            auto top = content.removeFromTop (32);
+            recipeTypeBox.setBounds (top.removeFromLeft (128));
+            top.removeFromLeft (8);
+            createFromPromptButton.setBounds (top.removeFromLeft (150));
+            top.removeFromLeft (8);
+            blankProjectButton.setBounds (top.removeFromLeft (128));
+
+            content.removeFromTop (10);
+            recipePrompt.setBounds (content.removeFromTop (juce::jmax (120, content.getHeight() / 2)));
+
+            content.removeFromTop (12);
+            auto quick = content.removeFromTop (36);
+            for (auto* button : { &synthStarterButton, &sampleStarterButton, &drumStarterButton, &fxStarterButton })
+            {
+                button->setBounds (quick.removeFromLeft (juce::jmax (96, quick.getWidth() / 4 - 8)));
+                quick.removeFromLeft (8);
+            }
+
+            outputFolderLabel.setBounds (content.removeFromBottom (24));
         }
-        checksContent.setSize (width, juce::jmax (checksViewport.getHeight(), y + 8));
+        else if (activeTab == ContentTab::Demos)
+        {
+            auto demoHeader = content.removeFromTop (42);
+            demoTitle.setBounds (demoHeader.removeFromTop (22));
+            demoBody.setBounds (demoHeader);
+            demoViewport.setBounds (content);
+
+            const int tileW = 238;
+            const int tileH = juce::jmax (132, demoViewport.getHeight() - demoViewport.getScrollBarThickness() - 4);
+            const int tileGap = 10;
+            int x = 0;
+            for (auto& tile : demoTiles)
+            {
+                tile->setBounds (x, 0, tileW, tileH);
+                x += tileW + tileGap;
+            }
+            demoContent.setSize (juce::jmax (demoViewport.getWidth(), x + 4), tileH);
+        }
+        else
+        {
+            doctorTitle.setBounds (content.removeFromTop (24));
+            doctorBody.setBounds (content.removeFromTop (34));
+            content.removeFromTop (8);
+            checksViewport.setBounds (content);
+
+            const int width = juce::jmax (360, checksViewport.getWidth() - checksViewport.getScrollBarThickness() - 6);
+            const int rowH = 86;
+            const int gapY = 8;
+            int y = 0;
+            for (auto& row : checkRows)
+            {
+                row->setBounds (0, y, width, rowH);
+                y += rowH + gapY;
+            }
+            checksContent.setSize (width, juce::jmax (checksViewport.getHeight(), y + 8));
+        }
     }
 }

@@ -401,6 +401,22 @@
       "visible": true
     },
     {
+      "id": "velocitySensitivity",
+      "name": "Vel Sens",
+      "type": "float",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.5,
+      "unit": "",
+      "section": "sample",
+      "displayMode": "continuous",
+      "step": 0.0,
+      "hostAutomatable": true,
+      "midiLearnable": true,
+      "modulatable": true,
+      "visible": true
+    },
+    {
       "id": "samplePitch",
       "name": "Sample Tune",
       "type": "float",

@@ -19,6 +19,7 @@
 #include "SampleMap.h"
 #include "VstExportModule.h"
 #include "ScriptEditorComponent.h"
+#include "ControlNodeEditor.h"
 
 #include <algorithm>
 #include <cmath>
@@ -36,6 +37,12 @@ namespace patchcraft
             return isRuntimeControlElement (element.type)
                 || element.type == ElementType::ValueDisplay
                 || element.type == ElementType::SampleDropZone;
+        }
+
+        static bool isSupportedRuntimeMidiFile (const juce::File& file)
+        {
+            const auto ext = file.getFileExtension().toLowerCase();
+            return file.existsAsFile() && (ext == ".mid" || ext == ".midi");
         }
 
         static bool isScriptUnit (const juce::String& unit)
@@ -651,7 +658,7 @@ namespace patchcraft
         bottomTab = p;
         if (bottomPanel) bottomPanel->setPage (p);
         if (canvasToolbar) canvasToolbar->syncSectionTabFromOwner();
-        if (p == BottomPanel::Page::DSP
+        if (p == BottomPanel::Page::Design
             && ! dspTutorialShownThisSession
             && getStudioTutorialsEnabled())
         {
@@ -714,7 +721,6 @@ namespace patchcraft
             { BottomPanel::Page::OneShotMaker,   "studio-one-shot.png" },
             { BottomPanel::Page::MidiPlayground, "studio-midi.png" },
             { BottomPanel::Page::ArpStudio,      "studio-arp-studio.png" },
-            { BottomPanel::Page::DSP,            "studio-dsp.png" },
             { BottomPanel::Page::Widgets,          "studio-build.png" },
             { BottomPanel::Page::Animation,      "studio-animation-lab.png" },
             { BottomPanel::Page::Branding,       "studio-brand-lab.png" },
@@ -790,6 +796,21 @@ namespace patchcraft
         expansionLibraryPanel = std::make_unique<ExpansionLibraryPanel> (*this);
         layersPanel     = std::make_unique<LayersPanel> (*this);
         scriptEditor    = std::make_unique<ScriptEditorComponent> (project);
+        scriptEditor->onPopOut = [this] { togglePanelFloat (scriptEditor.get(), "pScript"); };
+        scriptEditor->onClose = [this]
+        {
+            showScriptEditorInsteadOfElements = false;
+            leftTabs.setCurrentTabIndex (0, juce::dontSendNotification);
+            if (elementPalette != nullptr)
+                elementPalette->setVisible (true);
+            if (layersPanel != nullptr)
+                layersPanel->setVisible (false);
+            if (assetLibraryPanel != nullptr)
+                assetLibraryPanel->setVisible (false);
+            if (scriptEditor != nullptr)
+                scriptEditor->setVisible (false);
+            resized();
+        };
         canvasEditor    = std::make_unique<CanvasEditor> (*this);
         canvasToolbar   = std::make_unique<CanvasToolbar> (*this, *canvasEditor);
         inspectorPanel  = std::make_unique<InspectorPanel> (*this);
@@ -965,6 +986,21 @@ namespace patchcraft
                 canvasEditor->repaint();
             return;
         }
+        else if (scope == PatchCraftProject::ChangeScope::layout)
+        {
+            refreshTooltipWindowState();
+            topToolbar->setProjectName (project.getManifest().instrumentName,
+                                        project.hasUnsavedChanges());
+            if (inspectorPanel != nullptr)
+                inspectorPanel->refresh();
+            if (layersPanel != nullptr)
+                layersPanel->repaint();
+            if (bottomPanel != nullptr)
+                bottomPanel->repaint();
+            if (canvasEditor != nullptr)
+                canvasEditor->repaint();
+            return;
+        }
 
         projectChanged();
     }
@@ -1011,6 +1047,7 @@ namespace patchcraft
         if (canvasEditor == nullptr)
             return;
 
+        setBottomTab (BottomPanel::Page::Design);
         const auto& canvas = project.getCanvasSize();
         canvasEditor->addElementAt (type,
             { canvas.width / 2 - 48, canvas.height / 2 - 48 },
@@ -1041,6 +1078,7 @@ namespace patchcraft
         if (canvasEditor == nullptr)
             return;
 
+        setBottomTab (BottomPanel::Page::Design);
         const auto& canvas = project.getCanvasSize();
         canvasEditor->addModuleLayout (moduleType, { canvas.width / 2 - 140, canvas.height / 2 - 60 });
     }
@@ -1400,6 +1438,7 @@ namespace patchcraft
         canvasEditor->selectionChanged();
         inspectorPanel->selectionChanged();
         layersPanel->refresh();
+        if (bottomPanel != nullptr) bottomPanel->refreshDesignSelection();
         if (canvasToolbar != nullptr) canvasToolbar->refresh();
     }
 
@@ -1416,6 +1455,7 @@ namespace patchcraft
         canvasEditor->selectionChanged();
         inspectorPanel->selectionChanged();
         layersPanel->refresh();
+        if (bottomPanel != nullptr) bottomPanel->refreshDesignSelection();
         if (canvasToolbar != nullptr) canvasToolbar->refresh();
     }
 
@@ -1430,12 +1470,45 @@ namespace patchcraft
         canvasEditor->selectionChanged();
         inspectorPanel->selectionChanged();
         layersPanel->refresh();
+        if (bottomPanel != nullptr) bottomPanel->refreshDesignSelection();
         if (canvasToolbar != nullptr) canvasToolbar->refresh();
     }
 
     void StudioMainComponent::clearSelection()
     {
         setSelectedElementIds ({});
+    }
+
+    void StudioMainComponent::openControlNodeEditor (const juce::String& requestedElementId)
+    {
+        const auto elementId = requestedElementId.isNotEmpty() ? requestedElementId : selectedElementId;
+        const auto* element = project.getLayout().find (elementId);
+        const bool bindable = element != nullptr
+            && (element->type == ElementType::Knob || element->type == ElementType::Slider
+                || element->type == ElementType::Button || element->type == ElementType::Toggle
+                || element->type == ElementType::Dropdown || element->type == ElementType::ValueDisplay
+                || element->type == ElementType::MacroControl || element->type == ElementType::SampleDropZone);
+        if (! bindable)
+        {
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon,
+                                                    "Control Node Editor",
+                                                    "Select a knob, slider, button, dropdown, value display, macro, or drop zone first.");
+            return;
+        }
+
+        setSelectedElementId (elementId);
+        auto* content = new ControlNodeEditor (*this, elementId);
+        juce::DialogWindow::LaunchOptions options;
+        options.dialogTitle = "Sound Connection - " + (element->label.isNotEmpty() ? element->label : element->id);
+        options.dialogBackgroundColour = PatchCraftLookAndFeel::bg();
+        options.escapeKeyTriggersCloseButton = true;
+        options.useNativeTitleBar = true;
+        options.resizable = true;
+        options.useBottomRightCornerResizer = true;
+        options.componentToCentreAround = this;
+        options.content.setOwned (content);
+        if (auto* window = options.launchAsync())
+            window->setResizeLimits (760, 560, 1600, 1100);
     }
 
     void StudioMainComponent::selectAllElements()
@@ -1524,7 +1597,9 @@ namespace patchcraft
         leftCollapseButton.setVisible (designTab);
         leftPopButton.setVisible  (designTab && ! leftPanelCollapsed);
 
-        elementPalette->setVisible (elementsFloating || (designTab && ! leftPanelCollapsed && ! showLibraryInsteadOfElements && ! showLayersInsteadOfElements && ! showScriptEditorInsteadOfElements));
+        // pScript now docks across the bottom of the canvas (lower-half window),
+        // so the Elements palette stays available in the left column alongside it.
+        elementPalette->setVisible (elementsFloating || (designTab && ! leftPanelCollapsed && ! showLibraryInsteadOfElements && ! showLayersInsteadOfElements));
         assetLibraryPanel->setVisible (libraryFloating || brandLibraryDocked || sampleLibraryDocked || (designTab && ! leftPanelCollapsed && showLibraryInsteadOfElements));
         expansionLibraryPanel->setVisible (packsFloating);
         if (scriptEditor != nullptr)
@@ -1572,8 +1647,6 @@ namespace patchcraft
                     expansionLibraryPanel->setBounds (leftCol);
                 if (! layersFloating)
                     layersPanel->setBounds (leftCol);
-                if (scriptEditor != nullptr && ! isPanelFloating (scriptEditor.get()))
-                    scriptEditor->setBounds (leftCol);
                 leftResizeHandle = r.removeFromLeft (5);
             }
 
@@ -1607,6 +1680,15 @@ namespace patchcraft
                 rightResizeHandle = r.removeFromRight (5);
             }
 
+            // pScript editor docks as a resizable lower-half panel below the canvas.
+            if (scriptEditor != nullptr && leftScriptEditorDocked && ! isPanelFloating (scriptEditor.get()))
+            {
+                const int dockH = juce::jlimit (200, juce::jmax (200, r.getHeight() - 140),
+                                                juce::roundToInt (r.getHeight() * 0.5f));
+                auto dock = r.removeFromBottom (dockH);
+                scriptEditor->setBounds (dock);
+            }
+
             canvasEditor->setBounds (r);
             canvasEditor->refreshZoomForBounds();
         }
@@ -1629,7 +1711,7 @@ namespace patchcraft
 
     juce::StringArray StudioMainComponent::getMenuBarNames()
     {
-        return { "File", "Design", "Window", "Store", "Help" };
+        return { "File", "Design", "Tools", "Window", "Store", "Help" };
     }
 
     juce::PopupMenu StudioMainComponent::getMenuForIndex (int, const juce::String& menuName)
@@ -1798,6 +1880,20 @@ namespace patchcraft
             menu.addItem (3040, "Show Grid", true, canvasEditor != nullptr && canvasEditor->isGridVisible());
             menu.addItem (3041, "Show Rulers", true, canvasEditor != nullptr && canvasEditor->areRulersVisible());
         }
+        else if (menuName == "Tools")
+        {
+            const auto* selected = project.getLayout().find (selectedElementId);
+            const bool bindable = selected != nullptr
+                && (selected->type == ElementType::Knob || selected->type == ElementType::Slider
+                    || selected->type == ElementType::Button || selected->type == ElementType::Toggle
+                    || selected->type == ElementType::Dropdown || selected->type == ElementType::ValueDisplay
+                    || selected->type == ElementType::MacroControl || selected->type == ElementType::SampleDropZone);
+            menu.addItem (6000, "Open Control Node Editor...", bindable);
+            menu.addItem (6001, "Add Sound Control + Open Node Editor");
+            menu.addSeparator();
+            menu.addItem (4013, "Full Screen Sample Mapper Zones");
+            menu.addItem (4010, "Animation Lab");
+        }
         else if (menuName == "Window")
         {
             juce::PopupMenu zoomMenu;
@@ -1872,6 +1968,18 @@ namespace patchcraft
             case 1010: juce::JUCEApplication::getInstance()->systemRequestedQuit(); break;
             case 5000: setBottomTab (BottomPanel::Page::Expansions); break;
             case 5001: juce::URL ("https://plugin.club").launchInDefaultBrowser(); break;
+            case 6000: openControlNodeEditor(); break;
+            case 6001:
+            {
+                addElementToCanvas (ElementType::Knob);
+                juce::Component::SafePointer<StudioMainComponent> safe (this);
+                juce::MessageManager::callAsync ([safe]
+                {
+                    if (auto* component = safe.getComponent())
+                        component->openControlNodeEditor();
+                });
+                break;
+            }
             case 2998: undo(); break;
             case 2999: redo(); break;
             case 3003: copySelectedElements (true); break;
@@ -1941,7 +2049,7 @@ namespace patchcraft
             case 4006: setBottomTab (BottomPanel::Page::Dashboard); break;
             case 4007: setBottomTab (BottomPanel::Page::Design); break;
             case 4008: setBottomTab (BottomPanel::Page::ArpStudio); break;
-            case 4009: setBottomTab (BottomPanel::Page::DSP); break;
+            case 4009: setBottomTab (BottomPanel::Page::Design); break;
             case 4010: setBottomTab (BottomPanel::Page::Animation); break;
             case 4011: setBottomTab (BottomPanel::Page::Export); break;
             case 4014: setBottomTab (BottomPanel::Page::Expansions); break;
@@ -1984,8 +2092,8 @@ namespace patchcraft
 
     void StudioMainComponent::showDspBuilderTutorial()
     {
-        if (bottomTab != BottomPanel::Page::DSP)
-            setBottomTab (BottomPanel::Page::DSP);
+        if (bottomTab != BottomPanel::Page::Design)
+            setBottomTab (BottomPanel::Page::Design);
 
         if (bottomPanel != nullptr)
             bottomPanel->showDspBuilderTutorial();
@@ -2056,6 +2164,15 @@ namespace patchcraft
         selectedElementId.clear();
         selectedElementIds.clear();
         project.notifyChanged();
+    }
+
+    void StudioMainComponent::loadArpStepSequencerTemplate()
+    {
+        project.resetToArpStepSequencerTemplate();
+        selectedElementId.clear();
+        selectedElementIds.clear();
+        refreshAllPanels();
+        setBottomTab (BottomPanel::Page::Design);
     }
 
     void StudioMainComponent::openProject()
@@ -2614,8 +2731,41 @@ namespace patchcraft
 
     void StudioMainComponent::importSampleFiles (const juce::Array<juce::File>& files,
                                                  bool switchToMapper,
-                                                 bool spanMappedRoots)
+                                                 bool spanMappedRoots,
+                                                 juce::String sampleMappingMode,
+                                                 int targetNote,
+                                                 int targetPadIndex)
     {
+        sampleMappingMode = sampleMappingMode.trim().toLowerCase();
+        targetNote = juce::jlimit (-1, 127, targetNote);
+        targetPadIndex = juce::jlimit (-1, 63, targetPadIndex);
+        const bool requestedPadMode = sampleMappingMode == "pads" || targetPadIndex >= 0;
+        if (requestedPadMode)
+        {
+            if (targetPadIndex < 0 && targetNote >= 0)
+                targetPadIndex = juce::jlimit (0, 63, targetNote - 36);
+
+            if (targetNote < 0 && targetPadIndex >= 0)
+                targetNote = juce::jlimit (0, 127, 36 + targetPadIndex);
+
+            if (targetNote < 0 && targetPadIndex < 0)
+            {
+                int nextPadIndex = 0;
+                for (const auto& zone : project.getSampleMap().getZones())
+                    if (zone.padIndex >= 0)
+                        nextPadIndex = juce::jmax (nextPadIndex, zone.padIndex + 1);
+
+                targetPadIndex = juce::jlimit (0, 63, nextPadIndex);
+                targetNote = juce::jlimit (0, 127, 36 + targetPadIndex);
+            }
+        }
+
+        const bool hasTargetNote = targetNote >= 0;
+        const bool hasTargetPad = targetPadIndex >= 0;
+        const bool padMode = requestedPadMode || hasTargetPad;
+        const bool keyboardMode = sampleMappingMode == "keyboard";
+        const bool zoneMode = sampleMappingMode == "zone";
+
         int baseNote = 24; // C0 fallback when filenames/audio do not expose pitch.
         constexpr int zoneSize = 1;
         bool anyParsedRoot = false;
@@ -2680,11 +2830,79 @@ namespace patchcraft
                 zone.roundRobinIndex = ++rootRoundRobinIndex[zone.rootNote];
             }
         }
+
+        if (hasTargetNote)
+        {
+            for (int i = 0; i < (int) importedZones.size(); ++i)
+            {
+                auto& zone = importedZones[(size_t) i];
+                const int pad = hasTargetPad ? juce::jlimit (0, 63, targetPadIndex + i) : -1;
+                const int note = hasTargetPad
+                    ? juce::jlimit (0, 127, targetNote + i)
+                    : juce::jlimit (0, 127, targetNote + (keyboardMode ? i : 0));
+
+                zone.rootNote = note;
+                zone.lowNote = keyboardMode && ! zoneMode ? note : note;
+                zone.highNote = keyboardMode && ! zoneMode ? note : note;
+                zone.lowVelocity = 1;
+                zone.highVelocity = 127;
+                zone.oneShot = padMode || zoneMode;
+                zone.loopEnabled = false;
+
+                if (padMode)
+                {
+                    zone.padIndex = pad;
+                    zone.padLabel = zone.padLabel.isNotEmpty()
+                        ? zone.padLabel
+                        : juce::File (zone.samplePath).getFileNameWithoutExtension();
+                    zone.group = "Drum Pads";
+                    zone.roundRobinGroup = 0;
+                    zone.roundRobinIndex = 0;
+                }
+                else
+                {
+                    zone.padIndex = -1;
+                    if (zone.group.isEmpty())
+                        zone.group = zoneMode ? "Drop Zones" : "Keyboard";
+                }
+            }
+            anyParsedRoot = false;
+            spanMappedRoots = false;
+        }
+
         if (! importedZones.empty())
         {
             project.performSampleMapEdit ("Import samples",
-                [zonesToAdd = importedZones, shouldAutoMap = anyParsedRoot && spanMappedRoots] (SampleMap& map)
+                [zonesToAdd = importedZones,
+                 shouldAutoMap = anyParsedRoot && spanMappedRoots,
+                 hasTargetNote,
+                 hasTargetPad,
+                 padMode] (SampleMap& map)
                 {
+                    if (hasTargetNote)
+                    {
+                        auto& existing = map.getZones();
+                        juce::Array<int> targetNotes;
+                        juce::Array<int> targetPads;
+                        for (const auto& zone : zonesToAdd)
+                        {
+                            targetNotes.addIfNotAlreadyThere (zone.rootNote);
+                            if (padMode && zone.padIndex >= 0)
+                                targetPads.addIfNotAlreadyThere (zone.padIndex);
+                        }
+
+                        existing.erase (std::remove_if (existing.begin(), existing.end(),
+                            [&] (const SampleZoneDef& zone)
+                            {
+                                if (hasTargetPad && targetPads.contains (zone.padIndex))
+                                    return true;
+                                for (int note : targetNotes)
+                                    if (note == zone.rootNote || (note >= zone.lowNote && note <= zone.highNote))
+                                        return true;
+                                return false;
+                            }), existing.end());
+                    }
+
                     for (const auto& zone : zonesToAdd)
                         map.add (zone);
                     if (shouldAutoMap)
@@ -2698,6 +2916,102 @@ namespace patchcraft
 
         if (! importedZones.empty() && switchToMapper)
             setBottomTab (BottomPanel::Page::Samples);
+    }
+
+    bool StudioMainComponent::assignMidiFilesToSampleMap (const juce::Array<juce::File>& files,
+                                                          juce::String& report,
+                                                          int targetNote,
+                                                          int targetPadIndex)
+    {
+        juce::Array<juce::File> midiFiles;
+        for (const auto& file : files)
+            if (isSupportedRuntimeMidiFile (file))
+                midiFiles.add (file);
+
+        if (midiFiles.isEmpty())
+        {
+            report = "No MIDI files assigned. Drop .mid or .midi files.";
+            return false;
+        }
+
+        targetNote = juce::jlimit (-1, 127, targetNote);
+        targetPadIndex = juce::jlimit (-1, 63, targetPadIndex);
+
+        const auto& currentZones = project.getSampleMap().getZones();
+        if (targetNote < 0 && currentZones.size() == 1)
+            targetNote = currentZones.front().rootNote;
+
+        if (targetNote < 0 && targetPadIndex < 0)
+        {
+            report = "Drop MIDI on a pad, key, or sample drop zone so PatchCraft knows which sample zone should play it.";
+            return false;
+        }
+
+        int assigned = 0;
+        int missed = 0;
+        juce::StringArray assignedTargets;
+
+        project.performSampleMapEdit ("Assign MIDI to sample zones",
+            [&] (SampleMap& map)
+            {
+                auto& zones = map.getZones();
+                for (int i = 0; i < midiFiles.size(); ++i)
+                {
+                    const auto& file = midiFiles.getReference (i);
+                    const int pad = targetPadIndex >= 0 ? juce::jlimit (0, 63, targetPadIndex + i) : -1;
+                    const int note = targetNote >= 0 ? juce::jlimit (0, 127, targetNote + i) : -1;
+
+                    auto matchZone = [&] () -> SampleZoneDef*
+                    {
+                        for (auto& zone : zones)
+                        {
+                            if (pad >= 0 && zone.padIndex == pad)
+                                return &zone;
+                            if (note >= 0 && note >= zone.lowNote && note <= zone.highNote)
+                                return &zone;
+                            if (note >= 0 && zone.rootNote == note)
+                                return &zone;
+                        }
+                        return nullptr;
+                    };
+
+                    if (auto* zone = matchZone())
+                    {
+                        zone->midiPath = file.getFullPathName();
+                        zone->midiPlaybackMode = pad >= 0 ? "drum" : "trigger";
+                        zone->midiHostSync = true;
+                        zone->midiTranspose = 0;
+                        zone->midiVelocityAmount = 1.0f;
+                        ++assigned;
+                        const int labelNote = note >= 0 ? note : zone->rootNote;
+                        assignedTargets.add (juce::MidiMessage::getMidiNoteName (labelNote, true, true, 4));
+                    }
+                    else
+                    {
+                        ++missed;
+                    }
+                }
+            });
+
+        if (assigned <= 0)
+        {
+            report = "MIDI was not assigned because no sample zone exists at that target. Drop a sample on the pad/key first.";
+            return false;
+        }
+
+        if (project.getEngineType() != "sample")
+            project.setEngineType ("sample");
+        else
+            project.notifyChanged();
+
+        report = "Assigned " + juce::String (assigned) + " MIDI file"
+               + (assigned == 1 ? "" : "s")
+               + " to " + assignedTargets.joinIntoString (", ") + ".";
+        if (missed > 0)
+            report += " " + juce::String (missed) + " file"
+                   + (missed == 1 ? "" : "s")
+                   + " had no matching sample zone.";
+        return true;
     }
 
     void StudioMainComponent::importBackground()
@@ -3635,13 +3949,34 @@ namespace patchcraft
         scaleX = juce::jlimit (0.05f, 20.0f, scaleX);
         scaleY = juce::jlimit (0.05f, 20.0f, scaleY);
 
+        juce::StringArray expandedIds;
+        auto addWithChildren = [&] (auto& self, const juce::String& id) -> void
+        {
+            if (id.isEmpty() || expandedIds.contains (id))
+                return;
+
+            if (auto* el = project.getLayout().find (id); el != nullptr && ! el->locked && el->type != ElementType::Group)
+            {
+                expandedIds.add (id);
+                for (const auto& child : project.getLayout().getAll())
+                    if (child.containerId == id)
+                        self (self, child.id);
+            }
+        };
+
+        for (const auto& id : ids)
+            addWithChildren (addWithChildren, id);
+
+        if (expandedIds.isEmpty())
+            return;
+
         int left = std::numeric_limits<int>::max();
         int top = std::numeric_limits<int>::max();
         int right = std::numeric_limits<int>::min();
         int bottom = std::numeric_limits<int>::min();
         bool found = false;
 
-        for (const auto& id : ids)
+        for (const auto& id : expandedIds)
         {
             if (auto* el = project.getLayout().find (id); el != nullptr && ! el->locked)
             {
@@ -3661,7 +3996,7 @@ namespace patchcraft
 
         project.performLayoutEdit ("Scale selection", [&] (LayoutModel& m)
         {
-            for (const auto& id : ids)
+            for (const auto& id : expandedIds)
             {
                 if (auto* el = m.find (id); el != nullptr && ! el->locked)
                 {
@@ -3819,8 +4154,10 @@ namespace patchcraft
 
     void StudioMainComponent::createPscriptHandlerForSelectedControl()
     {
-        const LayoutElement* selected = nullptr;
-        const ParameterDef* source = nullptr;
+        // Gather every selected control that maps to a real parameter so a single
+        // action can attach handlers to one OR many assets at once (bulk attach).
+        struct Attachable { const LayoutElement* element; const ParameterDef* source; };
+        std::vector<Attachable> attachables;
 
         for (const auto& id : selectedElementIds)
         {
@@ -3830,29 +4167,31 @@ namespace patchcraft
                 && element->parameterId.isNotEmpty())
             {
                 if (auto* parameter = project.getParameters().find (element->parameterId))
-                {
-                    selected = element;
-                    source = parameter;
-                    break;
-                }
+                    attachables.push_back ({ element, parameter });
             }
         }
 
-        if (selected == nullptr || source == nullptr)
+        if (attachables.empty())
         {
             juce::AlertWindow::showMessageBoxAsync (
                 juce::AlertWindow::WarningIcon,
                 "pScript needs a mapped control",
-                "Select a knob, slider, button, dropdown, value display, or sample drop zone that is assigned to a real parameter, then run this action again.");
+                "Select one or more knobs, sliders, buttons, dropdowns, value displays, or sample drop zones assigned to real parameters, then run this action again.");
             return;
         }
 
-        const auto* target = choosePscriptMacroTarget (project.getParameters(), source->id);
-        auto snippet = buildPscriptHandlerSnippet (*selected, *source, target);
+        juce::String combined;
+        for (const auto& a : attachables)
+        {
+            const auto* target = choosePscriptMacroTarget (project.getParameters(), a.source->id);
+            if (combined.isNotEmpty())
+                combined << "\n";
+            combined << buildPscriptHandlerSnippet (*a.element, *a.source, target);
+        }
 
         focusPscriptPanel();
         if (scriptEditor != nullptr)
-            scriptEditor->insertSnippetAndCompile (snippet);
+            scriptEditor->insertSnippetAndCompile (combined);
     }
 
     namespace
@@ -4349,12 +4688,11 @@ namespace patchcraft
 
     void StudioMainComponent::addArpBlock()
     {
-        // Switch the bottom workspace to DSP and ask the panel to drop in
-        // an arpeggiator block. setBottomTab handles the page transition
-        // (and its tutorial / sidebar bookkeeping); BottomPanel::addArpBlock
-        // forwards to DspPage::addArpBlock to do the actual graph mutation.
+        if (bottomPanel)
+            bottomPanel->addArpBlock();
         setBottomTab (BottomPanel::Page::DSP);
-        if (bottomPanel) bottomPanel->addArpBlock();
+        if (canvasToolbar)
+            canvasToolbar->syncSectionTabFromOwner();
     }
 
     void StudioMainComponent::exportVstPlugin()

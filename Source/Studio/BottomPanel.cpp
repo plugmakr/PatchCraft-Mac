@@ -8,11 +8,11 @@
 #include "KeyzonesComponent.h"
 #include "VelocityMapViewer.h"
 #include "ParametersComponent.h"
-#include "ControlBuilderComponent.h"
 #include "PresetsComponent.h"
+#include "ControlBuilderComponent.h"
+#include "ControlNodeEditor.h"
 #include "TestPage.h"
 #include "BrandingLabPage.h"
-#include "DspPage.h"
 #include "MidiPlaygroundPage.h"
 #include "OneShotMakerPage.h"
 #include "WorkflowPage.h"
@@ -20,6 +20,8 @@
 #include "LaunchCenterPage.h"
 #include "ExpansionsPage.h"
 #include "AnimationLabPage.h"
+#include "ArpeggiatorRuntime.h"
+#include "PatchCraftProject.h"
 
 namespace patchcraft
 {
@@ -42,17 +44,14 @@ namespace patchcraft
         addChildComponent (*projectBrowserPage);
 
         // Design page -------------------------------------------------------
-        designDspHeader.setText ("DSP QUICK EDIT", juce::dontSendNotification);
+        designDspHeader.setText ("CONTROL BINDINGS", juce::dontSendNotification);
+        designDspHeader.setTooltip ("Select a layout control and wire it to sound, motion, MIDI, effects, and output parameters.");
         designDspHeader.setFont (juce::Font (11.0f, juce::Font::bold));
-        designDspHeader.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::text());
+        designDspHeader.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
         addAndMakeVisible (designDspHeader);
 
-        // The Presets list lives in the right tab panel (next to Layers and
-        // Inspector) now, so the bottom panel's Design page is just the DSP
-        // quick-edit grid at full width.
         parameters = std::make_unique<ParametersComponent> (owner);
-        designDspPage = std::make_unique<DspPage> (owner.getProject(), true, &owner);
-        addAndMakeVisible (*designDspPage);
+        addChildComponent (*parameters);
 
         // Sample Mapper page ------------------------------------------------
         styleSubTab (btnMapperMain,     8810);
@@ -107,11 +106,6 @@ namespace patchcraft
         testPage = std::make_unique<TestPage> (owner);
         addChildComponent (*testPage);
 
-        // DSP page -----------------------------------------------------------
-        dspPage = std::make_unique<DspPage> (owner.getProject(), false, &owner);
-        dspPage->onPatchSectionChanged = [this] { owner.refreshCanvasToolbar(); };
-        addChildComponent (*dspPage);
-
         // Build page ---------------------------------------------------------
         builder = std::make_unique<ControlBuilderComponent> (owner);
         addChildComponent (*builder);
@@ -132,6 +126,10 @@ namespace patchcraft
         expansionsPage = std::make_unique<ExpansionsPage> (owner);
         addChildComponent (*expansionsPage);
 
+        // Global Graph View --------------------------------------------------
+        globalGraphView = std::make_unique<ControlNodeEditor> (owner, "");
+        addChildComponent (*globalGraphView);
+
         rebuildPageVisibility();
     }
 
@@ -139,15 +137,26 @@ namespace patchcraft
 
     void BottomPanel::setPage (Page p)
     {
-        if (currentPage == p) return;
+        const bool enterCircles = (p == Page::ArpStudio);
+        if (enterCircles)
+            p = Page::MidiPlayground;
+
+        const bool wasPerform = (currentPage == Page::MidiPlayground || currentPage == Page::ArpStudio);
+        const bool toPerform = (p == Page::MidiPlayground);
+
+        if (currentPage == p && ! enterCircles)
+            return;
+
         currentPage = p;
+
         if (midiPlayground)
         {
-            if (p == Page::ArpStudio)
+            if (enterCircles)
                 midiPlayground->showArpStudioMode();
-            else if (p == Page::MidiPlayground)
+            else if (toPerform && ! wasPerform)
                 midiPlayground->showPlaygroundMode();
         }
+
         rebuildPageVisibility();
     }
 
@@ -178,28 +187,63 @@ namespace patchcraft
 
     juce::String BottomPanel::getDspPatchSectionId() const
     {
-        return dspPage != nullptr ? dspPage->getCurrentPatchSectionId() : juce::String ("source");
+        return "source";
     }
 
     juce::String BottomPanel::getDspPatchSectionLabel() const
     {
-        return dspPage != nullptr ? dspPage->getCurrentPatchSectionLabel() : juce::String ("Source");
+        return "Source";
     }
 
     void BottomPanel::showDspBuilderTutorial()
     {
-        currentPage = Page::DSP;
-        rebuildPageVisibility();
-        if (dspPage != nullptr)
-            dspPage->beginGuidedTutorial();
+        setPage (Page::DSP);
     }
 
     void BottomPanel::addArpBlock()
     {
-        currentPage = Page::DSP;
-        rebuildPageVisibility();
-        if (dspPage != nullptr)
-            dspPage->addArpBlock();
+        auto& graph = owner.getProject().getDspGraph();
+        bool hasArp = false;
+        for (const auto& block : graph.blocks)
+        {
+            if (block.enabled && ArpeggiatorRuntime::isArpBlock (block))
+            {
+                hasArp = true;
+                break;
+            }
+        }
+
+        if (! hasArp)
+        {
+            DspBlock arpBlock;
+            arpBlock.id = "arp_" + juce::String (juce::Random::getSystemRandom().nextInt (99999));
+            arpBlock.section = "mod";
+            arpBlock.type = "arp";
+            arpBlock.name = "Arpeggiator";
+            arpBlock.enabled = true;
+            arpBlock.values = {
+                { "rate", 1.0f },
+                { "sync", 1.0f },
+                { "arpSteps", 8.0f },
+                { "arpGate", 0.55f },
+                { "arpPattern", 0.0f },
+                { "arpOctaves", 2.0f },
+                { "arpNote0", 0.0f },
+                { "arpNote1", 4.0f },
+                { "arpNote2", 7.0f },
+                { "arpNote3", 12.0f },
+                { "arpNote4", 7.0f },
+                { "arpNote5", 4.0f },
+                { "arpNote6", 10.0f },
+                { "arpNote7", 14.0f }
+            };
+            graph.blocks.push_back (std::move (arpBlock));
+            owner.getProject().notifyChanged();
+        }
+
+        setPage (Page::DSP);
+        if (globalGraphView)
+            globalGraphView->rebuild();
     }
 
     void BottomPanel::refresh()
@@ -215,13 +259,17 @@ namespace patchcraft
             velocityMap->setSelectedZone (sampleMapper != nullptr ? sampleMapper->getSelectedZoneIndex() : -1);
         }
         if (oneShotMaker) oneShotMaker->refresh();
-        if (designDspPage) designDspPage->refresh();
         if (midiPlayground) midiPlayground->refresh();
-        if (dspPage) dspPage->refresh();
         if (animationLab) animationLab->refresh();
         if (launchCenter) launchCenter->refresh();
         if (expansionsPage) expansionsPage->refresh();
         repaint();
+    }
+
+    void BottomPanel::refreshDesignSelection()
+    {
+        if (parameters != nullptr)
+            parameters->refresh();
     }
 
     void BottomPanel::paint (juce::Graphics& g)
@@ -234,27 +282,25 @@ namespace patchcraft
 
     void BottomPanel::rebuildPageVisibility()
     {
-        const bool workflow = currentPage == Page::Dashboard;
+        const bool workflow  = currentPage == Page::Dashboard;
         const bool projectBrowser = currentPage == Page::ProjectBrowser;
-        const bool design  = currentPage == Page::Design;
-        const bool mapper  = currentPage == Page::Samples;
-        const bool oneShot = currentPage == Page::OneShotMaker;
-        const bool midi    = currentPage == Page::MidiPlayground || currentPage == Page::ArpStudio;
-        const bool dsp     = currentPage == Page::DSP;
-        const bool build   = currentPage == Page::Widgets;
+        const bool design    = currentPage == Page::Design;
+        const bool mapper    = currentPage == Page::Samples;
+        const bool oneShot   = currentPage == Page::OneShotMaker;
+        const bool midi      = currentPage == Page::MidiPlayground || currentPage == Page::ArpStudio;
+        const bool test      = currentPage == Page::Test;
+        const bool build     = currentPage == Page::Widgets;
         const bool animation = currentPage == Page::Animation;
-        const bool launch  = currentPage == Page::Export;
-        const bool expansions = currentPage == Page::Expansions;
-        // "Test" now routes to the Brand Lab — the developer's live test
-        // environment is the same surface as their branding workspace.
-        const bool brand   = currentPage == Page::Branding;
-        const bool test    = currentPage == Page::Test;
+        const bool brand     = currentPage == Page::Branding;
+        const bool launch    = currentPage == Page::Export;
+        const bool expansions= currentPage == Page::Expansions;
+        const bool graph     = currentPage == Page::DSP;
 
         if (workflowPage) workflowPage->setVisible (workflow);
         if (projectBrowserPage) projectBrowserPage->setVisible (projectBrowser);
         designDspHeader     .setVisible (design);
-        if (parameters) parameters->setVisible (false);
-        if (designDspPage) designDspPage->setVisible (design);
+        if (parameters) parameters->setVisible (design);
+        if (globalGraphView) globalGraphView->setVisible (graph);
 
         btnMapperMain    .setVisible (mapper);
         btnMapperKeyzones.setVisible (mapper);
@@ -271,7 +317,6 @@ namespace patchcraft
         if (oneShotMaker) oneShotMaker->setVisible (oneShot);
         if (midiPlayground) midiPlayground->setVisible (midi);
         if (testPage) testPage->setVisible (test);
-        if (dspPage) dspPage->setVisible (dsp);
         if (launchCenter) launchCenter->setVisible (launch);
         if (expansionsPage) expansionsPage->setVisible (expansions);
 
@@ -281,7 +326,13 @@ namespace patchcraft
         {
             brandingLab->setVisible (brand);
             if (brand)
+            {
                 brandingLab->refresh();
+                // Start the live engine + hardware MIDI callbacks immediately so a
+                // connected MIDI keyboard triggers sound and lights the on-screen
+                // keys without first requiring a mouse click in the preview.
+                brandingLab->activateTest();
+            }
             else
                 brandingLab->deactivateTest();
         }
@@ -300,8 +351,6 @@ namespace patchcraft
             velocityMap->setSelectedZone (sampleMapper != nullptr ? sampleMapper->getSelectedZoneIndex() : -1);
             velocityMap->setVisible (activeMapperSubTab == 2);
         }
-        resized();
-        repaint();
     }
 
     void BottomPanel::resized()
@@ -322,13 +371,17 @@ namespace patchcraft
                 break;
             }
 
+            case Page::DSP:
+            {
+                if (globalGraphView) globalGraphView->setBounds (r);
+                break;
+            }
+
             case Page::Design:
             {
-                // Presets now live in the right tab panel, so the DSP quick
-                // edit gets the full width of the bottom panel.
                 auto full = r.reduced (4);
                 designDspHeader.setBounds (full.removeFromTop (22));
-                if (designDspPage) designDspPage->setBounds (full);
+                if (parameters) parameters->setBounds (full);
                 break;
             }
 
@@ -365,14 +418,7 @@ namespace patchcraft
 
             case Page::Test:
             {
-                // Test page is now folded into the Brand Lab — route the
                 if (testPage) testPage->setBounds (r);
-                break;
-            }
-
-            case Page::DSP:
-            {
-                if (dspPage) dspPage->setBounds (r);
                 break;
             }
 

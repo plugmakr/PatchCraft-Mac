@@ -51,6 +51,7 @@ namespace patchcraft
         void newProject();
         void openProject();
         void loadFactoryDemo (const juce::File& demoPackFolder);
+        void loadArpStepSequencerTemplate();
         void saveProject();
         void saveProjectAs();
         void saveCurrentDspPatch();
@@ -60,7 +61,14 @@ namespace patchcraft
         void importSamples();
         void importSampleFiles (const juce::Array<juce::File>& files,
                                 bool switchToMapper = true,
-                                bool spanMappedRoots = true);
+                                bool spanMappedRoots = true,
+                                juce::String sampleMappingMode = {},
+                                int targetNote = -1,
+                                int targetPadIndex = -1);
+        bool assignMidiFilesToSampleMap (const juce::Array<juce::File>& files,
+                                         juce::String& report,
+                                         int targetNote = -1,
+                                         int targetPadIndex = -1);
         void toggleSampleLibraryDrawerForSamples();
         void showSampleLibraryDrawer (bool shouldShow);
         void importBackground();
@@ -134,6 +142,7 @@ namespace patchcraft
         bool applyBrandingAsset (const juce::String& category, const juce::File& file);
         void selectAllElements();
         void openSampleMapperZoneManager();
+        void openControlNodeEditor (const juce::String& elementId = {});
         void openProjectFolder (const juce::File& folder);
         void addRecentProject (const juce::File& folder);
         juce::StringArray getRecentProjectPaths() const;
@@ -241,7 +250,7 @@ namespace patchcraft
 
         bool sampleLibraryDrawerOpen = false;
         bool dspTutorialShownThisSession = false;
-        int leftPanelWidth = 240;
+        int leftPanelWidth = 320;
         int inspectorPanelWidth = 300;
         bool leftPanelCollapsed  = false;
         bool rightPanelCollapsed = false;

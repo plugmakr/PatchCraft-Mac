@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "instrumentName": "Modular Motion FX",
   "creator": "AudiCode",
-  "description": "A creative FX demo with modular motion, tone, dynamics, destruction, and space controls.",
+  "description": "Creative FX chain with motion, tone, dynamics, destruction, and space \u2014 studio-safe gain staging.",
   "category": "Creative FX",
   "engine": "fx",
   "backgroundImage": "assets/background-clean.png",

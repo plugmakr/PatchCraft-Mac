@@ -21,8 +21,11 @@ namespace patchcraft
     private:
         StudioMainComponent& owner;
 
+        juce::TextEditor searchBox;
         juce::Viewport viewport;
         juce::Component scrollContent;
+
+        void applySearchFilter();
 
         struct Row : public juce::Component
         {
@@ -37,6 +40,7 @@ namespace patchcraft
             juce::String iconKey;
             std::function<void()> onClick;
             bool hover = false;
+            bool matchesFilter = true;
         };
 
         struct Section : public juce::Component
@@ -47,11 +51,14 @@ namespace patchcraft
             void mouseUp (const juce::MouseEvent&) override;
             void addRow (std::unique_ptr<Row>);
             int  getNeededHeight() const;
+            // Returns the number of rows that match the (case-insensitive) query.
+            int  applyFilter (const juce::String& query);
 
             juce::String title;
             juce::OwnedArray<Row> rows;
             std::function<void()> onToggle;
             bool open = true;
+            juce::String activeFilter;
         };
 
         Section controlSection { "Sound + Control Elements" };

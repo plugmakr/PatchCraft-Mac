@@ -1,4 +1,5 @@
 #include "PatchCraftTypes.h"
+#include "DspModuleRegistry.h"
 
 #include <cmath>
 
@@ -419,6 +420,8 @@ namespace patchcraft
             case ElementType::PadGrid:      return "padGrid";
             case ElementType::DrumGrid:     return "drumGrid";
             case ElementType::ArpLane:      return "arpLane";
+            case ElementType::SequencerLane: return "sequencerLane";
+            case ElementType::PianoRoll:    return "pianoRoll";
             case ElementType::Mixer:        return "mixer";
             case ElementType::MacroControl: return "macroControl";
             case ElementType::ModMatrix:    return "modMatrix";
@@ -461,6 +464,8 @@ namespace patchcraft
         if (s == "padGrid")      return ElementType::PadGrid;
         if (s == "drumGrid")     return ElementType::DrumGrid;
         if (s == "arpLane")      return ElementType::ArpLane;
+        if (s == "sequencerLane") return ElementType::SequencerLane;
+        if (s == "pianoRoll")    return ElementType::PianoRoll;
         if (s == "mixer")        return ElementType::Mixer;
         if (s == "macroControl") return ElementType::MacroControl;
         if (s == "modMatrix")    return ElementType::ModMatrix;
@@ -504,6 +509,8 @@ namespace patchcraft
             case ElementType::PadGrid:      return "Pad Grid";
             case ElementType::DrumGrid:     return "Drum Grid";
             case ElementType::ArpLane:      return "Arp Lane";
+            case ElementType::SequencerLane: return "Sequencer Lane";
+            case ElementType::PianoRoll:    return "Piano Roll";
             case ElementType::Mixer:        return "Mixer";
             case ElementType::MacroControl: return "Macro Control";
             case ElementType::ModMatrix:    return "Mod Matrix";
@@ -559,6 +566,7 @@ namespace patchcraft
             || type == ElementType::PadGrid
             || type == ElementType::DrumGrid
             || type == ElementType::ArpLane
+            || type == ElementType::PianoRoll
             || type == ElementType::Mixer
             || type == ElementType::MacroControl
             || type == ElementType::ModMatrix
@@ -664,6 +672,13 @@ namespace patchcraft
             obj->setProperty ("drumSteps",   drumSteps);
             obj->setProperty ("drumPattern", drumPattern);
         }
+        if (type == ElementType::PianoRoll)
+        {
+            obj->setProperty ("pianoRollSteps",        pianoRollSteps);
+            obj->setProperty ("pianoRollStepsPerBeat", pianoRollStepsPerBeat);
+            obj->setProperty ("pianoRollLowNote",      pianoRollLowNote);
+            obj->setProperty ("pianoRollRows",         pianoRollRows);
+        }
         if (type == ElementType::ArpLane)
         {
             obj->setProperty ("arpLaneIndex", arpLaneIndex);
@@ -679,6 +694,15 @@ namespace patchcraft
             obj->setProperty ("arpLaneRatchet", arpLaneRatchet);
             obj->setProperty ("arpLaneFillPulses", arpLaneFillPulses);
             obj->setProperty ("arpLaneFillProbability", (double) arpLaneFillProbability);
+        }
+        else if (type == ElementType::SequencerLane)
+        {
+            obj->setProperty ("seqLaneIndex", seqLaneIndex);
+            obj->setProperty ("seqLaneSteps", seqLaneSteps);
+            obj->setProperty ("seqLaneType", seqLaneType);
+            obj->setProperty ("seqLaneDirection", seqLaneDirection);
+            obj->setProperty ("seqLaneTarget", seqLaneTarget);
+            obj->setProperty ("seqLaneColour", seqLaneColour.toDisplayString (true));
         }
         if (type == ElementType::Mixer)
         {
@@ -794,6 +818,35 @@ namespace patchcraft
                 e.arpLaneFillPulses = juce::jlimit (0, 128, (int) o->getProperty ("arpLaneFillPulses"));
             if (o->hasProperty ("arpLaneFillProbability"))
                 e.arpLaneFillProbability = juce::jlimit (0.0f, 1.0f, (float) (double) o->getProperty ("arpLaneFillProbability"));
+        }
+        else if (e.type == ElementType::SequencerLane)
+        {
+            if (o->hasProperty ("seqLaneIndex"))
+                e.seqLaneIndex = juce::jlimit (0, 15, (int) o->getProperty ("seqLaneIndex"));
+            if (o->hasProperty ("seqLaneSteps"))
+                e.seqLaneSteps = juce::jlimit (1, 64, (int) o->getProperty ("seqLaneSteps"));
+            if (o->hasProperty ("seqLaneType"))
+                e.seqLaneType = o->getProperty ("seqLaneType").toString();
+            if (o->hasProperty ("seqLaneDirection"))
+                e.seqLaneDirection = o->getProperty ("seqLaneDirection").toString();
+            if (o->hasProperty ("seqLaneTarget"))
+                e.seqLaneTarget = o->getProperty ("seqLaneTarget").toString();
+            if (o->hasProperty ("seqLaneColour"))
+                e.seqLaneColour = juce::Colour::fromString (o->getProperty ("seqLaneColour").toString());
+        }
+        else if (e.type == ElementType::PianoRoll)
+        {
+            if (o->hasProperty ("pianoRollSteps"))
+                e.pianoRollSteps = juce::jlimit (1, 256, (int) o->getProperty ("pianoRollSteps"));
+            if (o->hasProperty ("pianoRollStepsPerBeat"))
+                e.pianoRollStepsPerBeat = juce::jlimit (1, 16, (int) o->getProperty ("pianoRollStepsPerBeat"));
+            if (o->hasProperty ("pianoRollLowNote"))
+                e.pianoRollLowNote = juce::jlimit (0, 120, (int) o->getProperty ("pianoRollLowNote"));
+            if (o->hasProperty ("pianoRollRows"))
+                e.pianoRollRows = juce::jlimit (4, 88, (int) o->getProperty ("pianoRollRows"));
+        }
+        else if (e.type == ElementType::Mixer)
+        {
             if (o->hasProperty ("mixerChannels"))
                 e.mixerChannels = juce::jlimit (1, 16, (int) o->getProperty ("mixerChannels"));
             if (o->hasProperty ("mixerMode"))
@@ -987,10 +1040,18 @@ namespace patchcraft
         obj->setProperty ("chokeGroup",     chokeGroup);
         obj->setProperty ("oneShot",        oneShot);
         obj->setProperty ("triggerProbability", triggerProbability);
-        obj->setProperty ("midiPath",       midiPath);
-        obj->setProperty ("midiPlaybackMode", midiPlaybackMode);
-        obj->setProperty ("midiHostSync",   midiHostSync);
-        obj->setProperty ("midiTranspose",  midiTranspose);
+        obj->setProperty ("playMode",       playMode);
+        if (! cuePoints.empty())
+        {
+            juce::Array<juce::var> cueArray;
+            for (int cue : cuePoints)
+                cueArray.add (cue);
+            obj->setProperty ("cuePoints", cueArray);
+        }
+        obj->setProperty ("midiPath",          midiPath);
+        obj->setProperty ("midiPlaybackMode",  midiPlaybackMode);
+        obj->setProperty ("midiHostSync",      midiHostSync);
+        obj->setProperty ("midiTranspose",     midiTranspose);
         obj->setProperty ("midiVelocityAmount", (double) midiVelocityAmount);
         return juce::var (obj);
     }
@@ -1052,6 +1113,14 @@ namespace patchcraft
                 z.oneShot = (bool) o->getProperty ("oneShot");
             if (o->hasProperty ("triggerProbability"))
                 z.triggerProbability = (int) o->getProperty ("triggerProbability");
+            if (o->hasProperty ("playMode"))
+                z.playMode = (int) o->getProperty ("playMode");
+            if (o->hasProperty ("cuePoints"))
+            {
+                if (auto* cueArray = o->getProperty ("cuePoints").getArray())
+                    for (const auto& cue : *cueArray)
+                        z.cuePoints.push_back ((int) cue);
+            }
             if (o->hasProperty ("bpm"))
                 z.bpm = (float) (double) o->getProperty ("bpm");
             if (o->hasProperty ("midiPath"))
@@ -1070,6 +1139,7 @@ namespace patchcraft
             z.padIndex = juce::jlimit (-1, 15, z.padIndex);
             z.chokeGroup = juce::jlimit (0, 127, z.chokeGroup);
             z.triggerProbability = juce::jlimit (0, 100, z.triggerProbability);
+            z.playMode = juce::jlimit (-1, 3, z.playMode);
             z.keyTracking = juce::jlimit (0.0f, 2.0f, z.keyTracking);
             if (! (z.midiPlaybackMode == "trigger" || z.midiPlaybackMode == "pitch"
                    || z.midiPlaybackMode == "slice" || z.midiPlaybackMode == "drum"
@@ -1537,22 +1607,7 @@ namespace patchcraft
 
     static DspNodeKind classifyBlockKind (const DspBlock& block)
     {
-        const auto section = block.section.toLowerCase();
-        const auto type = block.type.toLowerCase();
-
-        if (section == "out")
-            return DspNodeKind::output;
-        if (type.contains ("analyzer") || type.contains ("meter") || type.contains ("scope"))
-            return DspNodeKind::analysis;
-        if (section == "source")
-            return DspNodeKind::source;
-        if (section == "filter" || section == "amp" || section == "fx")
-            return DspNodeKind::processor;
-        if (section == "mod")
-            return DspNodeKind::modulation;
-        if (type.contains ("utility") || type.contains ("router") || type.contains ("mixer"))
-            return DspNodeKind::utility;
-        return DspNodeKind::unknown;
+        return DspModuleRegistry::classifyBlockKind (block);
     }
 
     static DspNodePort makePort (juce::String id, juce::String name, DspSignalType type, bool input)
@@ -1583,30 +1638,7 @@ namespace patchcraft
 
     static bool blockTypeLooksSupported (const TypedDspNode& node)
     {
-        const auto type = node.type.toLowerCase();
-        if (type.isEmpty())
-            return false;
-
-        if (node.kind == DspNodeKind::source)
-            return containsAnyToken (type, { "osc", "wavetable", "serum", "noise", "sub", "sample", "sampler", "slice", "chop",
-                                             "scratch", "deck", "drumrack", "drum", "layer", "granular", "input", "external", "drive", "hybrid" });
-        if (node.kind == DspNodeKind::processor)
-            return containsAnyToken (type, { "state", "filter", "eq", "surgical", "envelope", "adsr", "gate", "delay", "reverb",
-                                             "multitap", "dist", "shape", "crush", "dynamics", "dynamic", "compress", "limiter",
-                                             "transient", "deess", "chorus", "phaser", "flanger", "comb", "resonator", "vocal",
-                                             "formant", "tape", "lofi", "vinyl", "convolution", "spectral", "effect", "utility",
-                                             "router", "mixer", "amp", "master" });
-        if (node.kind == DspNodeKind::modulation)
-            return containsAnyToken (type, { "lfo", "random", "macro", "midi", "drum", "cc", "velocity", "keytrack", "step", "sequencer", "arp", "auto", "envelopefollower", "peakfollower",
-                                             "rmsfollower", "transientdetector", "spectralcentroid", "bandenergy", "gatetrigger" });
-        if (node.kind == DspNodeKind::analysis)
-            return containsAnyToken (type, { "analyzer", "meter", "scope", "spectrum" });
-        if (node.kind == DspNodeKind::utility)
-            return containsAnyToken (type, { "utility", "router", "mixer", "output", "input" });
-        if (node.kind == DspNodeKind::output)
-            return containsAnyToken (type, { "output", "mainoutput", "utility", "limiter", "mixer", "drummixer", "master", "bus", "stereo" });
-
-        return false;
+        return DspModuleRegistry::isBlockSupported (node);
     }
 
     static float nodeValue (const TypedDspNode& node, const juce::String& key, float fallback = 0.0f)

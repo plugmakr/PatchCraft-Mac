@@ -159,6 +159,7 @@ namespace patchcraft
                     lblArpLaneDirection, lblArpLaneRotate, lblArpLaneEuclideanPulses,
                     lblArpLaneProbability, lblArpLaneRatchet, lblArpLaneFillPulses,
                     lblArpLaneFillProbability;
+        juce::Label lblSeqLane, lblSeqLaneSteps, lblSeqLaneType, lblSeqLaneDirection, lblSeqLaneTarget, lblSeqLaneColour;
         juce::Slider arpLaneIndexSlider;
         juce::Slider arpLaneStepsSlider;
         juce::Slider arpLaneRootNoteSlider;
@@ -174,6 +175,12 @@ namespace patchcraft
         juce::ComboBox arpLaneDirectionBox;
         juce::TextButton arpLaneOpenPerformanceBtn { "Edit Bank" };
         juce::TextButton arpLaneApplySampleTargetBtn { "Build Ring" };
+        juce::Slider seqLaneStepsSlider;
+        juce::ComboBox seqLaneTypeBox;
+        juce::ComboBox seqLaneDirectionBox;
+        juce::TextEditor seqLaneTargetBox;
+        juce::TextEditor seqLaneColourEdit;
+        juce::TextButton seqLaneColourButton { "Pick" };
 
         // Mixer authoring (Mixer only).
         juce::Label lblMixer, lblMixerMode, lblMixerChannels, lblMixerLabels,
@@ -232,6 +239,7 @@ namespace patchcraft
             Actions,
             DrumGrid,
             ArpLane,
+            SeqLane,
             Mixer,
             Macro,
             ModMatrix,
@@ -241,7 +249,7 @@ namespace patchcraft
         };
 
         std::array<bool, (size_t) InspectorSection::Count> sectionOpen {{
-            true, true, true, true, true, true, true, true, true, true, true, true
+            true, true, true, true, true, true, true, true, true, true, true, true, true
         }};
         std::array<juce::Rectangle<int>, (size_t) InspectorSection::Count> sectionHeaderBounds {};
 
@@ -300,6 +308,8 @@ namespace patchcraft
                     lblContainerManager, lblContainerChildren,
                     lblDefault, lblStep, lblValType, lblSmoothing,
                     lblActions, lblPosX, lblPosY, lblSizeW, lblSizeH;
+
+        std::map<juce::String, int> paramIdToComboId;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (InspectorPanel)
     };

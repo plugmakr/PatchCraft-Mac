@@ -92,6 +92,9 @@ namespace patchcraft
             std::atomic<float> pan       { 0.0f };
             std::atomic<float> retrigger { 1.0f };
             std::atomic<float> bpmSync   { 1.0f };
+            // 0.5 == linear (legacy). <0.5 compresses dynamics (louder soft
+            // notes), >0.5 expands. Shapes velocity -> gain via a power curve.
+            std::atomic<float> velocitySensitivity { 0.5f };
             std::array<std::atomic<float>, 16> padVolume {};
             std::array<std::atomic<float>, 16> padPitch {};
             std::array<std::atomic<float>, 16> padPan {};
@@ -158,7 +161,22 @@ namespace patchcraft
         GranularVoice* findFreeGranularVoice();
         GranularVoice::Params currentGranularParams (float tempoRatio = 1.0f) const;
         LoadedSamplePtr selectSample (int note, int velocity);
+
+        // A zone selected for a note, paired with its velocity-crossfade gain.
+        struct LayeredSample
+        {
+            LoadedSamplePtr sample;
+            float velocityGain = 1.0f;
+        };
+        // Gather every zone that should sound for note+velocity (respecting
+        // round-robin within a group), each with an equal-power velocity
+        // crossfade gain. Single-match packs behave exactly as before.
+        int selectSamplesLayered (int note, int velocity, LayeredSample* out, int maxLayers);
+        float velocityCurveGain (float velocity01) const noexcept;
+
+        static constexpr int kMaxLayersPerNote = 8;
         std::array<int, 128> nextRoundRobinIndex {};
+        std::atomic<juce::uint32> voiceStartCounter { 0 };
 
         juce::AudioFormatManager formatManager;
 
@@ -171,11 +189,20 @@ namespace patchcraft
             bool   active = false;
             int    note = 60;
             double phase = 0.0;
+            double phase2 = 0.0;
             float  velocity = 0.0f;
             juce::ADSR env;
+            // When a note lands in the GM percussion range and no samples are
+            // loaded, we synthesize a drum hit (kick/snare/hat/...) instead of a
+            // sine so drum grids and pads actually sound like drums. -1 = melodic.
+            int    drumType = -1;
+            double drumAgeSamples = 0.0;
+            float  prevNoise = 0.0f;
+            juce::uint32 noiseState = 0x9e3779b9u;
         };
         std::array<SineVoice, kMaxVoices> sineVoices;
         SineVoice* findFreeSineVoice();
+        static int drumTypeForNote (int note) noexcept;
         bool hasUsableSamples() const noexcept
         {
             auto list = getSamples();

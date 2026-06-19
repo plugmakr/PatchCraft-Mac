@@ -67,10 +67,23 @@ namespace patchcraft
         exportJsonBtn.onClick = [this] { exportMeterSourceJson(); };
         addToProjectBtn.onClick = [this] { addMeterToLibrary(); };
 
+        importBgBtn.onClick = [this] { importImage (0); };
+        importFillBtn.onClick = [this] { importImage (1); };
+        importStripBtn.onClick = [this] { importImage (2); };
+        clearImageBtn.onClick = [this]
+        {
+            importedBg = importedFill = importedStrip = {};
+            importedSource = {};
+            repaint();
+        };
+        for (auto* button : { &importBgBtn, &importFillBtn, &importStripBtn, &clearImageBtn })
+            addAndMakeVisible (*button);
+
         styleMeterBuilderLabel (assetLbl, "METER ASSET");
         styleMeterBuilderLabel (geometryLbl, "RANGE / GEOMETRY");
         styleMeterBuilderLabel (behaviorLbl, "BEHAVIOR");
-        for (auto* label : { &assetLbl, &geometryLbl, &behaviorLbl })
+        styleMeterBuilderLabel (imageLbl, "IMPORT IMAGE -> WORKING ASSET");
+        for (auto* label : { &assetLbl, &geometryLbl, &behaviorLbl, &imageLbl })
             addAndMakeVisible (*label);
 
         lowColourBtn.setColour (juce::TextButton::buttonColourId, lowColour);
@@ -134,6 +147,25 @@ namespace patchcraft
         const float height = (float) heightSlider.getValue();
         auto meter = horizontal ? area.withSizeKeepingCentre (height, width)
                                 : area.withSizeKeepingCentre (width * (stereo ? 2.3f : 1.0f), height);
+
+        // Image-based meter: draw the empty image, then reveal the fill image up
+        // to the current level. This is what gets baked into each filmstrip frame.
+        if (importedBg.isValid() || importedFill.isValid())
+        {
+            const float value = juce::jlimit (0.0f, 1.0f, (float) valueSlider.getValue());
+            if (importedBg.isValid())
+                g.drawImage (importedBg, meter, juce::RectanglePlacement::stretchToFit);
+            if (importedFill.isValid())
+            {
+                auto reveal = meter;
+                if (horizontal) reveal = meter.withWidth (meter.getWidth() * value);
+                else            reveal = meter.removeFromBottom (meter.getHeight() * value);
+                juce::Graphics::ScopedSaveState clip (g);
+                g.reduceClipRegion (reveal.getSmallestIntegerContainer());
+                g.drawImage (importedFill, meter, juce::RectanglePlacement::stretchToFit);
+            }
+            return;
+        }
 
         const int lanes = stereo ? 2 : 1;
         for (int lane = 0; lane < lanes; ++lane)
@@ -225,6 +257,13 @@ namespace patchcraft
         midColourBtn.setBounds (colours.removeFromLeft (92).reduced (2));
         highColourBtn.setBounds (colours.removeFromLeft (92).reduced (2));
         right.removeFromTop (6);
+        header (imageLbl);
+        auto imgRow = right.removeFromTop (28);
+        importBgBtn.setBounds (imgRow.removeFromLeft (68).reduced (2));
+        importFillBtn.setBounds (imgRow.removeFromLeft (68).reduced (2));
+        importStripBtn.setBounds (imgRow.removeFromLeft (68).reduced (2));
+        clearImageBtn.setBounds (imgRow.reduced (2));
+        right.removeFromTop (6);
         header (behaviorLbl);
         peakHoldToggle.setBounds (right.removeFromTop (24));
         dbScaleToggle.setBounds (right.removeFromTop (24));
@@ -275,6 +314,10 @@ namespace patchcraft
 
     juce::Image MeterBuilderComponent::renderMeterFilmstrip (bool verticalStrip)
     {
+        // A ready-made imported filmstrip is the working asset as-is.
+        if (importedStrip.isValid())
+            return importedStrip;
+
         constexpr int total = 64;
         auto first = renderMeterFrame (0, total);
         juce::Image strip (juce::Image::ARGB,
@@ -395,6 +438,31 @@ namespace patchcraft
                             .withButton ("OK")
                             .withIconType (juce::MessageBoxIconType::WarningIcon),
                         nullptr);
+            });
+    }
+
+    void MeterBuilderComponent::importImage (int slot)
+    {
+        auto chooser = std::make_shared<juce::FileChooser> (
+            slot == 2 ? "Import Meter Filmstrip" : (slot == 0 ? "Import Empty (Off) Image" : "Import Fill (Lit) Image"),
+            juce::File::getSpecialLocation (juce::File::userPicturesDirectory),
+            "*.png;*.jpg;*.jpeg");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode
+                              | juce::FileBrowserComponent::canSelectFiles,
+            [this, chooser, slot] (const juce::FileChooser& fc)
+            {
+                auto file = fc.getResult();
+                if (file == juce::File())
+                    return;
+                auto image = juce::ImageFileFormat::loadFrom (file);
+                if (! image.isValid())
+                    return;
+
+                importedSource = file;
+                if (slot == 0)      importedBg = image;
+                else if (slot == 1) importedFill = image;
+                else                importedStrip = image;
+                repaint();
             });
     }
 

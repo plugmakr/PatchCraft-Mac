@@ -84,6 +84,7 @@ namespace patchcraft
             || type == "chordsequencer" || type == "chord sequencer"
             || type == "midigenerator" || type == "midi generator"
             || type == "drummachine" || type == "drum machine"
+            || type == "drumsequencer" || type == "drum sequencer"
             || type == "drumpattern" || type == "drum pattern"
             || type == "stepsequencer" || type == "step sequencer";
     }
@@ -261,6 +262,8 @@ namespace patchcraft
         settings.drumSampleSlices.fill (-1.0f);
         settings.drumTrackFxTargets.fill (0.0f);
         settings.drumTrackFxAmounts.fill (0.0f);
+        settings.drumTrackMuted.fill (0.0f);
+        settings.drumTrackSolo.fill (0.0f);
         drumFxState.fill (0.0f);
 
         for (const auto& block : graph.blocks)
@@ -306,6 +309,8 @@ namespace patchcraft
                         juce::roundToInt (valueForKey (block, "dmTrack" + juce::String (track) + "FxTarget", 0.0f)));
                     settings.drumTrackFxAmounts[(size_t) track] = juce::jlimit (0.0f, 1.0f,
                         valueForKey (block, "dmTrack" + juce::String (track) + "FxAmount", 0.0f));
+                    settings.drumTrackMuted[(size_t) track] = valueForKey (block, "dmTrack" + juce::String (track) + "Mute", 0.0f) >= 0.5f ? 1.0f : 0.0f;
+                    settings.drumTrackSolo[(size_t) track] = valueForKey (block, "dmTrack" + juce::String (track) + "Solo", 0.0f) >= 0.5f ? 1.0f : 0.0f;
 
                     for (int pattern = 0; pattern < kMaxDrumPatterns; ++pattern)
                         for (int step = 0; step < kMaxDrumSteps; ++step)
@@ -1409,6 +1414,10 @@ namespace patchcraft
         if (currentStep >= 0 && step < currentStep)
             ++cycleCounter;
 
+        const bool anySolo = std::any_of (settings.drumTrackSolo.begin(),
+                                          settings.drumTrackSolo.begin() + (size_t) tracks,
+                                          [] (float value) { return value >= 0.5f; });
+
         if (step != currentStep)
         {
             stopActiveDrums (engine, sampleEngine);
@@ -1418,6 +1427,11 @@ namespace patchcraft
 
             auto triggerDrum = [&] (int track, size_t index, int subSlot)
             {
+                if (settings.drumTrackMuted[(size_t) track] >= 0.5f)
+                    return;
+                if (anySolo && settings.drumTrackSolo[(size_t) track] < 0.5f)
+                    return;
+
                 activeDrumSubSlots[(size_t) track] = subSlot;
                 const float probability = juce::jlimit (0.0f, 1.0f,
                     settings.probability * settings.drumProbabilities[index]);
@@ -1480,6 +1494,11 @@ namespace patchcraft
             const int pattern = activeDrumPattern();
             for (int track = 0; track < tracks; ++track)
             {
+                if (settings.drumTrackMuted[(size_t) track] >= 0.5f)
+                    continue;
+                if (anySolo && settings.drumTrackSolo[(size_t) track] < 0.5f)
+                    continue;
+
                 const auto index = (size_t) drumPatternIndex (pattern, track, step);
                 if (settings.drumActive[index] >= 0.5f)
                 {

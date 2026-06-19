@@ -1,0 +1,159 @@
+{
+  "blocks": [
+    {
+      "id": "aurora_source",
+      "section": "source",
+      "type": "oscillator",
+      "name": "Aurora Dual Layer Source",
+      "enabled": true,
+      "targetId": "oscBlend",
+      "values": {
+        "oscType": 1.0,
+        "osc2Type": 0.0,
+        "oscBlend": 0.08,
+        "osc2Detune": -4.0,
+        "subBlend": 0.06,
+        "noiseBlend": 0.0,
+        "volume": 0.78
+      },
+      "metadata": {
+        "graphX": "90",
+        "graphY": "82"
+      }
+    },
+    {
+      "id": "aurora_shape",
+      "section": "filter",
+      "type": "filter",
+      "name": "Cinematic Tone Shape",
+      "enabled": true,
+      "targetId": "filterCutoff",
+      "values": {
+        "filterCutoff": 4200.0,
+        "filterResonance": 0.2,
+        "attack": 0.22,
+        "decay": 1.1,
+        "sustain": 0.62,
+        "release": 2.4
+      },
+      "metadata": {
+        "graphX": "320",
+        "graphY": "92"
+      }
+    },
+    {
+      "id": "aurora_motion",
+      "section": "mod",
+      "type": "midiPlayground",
+      "name": "Aurora Arp Motion",
+      "enabled": true,
+      "targetId": "filterCutoff",
+      "values": {
+        "arpSteps": 8,
+        "arpGate": 0.58,
+        "rate": 4.0,
+        "sync": 1,
+        "mpScaleRoot": 0,
+        "mpScaleType": 1,
+        "mpProbability": 1,
+        "arpNote0": 0,
+        "arpNote1": 2,
+        "arpNote2": 4,
+        "arpNote3": 7,
+        "arpNote4": 9,
+        "arpNote5": 7,
+        "arpNote6": 4,
+        "arpNote7": 2
+      },
+      "metadata": {
+        "graphX": "320",
+        "graphY": "350"
+      }
+    },
+    {
+      "id": "aurora_fx",
+      "section": "fx",
+      "type": "fxChain",
+      "name": "Spatial Texture FX",
+      "enabled": true,
+      "targetId": "reverbMix",
+      "values": {
+        "delayTime": 0.375,
+        "delayFeedback": 0.28,
+        "delayMix": 0.24,
+        "reverbMix": 0.4,
+        "chorusMix": 0.28,
+        "convolutionMix": 0.36
+      },
+      "metadata": {
+        "graphX": "650",
+        "graphY": "102"
+      }
+    },
+    {
+      "id": "aurora_output",
+      "section": "out",
+      "type": "output",
+      "name": "Output Safety",
+      "enabled": true,
+      "targetId": "volume",
+      "values": {
+        "volume": 0.78,
+        "outputLimiter": 1,
+        "outputGainDb": -6.0
+      },
+      "metadata": {
+        "graphX": "845",
+        "graphY": "102"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "aurora_source_to_shape",
+      "sourceNodeId": "aurora_source",
+      "targetNodeId": "aurora_shape",
+      "gain": 1.0,
+      "enabled": true
+    },
+    {
+      "id": "aurora_shape_to_fx",
+      "sourceNodeId": "aurora_shape",
+      "targetNodeId": "aurora_fx",
+      "gain": 1.0,
+      "enabled": true
+    },
+    {
+      "id": "aurora_fx_to_output",
+      "sourceNodeId": "aurora_fx",
+      "targetNodeId": "aurora_output",
+      "gain": 1.0,
+      "enabled": true
+    }
+  ],
+  "macros": [
+    {
+      "macroId": "atmosphere",
+      "targetId": "filterCutoff",
+      "targetMin": 2200,
+      "targetMax": 9200,
+      "curve": 0.5
+    },
+    {
+      "macroId": "movement",
+      "targetId": "lfoAmount",
+      "targetMin": 0,
+      "targetMax": 0.65,
+      "curve": 0.5
+    },
+    {
+      "macroId": "space",
+      "targetId": "reverbMix",
+      "targetMin": 0.08,
+      "targetMax": 0.7,
+      "curve": 0.5
+    }
+  ],
+  "modulation": [],
+  "automation": []
+}

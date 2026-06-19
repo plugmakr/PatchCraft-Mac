@@ -58,6 +58,9 @@ namespace patchcraft
         void addBoundVisualToCanvas();
         void refreshParameterChoices();
         void timerCallback() override;
+        static juce::String reactiveModeForSource (const juce::String& source);
+        static juce::String fxPresetForAction (const juce::String& action);
+        void drawPreviewEffect (juce::Graphics&, juce::Rectangle<float> area);
 
         bool previewActive = false;
         float previewPhase = 0.0f;

@@ -38,6 +38,7 @@ namespace patchcraft
         juce::TextButton sampleButton { "Sample Instrument" };
         juce::TextButton drumButton { "Drum Machine" };
         juce::TextButton fxButton { "FX Plugin" };
+        juce::TextButton arpSequencerButton { "Arp Step Sequencer" };
         juce::Label factoryDemoLabel;
         juce::ComboBox factoryDemoBox;
         juce::TextButton loadFactoryDemoButton { "Choose / Load Demo" };

@@ -96,15 +96,55 @@ namespace patchcraft
 
     bool DspRoutingEngine::setFxBlockParameterValue (const juce::String& parameterId, float value)
     {
+        auto graphValue = value;
+        const bool normalisedGraphValue = parameterId == "oscType" || parameterId == "osc2Type"
+            || parameterId == "oscBlend" || parameterId == "octave" || parameterId == "detune"
+            || parameterId == "osc2Detune" || parameterId == "subBlend" || parameterId == "noiseBlend"
+            || parameterId == "volume" || parameterId == "pan" || parameterId == "filterCutoff"
+            || parameterId == "filterResonance" || parameterId == "attack" || parameterId == "decay"
+            || parameterId == "sustain" || parameterId == "release" || parameterId == "delayTime"
+            || parameterId == "delayFeedback" || parameterId == "delayMix" || parameterId == "reverbMix"
+            || parameterId == "drive" || parameterId == "mix";
+        if (normalisedGraphValue)
+            if (const auto* parameter = findParam (parameterId))
+                if (std::abs (parameter->max - parameter->min) > 0.000001f)
+                    graphValue = juce::jlimit (0.0f, 1.0f,
+                        (value - parameter->min) / (parameter->max - parameter->min));
+
         bool changed = false;
         for (auto& block : blocks)
         {
             auto found = block.block.values.find (parameterId);
-            if (found == block.block.values.end())
-                continue;
+            if (found != block.block.values.end())
+            {
+                found->second = graphValue;
+                changed = true;
+            }
 
-            found->second = value;
-            changed = true;
+            auto setAlias = [&] (const juce::String& key, float aliasValue)
+            {
+                auto alias = block.block.values.find (key);
+                if (alias != block.block.values.end())
+                {
+                    alias->second = aliasValue;
+                    changed = true;
+                }
+            };
+
+            if (parameterId == "filterCutoff" && block.block.section == "filter") setAlias ("cutoff", graphValue);
+            else if (parameterId == "filterResonance" && block.block.section == "filter") setAlias ("resonance", graphValue);
+            else if (parameterId == "lfoRate" && block.block.type.containsIgnoreCase ("lfo")) setAlias ("rate", value);
+            else if (parameterId == "lfoAmount" && block.block.type.containsIgnoreCase ("lfo")) setAlias ("amount", value);
+            else if (parameterId == "arpLaneRate"
+                     && (block.block.type.containsIgnoreCase ("arp") || block.block.type.containsIgnoreCase ("midi"))) setAlias ("rate", value);
+            else if (parameterId == "arpLaneGate"
+                     && (block.block.type.containsIgnoreCase ("arp") || block.block.type.containsIgnoreCase ("midi"))) setAlias ("arpGate", value);
+            else if (parameterId == "arpLaneProbability"
+                     && (block.block.type.containsIgnoreCase ("arp") || block.block.type.containsIgnoreCase ("midi")))
+            {
+                for (int step = 0; step < 128; ++step)
+                    setAlias ("mpStepProb" + juce::String (step), value);
+            }
         }
         return changed;
     }
@@ -273,7 +313,19 @@ namespace patchcraft
             const bool tempoSync = valueForKey (block.block, "sync", 0.0f) >= 0.5f
                 && (globalSync == nullptr || globalSync->current >= 0.5f);
             const double cyclesPerSecond = tempoSync ? (context.bpm / 240.0) * rate : rate;
-            const auto value = (float) std::sin (block.phase);
+
+            float value = 0.0f;
+            if (block.block.type.containsIgnoreCase ("step"))
+            {
+                const int numSteps = 8;
+                const double stepPhase = std::floor ((block.phase / juce::MathConstants<double>::twoPi) * numSteps) / (double) numSteps;
+                value = (float) std::sin (stepPhase * juce::MathConstants<double>::twoPi);
+            }
+            else
+            {
+                value = (float) std::sin (block.phase);
+            }
+
             block.phase += juce::MathConstants<double>::twoPi
                          * cyclesPerSecond * context.secondsPerBlock();
             if (block.phase > juce::MathConstants<double>::twoPi)
@@ -732,7 +784,11 @@ namespace patchcraft
                 && block.block.values.count (block.block.targetId) != 0)
                 setExactOrNorm (block.block.targetId, block.block, block.block.targetId);
 
-            if (nodeKind == DspNodeKind::modulation && block.block.targetId.isNotEmpty())
+            const bool hasExplicitRoute = std::any_of (modulation.begin(), modulation.end(), [&block] (const ModRoute& route)
+            {
+                return route.enabled && route.sourceId == block.block.id && route.targetId == block.block.targetId;
+            });
+            if (nodeKind == DspNodeKind::modulation && block.block.targetId.isNotEmpty() && ! hasExplicitRoute)
             {
                 if (auto* target = findParam (block.block.targetId))
                 {

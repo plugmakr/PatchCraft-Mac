@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "instrumentName": "Dream Keys Sampler",
   "creator": "AudiCode",
-  "description": "A playable sample instrument demo with waveform editing, drop zone, granular texture, and musical presets.",
+  "description": "Tape-style keys with waveform editing, drop zone, granular texture, and distinct musical presets.",
   "category": "Sample Instrument",
   "engine": "sample",
   "backgroundImage": "assets/background-clean.png",

@@ -18,6 +18,8 @@
                  : type == ElementType::RuntimeSampleLibrary ? 360
                  : type == ElementType::DrumGrid ? 560
                  : type == ElementType::ArpLane ? 260
+                 : type == ElementType::SequencerLane ? 480
+                 : type == ElementType::PianoRoll ? 620
                  : type == ElementType::Mixer ? 520
                  : type == ElementType::MacroControl ? 190
                  : type == ElementType::ModMatrix ? 420
@@ -38,6 +40,8 @@
                   : type == ElementType::RuntimeSampleLibrary ? 220
                   : type == ElementType::DrumGrid ? 220
                   : type == ElementType::ArpLane ? 330
+                  : type == ElementType::SequencerLane ? 56
+                  : type == ElementType::PianoRoll ? 300
                   : type == ElementType::Mixer ? 260
                   : type == ElementType::MacroControl ? 132
                   : type == ElementType::ModMatrix ? 220
@@ -77,7 +81,16 @@
         if (type == ElementType::Panel)
         {
             el.backgroundColour = juce::Colour (0x33141822);
-            el.borderColour = PatchCraftLookAndFeel::accent();
+            el.borderColour = PatchCraftLookAndFeel::border();
+            el.strokeWidth = 1.0f;
+            el.cornerRadius = 8.0f;
+        }
+        if (type == ElementType::TabPanel)
+        {
+            el.backgroundColour = juce::Colour (0x33141822);
+            el.borderColour = PatchCraftLookAndFeel::border();
+            el.strokeWidth = 1.0f;
+            el.cornerRadius = 8.0f;
         }
         if (el.parameterId == "bpmSync" || el.parameterId == "retrigger")
         {
@@ -147,6 +160,72 @@
             block.values["mpActiveBank"] = (float) el.arpLaneIndex;
             block.values["mpMultiLane"] = 1.0f;
             seedMusicalOrbitLaneData (block);
+            graph.userConfigured = true;
+        }
+        if (type == ElementType::SequencerLane)
+        {
+            el.label = "Gate Lane";
+            el.parameterId.clear();
+            el.seqLaneIndex = 0;
+            el.seqLaneSteps = 16;
+            el.seqLaneType = "gate";
+            el.seqLaneDirection = "forward";
+            el.cornerRadius = 6.0f;
+            el.accentColour = PatchCraftLookAndFeel::accent();
+            el.seqLaneColour = PatchCraftLookAndFeel::accent();
+            el.backgroundColour = juce::Colour (0xdd10141a);
+            el.borderColour = PatchCraftLookAndFeel::border();
+        }
+        if (type == ElementType::PianoRoll)
+        {
+            el.label = "Piano Roll";
+            el.parameterId.clear();
+            el.pianoRollSteps = 16;
+            el.pianoRollStepsPerBeat = 4;
+            el.pianoRollLowNote = 48;
+            el.pianoRollRows = 25;
+            el.cornerRadius = 8.0f;
+            el.strokeWidth = 1.0f;
+            el.accentColour = PatchCraftLookAndFeel::accent();
+            el.backgroundColour = juce::Colour (0xdd111722);
+            el.borderColour = PatchCraftLookAndFeel::border();
+
+            auto& graph = owner.getProject().getDspGraph();
+            DspBlock* prBlock = nullptr;
+            for (auto& block : graph.blocks)
+            {
+                const auto t = block.type.trim().toLowerCase().removeCharacters (" _-");
+                if (t == "pianoroll" || t == "pianorollclip" || t == "midiclip")
+                {
+                    prBlock = &block;
+                    break;
+                }
+            }
+            if (prBlock == nullptr)
+            {
+                DspBlock block;
+                block.id = "piano_roll";
+                block.section = "modulation";
+                block.type = "pianoRoll";
+                block.name = "Piano Roll";
+                block.enabled = true;
+                graph.blocks.push_back (block);
+                prBlock = &graph.blocks.back();
+            }
+            prBlock->values["prSteps"] = (float) el.pianoRollSteps;
+            prBlock->values["prStepsPerBeat"] = (float) el.pianoRollStepsPerBeat;
+            prBlock->values["prLowNote"] = (float) el.pianoRollLowNote;
+            prBlock->values["prRows"] = (float) el.pianoRollRows;
+            prBlock->values["prRate"] = 1.0f;
+            prBlock->values["prGate"] = 0.9f;
+            prBlock->values["prVelocity"] = 1.0f;
+            prBlock->values["prSync"] = 1.0f;
+            prBlock->values["prLoop"] = 1.0f;
+            if (prBlock->metadata.find ("notes") == prBlock->metadata.end())
+            {
+                // Seed a simple Cmaj7 arpeggio so the element is immediately audible.
+                prBlock->metadata["notes"] = "0,4,60,0.85;4,4,64,0.85;8,4,67,0.85;12,4,71,0.85";
+            }
             graph.userConfigured = true;
         }
         if (type == ElementType::GranularField)
@@ -2343,9 +2422,12 @@
                 liveValues.setValue ("sampleSliceCount", 32.0f);
                 ensureBlock ("loop_slicer_source", "source", "sliceChop", "Loop Slicer", "sampleSlice", "sampler", "source", "stereo",
                              { { "sampleSlice", 0.0f }, { "sampleSliceCount", 32.0f }, { "sampleLength", 0.20f }, { "sampleGlitchGrid", 32.0f } });
-                ensureBlock ("loop_slicer_midi", "mod", "midiPlayground", "Loop Slicer MIDI", "arpLaneRate", "midi", "sequencer", "event",
+                // drumSequencer (not midiPlayground) so the step grid is recognised
+                // by findDrumMachineBlock and actually triggers slices on playback.
+                ensureBlock ("loop_slicer_midi", "mod", "drumSequencer", "Loop Slicer Sequencer", "arpLaneRate", "midi", "sequencer", "event",
                              { { "arpLaneRate", 2.0f }, { "arpLaneGate", 0.50f }, { "arpLaneSwing", 0.05f }, { "arpLaneProbability", 1.0f },
-                               { "mpSampleControl", 1.0f }, { "sampleSliceCount", 32.0f }, { "retrigger", 1.0f } });
+                               { "mpSampleControl", 1.0f }, { "sampleSliceCount", 32.0f }, { "dmTracks", 4.0f },
+                               { "dmTriggerPadSlots", 1.0f }, { "retrigger", 1.0f } });
                 ensureBlock ("loop_slicer_delay", "fx", "multiTapDelay", "Loop Slicer Echo", "multiTapMix", "creative", "space", "stereo",
                              { { "multiTapTime", 0.25f }, { "multiTapFeedback", 0.18f }, { "multiTapSpread", 0.34f }, { "multiTapMix", 0.10f } });
                 ensureBlock ("loop_slicer_output", "out", "limiter", "Loop Slicer Output", "outputCeilingDb", "sampler", "output", "stereo",
@@ -2367,10 +2449,11 @@
             else if (moduleKey == "midiloopplayer")
             {
                 ensureParams ({ "arpLaneRate", "arpLaneGate", "arpLaneSwing", "arpLaneProbability", "retrigger", "outputLimiter" }, "sample");
-                ensureBlock ("midi_loop_player_module", "mod", "midiPlayground", "MIDI Loop Player", "arpLaneRate", "midi", "sequencer", "event",
+                // drumSequencer block so the step grid binds + plays its pattern.
+                ensureBlock ("midi_loop_player_module", "mod", "drumSequencer", "MIDI Loop Player", "arpLaneRate", "midi", "sequencer", "event",
                              { { "arpLaneRate", 1.0f }, { "arpLaneGate", 0.58f }, { "arpLaneSwing", 0.06f }, { "arpLaneProbability", 1.0f },
                                { "mpScaleRoot", 0.0f }, { "mpScaleType", 1.0f }, { "mpSampleControl", 1.0f }, { "sampleSliceCount", 16.0f },
-                               { "retrigger", 1.0f } });
+                               { "dmTracks", 4.0f }, { "dmTriggerPadSlots", 1.0f }, { "retrigger", 1.0f } });
                 addModulePanel ("Add MIDI Loop Player Module", "MIDI Loop Player", 560, 260,
                     [&] (LayoutModel& layout, const juce::String& panelId)
                     {
@@ -2571,6 +2654,57 @@
             finishModernModule();
             return;
         }
+        if (moduleKey == "harmonycomposer" || moduleKey == "chordcomposer")
+        {
+            // Diatonic chord engine driven by ComposerRuntime. Builds chords from
+            // scale degrees and plays them on the transport, so a developer can
+            // pick a key + progression and the Player performs it.
+            ensureParams ({ "composerRoot", "composerScale", "composerChordCount", "composerRate",
+                            "composerGate", "composerVelocity", "composerVoices", "composerOctave",
+                            "composerSpread", "composerDegree1", "composerDegree2", "composerDegree3",
+                            "composerDegree4", "composerChord1On", "composerChord2On",
+                            "composerChord3On", "composerChord4On", "volume", "pan" }, "synth");
+
+            ensureBlock ("harmony_composer_module", "mod", "harmonyComposer", "Harmony Composer",
+                         "composerRoot", "midi", "harmony", "event",
+                         { { "composerRoot", 0.0f }, { "composerScale", 1.0f }, { "composerChordCount", 4.0f },
+                           { "composerRate", 1.0f }, { "composerGate", 0.82f }, { "composerVelocity", 0.82f },
+                           { "composerVoices", 4.0f }, { "composerOctave", 4.0f }, { "composerSpread", 0.38f },
+                           { "composerDegree1", 0.0f }, { "composerDegree2", 4.0f },
+                           { "composerDegree3", 5.0f }, { "composerDegree4", 3.0f },
+                           { "composerChord1On", 1.0f }, { "composerChord2On", 1.0f },
+                           { "composerChord3On", 1.0f }, { "composerChord4On", 1.0f } });
+
+            addModulePanel ("Add Harmony Composer Module", "Harmony Composer", 720, 332,
+                [&] (LayoutModel& layout, const juce::String& panelId)
+                {
+                    addChildSurface (layout, panelId, ElementType::Dropdown, "Key", "composerRoot", 18, 40, 96, 32);
+                    addChildSurface (layout, panelId, ElementType::Dropdown, "Scale", "composerScale", 124, 40, 124, 32);
+                    addChildKnob  (layout, panelId, "Voices", "composerVoices", 264, 36, 60);
+                    addChildKnob  (layout, panelId, "Spread", "composerSpread", 338, 36, 60);
+                    addChildKnob  (layout, panelId, "Rate", "composerRate", 412, 36, 60);
+                    addChildKnob  (layout, panelId, "Gate", "composerGate", 486, 36, 60);
+                    addChildKnob  (layout, panelId, "Octave", "composerOctave", 560, 36, 60);
+
+                    // Four selectable chord slots: degree dropdown + enable toggle.
+                    const char* degParams[4] = { "composerDegree1", "composerDegree2", "composerDegree3", "composerDegree4" };
+                    const char* onParams[4]  = { "composerChord1On", "composerChord2On", "composerChord3On", "composerChord4On" };
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        const int cx = 18 + i * 172;
+                        addChildSurface (layout, panelId, ElementType::Dropdown, "Chord " + juce::String (i + 1),
+                                         degParams[i], cx, 116, 150, 34);
+                        addChildToggle (layout, panelId, "Play", onParams[i], cx, 158, 150, 28);
+                    }
+
+                    addChildSurface (layout, panelId, ElementType::Keyboard, "Chord Preview",
+                                     juce::String(), 18, 200, 684, 110);
+                });
+
+            finishModernModule();
+            return;
+        }
+
         if (moduleKey == "chordprogressionbuilder" || moduleKey == "scalechordassistant"
             || moduleKey == "chordpadbank" || moduleKey == "voicinghumanize")
         {
@@ -2655,10 +2789,12 @@
             return;
         }
 
-        if (moduleKey == "arplanemodule" || moduleKey == "lfo" || moduleKey == "steplfo" || moduleKey == "macrobank")
+        if (moduleKey == "arplanemodule" || moduleKey == "seqsequencermodule"
+            || moduleKey == "lfo" || moduleKey == "steplfo" || moduleKey == "macrobank")
         {
             ensureParams ({ "arpLaneIndex", "arpLaneSteps", "arpLaneRate", "arpLaneGate", "arpLaneSwing",
                             "arpLaneProbability", "arpLaneGroup", "arpLaneFxTarget", "arpLaneFxAmount",
+                            "arpLaneHumanize", "arpLaneMutation",
                             "lfoRate", "lfoAmount", "filterCutoff" }, "synth");
             if (moduleKey == "arplanemodule")
             {
@@ -2668,13 +2804,85 @@
                 addModulePanel ("Add Arp Lane Module", "Arp Lane", 520, 390,
                     [&] (LayoutModel& layout, const juce::String& panelId)
                     {
-                        addChildSurface (layout, panelId, ElementType::ArpLane, "Arp Lane", "arpLaneRate", 24, 34, 260, 300);
-                        addChildKnob (layout, panelId, "Rate", "arpLaneRate", 318, 42);
-                        addChildKnob (layout, panelId, "Gate", "arpLaneGate", 398, 42);
-                        addChildKnob (layout, panelId, "Swing", "arpLaneSwing", 318, 122);
-                        addChildKnob (layout, panelId, "FX Amt", "arpLaneFxAmount", 398, 122);
-                        addChildValue (layout, panelId, "Group", "arpLaneGroup", 320, 220, 78, 30);
-                        addChildValue (layout, panelId, "FX", "arpLaneFxTarget", 410, 220, 78, 30);
+                        LayoutElement lane;
+                        lane.type = ElementType::ArpLane;
+                        lane.label = "Arp Lane";
+                        lane.parameterId = "arpLaneRate";
+                        lane.arpLaneMode = "linear";
+                        lane.arpLaneSteps = 16;
+                        lane.x = pos.x + 24;
+                        lane.y = pos.y + 34;
+                        lane.width = 472;
+                        lane.height = 120;
+                        lane.containerId = panelId;
+                        lane.groupId = tabGroup;
+                        lane.id = layout.generateUniqueId ("module_");
+                        lane.accentColour = PatchCraftLookAndFeel::accent();
+                        layout.add (lane);
+                        addChildKnob (layout, panelId, "Rate", "arpLaneRate", 318, 170);
+                        addChildKnob (layout, panelId, "Gate", "arpLaneGate", 398, 170);
+                        addChildKnob (layout, panelId, "Swing", "arpLaneSwing", 318, 250);
+                        addChildKnob (layout, panelId, "FX Amt", "arpLaneFxAmount", 398, 250);
+                        addChildValue (layout, panelId, "Group", "arpLaneGroup", 320, 320, 78, 30);
+                        addChildValue (layout, panelId, "FX", "arpLaneFxTarget", 410, 320, 78, 30);
+                    });
+            }
+            else if (moduleKey == "seqsequencermodule")
+            {
+                ensureBlock ("step_sequencer_module", "mod", "arp", "Step Sequencer", "arpLaneRate", "midi", "arp", "event",
+                             { { "arpSteps", 16.0f }, { "arpLaneRate", 1.0f }, { "arpLaneGate", 0.58f },
+                               { "arpLaneSwing", 0.0f }, { "arpLaneProbability", 1.0f } });
+                addModulePanel ("Add Step Sequencer", "Step Sequencer", 540, 430,
+                    [&] (LayoutModel& layout, const juce::String& panelId)
+                    {
+                        auto addSeqLane = [&] (const juce::String& label, const juce::String& laneType,
+                                               juce::Colour colour, int yOffset)
+                        {
+                            LayoutElement seq;
+                            seq.type = ElementType::SequencerLane;
+                            seq.label = label;
+                            seq.seqLaneType = laneType;
+                            seq.seqLaneSteps = 16;
+                            seq.seqLaneIndex = 0;
+                            seq.seqLaneColour = colour;
+                            seq.x = pos.x + 24;
+                            seq.y = pos.y + yOffset;
+                            seq.width = 492;
+                            seq.height = 52;
+                            seq.containerId = panelId;
+                            seq.groupId = tabGroup;
+                            seq.id = layout.generateUniqueId ("seq_");
+                            seq.accentColour = PatchCraftLookAndFeel::accent();
+                            seq.backgroundColour = juce::Colour (0xdd10141a);
+                            layout.add (seq);
+                        };
+
+                        LayoutElement mainLane;
+                        mainLane.type = ElementType::ArpLane;
+                        mainLane.label = "Main Steps";
+                        mainLane.arpLaneMode = "linear";
+                        mainLane.arpLaneSteps = 16;
+                        mainLane.x = pos.x + 24;
+                        mainLane.y = pos.y + 34;
+                        mainLane.width = 492;
+                        mainLane.height = 110;
+                        mainLane.containerId = panelId;
+                        mainLane.groupId = tabGroup;
+                        mainLane.id = layout.generateUniqueId ("module_");
+                        mainLane.accentColour = PatchCraftLookAndFeel::accent();
+                        layout.add (mainLane);
+
+                        addSeqLane ("Gate", "gate", PatchCraftLookAndFeel::accent(), 156);
+                        addSeqLane ("Velocity", "value", juce::Colour (0xff79c267), 216);
+                        addSeqLane ("Pitch", "pitch", juce::Colour (0xff6ab0ff), 276);
+                        addSeqLane ("Chance", "chance", juce::Colour (0xff8fd6ff), 336);
+
+                        addChildKnob (layout, panelId, "Rate", "arpLaneRate", 24, 400);
+                        addChildKnob (layout, panelId, "Gate", "arpLaneGate", 104, 400);
+                        addChildKnob (layout, panelId, "Swing", "arpLaneSwing", 184, 400);
+                        addChildKnob (layout, panelId, "Prob", "arpLaneProbability", 264, 400);
+                        addChildSlider (layout, panelId, "Humanize", "arpLaneHumanize", 344, 382, 44, 88);
+                        addChildSlider (layout, panelId, "Mutation", "arpLaneMutation", 404, 382, 44, 88);
                     });
             }
             else if (moduleKey == "lfo")

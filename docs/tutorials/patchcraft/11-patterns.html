@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Patterns — PatchCraft Documentation</title>
+  <meta name="description" content="Complete guide to PatchCraft Patterns (Pattern Builder): step grids, piano roll, drum patterns, musical operators, and Player export.">
+  <link rel="stylesheet" href="css/patchcraft-docs.css">
+</head>
+<body data-page="11-patterns">
+
+<header class="doc-topbar">
+  <a class="doc-brand" href="index.html">
+    <span class="doc-brand-mark">P</span>
+    PatchCraft Docs
+  </a>
+  <nav class="doc-topbar-links">
+    <a href="https://audicode.com/products/patchcraft" target="_blank" rel="noopener">Product</a>
+    <a href="index.html">Tutorial bundle</a>
+    <a href="12-circles.html">Circles →</a>
+  </nav>
+  <button class="menu-toggle" type="button" aria-label="Open navigation">Menu</button>
+</header>
+
+<div class="doc-shell">
+  <aside class="doc-sidebar">
+    <h2>Tutorial bundle</h2>
+    <ul class="doc-nav">
+      <li><a href="index.html" data-page="index"><span class="nav-num">—</span> Index</a></li>
+      <li><a href="05-midi-playground.html" data-page="05"><span class="nav-num">05</span> MIDI Playground (overview)</a></li>
+      <li><a href="11-patterns.html" data-page="11-patterns"><span class="nav-num">11</span> Patterns</a></li>
+      <li><a href="12-circles.html" data-page="12-circles"><span class="nav-num">12</span> Circles</a></li>
+    </ul>
+
+    <h2>On this page</h2>
+    <ul class="doc-nav doc-toc">
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#opening">Opening Patterns</a></li>
+      <li><a href="#workflow">Core workflow</a></li>
+      <li><a href="#editors">Editor views</a></li>
+      <li><a href="#modes">Performance modes</a></li>
+      <li><a href="#harmony">Harmony &amp; presets</a></li>
+      <li><a href="#rhythm">Rhythm controls</a></li>
+      <li><a href="#operators">Musical tools</a></li>
+      <li><a href="#slots">Phrase slots</a></li>
+      <li><a href="#templates">Templates &amp; Player UI</a></li>
+      <li><a href="#export">Preview &amp; export</a></li>
+      <li><a href="#canvas">Canvas widgets</a></li>
+      <li><a href="#troubleshooting">Troubleshooting</a></li>
+    </ul>
+  </aside>
+
+  <main class="doc-main">
+    <header class="doc-hero">
+      <div class="doc-eyebrow">PatchCraft · Workspace 03 · Patterns</div>
+      <h1>Patterns (Pattern Builder)</h1>
+      <p class="doc-lead">
+        Author deterministic MIDI performances for your instrument — melodies, chords, arps, sample chops, and drum grooves —
+        then commit them to the pack with <strong>Use This Pattern</strong> and ship them in the Player.
+      </p>
+      <div class="doc-meta">
+        <span class="doc-pill accent">Studio toolbar tab: Patterns</span>
+        <span class="doc-pill">Pairs with Circles tab</span>
+        <span class="doc-pill">No random — stable every play</span>
+      </div>
+    </header>
+
+    <section class="doc-section" id="overview">
+      <div class="doc-section-header">
+        <span class="doc-section-num">01</span>
+        <h2>Overview</h2>
+      </div>
+      <p>
+        <strong>Patterns</strong> is PatchCraft’s linear pattern workspace (internally called <em>Pattern Builder</em>).
+        It lives on the same engine as <a href="12-circles.html">Circles</a> but optimises for step grids, piano roll editing,
+        drum machines, and musical preset drops.
+      </p>
+      <p>
+        Sound always comes from your current DSP graph, sample map, or FX chain. Patterns does not generate audio —
+        it generates <strong>note events, slice triggers, and modulation lanes</strong> that drive what you already built.
+      </p>
+
+      <div class="card-grid">
+        <div class="info-card">
+          <h4>What you edit</h4>
+          <p>Step on/off, pitch, velocity, gate, probability, slice index, and modulation targets per step.</p>
+        </div>
+        <div class="info-card teal">
+          <h4>What gets exported</h4>
+          <p>MIDI Playground DSP block data, phrase bank slots, and optional Player GUI controls from templates.</p>
+        </div>
+        <div class="info-card green">
+          <h4>Relationship to Circles</h4>
+          <p>Same five phrase slots. Switch to Circles for ring editing; changes sync back to the active slot.</p>
+        </div>
+      </div>
+
+      <div class="callout note">
+        <div class="callout-title">Deterministic by design</div>
+        <p style="margin:0">
+          Musical Tools (transpose, invert, retrograde, scale-quantize) and authored presets never use random number generators.
+          A pattern you hear in Test is the same pattern your customers get in the exported Player.
+        </p>
+      </div>
+    </section>
+
+    <section class="doc-section" id="opening">
+      <div class="doc-section-header">
+        <span class="doc-section-num">02</span>
+        <h2>Opening Patterns</h2>
+      </div>
+      <ol>
+        <li>Open PatchCraft Studio and load or create a project.</li>
+        <li>Click the <strong>Patterns</strong> tab in the canvas toolbar (between One-Shots and Circles).</li>
+        <li>Confirm the header reads <strong>PATTERN PLAYER</strong> and the view toggle shows <strong>Pattern Builder</strong> selected.</li>
+      </ol>
+      <p>Alternative routes:</p>
+      <ul>
+        <li><strong>Design → canvas right-click</strong> → Add Arpeggiator (MIDI Playground) — inserts a runtime block and jumps you into pattern authoring.</li>
+        <li><strong>Inspector</strong> on an existing MIDI/arp element → open Patterns to edit its backing data.</li>
+      </ul>
+    </section>
+
+    <section class="doc-section" id="workflow">
+      <div class="doc-section-header">
+        <span class="doc-section-num">03</span>
+        <h2>Core workflow</h2>
+      </div>
+      <p>The summary strip at the top of Patterns encodes the intended path:</p>
+
+      <ol class="workflow-steps">
+        <li>
+          <strong>Build Sound in DSP</strong>
+          Create or refine your instrument in the Graph workspace — sampler zones, synth patch, drum kit, or FX chain.
+          Use <strong>Build Sound</strong> in the source panel to jump to Design/Graph.
+        </li>
+        <li>
+          <strong>Choose or author a pattern</strong>
+          Pick a <em>Drop Preset</em> musical idea, use Chords / Sample Chops / Drums quick actions, or paint steps in an editor view.
+        </li>
+        <li>
+          <strong>Use This Pattern</strong>
+          Commits the current editor contents to the active phrase slot and marks the MIDI block as part of the instrument.
+          This is the “make it real” button — until you press it, edits may be preview-only.
+        </li>
+        <li>
+          <strong>Add Player Controls</strong>
+          Applies a GUI template (performance strip, drum pads, macro panel, etc.) so end users can switch slots and perform in the Player.
+        </li>
+        <li>
+          <strong>Test in Player</strong>
+          Opens Branding Lab preview with live audio so you can verify timing, gates, and slot switching.
+        </li>
+      </ol>
+    </section>
+
+    <section class="doc-section" id="editors">
+      <div class="doc-section-header">
+        <span class="doc-section-num">04</span>
+        <h2>Editor views</h2>
+      </div>
+      <p>Select the editor from the <strong>View</strong> dropdown (hidden automatically in Drum Machine mode).</p>
+
+      <h3>Step Grid (Output Lane)</h3>
+      <p>
+        Four horizontal lanes per step: <strong>Note</strong>, <strong>Velocity</strong>, <strong>Gate</strong>, and <strong>Probability</strong>.
+        Click a cell to set pitch or drag vertically within a lane to sculpt velocity/gate/probability curves.
+      </p>
+      <ul>
+        <li>Best for arps, bass lines, and modulation lanes where step timing matters more than pitch contour.</li>
+        <li>Gate length is editable by horizontal drag within the gate row.</li>
+      </ul>
+
+      <h3>Piano Roll</h3>
+      <p>
+        Six-octave roll centred on the current root (−36 to +36 semitones). Click empty grid to add a note; click an existing note to remove it.
+        Drag horizontally to extend note length (gate). A mini keyboard gutter shows C labels for orientation.
+      </p>
+      <ul>
+        <li>Ideal for chord beds, melodies, and progressions dropped from presets.</li>
+        <li>Hover highlights preview pitch before you click.</li>
+      </ul>
+
+      <h3>Drum Pattern Grid</h3>
+      <p>
+        Appears when <strong>Mode</strong> is set to Drum Machine (or the active block is a drum machine).
+        Tracks map to kit voices; velocity is set by vertical position within a cell.
+      </p>
+      <ul>
+        <li>Eight patterns (Pattern 1–8) per drum block — switch with the Pattern dropdown.</li>
+        <li>Drum-specific Musical Tools: copy/paste pattern, shift steps, accent downbeats, ghost notes, trap hat rolls.</li>
+      </ul>
+    </section>
+
+    <section class="doc-section" id="modes">
+      <div class="doc-section-header">
+        <span class="doc-section-num">05</span>
+        <h2>Performance modes</h2>
+      </div>
+      <div class="doc-table-wrap">
+        <table class="doc-table">
+          <thead>
+            <tr><th>Mode</th><th>Purpose</th><th>Typical editor</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Chord / Progression</td><td>Harmonic pads and voiced chords with strum/spread</td><td>Piano Roll or Step Grid</td></tr>
+            <tr><td>Sample Chopper</td><td>Slice-triggered performances across a mapped sample</td><td>Step Grid + slice count</td></tr>
+            <tr><td>Arp / Step Sequencer</td><td>Classic monophonic/polyphonic step sequencing</td><td>Step Grid</td></tr>
+            <tr><td>Modulation Lane</td><td>Per-step control of filter, volume, slice, wavetable position</td><td>Step Grid (target dropdown)</td></tr>
+            <tr><td>Drum Machine</td><td>16-track drum patterns with probability and ratchets</td><td>Drum Pattern Grid</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Changing mode reconfigures the underlying MIDI block type and visible controls. Save your project after switching modes on a mature patch.</p>
+    </section>
+
+    <section class="doc-section" id="harmony">
+      <div class="doc-section-header">
+        <span class="doc-section-num">06</span>
+        <h2>Harmony &amp; presets</h2>
+      </div>
+
+      <h3>Drop Preset (musical ideas)</h3>
+      <p>One-click authored content grouped by category:</p>
+      <ul>
+        <li><strong>Chords</strong> — major/minor triads, 7ths, extended voicings</li>
+        <li><strong>Progressions</strong> — pop, jazz, cinematic, trailer movement</li>
+        <li><strong>Melodies + Bass</strong> — trance arp, acid line, anjuna lead, walking bass</li>
+        <li><strong>Drum Grooves</strong> — trap, four-on-the-floor, DnB, UK garage</li>
+        <li><strong>Sample Remix</strong> — chopper and glitch gate performances</li>
+      </ul>
+      <p>Select a preset, then click <strong>Use This Pattern</strong> to write it into the active slot.</p>
+
+      <h3>Root, scale, and progressions</h3>
+      <ul>
+        <li><strong>Root</strong> — transposes authored content to the chosen pitch center.</li>
+        <li><strong>Scale</strong> — constrains quantize operations and some preset voicings (Major, Minor, Dorian, Blues, etc.).</li>
+        <li><strong>Progression</strong> dropdown — applies named chord sequences into the piano roll.</li>
+        <li><strong>Chords</strong> button — quick entry to chord phrase configuration.</li>
+      </ul>
+
+      <h3>Chord performance sliders</h3>
+      <div class="doc-table-wrap">
+        <table class="doc-table">
+          <thead><tr><th>Control</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td>Chord Size</td><td>Number of notes in each triggered chord</td></tr>
+            <tr><td>Spread</td><td>Voicing width across octaves</td></tr>
+            <tr><td>Strum</td><td>Time offset between chord notes</td></tr>
+            <tr><td>Octave</td><td>Range extension for arpeggiated chords</td></tr>
+            <tr><td>Octave Fold</td><td>Keep generated notes within a single octave span</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="doc-section" id="rhythm">
+      <div class="doc-section-header">
+        <span class="doc-section-num">07</span>
+        <h2>Rhythm controls</h2>
+      </div>
+      <div class="doc-table-wrap">
+        <table class="doc-table">
+          <thead><tr><th>Control</th><th>Range / notes</th></tr></thead>
+          <tbody>
+            <tr><td>Steps</td><td>1–128 steps per pattern (UI adapts cell width above 64 steps)</td></tr>
+            <tr><td>Rate</td><td>Note division multiplier (synced to project BPM in Test/Player)</td></tr>
+            <tr><td>Gate</td><td>Note length as fraction of step</td></tr>
+            <tr><td>Swing</td><td>Off-beat delay amount for even steps</td></tr>
+            <tr><td>Probability</td><td>Global hit chance — combine with per-step probability in grid</td></tr>
+            <tr><td>Humanize</td><td>Timing/velocity micro-offset (deterministic from pattern seed, not random)</td></tr>
+            <tr><td>Ratchet</td><td>Retrigger count per active step</td></tr>
+            <tr><td>Mutation</td><td>Controlled variation depth for certain preset transforms</td></tr>
+            <tr><td>Euclidean</td><td>Pulses + rotate — distributes hits evenly around the ring/step count</td></tr>
+            <tr><td>Flam</td><td>Double-hit offset on active steps (drums and melodic)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="doc-section" id="operators">
+      <div class="doc-section-header">
+        <span class="doc-section-num">08</span>
+        <h2>Musical tools (operators)</h2>
+      </div>
+      <p>Open <strong>Musical Tools</strong> for deterministic transforms on the current pattern:</p>
+
+      <h3>Melodic / step patterns</h3>
+      <ul>
+        <li><strong>Transpose</strong> — ± octave, ± fifth, ± semitone</li>
+        <li><strong>Invert</strong> — mirror intervals around root</li>
+        <li><strong>Retrograde</strong> — reverse step order</li>
+        <li><strong>Scale-quantize</strong> — snap all pitches to the selected scale</li>
+        <li><strong>Compress to one octave</strong></li>
+        <li><strong>Activate every step / every other step / clear all</strong></li>
+      </ul>
+
+      <h3>Drum patterns</h3>
+      <ul>
+        <li>Copy / paste / duplicate pattern across pattern slots</li>
+        <li>Shift left or right by one step</li>
+        <li>Accent downbeats, add ghost notes, add trap hat rolls</li>
+        <li>Clear current pattern</li>
+      </ul>
+
+      <div class="callout tip">
+        <div class="callout-title">Phrase library</div>
+        <p style="margin:0">
+          <strong>Phrase Library</strong> exposes hand-authored grooves beyond the Drop Preset list.
+          Use it when you want a finished phrase as a starting point, then apply Musical Tools to customise.
+        </p>
+      </div>
+    </section>
+
+    <section class="doc-section" id="slots">
+      <div class="doc-section-header">
+        <span class="doc-section-num">09</span>
+        <h2>Phrase slots (banks)</h2>
+      </div>
+      <p>
+        PatchCraft stores <strong>five phrase slots</strong> per MIDI Playground block. The Slot dropdown selects which bank you edit.
+      </p>
+      <ul>
+        <li><strong>Save Slot</strong> — snapshots the current editor into the selected bank.</li>
+        <li><strong>Duplicate Slot</strong> — copies the active bank to the next free slot.</li>
+        <li>Switch slots in the Player via key switches or GUI controls added by templates.</li>
+      </ul>
+      <p>
+        Circles view edits the same slots with a ring UI — see <a href="12-circles.html">Circles documentation</a> for lane targeting and orbit modes.
+      </p>
+    </section>
+
+    <section class="doc-section" id="templates">
+      <div class="doc-section-header">
+        <span class="doc-section-num">10</span>
+        <h2>Templates &amp; Player UI</h2>
+      </div>
+
+      <h3>Make Pattern (MIDI template)</h3>
+      <p>Creates or replaces the MIDI Playground DSP block with a configured pattern module:</p>
+      <ul>
+        <li>Melodic Lead Line, Cinematic Chord Bed, Drum Pattern, Sample Chopper, Glitch Gate</li>
+        <li>Polymeter Key-Switch Banks, MIDI Echo Throw, Pattern Morph Performance</li>
+        <li>Chord Pad Performer, Riff Generator, Advanced Arp Instrument</li>
+      </ul>
+
+      <h3>Add Player Controls (GUI template)</h3>
+      <p>Generates canvas elements wired to pattern parameters:</p>
+      <ul>
+        <li>Performance Strip, Sample Controls, Drum Pad Panel, MIDI Macro Panel</li>
+        <li>XY Performance Pad, Drum Song Controls</li>
+      </ul>
+
+      <div class="callout warn">
+        <div class="callout-title">CircleSEQ templates</div>
+        <p style="margin:0">
+          <strong>CircleSEQ Flagship Instrument</strong> and <strong>CircleSEQ Flagship Player</strong> belong to the Circles workflow.
+          Use them from the Circles tab — see <a href="12-circles.html#templates">Circles → Templates</a>.
+        </p>
+      </div>
+    </section>
+
+    <section class="doc-section" id="export">
+      <div class="doc-section-header">
+        <span class="doc-section-num">11</span>
+        <h2>Preview &amp; export</h2>
+      </div>
+      <ul>
+        <li><strong>Play Pattern / Stop</strong> — auditions the active slot with the current DSP sound inside Patterns.</li>
+        <li><strong>Export MIDI</strong> — writes a Standard MIDI File of the current pattern for your DAW.</li>
+        <li><strong>Test in Player</strong> — full instrument preview with keyboard and transport.</li>
+        <li><strong>Export Center</strong> — packages the MIDI block, phrase banks, and GUI into the <code>.patchcraft</code> folder.</li>
+      </ul>
+
+      <div class="code-block">
+        <div class="code-block-header">
+          <span>Typical pack contents (pattern layer)</span>
+          <button class="copy-btn" type="button">Copy</button>
+        </div>
+        <pre>dsp/graph.json          → midiPlayground or arpSequencer block
+dsp/blocks/*.values     → step notes, gates, velocities, probabilities
+phrase_banks/           → five slot snapshots (mpBank1..5)
+layout/                 → optional performance controls from GUI template
+pscript.txt             → optional script hooks (note starts, knob moves)</pre>
+      </div>
+    </section>
+
+    <section class="doc-section" id="canvas">
+      <div class="doc-section-header">
+        <span class="doc-section-num">12</span>
+        <h2>Canvas widgets (Player surface)</h2>
+      </div>
+      <p>From Design, add pattern-related elements that bind to the same runtime data:</p>
+      <ul>
+        <li><strong>Piano Roll</strong> widget — on-canvas step sequencer for end users (Player + Branding preview).</li>
+        <li><strong>Drum Grid</strong> — 16×step drum matrix with bank switching.</li>
+        <li><strong>Arp Lane / CircleSEQ</strong> — circular lane displays; edit in Circles, perform in Player.</li>
+      </ul>
+      <p>
+        Right-click a selected Arp Lane in Design for <strong>Copy Circle Pattern</strong>, <strong>Paste Pattern</strong>, and <strong>Reset Circle</strong>.
+      </p>
+    </section>
+
+    <section class="doc-section" id="troubleshooting">
+      <div class="doc-section-header">
+        <span class="doc-section-num">13</span>
+        <h2>Troubleshooting</h2>
+      </div>
+      <div class="doc-table-wrap">
+        <table class="doc-table">
+          <thead><tr><th>Symptom</th><th>Fix</th></tr></thead>
+          <tbody>
+            <tr><td>No sound when playing pattern</td><td>Build DSP first; confirm a MIDI block exists (Make Pattern); check Test audio is running.</td></tr>
+            <tr><td>Edits disappear after reload</td><td>Press <strong>Use This Pattern</strong> and save the project.</td></tr>
+            <tr><td>Wrong editor visible</td><td>Drum mode hides piano roll — set Mode to Arp/Step or Chord for melodic editors.</td></tr>
+            <tr><td>Pattern differs in Player</td><td>Ensure you committed the correct phrase slot; verify slot switch controls in Brand Lab.</td></tr>
+            <tr><td>Can't find Patterns tab</td><td>Update Studio — tab lives in canvas toolbar between One-Shots and Circles.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="doc-footer">
+      <a href="12-circles.html">Next: Circles →</a>
+      <a href="index.html">Tutorial index</a>
+      <a href="https://audicode.com/products/patchcraft">PatchCraft product page</a>
+      <p style="margin-top:16px">© AudiCode · PatchCraft Studio documentation</p>
+    </footer>
+  </main>
+</div>
+
+<script src="js/patchcraft-docs.js"></script>
+</body>
+</html>

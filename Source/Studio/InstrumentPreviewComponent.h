@@ -83,6 +83,14 @@ namespace patchcraft
         juce::MidiKeyboardState  keyboardState;
         std::unique_ptr<juce::MidiKeyboardComponent> keyboard;
 
+        // External (hardware) MIDI arrives on the MIDI thread. MidiKeyboardState
+        // only forwards events that were queued via noteOn/noteOff (e.g. on-screen
+        // clicks) to processNextMidiBuffer, so hardware notes would never reach the
+        // engine. We stage them in this lock-guarded buffer and merge them into the
+        // audio block, mirroring the working TestPage path.
+        juce::CriticalSection hardwareMidiLock;
+        juce::MidiBuffer       hardwareMidiBuffer;
+
         juce::Label headerLabel;
         juce::Label statusLabel;
 

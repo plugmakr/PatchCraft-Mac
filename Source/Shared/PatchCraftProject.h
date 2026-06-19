@@ -24,6 +24,7 @@ namespace patchcraft
         enum class ChangeScope
         {
             structural,
+            layout,
             dspRealtime
         };
 
@@ -85,7 +86,8 @@ namespace patchcraft
         // Snapshot the current layout, run mutator, push action onto undo stack.
         // Action is named so the UI can show "Undo: <name>".
         void performLayoutEdit (const juce::String& actionName,
-                                std::function<void (LayoutModel&)> mutator);
+                                std::function<void (LayoutModel&)> mutator,
+                                bool structuralChange = true);
         void performSampleMapEdit (const juce::String& actionName,
                                    std::function<void (SampleMap&)> mutator);
 
@@ -96,6 +98,7 @@ namespace patchcraft
 
         // ---- Helpers ----------------------------------------------------------
         void resetToDefaultInstrument();          // sampler default
+        void resetToArpStepSequencerTemplate();
         void resetCanvasToBlank();
         // Switch the project's engine. Replaces parameter palette and layout
         // with that engine's template. Destructive - undo via UndoManager.

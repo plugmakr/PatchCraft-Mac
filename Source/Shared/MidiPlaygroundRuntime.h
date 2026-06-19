@@ -138,6 +138,8 @@ namespace patchcraft
             std::array<float, kMaxDrumPatterns * kMaxDrumTracks * kMaxDrumSteps> drumSampleSlices {};
             std::array<float, kMaxDrumTracks> drumTrackFxTargets {};
             std::array<float, kMaxDrumTracks> drumTrackFxAmounts {};
+            std::array<float, kMaxDrumTracks> drumTrackMuted {};
+            std::array<float, kMaxDrumTracks> drumTrackSolo {};
         };
 
         bool enabled = false;

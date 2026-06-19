@@ -2,6 +2,7 @@
 #include "StudioMainComponent.h"
 #include "PatchCraftLookAndFeel.h"
 #include "TestPage.h"
+#include "StudioInstrumentRenderer.h"
 #include "LibraryScanner.h"
 
 #include <functional>
@@ -94,6 +95,55 @@ namespace patchcraft
             const int width = juce::jmax (1, juce::roundToInt ((float) canvasSize.width * scale));
             const int height = juce::jmax (1, juce::roundToInt ((float) canvasSize.height * scale));
             return bounds.withSizeKeepingCentre (width, height);
+        }
+
+        static bool isRuntimeAudioFile (const juce::File& file)
+        {
+            const auto ext = file.getFileExtension().toLowerCase();
+            return file.existsAsFile()
+                && (ext == ".wav" || ext == ".aif" || ext == ".aiff" || ext == ".flac");
+        }
+
+        static bool isRuntimeMidiFile (const juce::File& file)
+        {
+            const auto ext = file.getFileExtension().toLowerCase();
+            return file.existsAsFile() && (ext == ".mid" || ext == ".midi");
+        }
+
+        static bool isRuntimeImportPath (const juce::File& file)
+        {
+            return file.isDirectory() || isRuntimeAudioFile (file) || isRuntimeMidiFile (file);
+        }
+
+        static void collectRuntimeImportFiles (const juce::StringArray& paths,
+                                               juce::Array<juce::File>& audioFiles,
+                                               juce::Array<juce::File>& midiFiles)
+        {
+            for (const auto& path : paths)
+            {
+                const juce::File file (path);
+                if (file.isDirectory())
+                {
+                    juce::Array<juce::File> children;
+                    file.findChildFiles (children, juce::File::findFiles, true,
+                                         "*.wav;*.aif;*.aiff;*.flac;*.mid;*.midi");
+                    for (const auto& child : children)
+                    {
+                        if (isRuntimeAudioFile (child))
+                            audioFiles.add (child);
+                        else if (isRuntimeMidiFile (child))
+                            midiFiles.add (child);
+                    }
+                }
+                else if (isRuntimeAudioFile (file))
+                {
+                    audioFiles.add (file);
+                }
+                else if (isRuntimeMidiFile (file))
+                {
+                    midiFiles.add (file);
+                }
+            }
         }
     }
 
@@ -491,57 +541,36 @@ namespace patchcraft
         testPage->setBrandLabPreviewMode (true);
         addAndMakeVisible (*testPage);
 
-        for (auto* button : { &playerFileBtn, &playerLibraryBtn, &playerViewBtn, &playerToolsBtn,
-                              &playerSoundBtn, &playerRackBtn, &playerControlBtn, &playerMidiClipBtn,
-                              &playerPlayBtn, &playerStopBtn,
-                              &playerPrevPresetBtn, &playerPresetBtn, &playerNextPresetBtn })
+        runtimeDropStatusLabel.setVisible (false);
+        runtimeDropStatusLabel.setJustificationType (juce::Justification::centredLeft);
+        runtimeDropStatusLabel.setFont (juce::FontOptions (12.0f).withStyle ("bold"));
+        runtimeDropStatusLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+        runtimeDropStatusLabel.setColour (juce::Label::backgroundColourId, juce::Colour (0xdd11161e));
+        addAndMakeVisible (runtimeDropStatusLabel);
+
+        // Consumer-facing buttons only — matches the real Player chrome.
+        // Dev-only buttons (File, View, Tools, Rack, Control, MIDI Clip) removed.
+        for (auto* button : { &playerLibraryBtn, &playerSoundBtn,
+                               &playerPlayBtn, &playerStopBtn,
+                               &playerPrevPresetBtn, &playerPresetBtn, &playerNextPresetBtn })
         {
             stylePlayerToolbarButton (*button);
             addAndMakeVisible (*button);
         }
 
-        playerFileBtn.setButtonText ("F");
         playerLibraryBtn.setButtonText ("LIB");
-        playerViewBtn.setButtonText ("VIEW");
-        playerToolsBtn.setButtonText ("TOOL");
         playerSoundBtn.setButtonText ("SND");
-        playerRackBtn.setButtonText ("RACK");
-        playerControlBtn.setButtonText ("CTRL");
-        playerMidiClipBtn.setButtonText ("MIDI");
         playerPlayBtn.setButtonText (">");
-        playerStopBtn.setButtonText ("■");
+        playerStopBtn.setButtonText ("\u25a0");
         playerPrevPresetBtn.setButtonText ("<");
         playerNextPresetBtn.setButtonText (">");
         playerPresetBtn.getProperties().set ("fontSize", 12.0);
 
-        playerFileBtn.setTooltip ("Open the same Player file/actions menu users see in the plugin.");
-        playerFileBtn.onClick = [this] { showPlayerFileMenu(); };
         playerLibraryBtn.setTooltip ("Preview the Player library entry point and pack browser state.");
-        playerLibraryBtn.onClick = [this]
-        {
-            showPlayerLibraryPanel();
-        };
-        playerViewBtn.setTooltip ("Toggle the Brand Lab form so the Player can be checked at full DAW size.");
-        playerViewBtn.onClick = [this]
-        {
-            showFormToggle.setToggleState (! showFormToggle.getToggleState(), juce::dontSendNotification);
-            if (showFormToggle.onClick)
-                showFormToggle.onClick();
-        };
-        playerToolsBtn.setTooltip ("Open active Player tools.");
-        playerToolsBtn.onClick = [this] { showPlayerToolsMenu(); };
+        playerLibraryBtn.onClick = [this] { showPlayerLibraryPanel(); };
         playerSoundBtn.setTooltip ("Open live sound controls for exposed synth, sample, FX, pad, and macro parameters.");
         playerSoundBtn.onClick = [this] { showPlayerSoundPanel(); };
-        playerRackBtn.setTooltip ("Open live rack/mix controls for layer balance, global level, pan, and routing context.");
-        playerRackBtn.onClick = [this] { showPlayerRackPanel(); };
-        playerControlBtn.setTooltip ("Open active Player control center actions: library, MIDI clip, branding form, license state, and routing.");
-        playerControlBtn.onClick = [this] { showPlayerControlPanel(); };
-        playerMidiClipBtn.setTooltip ("Open the MIDI clip editor as a popout so the Player preview stays full sized.");
-        playerMidiClipBtn.onClick = [this]
-        {
-            if (testPage != nullptr)
-                testPage->showMidiClipEditor();
-        };
+
         playerPlayBtn.setTooltip ("Start the Brand Lab runtime transport. Drum grids, MIDI clips, synced FX, and playheads run here.");
         playerPlayBtn.onClick = [this]
         {
@@ -661,6 +690,13 @@ namespace patchcraft
             }
         }
 
+        if (runtimeDropStatusTicks > 0)
+        {
+            --runtimeDropStatusTicks;
+            if (runtimeDropStatusTicks == 0)
+                runtimeDropStatusLabel.setVisible (false);
+        }
+
         playerPlayBtn.setButtonText (testPage != nullptr && testPage->isTransportPlaying() ? "ON" : ">");
         repaint();
     }
@@ -678,6 +714,117 @@ namespace patchcraft
         return false;
     }
 
+    bool BrandingLabPage::isInterestedInFileDrag (const juce::StringArray& files)
+    {
+        for (const auto& path : files)
+            if (isRuntimeImportPath (juce::File (path)))
+                return true;
+        return false;
+    }
+
+    void BrandingLabPage::filesDropped (const juce::StringArray& files, int x, int y)
+    {
+        importRuntimeFilesAt (files, { x, y });
+    }
+
+    void BrandingLabPage::showRuntimeDropStatus (const juce::String& message, bool warning)
+    {
+        runtimeDropStatusLabel.setText (message, juce::dontSendNotification);
+        runtimeDropStatusLabel.setColour (juce::Label::backgroundColourId,
+                                          warning ? juce::Colour (0xdd5a2718)
+                                                  : juce::Colour (0xdd11161e));
+        runtimeDropStatusLabel.setColour (juce::Label::textColourId,
+                                          warning ? juce::Colour (0xffffd08a)
+                                                  : juce::Colours::white);
+        runtimeDropStatusLabel.setVisible (true);
+        runtimeDropStatusLabel.toFront (false);
+        runtimeDropStatusTicks = 120;
+        repaint();
+    }
+
+    void BrandingLabPage::importRuntimeFilesAt (const juce::StringArray& paths, juce::Point<int> localPosition)
+    {
+        juce::Array<juce::File> audioFiles;
+        juce::Array<juce::File> midiFiles;
+        collectRuntimeImportFiles (paths, audioFiles, midiFiles);
+
+        if (audioFiles.isEmpty() && midiFiles.isEmpty())
+            return;
+
+        StudioInstrumentRenderer::RuntimeDropTarget target;
+        if (testPage != nullptr && testPage->getBounds().contains (localPosition))
+        {
+            if (auto* renderer = testPage->getInstrumentRenderer())
+            {
+                const auto testPoint = localPosition - testPage->getPosition();
+                const auto rendererPoint = testPoint - renderer->getPosition();
+                if (renderer->getLocalBounds().contains (rendererPoint))
+                    target = renderer->runtimeDropTargetAt (rendererPoint);
+            }
+        }
+
+        if (! audioFiles.isEmpty())
+        {
+            if (testPage != nullptr && ! testPage->isAudioRunning())
+                testPage->activate();
+
+            owner.importSampleFiles (audioFiles, false, false,
+                                     target.mappingMode, target.note, target.padIndex);
+        }
+
+        juce::String report;
+        bool ok = true;
+        if (! audioFiles.isEmpty())
+        {
+            const bool padLibraryDrop = target.mappingMode.equalsIgnoreCase ("pads")
+                                     && ! target.targeted;
+            report = "Imported " + juce::String (audioFiles.size()) + " sample"
+                   + (audioFiles.size() == 1 ? "" : "s")
+                   + (target.targeted && target.note >= 0
+                        ? " to " + juce::MidiMessage::getMidiNoteName (target.note, true, true, 4)
+                        : padLibraryDrop
+                            ? " to runtime pads"
+                        : " to the active sample map")
+                   + ".";
+        }
+
+        if (! midiFiles.isEmpty())
+        {
+            const bool shouldAssignToSampleZone = target.targeted
+                || owner.getProject().getSampleMap().getZones().size() == 1;
+
+            if (shouldAssignToSampleZone)
+            {
+                juce::String midiReport;
+                ok = owner.assignMidiFilesToSampleMap (midiFiles, midiReport, target.note, target.padIndex);
+                if (report.isNotEmpty())
+                    report += " ";
+                report += midiReport;
+            }
+
+            if (testPage != nullptr)
+            {
+                if (! testPage->isAudioRunning())
+                    testPage->activate();
+
+                juce::String clipReport;
+                const int clipTargetNote = target.targeted ? target.note : -1;
+                const bool clipLoaded = testPage->loadMidiClipFile (midiFiles.getReference (0),
+                                                                     clipTargetNote,
+                                                                     clipReport,
+                                                                     true);
+                if (report.isNotEmpty())
+                    report += " ";
+                report += clipReport;
+                ok = shouldAssignToSampleZone ? (ok && clipLoaded) : clipLoaded;
+            }
+        }
+
+        refresh();
+        if (report.isNotEmpty())
+            showRuntimeDropStatus (report, ! ok);
+    }
+
     void BrandingLabPage::itemDropped (const SourceDetails& details)
     {
         auto* object = details.description.getDynamicObject();
@@ -688,6 +835,14 @@ namespace patchcraft
         const juce::File file (object->getProperty ("path").toString());
         const int frames = juce::jmax (1, (int) object->getProperty ("frames"));
         const bool vertical = (bool) object->getProperty ("vertical");
+        juce::StringArray paths;
+        if (auto* pathArray = object->getProperty ("paths").getArray())
+        {
+            for (const auto& path : *pathArray)
+                paths.addIfNotAlreadyThere (path.toString());
+        }
+        if (paths.isEmpty() && file != juce::File())
+            paths.add (file.getFullPathName());
 
         if (playerHeaderArea.contains (details.localPosition)
             || category.startsWithIgnoreCase ("branding"))
@@ -708,9 +863,7 @@ namespace patchcraft
 
         if (category == "sounds")
         {
-            juce::Array<juce::File> files;
-            files.add (file);
-            owner.importSampleFiles (files, false, false);
+            importRuntimeFilesAt (paths, details.localPosition);
             refresh();
             return;
         }
@@ -1048,220 +1201,6 @@ namespace patchcraft
         options.launchAsync();
     }
 
-    void BrandingLabPage::showPlayerRackPanel()
-    {
-        struct RackPanel final : public juce::Component
-        {
-            explicit RackPanel (StudioMainComponent& ownerToUse) : owner (ownerToUse)
-            {
-                title.setText ("Instrument Rack", juce::dontSendNotification);
-                title.setFont (juce::FontOptions (17.0f).withStyle ("bold"));
-                title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
-                addAndMakeVisible (title);
-
-                status.setText ("Main runtime rack controls. These values are live while the Brand Lab Player is playing.",
-                                juce::dontSendNotification);
-                status.setFont (juce::FontOptions (11.0f));
-                status.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
-                addAndMakeVisible (status);
-
-                addSlider ("Master Level", "volume", 0.0, 1.5, 0.01, 1.0f);
-                addSlider ("Pan", "pan", -1.0, 1.0, 0.01, 0.0f);
-                addSlider ("Output Gain dB", "outputGainDb", -24.0, 12.0, 0.1, 0.0f);
-                addSlider ("Tempo", "projectBpm", 40.0, 220.0, 1.0, 120.0f);
-
-                setSize (640, 360);
-            }
-
-            void addSlider (const juce::String& name, const juce::String& id,
-                            double min, double max, double step, float fallback)
-            {
-                auto* label = labels.add (new juce::Label());
-                label->setText (name, juce::dontSendNotification);
-                label->setColour (juce::Label::textColourId, PatchCraftLookAndFeel::text());
-                addAndMakeVisible (*label);
-
-                auto* slider = sliders.add (new juce::Slider());
-                slider->setRange (min, max, step);
-                slider->setValue (owner.getProject().getLiveValues().getValue (id, fallback), juce::dontSendNotification);
-                slider->setSliderStyle (juce::Slider::LinearHorizontal);
-                slider->setTextBoxStyle (juce::Slider::TextBoxRight, false, 70, 18);
-                slider->onValueChange = [this, slider, id]
-                {
-                    owner.getProject().getLiveValues().setValue (id, (float) slider->getValue());
-                    owner.getProject().notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
-                };
-                addAndMakeVisible (*slider);
-            }
-
-            void paint (juce::Graphics& g) override
-            {
-                g.fillAll (PatchCraftLookAndFeel::bg());
-                auto r = getLocalBounds().reduced (14);
-                g.setColour (PatchCraftLookAndFeel::panel());
-                g.fillRoundedRectangle (r.toFloat(), 9.0f);
-                g.setColour (PatchCraftLookAndFeel::border());
-                g.drawRoundedRectangle (r.toFloat().reduced (0.5f), 9.0f, 1.0f);
-
-                auto info = r.reduced (18).removeFromBottom (54);
-                g.setColour (PatchCraftLookAndFeel::textDim());
-                g.setFont (juce::FontOptions (11.0f));
-                const auto zoneCount = (int) owner.getProject().getSampleMap().getZones().size();
-                g.drawFittedText ("Loaded sample zones: " + juce::String (zoneCount)
-                                  + " | Engine: " + owner.getProject().getEngineType(),
-                                  info,
-                                  juce::Justification::centredLeft,
-                                  2);
-            }
-
-            void resized() override
-            {
-                auto r = getLocalBounds().reduced (26, 22);
-                title.setBounds (r.removeFromTop (24));
-                status.setBounds (r.removeFromTop (28));
-                r.removeFromTop (8);
-                for (int i = 0; i < sliders.size(); ++i)
-                {
-                    auto row = r.removeFromTop (30);
-                    labels[i]->setBounds (row.removeFromLeft (150));
-                    row.removeFromLeft (8);
-                    sliders[i]->setBounds (row);
-                    r.removeFromTop (8);
-                }
-            }
-
-            StudioMainComponent& owner;
-            juce::Label title, status;
-            juce::OwnedArray<juce::Label> labels;
-            juce::OwnedArray<juce::Slider> sliders;
-        };
-
-        juce::DialogWindow::LaunchOptions options;
-        options.dialogTitle = "Instrument Rack";
-        options.dialogBackgroundColour = PatchCraftLookAndFeel::bg();
-        options.escapeKeyTriggersCloseButton = true;
-        options.useNativeTitleBar = true;
-        options.resizable = true;
-        options.componentToCentreAround = this;
-        options.content.setOwned (new RackPanel (owner));
-        options.launchAsync();
-    }
-
-    void BrandingLabPage::showPlayerControlPanel()
-    {
-        juce::PopupMenu menu;
-        menu.addItem (1, "Open Player Library");
-        menu.addItem (2, "Open MIDI Clip Editor");
-        menu.addItem (3, showFormToggle.getToggleState() ? "Hide Branding Form" : "Show Branding Form");
-        menu.addItem (4, "Runtime Routing");
-        menu.addSeparator();
-        menu.addItem (5, licenseRequiredToggle.getToggleState() ? "License Required: On" : "License Required: Off");
-
-        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (playerControlBtn),
-            [this] (int result)
-            {
-                if (result == 1)
-                    showPlayerLibraryPanel();
-                else if (result == 2 && testPage != nullptr)
-                    testPage->showMidiClipEditor();
-                else if (result == 3)
-                {
-                    showFormToggle.setToggleState (! showFormToggle.getToggleState(), juce::dontSendNotification);
-                    if (showFormToggle.onClick)
-                        showFormToggle.onClick();
-                }
-                else if (result == 4)
-                    showRuntimeRoutingPanel();
-                else if (result == 5)
-                {
-                    licenseRequiredToggle.setToggleState (! licenseRequiredToggle.getToggleState(), juce::sendNotification);
-                    writeToManifest();
-                }
-            });
-    }
-
-    void BrandingLabPage::showRuntimeRoutingPanel()
-    {
-        struct RoutingPanel final : public juce::Component
-        {
-            explicit RoutingPanel (StudioMainComponent& ownerToUse) : owner (ownerToUse)
-            {
-                openDspButton.setButtonText ("Open DSP Routing");
-                openDspButton.getProperties().set ("primaryAction", true);
-                openDspButton.onClick = [this]
-                {
-                    owner.setBottomTab (BottomPanel::Page::DSP);
-                    if (auto* dialog = findParentComponentOfClass<juce::DialogWindow>())
-                        dialog->exitModalState (0);
-                };
-                addAndMakeVisible (openDspButton);
-                setSize (640, 440);
-            }
-
-            void paint (juce::Graphics& g) override
-            {
-                g.fillAll (PatchCraftLookAndFeel::bg());
-                auto r = getLocalBounds().reduced (18);
-                g.setColour (PatchCraftLookAndFeel::panel());
-                g.fillRoundedRectangle (r.toFloat(), 9.0f);
-                g.setColour (PatchCraftLookAndFeel::border());
-                g.drawRoundedRectangle (r.toFloat().reduced (0.5f), 9.0f, 1.0f);
-
-                auto inner = r.reduced (18);
-                g.setColour (PatchCraftLookAndFeel::accent());
-                g.setFont (juce::FontOptions (18.0f).withStyle ("bold"));
-                g.drawText ("Runtime Routing", inner.removeFromTop (28), juce::Justification::centredLeft);
-                inner.removeFromTop (8);
-
-                const auto& graph = owner.getProject().getDspGraph();
-                const auto zoneCount = (int) owner.getProject().getSampleMap().getZones().size();
-                g.setColour (PatchCraftLookAndFeel::text());
-                g.setFont (juce::FontOptions (12.0f));
-                g.drawText ("Engine: " + owner.getProject().getEngineType(), inner.removeFromTop (22), juce::Justification::centredLeft);
-                g.drawText ("DSP blocks: " + juce::String ((int) graph.blocks.size())
-                            + " | Edges: " + juce::String ((int) graph.edges.size())
-                            + " | Sample zones: " + juce::String (zoneCount),
-                            inner.removeFromTop (22), juce::Justification::centredLeft);
-
-                inner.removeFromTop (12);
-                g.setColour (PatchCraftLookAndFeel::textDim());
-                int rows = 0;
-                for (const auto& block : graph.blocks)
-                {
-                    if (rows >= 12)
-                        break;
-                    g.drawText (block.section + " / " + block.type + " -> " + (block.targetId.isNotEmpty() ? block.targetId : block.id),
-                                inner.removeFromTop (22),
-                                juce::Justification::centredLeft);
-                    ++rows;
-                }
-                if (rows == 0)
-                    g.drawText ("No DSP graph blocks yet. Open DSP Routing to add source, FX, modulation, and output blocks.",
-                                inner.removeFromTop (44),
-                                juce::Justification::centredLeft);
-            }
-
-            void resized() override
-            {
-                auto bottom = getLocalBounds().reduced (18).removeFromBottom (34);
-                openDspButton.setBounds (bottom.removeFromRight (150));
-            }
-
-            StudioMainComponent& owner;
-            juce::TextButton openDspButton;
-        };
-
-        juce::DialogWindow::LaunchOptions options;
-        options.dialogTitle = "Runtime Routing";
-        options.dialogBackgroundColour = PatchCraftLookAndFeel::bg();
-        options.escapeKeyTriggersCloseButton = true;
-        options.useNativeTitleBar = true;
-        options.resizable = true;
-        options.componentToCentreAround = this;
-        options.content.setOwned (new RoutingPanel (owner));
-        options.launchAsync();
-    }
-
     void BrandingLabPage::showPlayerLibraryPanel()
     {
         LibraryScanner scanner;
@@ -1495,46 +1434,6 @@ namespace patchcraft
         options.launchAsync();
     }
 
-    void BrandingLabPage::showPlayerFileMenu()
-    {
-        juce::PopupMenu menu;
-        menu.addItem (1, "Open MIDI Clip Editor");
-        menu.addItem (2, showFormToggle.getToggleState() ? "Hide Branding Form" : "Show Branding Form");
-        menu.addSeparator();
-        menu.addItem (3, "About Player Chrome");
-
-        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (playerFileBtn),
-            [this] (int result)
-            {
-                if (result == 1 && testPage != nullptr)
-                    testPage->showMidiClipEditor();
-                else if (result == 2)
-                {
-                    showFormToggle.setToggleState (! showFormToggle.getToggleState(), juce::dontSendNotification);
-                    if (showFormToggle.onClick)
-                        showFormToggle.onClick();
-                }
-                else if (result == 3)
-                    showPlayerPreviewPanel ("Player Chrome",
-                                            "Brand Lab now previews the same top-level buyer controls as the exported Player: File, Library, View, Tools, Sound, Rack, Control, preset navigation, full instrument body, and full-width keyboard.");
-            });
-    }
-
-    void BrandingLabPage::showPlayerToolsMenu()
-    {
-        juce::PopupMenu menu;
-        menu.addItem (1, "MIDI Clip Editor");
-        menu.addItem (2, "Runtime Routing");
-
-        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (playerToolsBtn),
-            [this] (int result)
-            {
-                if (result == 1 && testPage != nullptr)
-                    testPage->showMidiClipEditor();
-                else if (result == 2)
-                    showRuntimeRoutingPanel();
-            });
-    }
 
     void BrandingLabPage::showPlayerPresetMenu()
     {
@@ -1894,30 +1793,22 @@ namespace patchcraft
         const int headerH = kPreviewPlayerHeaderHeight;
         auto headerStrip = previewArea.removeFromTop (headerH);
 
-        auto previewBody = previewArea.reduced (12);
-        const int previewKeyboardHeight = juce::jlimit (62, 86, previewArea.getHeight() / 8);
-        previewBody.removeFromBottom (previewKeyboardHeight);
-        const auto fittedInstrument = fitCanvasIntoBounds (owner.getProject().getCanvasSize(), previewBody);
+        const auto fittedInstrument = fitCanvasIntoBounds (owner.getProject().getCanvasSize(), previewArea);
         playerHeaderArea = fittedInstrument.isEmpty()
-            ? headerStrip.reduced (12, 0)
+            ? headerStrip
             : juce::Rectangle<int> (fittedInstrument.getX(), headerStrip.getY(),
                                     fittedInstrument.getWidth(), headerStrip.getHeight());
 
         auto toolbar = playerHeaderArea.withTop (playerHeaderArea.getY() + kPreviewPlayerTitleHeight)
                                       .reduced (10, 5);
 
-        auto left = toolbar.removeFromLeft (juce::jmin (252, toolbar.getWidth() / 3));
-        left.removeFromLeft (48);
-        playerFileBtn.setBounds (left.removeFromLeft (34).reduced (2));
-        playerLibraryBtn.setBounds (left.removeFromLeft (46).reduced (2));
-        playerViewBtn.setBounds (left.removeFromLeft (48).reduced (2));
-        playerToolsBtn.setBounds (left.removeFromLeft (50).reduced (2));
+        // Left side: Library button only (mirrors real Player)
+        auto left = toolbar.removeFromLeft (juce::jmin (100, toolbar.getWidth() / 4));
+        playerLibraryBtn.setBounds (left.removeFromLeft (72).reduced (2));
 
-        auto right = toolbar.removeFromRight (juce::jmin (260, toolbar.getWidth() / 2));
-        playerMidiClipBtn.setBounds (right.removeFromRight (50).reduced (2));
-        playerControlBtn.setBounds (right.removeFromRight (50).reduced (2));
-        playerRackBtn.setBounds (right.removeFromRight (50).reduced (2));
-        playerSoundBtn.setBounds (right.removeFromRight (46).reduced (2));
+        // Right side: Sound button only (mirrors real Player)
+        auto right = toolbar.removeFromRight (juce::jmin (100, toolbar.getWidth() / 4));
+        playerSoundBtn.setBounds (right.removeFromRight (72).reduced (2));
 
         auto middle = toolbar;
         const int transportW = juce::jmin (82, juce::jmax (0, middle.getWidth() / 4));
@@ -1937,8 +1828,7 @@ namespace patchcraft
 
         const auto& manifest = owner.getProject().getManifest();
         const auto buttonStyle = manifest.playerTitleButtonStyle.isNotEmpty() ? manifest.playerTitleButtonStyle : juce::String ("outlined");
-        for (auto* button : { &playerFileBtn, &playerLibraryBtn, &playerViewBtn, &playerToolsBtn,
-                              &playerSoundBtn, &playerRackBtn, &playerControlBtn, &playerMidiClipBtn,
+        for (auto* button : { &playerLibraryBtn, &playerSoundBtn,
                               &playerPlayBtn, &playerStopBtn, &playerPrevPresetBtn, &playerPresetBtn, &playerNextPresetBtn })
         {
             button->getProperties().set ("corner", buttonStyle == "square" ? 2.0 : (buttonStyle == "pill" ? 12.0 : 5.0));
@@ -1951,6 +1841,8 @@ namespace patchcraft
 
         // The TestPage fills what's left so the user can play their instrument.
         if (testPage) testPage->setBounds (previewArea);
+        runtimeDropStatusLabel.setBounds (previewArea.reduced (18).removeFromTop (30));
+        runtimeDropStatusLabel.toFront (false);
 
         if (! showForm) return;
 

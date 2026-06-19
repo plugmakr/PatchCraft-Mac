@@ -351,6 +351,12 @@ namespace patchcraft
         styleLabel (lblArpLaneRatchet, "Ratchets");
         styleLabel (lblArpLaneFillPulses, "Fill");
         styleLabel (lblArpLaneFillProbability, "Fill Chance");
+        styleLabel (lblSeqLane,        "SEQUENCER LANE", juce::Justification::centredLeft, 11.0f, true);
+        styleLabel (lblSeqLaneSteps,   "Steps");
+        styleLabel (lblSeqLaneType,    "Type");
+        styleLabel (lblSeqLaneDirection, "Direction");
+        styleLabel (lblSeqLaneTarget,  "Target");
+        styleLabel (lblSeqLaneColour,  "Lane Colour");
         styleLabel (lblMixer,           "MIXER", juce::Justification::centredLeft, 11.0f, true);
         styleLabel (lblMixerMode,       "Mode");
         styleLabel (lblMixerChannels,   "Channels");
@@ -396,6 +402,7 @@ namespace patchcraft
                           &lblArpLaneDirection, &lblArpLaneRotate, &lblArpLaneEuclideanPulses,
                           &lblArpLaneProbability, &lblArpLaneRatchet, &lblArpLaneFillPulses,
                           &lblArpLaneFillProbability,
+                          &lblSeqLane, &lblSeqLaneSteps, &lblSeqLaneType, &lblSeqLaneDirection, &lblSeqLaneTarget, &lblSeqLaneColour,
                           &lblMixer, &lblMixerMode, &lblMixerChannels, &lblMixerLabels,
                           &lblMixerVolumes, &lblMixerPans, &lblMixerMutes, &lblMixerSolos,
                           &lblMacroEditor, &lblMacroTargets, &lblModMatrixEditor, &lblModRoutes,
@@ -405,7 +412,7 @@ namespace patchcraft
                           &lblGranularTexture })
         {
             addAndMakeVisible (*l);
-            if (l == &lblDrumGrid || l == &lblArpLane || l == &lblMixer || l == &lblMacroEditor
+            if (l == &lblDrumGrid || l == &lblArpLane || l == &lblSeqLane || l == &lblMixer || l == &lblMacroEditor
                 || l == &lblModMatrixEditor || l == &lblGranularEditor || l == &lblContainerManager)
                 l->setInterceptsMouseClicks (false, false);
         }
@@ -810,12 +817,12 @@ namespace patchcraft
         contentPaddingSlider.setRange (-48.0, 48.0, 1.0);
         contentPaddingSlider.setTooltip ("Adjusts the inner padding of the asset inside its bounding box. Negative values let the art fill more of the box.");
 
-        for (auto* edit : { &backgroundColourEdit, &borderColourEdit, &accentColourEdit })
+        for (auto* edit : { &backgroundColourEdit, &borderColourEdit, &accentColourEdit, &seqLaneColourEdit })
         {
-            edit->setIndents (6, 4);
-            addAndMakeVisible (*edit);
+            edit->setSelectAllWhenFocused (true);
+            addAndMakeVisible (edit);
         }
-        for (auto* button : { &backgroundColourButton, &borderColourButton, &accentColourButton })
+        for (auto* button : { &backgroundColourButton, &borderColourButton, &accentColourButton, &seqLaneColourButton })
         {
             button->getProperties().set ("smallButton", true);
             button->getProperties().set ("fontSize", 10.5);
@@ -824,6 +831,7 @@ namespace patchcraft
         backgroundColourButton.onClick = [this] { showColourPicker ("Background Color", backgroundColourEdit, colourFromHex (backgroundColourEdit.getText(), juce::Colours::transparentBlack)); };
         borderColourButton.onClick = [this] { showColourPicker ("Border Color", borderColourEdit, colourFromHex (borderColourEdit.getText(), juce::Colours::transparentBlack)); };
         accentColourButton.onClick = [this] { showColourPicker ("Accent Color", accentColourEdit, colourFromHex (accentColourEdit.getText(), juce::Colours::transparentBlack)); };
+        seqLaneColourButton.onClick = [this] { showColourPicker ("Lane Color", seqLaneColourEdit, colourFromHex (seqLaneColourEdit.getText(), juce::Colours::transparentBlack)); };
 
         addAndMakeVisible (minEdit);
         addAndMakeVisible (maxEdit);
@@ -979,6 +987,7 @@ namespace patchcraft
         backgroundColourEdit.onTextChange = rewrite;
         borderColourEdit.onTextChange = rewrite;
         accentColourEdit.onTextChange = rewrite;
+        seqLaneColourEdit.onTextChange = rewrite;
         valueTypeBox.onChange    = rewrite;
         smoothingSlider.onValueChange = rewrite;
 
@@ -1031,6 +1040,7 @@ namespace patchcraft
         addAndMakeVisible (arpLaneStepsSlider);
 
         arpLaneModeBox.addItem ("Phrase bank", 1);
+        arpLaneModeBox.addItem ("Linear steps", 5);
         arpLaneModeBox.addItem ("Velocity lane", 2);
         arpLaneModeBox.addItem ("Trigger lane", 3);
         arpLaneModeBox.addItem ("CircleSEQ multi-ring", 4);
@@ -1109,6 +1119,35 @@ namespace patchcraft
         arpLaneIndexSlider.onValueChange = rewrite;
         arpLaneStepsSlider.onValueChange = rewrite;
         arpLaneModeBox.onChange = rewrite;
+
+        seqLaneStepsSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+        seqLaneStepsSlider.setTextBoxStyle (juce::Slider::TextBoxRight, true, 48, 22);
+        seqLaneStepsSlider.setRange (1.0, 64.0, 1.0);
+        seqLaneStepsSlider.setTooltip ("Number of steps in the sequence lane.");
+        addAndMakeVisible (seqLaneStepsSlider);
+        
+        seqLaneTypeBox.addItem ("Gate", 1);
+        seqLaneTypeBox.addItem ("Pitch", 2);
+        seqLaneTypeBox.addItem ("Value", 3);
+        seqLaneTypeBox.addItem ("Chance", 4);
+        seqLaneTypeBox.setTooltip ("Visual and functional style of this sequence lane.");
+        addAndMakeVisible (seqLaneTypeBox);
+        
+        seqLaneDirectionBox.addItem ("Forward", 1);
+        seqLaneDirectionBox.addItem ("Reverse", 2);
+        seqLaneDirectionBox.addItem ("PingPong", 3);
+        seqLaneDirectionBox.addItem ("Random", 4);
+        seqLaneDirectionBox.setTooltip ("Playback direction.");
+        addAndMakeVisible (seqLaneDirectionBox);
+        
+        seqLaneTargetBox.setTooltip ("DSP node or parameter target.");
+        seqLaneTargetBox.setSelectAllWhenFocused (true);
+        addAndMakeVisible (seqLaneTargetBox);
+        
+        seqLaneStepsSlider.onValueChange = rewrite;
+        seqLaneTypeBox.onChange = rewrite;
+        seqLaneDirectionBox.onChange = rewrite;
+        seqLaneTargetBox.onTextChange = rewrite;
         arpLaneTargetBox.onChange = [this] { writeArpLaneSampleTargetFromUi (false); };
         arpLaneRootNoteSlider.onValueChange = [this] { writeArpLaneSampleTargetFromUi (false); };
         arpLaneSampleSlotsSlider.onValueChange = [this] { writeArpLaneSampleTargetFromUi (false); };
@@ -1389,6 +1428,7 @@ namespace patchcraft
         const bool isShape  = (type == ElementType::Shape || type == ElementType::Panel);
         const bool isDrumGrid = (type == ElementType::DrumGrid);
         const bool isArpLane = (type == ElementType::ArpLane);
+        const bool isSeqLane = (type == ElementType::SequencerLane);
         const bool isMixer = (type == ElementType::Mixer);
         const bool isMacroControl = (type == ElementType::MacroControl);
         const bool isModMatrix = (type == ElementType::ModMatrix);
@@ -1704,7 +1744,7 @@ namespace patchcraft
             layoutColourRow (r, lblAccentColour, accentColourEdit, accentColourButton);
         }
 
-        const bool showSpecialSection = isDrumGrid || isArpLane || isMixer || isMacroControl || isModMatrix
+        const bool showSpecialSection = isDrumGrid || isArpLane || isSeqLane || isMixer || isMacroControl || isModMatrix
                                      || isGranularField || isTabPanel || showContainerManager;
         const bool showAdvancedControls = showSpecialSection && isSectionOpen (InspectorSection::Advanced);
         lblSpecialSection.setVisible (showSpecialSection);
@@ -1837,6 +1877,32 @@ namespace patchcraft
                 const int buttonW = juce::jmax (64, row.getWidth() / 2);
                 arpLaneApplySampleTargetBtn.setBounds (row.removeFromLeft (buttonW).reduced (4, 4));
                 arpLaneOpenPerformanceBtn.setBounds (row.reduced (4, 4));
+            }
+        }
+
+        for (auto* component : { static_cast<juce::Component*> (&seqLaneStepsSlider),
+                                 static_cast<juce::Component*> (&seqLaneTypeBox),
+                                 static_cast<juce::Component*> (&seqLaneDirectionBox),
+                                 static_cast<juce::Component*> (&seqLaneTargetBox),
+                                 static_cast<juce::Component*> (&seqLaneColourEdit),
+                                 static_cast<juce::Component*> (&seqLaneColourButton) })
+            component->setVisible (isSeqLane && showAdvancedControls && isSectionOpen (InspectorSection::SeqLane));
+        for (auto* label : { &lblSeqLane, &lblSeqLaneSteps, &lblSeqLaneType,
+                             &lblSeqLaneDirection, &lblSeqLaneTarget, &lblSeqLaneColour })
+            label->setVisible (isSeqLane && showAdvancedControls
+                               && (label == &lblSeqLane || isSectionOpen (InspectorSection::SeqLane)));
+
+        if (isSeqLane && showAdvancedControls)
+        {
+            r.removeFromTop (6);
+            sectionHeader (lblSeqLane, InspectorSection::SeqLane, "SEQUENCER LANE");
+            if (isSectionOpen (InspectorSection::SeqLane))
+            {
+                layoutRow (r, lblSeqLaneSteps, &seqLaneStepsSlider);
+                layoutRow (r, lblSeqLaneType, &seqLaneTypeBox);
+                layoutRow (r, lblSeqLaneDirection, &seqLaneDirectionBox);
+                layoutRow (r, lblSeqLaneTarget, &seqLaneTargetBox);
+                layoutColourRow (r, lblSeqLaneColour, seqLaneColourEdit, seqLaneColourButton);
             }
         }
 
@@ -2176,6 +2242,12 @@ namespace patchcraft
             static_cast<juce::Component*> (&arpLaneFillProbabilitySlider),
             static_cast<juce::Component*> (&arpLaneOpenPerformanceBtn),
             static_cast<juce::Component*> (&arpLaneApplySampleTargetBtn),
+            static_cast<juce::Component*> (&seqLaneStepsSlider),
+            static_cast<juce::Component*> (&seqLaneTypeBox),
+            static_cast<juce::Component*> (&seqLaneDirectionBox),
+            static_cast<juce::Component*> (&seqLaneTargetBox),
+            static_cast<juce::Component*> (&seqLaneColourEdit),
+            static_cast<juce::Component*> (&seqLaneColourButton),
             static_cast<juce::Component*> (&mixerModeBox),
             static_cast<juce::Component*> (&mixerChannelsSlider),
             static_cast<juce::Component*> (&mixerLabelsEdit),
@@ -2335,6 +2407,7 @@ namespace patchcraft
         arpLaneStepsSlider.setValue (juce::jlimit (1, 128, el->arpLaneSteps), juce::dontSendNotification);
         arpLaneModeBox.setSelectedId (el->arpLaneMode == "velocity" ? 2
                                    : el->arpLaneMode == "trigger" ? 3
+                                   : el->arpLaneMode == "linear" || el->arpLaneMode == "step" || el->arpLaneMode == "steps" ? 5
                                    : el->arpLaneMode == "multiRing" || el->arpLaneMode == "orbit" || el->arpLaneMode == "orbitMulti" ? 4 : 1,
                                    juce::dontSendNotification);
         arpLaneTargetBox.setSelectedId (el->arpLaneTarget == "drums" ? 2
@@ -2355,6 +2428,17 @@ namespace patchcraft
         arpLaneFillPulsesSlider.setValue (juce::jlimit (0, el->arpLaneSteps, el->arpLaneFillPulses), juce::dontSendNotification);
         arpLaneFillProbabilitySlider.setValue (juce::jlimit (0.0f, 1.0f, el->arpLaneFillProbability), juce::dontSendNotification);
         lblArpLaneRootNote.setText ("Base " + noteNameFor (el->arpLaneRootNote), juce::dontSendNotification);
+
+        seqLaneStepsSlider.setValue (juce::jlimit (1, 64, el->seqLaneSteps), juce::dontSendNotification);
+        seqLaneTypeBox.setSelectedId (el->seqLaneType == "pitch" ? 2
+                                    : el->seqLaneType == "value" ? 3
+                                    : el->seqLaneType == "chance" ? 4 : 1, juce::dontSendNotification);
+        seqLaneDirectionBox.setSelectedId (el->seqLaneDirection == "reverse" ? 2
+                                         : el->seqLaneDirection == "pingpong" ? 3
+                                         : el->seqLaneDirection == "random" ? 4 : 1, juce::dontSendNotification);
+        seqLaneTargetBox.setText (el->seqLaneTarget, juce::dontSendNotification);
+        seqLaneColourEdit.setText (colourToHex (el->seqLaneColour), juce::dontSendNotification);
+        
         mixerModeBox.setSelectedId (el->mixerMode == "layers" ? 2
                                   : el->mixerMode == "parameters" ? 3 : 1,
                                   juce::dontSendNotification);
@@ -2685,6 +2769,7 @@ namespace patchcraft
             el->arpLaneSteps = juce::jlimit (1, 128, juce::roundToInt (arpLaneStepsSlider.getValue()));
             el->arpLaneMode = arpLaneModeBox.getSelectedId() == 2 ? "velocity"
                             : arpLaneModeBox.getSelectedId() == 3 ? "trigger"
+                            : arpLaneModeBox.getSelectedId() == 5 ? "linear"
                             : arpLaneModeBox.getSelectedId() == 4 ? "multiRing" : "bank";
             el->arpLaneTarget = arpLaneTargetBox.getSelectedId() == 2 ? "drums"
                               : arpLaneTargetBox.getSelectedId() == 3 ? "oneShots"
@@ -2701,6 +2786,19 @@ namespace patchcraft
             el->arpLaneRatchet = juce::jlimit (1, 8, juce::roundToInt (arpLaneRatchetSlider.getValue()));
             el->arpLaneFillPulses = juce::jlimit (0, el->arpLaneSteps, juce::roundToInt (arpLaneFillPulsesSlider.getValue()));
             el->arpLaneFillProbability = juce::jlimit (0.0f, 1.0f, (float) arpLaneFillProbabilitySlider.getValue());
+        }
+
+        if (el->type == ElementType::SequencerLane)
+        {
+            el->seqLaneSteps = juce::jlimit (1, 64, juce::roundToInt (seqLaneStepsSlider.getValue()));
+            el->seqLaneType = seqLaneTypeBox.getSelectedId() == 2 ? "pitch"
+                            : seqLaneTypeBox.getSelectedId() == 3 ? "value"
+                            : seqLaneTypeBox.getSelectedId() == 4 ? "chance" : "gate";
+            el->seqLaneDirection = seqLaneDirectionBox.getSelectedId() == 2 ? "reverse"
+                                 : seqLaneDirectionBox.getSelectedId() == 3 ? "pingpong"
+                                 : seqLaneDirectionBox.getSelectedId() == 4 ? "random" : "forward";
+            el->seqLaneTarget = seqLaneTargetBox.getText().trim();
+            el->seqLaneColour = colourFromHex (seqLaneColourEdit.getText(), el->seqLaneColour);
         }
 
         if (el->type == ElementType::Mixer)

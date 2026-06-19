@@ -6,6 +6,7 @@
 #include "StudioMainComponent.h"
 #include "StudioAudioService.h"
 #include "StudioInstrumentRenderer.h"
+#include "ArpLaneUi.h"
 
 #include <cmath>
 
@@ -252,7 +253,7 @@ namespace patchcraft
             const int sliderRole = juce::jlimit (0, 10, juce::roundToInt (value ("arpLaneSliderRole", 0.0f)));
 
             block.values["mpActiveBank"] = (float) lane;
-            block.values["mpMultiLane"] = 1.0f;
+            block.values["mpMultiLane"] = value ("arpLaneMultiLane", 0.0f) >= 0.5f ? 1.0f : 0.0f;
             setArpLaneValue (block, lane, "arpSteps", (float) steps);
             setArpLaneValue (block, lane, "arpPattern", direction == 1 ? 1.0f : direction == 2 ? 2.0f : direction == 3 ? 7.0f : 0.0f);
             setArpLaneValue (block, lane, "arpGate", juce::jlimit (0.05f, 1.0f, value ("arpLaneGate", 0.58f)));
@@ -282,6 +283,37 @@ namespace patchcraft
             }
 
             if (parameterId.startsWith ("arpLaneStep"))
+            {
+                const int changedStep = parameterId.fromLastOccurrenceOf ("arpLaneStep", false, false).getIntValue() - 1;
+                if (changedStep >= 0 && changedStep < 16)
+                {
+                    const float v = juce::jlimit (0.0f, 1.0f, value (parameterId, 0.68f));
+                    const auto suffix = juce::String (changedStep);
+                    if (sliderRole == 0)
+                        setArpLaneValue (block, lane, "mpVelocity" + suffix, v);
+                    else if (sliderRole == 1)
+                        setArpLaneValue (block, lane, "mpGate" + suffix, juce::jlimit (0.05f, 1.0f, 0.05f + v * 0.95f));
+                    else if (sliderRole == 2)
+                        setArpLaneValue (block, lane, "mpStepProb" + suffix, v);
+                    else if (sliderRole == 3)
+                        setArpLaneValue (block, lane, "mpStepDiv" + suffix, (float) juce::jlimit (1, 8, 1 + juce::roundToInt (v * 7.0f)));
+                    else if (sliderRole == 4)
+                        setArpLaneValue (block, lane, "mpStep" + suffix + "On", v >= 0.5f ? 1.0f : 0.0f);
+                    else if (sliderRole == 5)
+                        setArpLaneValue (block, lane, "mpStepDelay" + suffix, juce::jlimit (0.0f, 0.85f, v * 0.85f));
+                    else if (sliderRole == 6)
+                        setArpLaneValue (block, lane, "mpSampleSlice" + suffix, (float) juce::jlimit (0, slots - 1, juce::roundToInt (v * (float) juce::jmax (1, slots - 1))));
+                    else if (sliderRole == 7)
+                        setArpLaneValue (block, lane, "mpStepTranspose" + suffix, (float) juce::jlimit (-24, 24, juce::roundToInt (v * 48.0f - 24.0f)));
+                    else if (sliderRole == 8)
+                        setArpLaneValue (block, lane, "mpAutoFilter" + suffix, v);
+                    else if (sliderRole == 9)
+                        setArpLaneValue (block, lane, "mpAutoPan" + suffix, juce::jlimit (-1.0f, 1.0f, v * 2.0f - 1.0f));
+                    else if (sliderRole == 10)
+                        setArpLaneValue (block, lane, "mpAutoFxSend" + suffix, v);
+                }
+            }
+            else if (parameterId == "arpLaneControlBank" || parameterId == "arpLaneSliderRole")
             {
                 for (int step = 0; step < 16; ++step)
                 {
@@ -683,6 +715,19 @@ namespace patchcraft
         {
             return setArpLaneStepFromUi (lane, step, velocity, active);
         };
+        instrumentRenderer->onSetArpLaneSteps = [this] (int lane, int steps)
+        {
+            return setArpLaneStepsFromUi (lane, steps);
+        };
+        instrumentRenderer->onSetSeqLaneStep = [this] (int laneIndex, int step, float value, bool active, const juce::String& laneType)
+        {
+            return setSeqLaneStepFromUi (laneIndex, step, value, active, laneType);
+        };
+        instrumentRenderer->onGetPianoRollNotes = [this] { return getPianoRollNotesEncoded(); };
+        instrumentRenderer->onSetPianoRollNotes = [this] (const juce::String& encoded)
+        {
+            return setPianoRollNotesFromUi (encoded);
+        };
         instrumentRenderer->onRuntimeStatus = [this] (const juce::String& message)
         {
             statusLabel.setText (message, juce::dontSendNotification);
@@ -747,12 +792,35 @@ namespace patchcraft
         };
         clearClipBtn.onClick = [this] { clearClip(); };
 
+        formatManager.registerBasicFormats();
+
+        loadAudioBtn.onClick = [this]
+        {
+            audioFileChooser = std::make_unique<juce::FileChooser> ("Select Audio File", juce::File(), "*.wav;*.mp3;*.aiff");
+            audioFileChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                [this] (const juce::FileChooser& fc)
+                {
+                    if (fc.getResult().existsAsFile())
+                        loadTestAudioFile (fc.getResult());
+                });
+        };
+
+        enableAudioLoop.setToggleState (false, juce::dontSendNotification);
+        enableAudioLoop.onClick = [this] { testAudioActive.store (enableAudioLoop.getToggleState()); };
+
+        audioFileLabel.setText ("No audio loaded", juce::dontSendNotification);
+        audioFileLabel.setFont (juce::Font (11.0f));
+        audioFileLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+
         for (auto* component : { static_cast<juce::Component*> (&playBtn),
                                  static_cast<juce::Component*> (&stopBtn),
                                  static_cast<juce::Component*> (&recordBtn),
                                  static_cast<juce::Component*> (&loopToggle),
                                  static_cast<juce::Component*> (&tempoSlider),
-                                 static_cast<juce::Component*> (&clearClipBtn) })
+                                 static_cast<juce::Component*> (&clearClipBtn),
+                                 static_cast<juce::Component*> (&loadAudioBtn),
+                                 static_cast<juce::Component*> (&enableAudioLoop),
+                                 static_cast<juce::Component*> (&audioFileLabel) })
             addAndMakeVisible (component);
 
         owner.getProject().addListener (this);
@@ -770,12 +838,34 @@ namespace patchcraft
         owner.getProject().removeListener (this);
     }
 
+    void TestPage::loadTestAudioFile (const juce::File& file)
+    {
+        if (auto reader = std::unique_ptr<juce::AudioFormatReader> (formatManager.createReaderFor (file)))
+        {
+            testAudioSampleRate = reader->sampleRate > 0 ? reader->sampleRate : 44100.0;
+            testAudioBuffer.setSize (juce::jmax (1, (int) reader->numChannels), (int) reader->lengthInSamples);
+            reader->read (&testAudioBuffer, 0, (int) reader->lengthInSamples, 0, true, true);
+            testAudioPos.store (0);
+            audioFileLabel.setText (file.getFileName(), juce::dontSendNotification);
+            enableAudioLoop.setToggleState (true, juce::sendNotification);
+            testAudioActive.store (true);
+        }
+        else
+        {
+            audioFileLabel.setText ("Failed to load audio", juce::dontSendNotification);
+            enableAudioLoop.setToggleState (false, juce::sendNotification);
+            testAudioActive.store (false);
+        }
+    }
+
     void TestPage::setBrandLabPreviewMode (bool shouldUse)
     {
         if (brandLabPreviewMode == shouldUse)
             return;
 
         brandLabPreviewMode = shouldUse;
+        if (instrumentRenderer != nullptr)
+            instrumentRenderer->setCustomerPreviewMode (shouldUse);
         resized();
         repaint();
     }
@@ -1005,8 +1095,12 @@ namespace patchcraft
     void TestPage::syncRoutingFromProject (bool preserveActiveNotes)
     {
         if (! preserveActiveNotes && engine != nullptr)
+        {
             arpeggiator.allNotesOff (*engine);
+            pianoRoll.allNotesOff (*engine);
+        }
         arpeggiator.bind (owner.getProject().getDspGraph());
+        pianoRoll.bind (owner.getProject().getDspGraph());
         routingEngine.bind (owner.getProject().getDspGraph(), owner.getProject().getParameters());
         routingEngine.prepare (makeRenderContext (currentBlockSize, 0, currentNumChans));
         routingEngine.syncFromLiveValues (owner.getProject().getLiveValues());
@@ -1055,6 +1149,17 @@ namespace patchcraft
             if (engine != nullptr)
                 engine->setParameter (id, value);
             return;
+        }
+
+        if (id == "retrigger" || id == "arpLaneMultiLane")
+        {
+            auto& graph = owner.getProject().getDspGraph();
+            auto& block = ensureArpBlock (graph);
+            if (id == "retrigger")
+                block.values["retrigger"] = value >= 0.5f ? 1.0f : 0.0f;
+            else
+                block.values["mpMultiLane"] = value >= 0.5f ? 1.0f : 0.0f;
+            graph.userConfigured = true;
         }
 
         const juce::SpinLock::ScopedLockType lock (engineLock);
@@ -1118,6 +1223,32 @@ namespace patchcraft
                     juce::FloatVectorOperations::copy (buffer.getWritePointer (ch), inputs[ch], numSamples);
         }
 
+        if (testAudioActive.load() && testAudioBuffer.getNumSamples() > 0)
+        {
+            int pos = testAudioPos.load();
+            const int length = testAudioBuffer.getNumSamples();
+            int remaining = numSamples;
+            int bufferOffset = 0;
+
+            while (remaining > 0)
+            {
+                int toCopy = juce::jmin (remaining, length - pos);
+                for (int ch = 0; ch < juce::jmin (numOutputs, testAudioBuffer.getNumChannels()); ++ch)
+                {
+                    // Add to the existing hardware input (or replace it)
+                    juce::FloatVectorOperations::add (buffer.getWritePointer (ch, bufferOffset),
+                                                      testAudioBuffer.getReadPointer (ch, pos),
+                                                      toCopy);
+                }
+                pos += toCopy;
+                bufferOffset += toCopy;
+                remaining -= toCopy;
+                if (pos >= length)
+                    pos = 0;
+            }
+            testAudioPos.store (pos);
+        }
+
         juce::MidiBuffer liveMidi;
         keyboardState.processNextMidiBuffer (liveMidi, 0, numSamples, true);
         {
@@ -1176,6 +1307,7 @@ namespace patchcraft
         const auto context = makeRenderContext (numSamples, numInputs, numOutputs);
         routingEngine.processToEngine (*engine, context);
         arpeggiator.process (*engine, context);
+        pianoRoll.process (*engine, context);
         engine->process (buffer, 0, numSamples);
         routingEngine.captureAudioAnalysis (buffer, 0, numSamples);
 
@@ -1559,6 +1691,7 @@ namespace patchcraft
         if (engine != nullptr)
         {
             arpeggiator.allNotesOff (*engine);
+            pianoRoll.allNotesOff (*engine);
             engine->allNotesOff();
             engine->reset();
             engine->prepare (currentSampleRate, currentBlockSize, currentNumChans);
@@ -1613,6 +1746,9 @@ namespace patchcraft
 
     double TestPage::getSequencerPlaybackPosition01 (int steps) const noexcept
     {
+        if (pianoRoll.isEnabled())
+            return pianoRoll.getPlaybackPosition01();
+
         if (! playing.load())
             return arpeggiator.getPlaybackPosition01 (steps);
 
@@ -1704,16 +1840,11 @@ namespace patchcraft
             block.values["mpBank" + juce::String (lane + 1) + "_" + key] = value;
         };
 
-        block.values["mpActiveBank"] = (float) lane;
-        block.values["mpMultiLane"] = 1.0f;
         setLaneValue ("mpStep" + keyStep + "On", active ? 1.0f : 0.0f);
         setLaneValue ("mpVelocity" + keyStep, velocity);
-        setLaneValue ("mpGate" + keyStep, 0.72f);
-        setLaneValue ("mpStepProb" + keyStep, 1.0f);
-        setLaneValue ("mpStepDiv" + keyStep, 1.0f);
-        owner.getProject().getLiveValues().setValue ("arpLaneControlBank", (float) juce::jlimit (0, 4, lane));
-        if (step < 16)
-            owner.getProject().getLiveValues().setValue ("arpLaneStep" + juce::String (step + 1), velocity);
+        setLaneValue ("mpGate" + keyStep, arpLaneValue (block, lane, "mpGate" + keyStep, 0.72f));
+        setLaneValue ("mpStepProb" + keyStep, arpLaneValue (block, lane, "mpStepProb" + keyStep, 1.0f));
+        setLaneValue ("mpStepDiv" + keyStep, arpLaneValue (block, lane, "mpStepDiv" + keyStep, 1.0f));
         graph.userConfigured = true;
         owner.getProject().markDirty();
 
@@ -1721,6 +1852,119 @@ namespace patchcraft
             const juce::SpinLock::ScopedLockType lock (engineLock);
             syncRoutingFromProject();
         }
+
+        return true;
+    }
+
+    bool TestPage::setArpLaneStepsFromUi (int lane, int steps)
+    {
+        lane = juce::jlimit (0, 15, lane);
+        steps = juce::jlimit (1, 128, steps);
+
+        auto& graph = owner.getProject().getDspGraph();
+        auto& block = ensureArpBlock (graph);
+        const auto setLaneValue = [&] (const juce::String& key, float value)
+        {
+            if (lane == 0)
+                block.values[key] = value;
+            block.values["mpBank" + juce::String (lane + 1) + "_" + key] = value;
+        };
+
+        setLaneValue ("arpSteps", (float) steps);
+        graph.userConfigured = true;
+        owner.getProject().markDirty();
+
+        {
+            const juce::SpinLock::ScopedLockType lock (engineLock);
+            syncRoutingFromProject();
+        }
+
+        return true;
+    }
+
+    bool TestPage::setSeqLaneStepFromUi (int laneIndex, int step, float value, bool active, const juce::String& laneType)
+    {
+        laneIndex = juce::jlimit (0, 15, laneIndex);
+        step = juce::jlimit (0, 127, step);
+
+        auto& graph = owner.getProject().getDspGraph();
+        auto& block = ensureArpBlock (graph);
+        const auto suffix = juce::String (step);
+        const auto setLaneValue = [&] (const juce::String& key, float v)
+        {
+            if (laneIndex == 0)
+                block.values[key] = v;
+            block.values["mpBank" + juce::String (laneIndex + 1) + "_" + key] = v;
+        };
+
+        if (laneType == "pitch")
+        {
+            setLaneValue ("arpNote" + suffix, juce::jmap (value, -24.0f, 24.0f, -24.0f, 24.0f));
+            setLaneValue ("mpStep" + suffix + "On", active ? 1.0f : 0.0f);
+        }
+        else if (laneType == "chance")
+        {
+            setLaneValue ("mpStepProb" + suffix, juce::jlimit (0.0f, 1.0f, value));
+            setLaneValue ("mpStep" + suffix + "On", active ? 1.0f : 0.0f);
+        }
+        else if (laneType == "gate")
+        {
+            return setArpLaneStepFromUi (laneIndex, step, ArpLaneUi::readLaneValue (&block, laneIndex, "mpVelocity" + suffix, 0.72f), active);
+        }
+        else
+        {
+            return setArpLaneStepFromUi (laneIndex, step, juce::jlimit (0.0f, 1.0f, value), active);
+        }
+
+        graph.userConfigured = true;
+        owner.getProject().markDirty();
+
+        {
+            const juce::SpinLock::ScopedLockType lock (engineLock);
+            syncRoutingFromProject();
+        }
+
+        return true;
+    }
+
+    juce::String TestPage::getPianoRollNotesEncoded() const
+    {
+        for (const auto& block : owner.getProject().getDspGraph().blocks)
+        {
+            if (! PianoRollRuntime::isPianoRollBlock (block))
+                continue;
+            const auto found = block.metadata.find ("notes");
+            if (found != block.metadata.end())
+                return found->second;
+        }
+        return {};
+    }
+
+    bool TestPage::setPianoRollNotesFromUi (const juce::String& encodedNotes)
+    {
+        auto& graph = owner.getProject().getDspGraph();
+        bool updated = false;
+        for (auto& block : graph.blocks)
+        {
+            if (! PianoRollRuntime::isPianoRollBlock (block))
+                continue;
+            block.metadata["notes"] = encodedNotes;
+            updated = true;
+        }
+
+        if (! updated)
+            return false;
+
+        graph.userConfigured = true;
+        owner.getProject().markDirty();
+
+        {
+            const juce::SpinLock::ScopedLockType lock (engineLock);
+            syncRoutingFromProject (true);
+        }
+
+        if (instrumentRenderer != nullptr)
+            instrumentRenderer->repaint();
 
         return true;
     }
@@ -1756,6 +2000,12 @@ namespace patchcraft
 
     void TestPage::paint (juce::Graphics& g)
     {
+        if (brandLabPreviewMode)
+        {
+            g.fillAll (owner.getProject().getManifest().playerBackgroundColour);
+            return;
+        }
+
         g.fillAll (PatchCraftLookAndFeel::panel());
         g.setColour (PatchCraftLookAndFeel::border());
         g.fillRect (0, 0, getWidth(), 1);
@@ -1763,7 +2013,7 @@ namespace patchcraft
 
     void TestPage::resized()
     {
-        auto r = getLocalBounds().reduced (12);
+        auto r = brandLabPreviewMode ? getLocalBounds() : getLocalBounds().reduced (12);
 
         const bool showDiagnostics = ! brandLabPreviewMode;
         for (auto* component : {
@@ -1774,6 +2024,9 @@ namespace patchcraft
                  static_cast<juce::Component*> (&loopToggle),
                  static_cast<juce::Component*> (&tempoSlider),
                  static_cast<juce::Component*> (&clearClipBtn),
+                 static_cast<juce::Component*> (&loadAudioBtn),
+                 static_cast<juce::Component*> (&enableAudioLoop),
+                 static_cast<juce::Component*> (&audioFileLabel),
                  static_cast<juce::Component*> (&clipLabel),
                  static_cast<juce::Component*> (clipView.get()),
                  static_cast<juce::Component*> (&metersLabel),
@@ -1789,6 +2042,27 @@ namespace patchcraft
 
         if (brandLabPreviewMode)
         {
+            // If the authored layout already draws its own on-screen keyboard,
+            // don't stack a second JUCE keyboard underneath it (customers would
+            // see two keyboards). The layout keyboard remains fully playable.
+            bool layoutHasKeyboard = false;
+            for (const auto& el : owner.getProject().getLayout().getAll())
+                if (el.type == ElementType::Keyboard && el.visible)
+                {
+                    layoutHasKeyboard = true;
+                    break;
+                }
+
+            if (layoutHasKeyboard)
+            {
+                if (keyboard != nullptr)
+                    keyboard->setVisible (false);
+                brandPreviewInstrumentBounds = fitCanvasIntoBounds (owner.getProject().getCanvasSize(), r);
+                if (instrumentRenderer != nullptr)
+                    instrumentRenderer->setBounds (brandPreviewInstrumentBounds);
+                return;
+            }
+
             const int keyboardHeight = juce::jlimit (62, 86, getHeight() / 8);
             auto keyboardSlot = r.removeFromBottom (keyboardHeight);
             brandPreviewInstrumentBounds = fitCanvasIntoBounds (owner.getProject().getCanvasSize(), r);
@@ -1797,7 +2071,10 @@ namespace patchcraft
                                             .reduced (0, 4);
 
             if (keyboard != nullptr)
+            {
+                keyboard->setVisible (true);
                 keyboard->setBounds (keyboardArea);
+            }
 
             if (instrumentRenderer != nullptr)
                 instrumentRenderer->setBounds (brandPreviewInstrumentBounds);
@@ -1814,6 +2091,10 @@ namespace patchcraft
         top.removeFromLeft (12);
         tempoSlider.setBounds (top.removeFromLeft (190));
         clearClipBtn.setBounds (top.removeFromLeft (72).reduced (2));
+        top.removeFromLeft (12);
+        loadAudioBtn.setBounds (top.removeFromLeft (120).reduced (2));
+        enableAudioLoop.setBounds (top.removeFromLeft (130).reduced (2));
+        audioFileLabel.setBounds (top.removeFromLeft (200).reduced (2));
         statusLabel.setBounds (top.reduced (10, 0));
 
         r.removeFromTop (8);
@@ -1847,5 +2128,70 @@ namespace patchcraft
     {
         // Delegate to ClipView for keyboard handling
         return clipView->keyPressed (key, nullptr);
+    }
+
+    bool TestPage::loadMidiClipFile (const juce::File& file, int targetNote, juce::String& report, bool startPlayback)
+    {
+        juce::FileInputStream fis (file);
+        if (fis.failedToOpen())
+        {
+            report = "Failed to open MIDI file.";
+            return false;
+        }
+        
+        juce::MidiFile midiFile;
+        if (! midiFile.readFrom (fis))
+        {
+            report = "Failed to parse MIDI file.";
+            return false;
+        }
+        
+        midiFile.convertTimestampTicksToSeconds();
+        const juce::ScopedLock sl (clipLock);
+        clip.clear();
+        
+        for (int t = 0; t < midiFile.getNumTracks(); ++t)
+        {
+            auto* track = midiFile.getTrack (t);
+            std::map<int, double> pendingNoteOns;
+            std::map<int, float> pendingVels;
+
+            for (int i = 0; i < track->getNumEvents(); ++i)
+            {
+                auto ev = track->getEventPointer (i);
+                if (ev->message.isNoteOn())
+                {
+                    pendingNoteOns[ev->message.getNoteNumber()] = ev->message.getTimeStamp();
+                    pendingVels[ev->message.getNoteNumber()] = ev->message.getFloatVelocity();
+                }
+                else if (ev->message.isNoteOff())
+                {
+                    int note = ev->message.getNoteNumber();
+                    if (pendingNoteOns.find (note) != pendingNoteOns.end())
+                    {
+                        ClipEvent ce;
+                        ce.time = pendingNoteOns[note];
+                        ce.length = ev->message.getTimeStamp() - ce.time;
+                        ce.note = (targetNote >= 0 && targetNote <= 127) ? targetNote : note;
+                        ce.velocity = pendingVels[note];
+                        clip.push_back (ce);
+                        pendingNoteOns.erase (note);
+                    }
+                }
+            }
+        }
+        
+        std::sort (clip.begin(), clip.end(), [](const ClipEvent& a, const ClipEvent& b) {
+            return a.time < b.time;
+        });
+        
+        playbackIndex = 0;
+        playPosSeconds.store (0.0);
+        
+        if (startPlayback)
+            playing.store (true);
+            
+        report = "Loaded " + juce::String (clip.size()) + " notes.";
+        return true;
     }
 }

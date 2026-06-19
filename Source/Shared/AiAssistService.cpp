@@ -73,6 +73,14 @@ namespace patchcraft
                 case AiAssistService::TaskType::GenerateFaustDsp:           return "Generate Faust DSP audio code from natural language.";
                 case AiAssistService::TaskType::GenerateMidiJson:           return "Generate JSON MIDI patterns from natural language.";
                 case AiAssistService::TaskType::GeneratePresetBank:         return "Generate parameter-mapped preset banks from natural language.";
+                case AiAssistService::TaskType::GeneratePScript:
+                    return "Generate a valid PatchCraft pScript. Output ONLY pScript source, no prose, no markdown fences. "
+                           "Use blocks like: when note starts:, when note ends:, when knob \"paramId\" moves:, "
+                           "when modwheel moves:, when timer 250 ms:. Inside blocks use 4-space indentation and statements "
+                           "like: let name = expr, set paramId to expr, print expr, randomize paramId between A and B, "
+                           "if cond:/else:. The keyword 'value' is the moved control's value; 'velocity' and 'modwheel' are 0..127. "
+                           "Use 'mapped LO..HI -> OUTLO..OUTHI' to scale, with optional units (Hz, dB, %, st, ms). "
+                           "Only reference parameter IDs that exist in the provided project context.";
             }
             return {};
         }
@@ -302,6 +310,7 @@ namespace patchcraft
             case TaskType::GenerateFaustDsp:           return "Code Copilot: Faust DSP";
             case TaskType::GenerateMidiJson:           return "Generator: MIDI Sequence";
             case TaskType::GeneratePresetBank:         return "Generator: AI Macro Preset";
+            case TaskType::GeneratePScript:            return "Generator: pScript";
         }
         return "AI Assist";
     }
@@ -846,6 +855,7 @@ namespace patchcraft
                 
             case TaskType::GenerateMidiJson:
             case TaskType::GeneratePresetBank:
+            case TaskType::GeneratePScript:
                 // No local static fallback needed, it will hit the LLM.
                 break;
         }

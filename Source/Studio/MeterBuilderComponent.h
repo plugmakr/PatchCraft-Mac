@@ -30,9 +30,23 @@ namespace patchcraft
         juce::TextButton exportJsonBtn { "Source JSON" };
         juce::TextButton addToProjectBtn { "Add To Library" };
 
+        juce::Label imageLbl;
+        juce::TextButton importBgBtn { "Empty Img" };
+        juce::TextButton importFillBtn { "Fill Img" };
+        juce::TextButton importStripBtn { "Filmstrip" };
+        juce::TextButton clearImageBtn { "Clear Img" };
+
         juce::Colour lowColour { 0xff5fb37b };
         juce::Colour midColour { 0xfff5a623 };
         juce::Colour highColour { 0xffe24d42 };
+
+        // Imported artwork. A ready-made filmstrip is used as-is; an empty/fill
+        // image pair is composited into a level-reveal filmstrip.
+        juce::Image importedBg;
+        juce::Image importedFill;
+        juce::Image importedStrip;
+        juce::File  importedSource;
+        bool hasImportedStrip() const { return importedStrip.isValid(); }
 
         void configureSlider (juce::Slider&, double, double, double, double, juce::String suffix = {});
         void cycleColour (juce::Colour&, juce::TextButton&);
@@ -43,6 +57,7 @@ namespace patchcraft
         bool writeMeterSourceJson (const juce::File&, bool verticalStrip, juce::String& error) const;
         void exportMeterFilmstrip();
         void exportMeterSourceJson();
+        void importImage (int slot);   // 0 = empty/bg, 1 = fill, 2 = filmstrip
     };
 
 } // namespace patchcraft

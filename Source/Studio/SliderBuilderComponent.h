@@ -33,9 +33,23 @@ namespace patchcraft
         juce::TextButton exportJsonBtn { "Source JSON" };
         juce::TextButton addToProjectBtn { "Add To Library" };
 
+        juce::Label  imageLbl;
+        juce::TextButton importThumbBtn { "Thumb Img" };
+        juce::TextButton importTrackBtn { "Track Img" };
+        juce::TextButton importStripBtn { "Filmstrip" };
+        juce::TextButton clearImageBtn { "Clear Img" };
+
         juce::Colour trackColour { 0xff202227 };
         juce::Colour fillColour { 0xfff5a623 };
         juce::Colour thumbColour { 0xffd9dde2 };
+
+        // Imported artwork. A ready-made filmstrip is used as-is; a single
+        // thumb/track image is composited into a generated filmstrip.
+        juce::Image importedThumb;
+        juce::Image importedTrack;
+        juce::Image importedStrip;
+        juce::File  importedSource;
+        bool hasImportedStrip() const { return importedStrip.isValid(); }
 
         void configureSlider (juce::Slider&, double, double, double, double, juce::String suffix = {});
         void cycleColour (juce::Colour&, juce::TextButton&);
@@ -46,6 +60,7 @@ namespace patchcraft
         bool writeSliderSourceJson (const juce::File&, bool verticalStrip, juce::String& error) const;
         void exportSliderFilmstrip();
         void exportSliderSourceJson();
+        void importImage (int slot);   // 0 = thumb, 1 = track, 2 = filmstrip
     };
 
 } // namespace patchcraft

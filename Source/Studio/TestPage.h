@@ -7,6 +7,7 @@
 #include "IInstrumentEngine.h"
 #include "DspRoutingEngine.h"
 #include "MidiPlaygroundRuntime.h"
+#include "PianoRollRuntime.h"
 
 #include <map>
 
@@ -58,9 +59,16 @@ namespace patchcraft
         bool isTransportPlaying() const noexcept { return playing.load(); }
         double getSequencerPlaybackPosition01 (int steps) const noexcept;
         bool setDrumActivePatternFromUi (int pattern);
+        
+        bool loadMidiClipFile (const juce::File& file, int targetNote, juce::String& report, bool startPlayback);
+        StudioInstrumentRenderer* getInstrumentRenderer() const { return instrumentRenderer.get(); }
         bool setDrumPatternCellFromUi (int pattern, int track, int step, bool active,
                                        float velocity, float gate, float probability, int divisions);
         bool setArpLaneStepFromUi (int lane, int step, float velocity, bool active);
+        bool setArpLaneStepsFromUi (int lane, int steps);
+        bool setSeqLaneStepFromUi (int laneIndex, int step, float value, bool active, const juce::String& laneType);
+        juce::String getPianoRollNotesEncoded() const;
+        bool setPianoRollNotesFromUi (const juce::String& encodedNotes);
 
         struct ClipEvent
         {
@@ -125,6 +133,7 @@ namespace patchcraft
         std::unique_ptr<IInstrumentEngine> engine;
         DspRoutingEngine routingEngine;
         MidiPlaygroundRuntime arpeggiator;
+        PianoRollRuntime pianoRoll;
         juce::String engineId;
         juce::SpinLock engineLock;
 
@@ -199,6 +208,18 @@ namespace patchcraft
         // Section labels
         juce::Label transportLabel, clipLabel, keyboardLabel,
                     metersLabel, monitorLabel, spectrumLabel, statusLabel;
+
+        // Test Audio Loop
+        void loadTestAudioFile (const juce::File& file);
+        juce::AudioFormatManager formatManager;
+        juce::AudioSampleBuffer testAudioBuffer;
+        std::atomic<bool> testAudioActive { false };
+        std::atomic<int> testAudioPos { 0 };
+        double testAudioSampleRate = 44100.0;
+        std::unique_ptr<juce::FileChooser> audioFileChooser;
+        juce::TextButton loadAudioBtn { "Load Test Audio..." };
+        juce::ToggleButton enableAudioLoop { "Enable Audio Loop" };
+        juce::Label audioFileLabel;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TestPage)
     };

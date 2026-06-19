@@ -45,8 +45,7 @@ namespace patchcraft
 
         juce::Label projectNameLabel;
         juce::Label projectStatusLabel;
-        juce::Label bpmLabel;
-        juce::Slider bpmSlider;
+        juce::ComboBox presetBox;
         juce::TextButton settingsBtn;
 
         bool previewActive = false;

@@ -10,6 +10,7 @@ namespace patchcraft
     {
         constexpr const char* kPlayerBundleName = "PatchCraft Player.vst3";
         constexpr const char* kPlayerFxBundleName = "PatchCraft Player FX.vst3";
+        constexpr const char* kComposerBundleName = "PatchCraft Composer.vst3";
         constexpr const char* kPropertiesAppName = "PatchCraft";
         constexpr const char* kPropertiesFileName = "VstExport";
 
@@ -40,6 +41,7 @@ namespace patchcraft
         constexpr juce::uint32 kManufacturerCode = 0x50637266; // 'Pcrf'
         constexpr juce::uint32 kPluginCode       = 0x5063706C; // 'Pcpl'
         constexpr juce::uint32 kFxPluginCode     = 0x50636678; // 'Pcfx'
+        constexpr juce::uint32 kComposerPluginCode = 0x50636D70; // 'Pcmp'
 
         CodeBytes codeBytesFromUint (juce::uint32 v)
         {
@@ -119,6 +121,35 @@ namespace patchcraft
 
             return { kPlayerBundleName, "PATCHCRAFT_PLAYER_TEMPLATE",
                      "PatchCraftPlayer_artefacts", kPluginCode };
+        }
+
+        TemplateSpec composerTemplate()
+        {
+            return { kComposerBundleName, "PATCHCRAFT_COMPOSER_TEMPLATE",
+                     "PatchCraftComposer_artefacts", kComposerPluginCode };
+        }
+
+        TemplateSpec templateForProject (const PatchCraftProject& project,
+                                         const VstExportModule::ExportOptions& options)
+        {
+            const auto engine = project.getManifest().engine;
+            if (options.exportAsMidiEffect
+                || engine.equalsIgnoreCase ("midi")
+                || engine.equalsIgnoreCase ("composer"))
+                return composerTemplate();
+
+            return templateForEngine (engine);
+        }
+
+        bool projectHasHarmonyComposer (const PatchCraftProject& project)
+        {
+            for (const auto& block : project.getDspGraph().blocks)
+                if (block.enabled
+                    && (block.type.equalsIgnoreCase ("harmonyComposer")
+                        || block.metadata.find ("role") != block.metadata.end()
+                           && block.metadata.at ("role").equalsIgnoreCase ("harmonyComposer")))
+                    return true;
+            return false;
         }
 
         bool isSameOrChildPath (const juce::File& candidate, const juce::File& parent)
@@ -456,6 +487,90 @@ namespace patchcraft
             return out;
         }
 
+        juce::String twoDigit (int value)
+        {
+            return value < 10 ? "0" + juce::String (value) : juce::String (value);
+        }
+
+        juce::String timestampForFileName()
+        {
+            const auto now = juce::Time::getCurrentTime();
+            return juce::String (now.getYear())
+                 + twoDigit (now.getMonth() + 1)
+                 + twoDigit (now.getDayOfMonth())
+                 + "_"
+                 + twoDigit (now.getHours())
+                 + twoDigit (now.getMinutes())
+                 + twoDigit (now.getSeconds());
+        }
+
+        juce::File uniqueVst3BundlePath (const juce::File& folder,
+                                         const juce::String& fileSafeName)
+        {
+            const auto stamp = timestampForFileName();
+            for (int attempt = 1; attempt < 100; ++attempt)
+            {
+                const auto suffix = attempt == 1 ? stamp : stamp + "_" + juce::String (attempt);
+                const auto candidate = folder.getChildFile (fileSafeName + "_" + suffix + ".vst3");
+                if (! candidate.exists())
+                    return candidate;
+            }
+
+            return {};
+        }
+
+        bool prepareFreshVst3Target (juce::File& bundlePath,
+                                     const juce::String& fileSafeName,
+                                     juce::String& note,
+                                     juce::String& error)
+        {
+            if (! bundlePath.exists())
+                return true;
+
+            const auto originalPath = bundlePath;
+            if (originalPath.deleteRecursively() && ! originalPath.exists())
+                return true;
+
+            const auto archiveFolder = originalPath.getParentDirectory().getChildFile ("Previous Exports");
+            const auto archiveCreated = archiveFolder.createDirectory();
+            if (archiveCreated.wasOk())
+            {
+                for (int attempt = 1; attempt < 100; ++attempt)
+                {
+                    const auto suffix = attempt == 1 ? timestampForFileName()
+                                                     : timestampForFileName() + "_" + juce::String (attempt);
+                    const auto archivePath = archiveFolder.getChildFile (
+                        originalPath.getFileNameWithoutExtension() + "_replaced_" + suffix + ".vst3");
+
+                    if (archivePath.exists())
+                        continue;
+
+                    if (originalPath.moveFileTo (archivePath) && ! originalPath.exists())
+                    {
+                        note = "Previous export could not be deleted, so it was archived here:\n"
+                             + archivePath.getFullPathName();
+                        return true;
+                    }
+                }
+            }
+
+            auto fallback = uniqueVst3BundlePath (originalPath.getParentDirectory(), fileSafeName);
+            if (fallback == juce::File())
+            {
+                error = "Could not replace or archive existing VST3 bundle:\n"
+                      + originalPath.getFullPathName()
+                      + "\n\nClose your DAW, Explorer preview panes, and OneDrive sync for this folder, then retry.";
+                return false;
+            }
+
+            bundlePath = fallback;
+            note = "The existing VST3 bundle is locked or unavailable for replacement:\n"
+                 + originalPath.getFullPathName()
+                 + "\n\nPatchCraft exported a fresh uniquely named bundle instead:\n"
+                 + bundlePath.getFullPathName();
+            return true;
+        }
+
         juce::String exportedProductName (const Manifest& manifest,
                                           const VstExportModule::ExportOptions& options)
         {
@@ -617,7 +732,8 @@ namespace patchcraft
     bool VstExportModule::isVstExpansionInstalled()
     {
         return appInstalledTemplateExists (templateForEngine ("synth"))
-            && appInstalledTemplateExists (templateForEngine ("fx"));
+            && appInstalledTemplateExists (templateForEngine ("fx"))
+            && appInstalledTemplateExists (composerTemplate());
     }
 
     juce::String VstExportModule::vstExpansionInstallMessage()
@@ -626,7 +742,8 @@ namespace patchcraft
                "The base PatchCraft release can export Player packs and branded "
                "customer installer kits. Standalone branded VST3 export is a "
                "paid addon. Install the PatchCraft VST Expansion package to add "
-               "PluginTemplate/PatchCraft Player.vst3 and PatchCraft Player FX.vst3 "
+               "PluginTemplate/PatchCraft Player.vst3, PatchCraft Player FX.vst3, "
+               "and PatchCraft Composer.vst3 "
                "beside PatchCraftStudio.exe.";
     }
 
@@ -708,7 +825,7 @@ namespace patchcraft
             }
         }
 
-        const auto templateSpec = templateForEngine (project.getManifest().engine);
+        const auto templateSpec = templateForProject (project, options);
         const auto templateBundle = findTemplateBundle (templateSpec);
         if (templateBundle == juce::File())
         {
@@ -719,13 +836,20 @@ namespace patchcraft
             return result;
         }
 
-        const auto bundleName = options.fileSafeName + ".vst3";
-        const auto bundlePath = exportFolder.getChildFile (bundleName);
+        auto bundleName = options.fileSafeName + ".vst3";
+        auto bundlePath = exportFolder.getChildFile (bundleName);
 
-        // Clear any previous attempt - .vst3 on Windows is a folder, so a
-        // simple "replace" semantics has to wipe the whole tree first.
-        if (bundlePath.exists())
-            bundlePath.deleteRecursively();
+        juce::String replacementNote;
+        juce::String replacementError;
+        if (! prepareFreshVst3Target (bundlePath, options.fileSafeName,
+                                      replacementNote, replacementError))
+        {
+            result.message = replacementError;
+            return result;
+        }
+
+        bundleName = bundlePath.getFileName();
+        const auto exportedFileSafeName = bundlePath.getFileNameWithoutExtension();
 
         juce::String copyError;
         if (! copyDirectoryRecursively (templateBundle, bundlePath, copyError))
@@ -749,7 +873,7 @@ namespace patchcraft
 
             if (oldBinary.existsAsFile())
             {
-                const auto newBinary = payloadDir.getChildFile (vst3BinaryNameForBundle (options.fileSafeName));
+                const auto newBinary = payloadDir.getChildFile (vst3BinaryNameForBundle (exportedFileSafeName));
                 newBinary.deleteFile();
                 oldBinary.moveFileTo (newBinary);
             }
@@ -757,7 +881,7 @@ namespace patchcraft
 
         juce::String plistError;
         if (! rewriteMacBundleInfo (bundlePath,
-                                    vst3BinaryNameForBundle (options.fileSafeName),
+                                    vst3BinaryNameForBundle (exportedFileSafeName),
                                     options.pluginName,
                                     options.version,
                                     plistError))
@@ -770,7 +894,7 @@ namespace patchcraft
         // from the same Studio install can coexist in the same DAW.
         ClassIdPatchSummary patchSummary;
         juce::String patchError;
-        const auto seed = options.fileSafeName + "|" + options.pluginName;
+        const auto seed = exportedFileSafeName + "|" + options.pluginName;
         const bool patchOk = rewriteBundleClassIds (bundlePath, seed, templateSpec.pluginCode,
                                                     patchSummary, patchError);
         if (! patchOk)
@@ -899,7 +1023,15 @@ namespace patchcraft
                 }
 
                 if (installPath.exists())
-                    installPath.deleteRecursively();
+                {
+                    if (! installPath.deleteRecursively() && installPath.exists())
+                    {
+                        installError = "Could not replace existing installed VST3 bundle:\n"
+                                     + installPath.getFullPathName()
+                                     + "\n\nClose any DAW currently scanning or using this plugin, then retry.";
+                        return false;
+                    }
+                }
 
                 return copyDirectoryRecursively (bundlePath, installPath, installError)
                     ? (result.installedPath = installPath, true)
@@ -943,6 +1075,8 @@ namespace patchcraft
                                 + "\n\nReopen your DAW (or rescan plugins) to see "
                                 + options.pluginName + "."
                               : juce::String());
+        if (replacementNote.isNotEmpty())
+            result.message += "\n\n" + replacementNote;
         if (protectedPathNote.isNotEmpty())
             result.message += "\n\n" + protectedPathNote;
         if (totalPatched == 0)
@@ -998,6 +1132,17 @@ namespace patchcraft
                                         .getChildFile ("VST3 Exports");
             aw->addTextEditor ("outdir",  defaultOut.getFullPathName(), "Output folder:");
 
+            const bool hasComposer = projectHasHarmonyComposer (project);
+            if (hasComposer)
+            {
+                aw->addComboBox ("outputType",
+                                 { "Audio Instrument / FX", "MIDI Composer Plugin" },
+                                 "Plugin type:");
+                if (auto* outputType = aw->getComboBoxComponent ("outputType"))
+                    outputType->setSelectedId (manifest.engine.equalsIgnoreCase ("midi")
+                                               || manifest.engine.equalsIgnoreCase ("composer") ? 2 : 1);
+            }
+
             aw->addButton ("Export",  1, juce::KeyPress (juce::KeyPress::returnKey));
             aw->addButton ("Cancel",  0, juce::KeyPress (juce::KeyPress::escapeKey));
 
@@ -1009,7 +1154,7 @@ namespace patchcraft
 
             aw->enterModalState (true,
                 juce::ModalCallbackFunction::create (
-                    [aw, safeParent, projectPtr] (int result)
+                    [aw, safeParent, projectPtr, hasComposer] (int result)
                     {
                         std::unique_ptr<juce::AlertWindow> owned (aw);
                         if (result != 1)
@@ -1022,6 +1167,9 @@ namespace patchcraft
                         opts.version          = owned->getTextEditorContents ("ver").trim();
                         opts.outputFolder     = juce::File (owned->getTextEditorContents ("outdir").trim());
                         opts.installToSystemVst3 = false;
+                        if (hasComposer)
+                            if (auto* outputType = owned->getComboBoxComponent ("outputType"))
+                                opts.exportAsMidiEffect = outputType->getSelectedId() == 2;
 
                         if (opts.pluginName.isEmpty())
                         {

@@ -51,20 +51,10 @@ namespace patchcraft
 
         juce::TextButton loadBtn { "Load Instrument" };
         juce::TextButton libraryBtn { "Library" };
-        juce::TextButton viewBtn { "View" };
-        juce::TextButton toolsBtn { "Tools" };
-        juce::TextButton importBtn { "Import" };
-        juce::TextButton transportBtn { "Play" };
-        juce::TextButton rackBtn { "Rack" };
         juce::TextButton performanceBtn { "Sound" };
-        juce::TextButton snapshotBtn { "Snap" };
-        juce::TextButton dnaBtn { "DNA" };
         juce::TextButton prevPresetBtn { "<" };
         juce::TextButton presetBtn { "Preset" };
         juce::TextButton nextPresetBtn { ">" };
-        juce::TextButton menuBtn { "File" };
-        juce::TextButton randomizeBtn { "Randomize" };
-        juce::TextButton abBtn { "A / B" };
         juce::TextButton controlBtn { "Control" };
         juce::Label presetLoadingLabel;
         juce::TooltipWindow tooltipWindow { this, 650 };
@@ -79,9 +69,6 @@ namespace patchcraft
         bool presetCloseAfterLoad = false;
 
         void showLoadDialog();
-        void showPackMenu();
-        void showViewMenu();
-        void showToolsMenu();
         void toggleLibrary();
         void togglePerformancePanel();
         void toggleControlCenter();

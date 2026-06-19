@@ -4,11 +4,11 @@ namespace patchcraft
 {
     juce::Image AssetManager::loadImage (const juce::File& path)
     {
-        if (! path.existsAsFile()) return {};
-
         auto key = path.getFullPathName();
         if (imageCache.contains (key))
             return imageCache[key];
+
+        if (! path.existsAsFile()) return {};
 
         auto img = juce::ImageFileFormat::loadFrom (path);
         if (img.isValid())
@@ -18,9 +18,6 @@ namespace patchcraft
 
     juce::Image AssetManager::loadControlFilmstrip (const juce::File& path, int frames, bool vertical, int maxFrameSize)
     {
-        if (! path.existsAsFile())
-            return {};
-
         const int safeMaxFrame = juce::jlimit (48, 512, maxFrameSize);
         auto key = path.getFullPathName() + "|control|"
                  + juce::String (frames) + "|" + (vertical ? "v" : "h")
@@ -28,6 +25,9 @@ namespace patchcraft
 
         if (controlFilmstripCache.contains (key))
             return controlFilmstripCache[key];
+
+        if (! path.existsAsFile())
+            return {};
 
         auto img = juce::ImageFileFormat::loadFrom (path);
         if (! img.isValid())

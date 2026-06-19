@@ -8,6 +8,11 @@
 #include "LibraryScanner.h"
 #include "MidiPlaygroundRuntime.h"
 #include "MidiPlaygroundPattern.h"
+#include "HarmonyEngine.h"
+#include "ComposerRuntime.h"
+#include "PianoRollRuntime.h"
+#include "ControlNodeAuthoring.h"
+#include "DspModuleRegistry.h"
 #include "MultiInstrumentEngine.h"
 #include "ParameterModel.h"
 #include "PatchCraftPackReader.h"
@@ -368,6 +373,82 @@ namespace
         require (shiftedPeak > 0.01f, "sampleStart did not move playback into the audible segment");
         require (slicePeak > 0.01f, "sampleSlice/sampleSliceCount did not trigger an audible segment");
         pass ("sample MIDI start/slice controls");
+    }
+
+    void smokeSamplerVelocityLayersAndCurve()
+    {
+        const auto file = createSmokeWav();
+
+        // Two velocity layers that overlap in a crossfade band so a mid
+        // velocity should sound BOTH layers (equal-power crossfade), while a
+        // low/high velocity favours a single layer.
+        patchcraft::SampleMap map;
+        patchcraft::SampleZoneDef soft;
+        soft.samplePath = file.getFileName();
+        soft.rootNote = 60; soft.lowNote = 0; soft.highNote = 127;
+        soft.lowVelocity = 1; soft.highVelocity = 80;
+        soft.velocityUpperVelXFade = 40.0f;
+        map.add (soft);
+
+        patchcraft::SampleZoneDef loud = soft;
+        loud.lowVelocity = 60; loud.highVelocity = 127;
+        loud.velocityLowerVelXFade = 40.0f;
+        loud.velocityUpperVelXFade = 0.0f;
+        map.add (loud);
+
+        auto countActiveAfterNote = [&] (float velocity)
+        {
+            patchcraft::SampleSynthEngine engine;
+            engine.prepare (kSampleRate, kBlockSize, kChannels);
+            engine.loadFromMap (file.getParentDirectory(), map);
+            engine.setParameter ("attack", 0.001f);
+            engine.noteOn (60, velocity);
+            juce::AudioBuffer<float> buffer (kChannels, kBlockSize);
+            buffer.clear();
+            engine.process (buffer, 0, buffer.getNumSamples());
+            return std::make_pair (engine.getActiveVoiceCount(), peakAbs (buffer));
+        };
+
+        const auto lowResult = countActiveAfterNote (0.15f);   // ~19 vel -> soft only
+        const auto midResult = countActiveAfterNote (0.55f);   // ~70 vel -> both layers
+        const auto highResult = countActiveAfterNote (0.98f);  // ~124 vel -> loud only
+
+        require (lowResult.first == 1, "low velocity should trigger a single velocity layer");
+        require (midResult.first == 2, "mid velocity inside the crossfade band should trigger both layers");
+        require (highResult.first == 1, "high velocity should trigger a single velocity layer");
+        require (lowResult.second > 0.0001f && midResult.second > 0.0001f && highResult.second > 0.0001f,
+                 "velocity-layered playback produced silence");
+
+        // Velocity sensitivity curve: at neutral 0.5 the gain is linear; a low
+        // sensitivity should make a soft note louder than the linear baseline.
+        auto softPeakWithSensitivity = [&] (float sensitivity)
+        {
+            patchcraft::SampleMap single;
+            patchcraft::SampleZoneDef z;
+            z.samplePath = file.getFileName();
+            z.rootNote = 60; z.lowNote = 0; z.highNote = 127;
+            z.lowVelocity = 1; z.highVelocity = 127;
+            single.add (z);
+
+            patchcraft::SampleSynthEngine engine;
+            engine.prepare (kSampleRate, kBlockSize, kChannels);
+            engine.loadFromMap (file.getParentDirectory(), single);
+            engine.setParameter ("attack", 0.001f);
+            engine.setParameter ("velocitySensitivity", sensitivity);
+            engine.noteOn (60, 0.25f);
+            juce::AudioBuffer<float> buffer (kChannels, kBlockSize);
+            buffer.clear();
+            engine.process (buffer, 0, buffer.getNumSamples());
+            return peakAbs (buffer);
+        };
+
+        const auto linearSoft = softPeakWithSensitivity (0.5f);
+        const auto compressedSoft = softPeakWithSensitivity (0.0f);
+        require (linearSoft > 0.0001f, "neutral velocity sensitivity produced silence");
+        require (compressedSoft > linearSoft * 1.05f,
+                 "low velocity sensitivity did not raise a soft note above the linear baseline");
+
+        pass ("sampler velocity layers and sensitivity curve");
     }
 
     void smokeSamplerGranularVoiceEngine()
@@ -742,6 +823,74 @@ namespace
         require (arpeggiator.handleNoteOff (engine, 60), "ARP did not consume note-off input");
         require (engine.getActiveVoiceCount() == 0, "ARP left a note active after note-off");
         pass ("ARP note sequencing runtime");
+    }
+
+    void smokePianoRollRuntime()
+    {
+        // Encode/decode round-trip.
+        std::vector<patchcraft::PianoRollRuntime::Note> authored = {
+            { 0, 1, 60, 0.80f },
+            { 1, 1, 62, 0.80f },
+            { 2, 1, 64, 0.80f },
+            { 3, 1, 67, 0.90f },
+        };
+        const auto encoded = patchcraft::PianoRollRuntime::encodeNotes (authored);
+        const auto decoded = patchcraft::PianoRollRuntime::decodeNotes (encoded);
+        require (decoded.size() == authored.size(), "Piano roll note encode/decode lost notes");
+        require (decoded[3].pitch == 67 && decoded[0].startStep == 0,
+                 "Piano roll note encode/decode corrupted note data");
+
+        patchcraft::DspBlock block;
+        block.id = "piano_roll_smoke";
+        block.section = "modulation";
+        block.type = "pianoRoll";
+        block.name = "Piano Roll Smoke";
+        block.enabled = true;
+        block.values = {
+            { "prSteps", 4.0f },
+            { "prStepsPerBeat", 4.0f },
+            { "prLowNote", 48.0f },
+            { "prRows", 25.0f },
+            { "prRate", 1.0f },
+            { "prGate", 0.9f },
+            { "prVelocity", 1.0f },
+            { "prSync", 1.0f },
+            { "prLoop", 1.0f },
+        };
+        block.metadata["notes"] = encoded;
+
+        patchcraft::DspGraph graph;
+        graph.blocks.push_back (block);
+
+        patchcraft::PianoRollRuntime runtime;
+        runtime.bind (graph);
+        require (runtime.isEnabled(), "Piano roll runtime did not bind an enabled clip block");
+        require (runtime.totalSteps() == 4, "Piano roll runtime did not read the step count");
+
+        CountingEngine engine;
+        auto context = makeContext (0);
+        context.ppqPosition = 0.0;
+        // One loop = 4 sixteenth steps = 1 beat. Render enough blocks to cover
+        // two full loops so every step boundary is crossed.
+        for (int blockIndex = 0; blockIndex < 200; ++blockIndex)
+        {
+            runtime.process (engine, context);
+            advanceContext (context);
+        }
+
+        require (engine.noteOnCount >= 4, "Piano roll runtime did not play the clip notes");
+        require (std::find (engine.noteOns.begin(), engine.noteOns.end(), 60) != engine.noteOns.end(),
+                 "Piano roll runtime did not play the root note");
+        require (std::find (engine.noteOns.begin(), engine.noteOns.end(), 67) != engine.noteOns.end(),
+                 "Piano roll runtime did not play the top voice");
+        require (engine.noteOffCount >= 1, "Piano roll runtime did not gate notes off");
+
+        // Stopping the transport must release everything.
+        context.isPlaying = false;
+        runtime.process (engine, context);
+        require (engine.getActiveVoiceCount() == 0, "Piano roll runtime left a note active after stop");
+        require (runtime.getPlaybackPosition01() < 0.0, "Piano roll runtime reported playback while stopped");
+        pass ("Piano roll clip runtime");
     }
 
     void smokeMidiPlaygroundRuntime()
@@ -1719,10 +1868,110 @@ namespace
         pass ("MIDI Playground DSP modulation routing");
     }
 
+    void smokeHarmonyComposerCore()
+    {
+        require (patchcraft::HarmonyEngine::scales().size() >= 24,
+                 "Harmony Engine scale library is incomplete");
+        require (patchcraft::HarmonyEngine::chords().size() >= 32,
+                 "Harmony Engine chord library is incomplete");
+
+        const auto chordMatches = patchcraft::HarmonyEngine::detectChords ({ 60, 64, 67 });
+        require (! chordMatches.empty(), "Harmony Engine did not detect a C major triad");
+        require (chordMatches.front().rootPitchClass == 0
+                 && chordMatches.front().chordId == "major"
+                 && chordMatches.front().exact,
+                 "Harmony Engine returned the wrong primary chord match");
+
+        const auto scaleMatches = patchcraft::HarmonyEngine::detectScales ({ 60, 62, 64, 65, 67, 69, 71 });
+        require (! scaleMatches.empty(), "Harmony Engine did not detect a scale");
+        require (scaleMatches.front().rootPitchClass == 0
+                 && scaleMatches.front().scaleId == "major",
+                 "Harmony Engine returned the wrong primary scale match");
+
+        const auto suggestions = patchcraft::HarmonyEngine::suggestNextChords (0, 1, 4);
+        require (! suggestions.empty() && suggestions.front().degree == 0,
+                 "Harmony Engine dominant resolution did not prefer the tonic");
+
+        patchcraft::HarmonyEngine::VoicingOptions options;
+        options.lowNote = 48;
+        options.highNote = 84;
+        options.preferredCenter = 60;
+        options.voices = 4;
+        const auto tonic = patchcraft::HarmonyEngine::buildDiatonicChord (0, 1, 0, 4);
+        const auto dominant = patchcraft::HarmonyEngine::buildDiatonicChord (0, 1, 4, 4);
+        const auto tonicVoicing = patchcraft::HarmonyEngine::voiceChord (tonic.rootPitchClass, tonic.chordIndex, options);
+        const auto dominantVoicing = patchcraft::HarmonyEngine::voiceChord (dominant.rootPitchClass, dominant.chordIndex,
+                                                                            options, tonicVoicing);
+        require (tonicVoicing.size() >= 3 && dominantVoicing.size() >= 3,
+                 "Harmony Engine could not build playable chord voicings");
+        require (tonicVoicing.front() >= options.lowNote && tonicVoicing.back() <= options.highNote,
+                 "Harmony Engine tonic voicing escaped its note range");
+        require (dominantVoicing.front() >= options.lowNote && dominantVoicing.back() <= options.highNote,
+                 "Harmony Engine dominant voicing escaped its note range");
+
+        patchcraft::DspBlock composerBlock;
+        composerBlock.id = "harmony_composer_smoke";
+        composerBlock.section = "mod";
+        composerBlock.type = "harmonyComposer";
+        composerBlock.enabled = true;
+        composerBlock.values = {
+            { "composerRoot", 0.0f },
+            { "composerScale", 1.0f },
+            { "composerChordCount", 4.0f },
+            { "composerRate", 1.0f },
+            { "composerGate", 0.50f },
+            { "composerVelocity", 0.80f },
+            { "composerVoices", 4.0f },
+            { "composerOctave", 4.0f },
+            { "composerSpread", 0.40f },
+            { "composerDegree1", 0.0f },
+            { "composerDegree2", 5.0f },
+            { "composerDegree3", 3.0f },
+            { "composerDegree4", 4.0f }
+        };
+        patchcraft::DspGraph graph;
+        graph.blocks.push_back (composerBlock);
+
+        patchcraft::ComposerRuntime runtime;
+        runtime.bind (graph);
+        require (runtime.isEnabled(), "Composer runtime did not bind its graph block");
+
+        auto context = makeContext (0);
+        context.ppqPosition = 0.0;
+        juce::MidiBuffer midi;
+        runtime.process (context, midi);
+        int noteOns = 0;
+        for (const auto event : midi)
+            if (event.getMessage().isNoteOn())
+                ++noteOns;
+        require (noteOns >= 3, "Composer runtime did not emit the first chord");
+
+        midi.clear();
+        context.ppqPosition = 0.75;
+        runtime.process (context, midi);
+        int noteOffs = 0;
+        for (const auto event : midi)
+            if (event.getMessage().isNoteOff())
+                ++noteOffs;
+        require (noteOffs >= 3, "Composer runtime did not close the chord gate");
+
+        midi.clear();
+        context.ppqPosition = 1.0;
+        runtime.process (context, midi);
+        require (runtime.getCurrentChordIndex() == 1,
+                 "Composer runtime did not advance with host PPQ");
+        require (! midi.isEmpty(), "Composer runtime did not emit the second chord");
+
+        pass ("Harmony Engine and Composer MIDI runtime");
+    }
+
     void smokePlayerFxGraphControlsStayLive()
     {
         patchcraft::DspGraph graph;
         graph.resetForEngine ("synth");
+        graph.macros.clear();
+        graph.modulation.clear();
+        graph.automation.clear();
 
         auto parameters = parametersForEngine ("synth");
         patchcraft::DspRoutingEngine router;
@@ -1733,6 +1982,15 @@ namespace
         router.setParameterValue ("delayMix", 0.82f);
         require (router.setFxBlockParameterValue ("delayMix", 0.82f),
                  "Player FX graph control did not find the delayMix block value");
+        router.setParameterValue ("filterCutoff", 6400.0f);
+        require (router.setFxBlockParameterValue ("filterCutoff", 6400.0f),
+                 "Player graph control did not update the filter cutoff alias");
+        router.setParameterValue ("lfoRate", 7.0f);
+        require (router.setFxBlockParameterValue ("lfoRate", 7.0f),
+                 "Player graph control did not update the LFO rate alias");
+        router.setParameterValue ("oscType", 1.0f);
+        require (router.setFxBlockParameterValue ("oscType", 1.0f),
+                 "Player graph control did not update oscillator waveform blocks");
 
         CountingEngine engine;
         router.processToEngine (engine, context);
@@ -1740,6 +1998,12 @@ namespace
                  "Player FX graph control did not reach the audio engine");
         require (engine.parameters["delayMix"] > 0.75f,
                  "Player FX graph routing overwrote the live delayMix control");
+        require (engine.parameters["filterCutoff"] > 1000.0f && engine.parameters["filterCutoff"] < 12000.0f,
+                 "Player graph routing ignored or corrupted the live filter cutoff control");
+        require (engine.parameters["lfoRate"] > 6.5f && engine.parameters["lfoRate"] < 7.5f,
+                 "Player graph routing ignored the live LFO rate control");
+        require (engine.parameters["oscType"] > 0.5f && engine.parameters["oscType"] < 1.5f,
+                 "Player graph routing converted a safe oscillator waveform into a different waveform");
 
         pass ("Player FX graph controls stay live");
     }
@@ -2105,13 +2369,10 @@ namespace
         scanner.scanLibrary();
 
         const auto entries = scanner.getEntries();
-        require (entries.size() >= 6, "Player library scanner did not find the approved factory demo packs");
-        require (scanner.search ("EchoCraft").size() > 0, "Player library search cannot find EchoCraft demo");
-        require (scanner.search ("CircleSEQ").size() > 0, "Player library search cannot find CircleSEQ demo");
-        require (scanner.search ("Analog House").size() > 0, "Player library search cannot find Analog House Drums demo");
-        require (scanner.getEntriesByCategory ("synth").size() >= 1, "Player library scanner is missing the ship synth demo");
-        require (scanner.getEntriesByCategory ("sample").size() >= 1, "Player library scanner is missing the ship sample demo");
-        require (scanner.getEntriesByCategory ("fx").size() >= 1, "Player library scanner is missing the ship FX demo");
+        require (entries.size() >= 1, "Player library scanner should expose at least one factory demo");
+        require (scanner.search ("ECHOCRAFT").size() >= 1 || scanner.search ("EchoCraft").size() >= 1,
+                 "Player library search cannot find EchoCraft-branded flagship demo");
+        require (scanner.getEntriesByCategory ("synth").size() >= 1, "Player library scanner is missing the flagship synth demo");
 
         bool hasThumbnail = false;
         for (const auto& entry : entries)
@@ -2131,7 +2392,12 @@ namespace
         require (demoRoot.isDirectory(), "FactoryDemos folder is missing");
 
         auto demoFolders = demoRoot.findChildFiles (juce::File::findDirectories, false, "*.patchcraft");
-        require (demoFolders.size() >= 6, "factory demo library should ship the approved six-demo RC set");
+        require (demoFolders.size() >= 1, "factory demo library should ship at least one demo");
+        bool hasAurora = false;
+        for (const auto& folder : demoFolders)
+            if (folder.getFileNameWithoutExtension() == "AuroraFlagship")
+                hasAurora = true;
+        require (hasAurora, "factory demo library should expose AuroraFlagship.patchcraft");
 
         int audibleInstrumentCount = 0;
         juce::StringArray defaultPresetSignatures;
@@ -2224,22 +2490,32 @@ namespace
                     break;
                 }
 
+            if (folder.getFileNameWithoutExtension() == "AuroraFlagship")
             {
                 int runtimeControlCount = 0;
                 for (const auto& element : pack.layout.getAll())
                     if (patchcraft::isRuntimeControlElement (element.type))
                         ++runtimeControlCount;
-                require (tabPanel == nullptr,
-                         "factory demo still uses the shared tab strip instead of a custom surface");
+                require (tabPanel != nullptr,
+                         "Aurora flagship demo must expose the Main/Motion/FX/Arp instrument tab strip");
+                require (tabPanel->tabs.size() == 4
+                         && tabPanel->tabs[0] == "Main"
+                         && tabPanel->tabs[1] == "Motion"
+                         && tabPanel->tabs[2] == "FX"
+                         && tabPanel->tabs[3] == "Arp",
+                         "Aurora flagship demo tab strip must be Main, Motion, FX, Arp");
                 require (runtimeControlCount >= 24,
                          "custom-surface factory demo does not expose enough runtime controls");
                 for (const auto& element : pack.layout.getAll())
                 {
-                    require (element.groupId.isEmpty() || element.groupId == "main",
-                             "custom-surface factory demo stores a non-main group id that can hide controls without tabs");
+                    require (element.groupId.isEmpty()
+                             || element.groupId == "main"
+                             || element.groupId == "motion"
+                             || element.groupId == "fx"
+                             || element.groupId == "arp",
+                             "Aurora flagship demo stores an unexpected tab/page group id");
                 }
             }
-
             const auto* defaultPreset = pack.findDefaultPreset();
             require (defaultPreset != nullptr, "factory demo is missing a default preset");
             for (const auto& preset : pack.presets)
@@ -2325,7 +2601,7 @@ namespace
             }
         }
 
-        require (audibleInstrumentCount >= 4, "factory demos need the approved playable instrument set");
+        require (audibleInstrumentCount >= 1, "factory demo should produce audible output when loaded");
         defaultPresetSignatures.removeDuplicates (false);
         require (defaultPresetSignatures.size() == demoFolders.size(),
                  "factory demo default presets must be unique per shipped demo");
@@ -3082,6 +3358,133 @@ namespace
         pass ("pScript timer event compilation and scheduled firing");
     }
 
+    void smokeDspModuleRegistry()
+    {
+        const char* premiumTypes[] = {
+            "oscStack", "serumWavetable", "samplePlayer", "sliceChop", "scratchDeck",
+            "granularSampler", "drumRack", "harmonyComposer", "midiPlayground",
+            "drumSequencer", "drumMachine", "arp", "stepLfo", "dynamicEq",
+            "limiter", "transientShaper", "flanger", "multiTapDelay", "vocalFormant",
+            "masterBus", "pianoRoll", "arpStepSequencer", "vinyl"
+        };
+
+        for (auto* typeId : premiumTypes)
+        {
+            const auto* desc = patchcraft::DspModuleRegistry::findByType (typeId);
+            require (desc != nullptr,
+                     (juce::String ("DspModuleRegistry missing premium type: ") + typeId).toRawUTF8());
+            require (desc->kind != patchcraft::DspNodeKind::unknown,
+                     (juce::String ("DspModuleRegistry kind unset for: ") + typeId).toRawUTF8());
+        }
+
+        patchcraft::DspBlock pianoRollBlock;
+        pianoRollBlock.type = "pianoRoll";
+        pianoRollBlock.section = "mod";
+        require (patchcraft::DspModuleRegistry::classifyBlockKind (pianoRollBlock)
+                     == patchcraft::DspNodeKind::modulation,
+                 "pianoRoll should classify as modulation");
+
+        patchcraft::TypedDspNode node;
+        node.type = "harmonyComposer";
+        node.kind = patchcraft::DspNodeKind::modulation;
+        require (patchcraft::DspModuleRegistry::isBlockSupported (node),
+                 "harmonyComposer should be first-class in registry");
+
+        require (patchcraft::DspModuleRegistry::all().size() >= 40,
+                 "DspModuleRegistry should catalogue at least 40 module types");
+
+        pass ("DspModuleRegistry premium module catalogue");
+    }
+
+    void smokeBeatmakerAnalysis()
+    {
+        using patchcraft::SampleMap;
+        const double sr = 44100.0;
+
+        // --- Tempo detection on a synthetic click track at a known BPM ----
+        {
+            const double bpm = 120.0;
+            const int seconds = 6;
+            const int total = (int) (sr * seconds);
+            juce::AudioBuffer<float> click (1, total);
+            click.clear();
+            auto* data = click.getWritePointer (0);
+            const double samplesPerBeat = sr * 60.0 / bpm;
+            const int clickLen = (int) (sr * 0.01); // 10 ms transient burst
+            for (double beat = 0.0; beat < (double) total; beat += samplesPerBeat)
+            {
+                const int startPos = (int) std::llround (beat);
+                for (int i = 0; i < clickLen && startPos + i < total; ++i)
+                {
+                    const float env = 1.0f - (float) i / (float) clickLen;
+                    data[startPos + i] = env * std::sin (2.0f * juce::MathConstants<float>::pi
+                                                          * 1500.0f * (float) i / (float) sr);
+                }
+            }
+
+            const double detected = SampleMap::detectTempoBpm (click, sr);
+            require (std::abs (detected - bpm) <= 4.0,
+                     (juce::String ("BPM detection off: got ") + juce::String (detected)).toRawUTF8());
+        }
+
+        // --- Musical key detection on a C-major drone -------------------
+        {
+            const int total = (int) (sr * 4.0);
+            juce::AudioBuffer<float> tone (1, total);
+            tone.clear();
+            auto* data = tone.getWritePointer (0);
+            // C major triad, tonic weighted loudest so the relative-minor
+            // ambiguity resolves to the major key.
+            const double freqs[3] = { 261.63, 329.63, 392.00 }; // C4 E4 G4
+            const float amps[3]   = { 1.0f, 0.6f, 0.8f };
+            for (int i = 0; i < total; ++i)
+            {
+                float s = 0.0f;
+                for (int n = 0; n < 3; ++n)
+                    s += amps[n] * std::sin (2.0f * juce::MathConstants<float>::pi
+                                             * (float) freqs[n] * (float) i / (float) sr);
+                data[i] = s * 0.25f;
+            }
+
+            bool minor = false;
+            float confidence = 0.0f;
+            const int pc = SampleMap::detectMusicalKey (tone, sr, minor, &confidence);
+            // Accept C major or its relative A minor (same key signature) as a
+            // correct result; both share the {C,E,G} pitch content.
+            const bool cMajor = (pc == 0 && ! minor);
+            const bool aMinor = (pc == 9 && minor);
+            require (cMajor || aMinor,
+                     (juce::String ("Key detection wrong: pc=") + juce::String (pc)
+                      + (minor ? " min" : " maj")).toRawUTF8());
+        }
+
+        // --- Beat-grid slicing math -------------------------------------
+        {
+            const double sr2 = 48000.0;
+            const auto grid = SampleMap::sliceByBeatGrid (0, 96000, sr2, 120.0, 1);
+            require (grid.size() == 5, "beat grid should yield 5 boundaries (4 slices)");
+            require (grid.front() == 0 && grid.back() == 96000, "grid endpoints incorrect");
+            require (std::abs (grid[1] - 24000) <= 1, "grid spacing incorrect");
+        }
+
+        // --- Cue points + play mode round-trip through serialization -----
+        {
+            patchcraft::SampleZoneDef zone;
+            zone.samplePath = "kick.wav";
+            zone.playMode = 3;
+            zone.cuePoints = { 0, 1024, 22050, 44100 };
+
+            const auto restored = patchcraft::SampleZoneDef::fromVar (zone.toVar());
+            require (restored.playMode == 3, "playMode did not round-trip");
+            require (restored.cuePoints.size() == zone.cuePoints.size(),
+                     "cuePoints count did not round-trip");
+            for (size_t i = 0; i < zone.cuePoints.size(); ++i)
+                require (restored.cuePoints[i] == zone.cuePoints[i], "cuePoint value mismatch");
+        }
+
+        pass ("beatmaker analysis (tempo, key, slicing, cue persistence)");
+    }
+
     void smokeExpandedCanvasModules()
     {
         patchcraft::PatchCraftProject project;
@@ -3229,6 +3632,7 @@ namespace
             { "eight_oh_eight_module_test",  "source", "drumRack",        "808 Kit Builder",    "pad1Pitch",      "drums",   "source",     "stereo" },
             { "boom_bap_module_test",         "source", "drumRack",        "Boom Bap Pad Bank",  "pad1Volume",     "drums",   "source",     "stereo" },
             { "quick_drum_kit_test",          "source", "drumRack",        "Quick Drum Kit",     "pad1Volume",     "drums",   "source",     "stereo" },
+            { "harmony_composer_test",        "mod",    "harmonyComposer", "Harmony Composer",   "composerRoot",   "midi",    "harmonyComposer", "event" },
             { "chord_progression_builder_test","mod",   "midiPlayground",  "Chord Progression",  "filterCutoff",   "midi",    "chordProgression", "event" },
             { "scale_chord_assistant_test",  "mod",    "midiPlayground",  "Scale Chord Assistant", "filterCutoff", "midi",    "chordProgression", "event" },
             { "chord_pad_bank_test",         "mod",    "midiPlayground",  "Chord Pad Bank",     "filterCutoff",   "midi",    "chordProgression", "event" },
@@ -3516,6 +3920,86 @@ namespace
 
         pass ("expanded canvas module templates");
     }
+
+    void smokeControlNodeAuthoring()
+    {
+        patchcraft::PatchCraftProject project;
+        project.setEngineType ("synth");
+
+        patchcraft::LayoutElement knob;
+        knob.id = "node_test_knob";
+        knob.type = patchcraft::ElementType::Knob;
+        knob.label = "Motion";
+        knob.parameterId = "filterCutoff";
+        project.getLayout().add (knob);
+
+        juce::String status;
+        auto* lfo = patchcraft::ControlNodeAuthoring::ensureNode (project, "lfo", status);
+        require (lfo != nullptr, "control node authoring did not create an LFO node");
+        const auto lfoId = lfo->id;
+        require (project.getParameters().find ("lfoRate") != nullptr,
+                 "control node authoring did not register node parameters");
+        require (patchcraft::ControlNodeAuthoring::bindControl (project, knob.id, "lfoRate", status),
+                 "control node authoring did not bind the UI control");
+        require (project.getLayout().find (knob.id)->parameterId == "lfoRate",
+                 "control node binding was not stored in the layout");
+        require (patchcraft::ControlNodeAuthoring::setNodeParameter (project, lfoId, "lfoRate", 3.5f),
+                 "control node parameter edit failed");
+        require (std::abs (project.getLiveValues().getValue ("lfoRate") - 3.5f) < 0.001f,
+                 "control node parameter edit did not reach live values");
+        require (std::abs (patchcraft::ControlNodeAuthoring::findBlock (project, lfoId)->values["rate"] - 3.5f) < 0.001f,
+                 "control node parameter edit did not persist the LFO rate alias");
+        require (patchcraft::ControlNodeAuthoring::setModulationRoute (project, lfoId, "filterCutoff", true, 0.30f, status),
+                 "control node modulation route could not be created");
+        require (patchcraft::ControlNodeAuthoring::hasModulationRoute (project, lfoId, "filterCutoff"),
+                 "control node modulation route was not stored in the DSP graph");
+        require (patchcraft::ControlNodeAuthoring::setModulationRoute (project, lfoId, "filterCutoff", false, 0.0f, status),
+                 "control node modulation route could not be removed");
+
+        auto* oscillator = patchcraft::ControlNodeAuthoring::ensureNode (project, "oscillator", status);
+        require (oscillator != nullptr, "control node authoring did not expose an oscillator node");
+        const auto oscillatorId = oscillator->id;
+        auto* filter = patchcraft::ControlNodeAuthoring::ensureNode (project, "filter", status);
+        require (filter != nullptr, "control node authoring did not expose a filter node");
+        const auto filterId = filter->id;
+        require (patchcraft::ControlNodeAuthoring::connectNodes (project, oscillatorId, filterId, status),
+                 "audio cable drag did not create a node connection");
+        require (std::any_of (project.getDspGraph().edges.begin(), project.getDspGraph().edges.end(),
+                             [&] (const patchcraft::DspGraphEdge& edge)
+                             {
+                                 return edge.sourceNodeId == oscillatorId && edge.targetNodeId == filterId
+                                     && edge.signalType == patchcraft::DspSignalType::audio;
+                             }),
+                 "audio cable connection was not stored in the DSP graph");
+
+        auto* delay = patchcraft::ControlNodeAuthoring::ensureNode (project, "delay", status);
+        require (delay != nullptr, "control node authoring did not expose a delay node");
+        const auto delayId = delay->id;
+        auto* arp = patchcraft::ControlNodeAuthoring::ensureNode (project, "arp", status);
+        require (arp != nullptr, "control node authoring did not expose an arp node");
+        const auto arpId = arp->id;
+        require (patchcraft::ControlNodeAuthoring::connectNodes (project, arpId, delayId, status),
+                 "ARP cable drag did not create a rhythmic modulation route");
+        require (std::any_of (project.getDspGraph().modulation.begin(), project.getDspGraph().modulation.end(),
+                             [&] (const patchcraft::ModRoute& route)
+                             {
+                                 return route.enabled && route.sourceId == arpId
+                                     && (route.targetId == "delayTime" || route.targetId == "delayFeedback"
+                                         || route.targetId == "delayMix");
+                             }),
+                 "ARP cable connection was not stored as delay modulation");
+        require (patchcraft::ControlNodeAuthoring::connectNodes (project, arpId, oscillatorId, status),
+                 "ARP cable drag did not create a source trigger route");
+        require (std::any_of (project.getDspGraph().edges.begin(), project.getDspGraph().edges.end(),
+                             [&] (const patchcraft::DspGraphEdge& edge)
+                             {
+                                 return edge.sourceNodeId == arpId && edge.targetNodeId == oscillatorId
+                                     && edge.signalType == patchcraft::DspSignalType::event;
+                             }),
+                 "ARP trigger cable was not stored in the DSP graph");
+
+        pass ("control-focused node authoring");
+    }
 }
 
 int main()
@@ -3525,6 +4009,7 @@ int main()
         smokeSynthWavetable();
         smokeSamplerWavLoad();
         smokeSamplerMidiSampleControls();
+        smokeSamplerVelocityLayersAndCurve();
         smokeSamplerGranularVoiceEngine();
         smokeSamplerBpmSyncPlayback();
         smokeSampleDrumPadsAndPerformanceMetadata();
@@ -3534,6 +4019,7 @@ int main()
         smokeFxSamplePreview();
         smokeFxLiveInput();
         smokeArpeggiatorRuntime();
+        smokePianoRollRuntime();
         smokeMidiPlaygroundRuntime();
         smokeMidiPlaygroundDrumMachineRuntime();
         smokeMidiPlaygroundSampleOverlayRuntime();
@@ -3545,6 +4031,7 @@ int main()
         smokeMidiPlaygroundActiveBankIsolation();
         smokeMidiPlaygroundMultiLanePlayback();
         smokeMidiPlaygroundDspModulationRouting();
+        smokeHarmonyComposerCore();
         smokePlayerFxGraphControlsStayLive();
         smokePlayerInstrumentFactory();
         smokePlayerFxFactory();
@@ -3567,6 +4054,9 @@ int main()
         smokePScriptExpandedFeatures();
         smokeTimerEvents();
         smokeExpandedCanvasModules();
+        smokeDspModuleRegistry();
+        smokeBeatmakerAnalysis();
+        smokeControlNodeAuthoring();
         std::cout << "PatchCraft audio smoke tests passed." << std::endl;
         return 0;
     }

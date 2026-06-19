@@ -1,112 +1,112 @@
 #include "ParametersComponent.h"
-#include "StudioMainComponent.h"
+
 #include "PatchCraftLookAndFeel.h"
+#include "StudioMainComponent.h"
 
 namespace patchcraft
 {
-    ParametersComponent::ParametersComponent (StudioMainComponent& o) : owner (o)
+    namespace
     {
-        addAndMakeVisible (list);
-        list.setRowHeight (24);
-        list.setColour (juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
-        list.setOutlineThickness (0);
-
-        addAndMakeVisible (addBtn);
-        addAndMakeVisible (menuBtn);
-        addBtn.onClick = [this]
+        static bool isBindable (const LayoutElement* element)
         {
-            ParameterDef p;
-            p.id = "param" + juce::String ((int) owner.getProject().getParameters().getAll().size() + 1);
-            p.name = p.id;
-            owner.getProject().getParameters().add (p);
-            owner.getProject().notifyChanged();
-            refresh();
-        };
+            return element != nullptr
+                && (element->type == ElementType::Knob || element->type == ElementType::Slider
+                    || element->type == ElementType::Button || element->type == ElementType::Toggle
+                    || element->type == ElementType::Dropdown || element->type == ElementType::ValueDisplay
+                    || element->type == ElementType::MacroControl || element->type == ElementType::SampleDropZone);
+        }
+
+        static juce::Colour stageColour (int index)
+        {
+            static const juce::Colour colours[] {
+                juce::Colour (0xff35b8d4), juce::Colour (0xff79c267), juce::Colour (0xffd889e8),
+                juce::Colour (0xffffb84d), juce::Colour (0xfff06b78)
+            };
+            return colours[juce::jlimit (0, 4, index)];
+        }
     }
 
-    juce::String ParametersComponent::formatValue (const ParameterDef& p)
+    ParametersComponent::ParametersComponent (StudioMainComponent& targetOwner) : owner (targetOwner)
     {
-        if (p.unit == "Hz")
-        {
-            if (p.defaultValue >= 1000.0f)
-                return juce::String (p.defaultValue / 1000.0f, 1) + " kHz";
-            return juce::String (p.defaultValue, 0) + " Hz";
-        }
-        if (p.unit == "%")
-            return juce::String (juce::roundToInt (p.defaultValue * 100.0f)) + " %";
-        if (p.unit == "s")
-            return juce::String (p.defaultValue, 2) + " s";
-        if (p.unit.isNotEmpty())
-            return juce::String (p.defaultValue, 2) + " " + p.unit;
-        return juce::String (p.defaultValue, 2);
+        addAndMakeVisible (openEditor);
+        addAndMakeVisible (addControl);
+        addAndMakeVisible (selectionStatus);
+
+        openEditor.setTooltip ("Open the node graph for the selected runtime control.");
+        openEditor.onClick = [this] { owner.openControlNodeEditor(); };
+        addControl.setTooltip ("Add a new knob to the Design canvas without opening another window.");
+        addControl.onClick = [this] { owner.addElementToCanvas (ElementType::Knob); };
+        selectionStatus.setFont (11.5f);
+        selectionStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+        refresh();
     }
 
     void ParametersComponent::paint (juce::Graphics& g)
     {
         g.fillAll (PatchCraftLookAndFeel::panel());
+        const juce::StringArray labels { "SOURCE", "SHAPE", "MOTION", "FX", "OUTPUT" };
+        int counts[5] {};
+        for (const auto& block : owner.getProject().getDspGraph().blocks)
+        {
+            const auto section = block.section.toLowerCase();
+            const int index = section == "source" ? 0
+                            : (section == "filter" || section == "amp" || section == "shape") ? 1
+                            : (section == "mod" || section == "motion") ? 2
+                            : section == "fx" ? 3 : section == "out" ? 4 : -1;
+            if (index >= 0 && block.enabled)
+                ++counts[index];
+        }
+
+        auto row = stageArea;
+        const int gap = 6;
+        const int width = juce::jmax (64, (row.getWidth() - gap * 4) / 5);
+        for (int index = 0; index < 5; ++index)
+        {
+            auto card = row.removeFromLeft (width);
+            row.removeFromLeft (gap);
+            const auto colour = stageColour (index);
+            g.setColour (juce::Colour (0xff151a21));
+            g.fillRoundedRectangle (card.toFloat(), 4.0f);
+            g.setColour (colour.withAlpha (0.75f));
+            g.drawRoundedRectangle (card.toFloat().reduced (0.5f), 4.0f, 1.0f);
+            g.fillRect (card.removeFromTop (3));
+            g.setColour (PatchCraftLookAndFeel::text());
+            g.setFont (juce::FontOptions (10.0f).withStyle ("bold"));
+            g.drawText (labels[index], card.removeFromTop (22), juce::Justification::centred);
+            g.setColour (colour);
+            g.setFont (juce::FontOptions (17.0f).withStyle ("bold"));
+            g.drawText (juce::String (counts[index]), card, juce::Justification::centred);
+        }
     }
 
     void ParametersComponent::resized()
     {
-        auto r = getLocalBounds();
-        auto bottom = r.removeFromBottom (28).reduced (4, 2);
-        addBtn.setBounds (bottom.removeFromLeft (28));
-        bottom.removeFromLeft (4);
-        menuBtn.setBounds (bottom.removeFromLeft (28));
-
-        list.setBounds (r.reduced (4, 2));
+        auto r = getLocalBounds().reduced (8, 6);
+        selectionStatus.setBounds (r.removeFromTop (24));
+        r.removeFromTop (3);
+        auto buttons = r.removeFromBottom (30);
+        openEditor.setBounds (buttons.removeFromLeft (148));
+        buttons.removeFromLeft (6);
+        addControl.setBounds (buttons.removeFromLeft (158));
+        r.removeFromBottom (6);
+        stageArea = r;
     }
 
     void ParametersComponent::refresh()
     {
-        list.updateContent();
+        const auto* element = owner.getProject().getLayout().find (owner.getSelectedElementId());
+        const bool bindable = isBindable (element);
+        openEditor.setEnabled (bindable);
+
+        juce::String text = "Select a runtime control to edit its sound connection.";
+        if (bindable)
+        {
+            const auto* parameter = owner.getProject().getParameters().find (element->parameterId);
+            const auto name = element->label.isNotEmpty() ? element->label : element->id;
+            text = name + "  ->  " + (parameter != nullptr ? parameter->name
+                                      : element->parameterId.isNotEmpty() ? element->parameterId : "Not connected");
+        }
+        selectionStatus.setText (text, juce::dontSendNotification);
         repaint();
     }
-
-    int ParametersComponent::getNumRows()
-    {
-        return (int) owner.getProject().getParameters().getAll().size();
-    }
-
-    void ParametersComponent::paintListBoxItem (int row, juce::Graphics& g, int w, int h, bool selected)
-    {
-        auto& params = owner.getProject().getParameters().getAll();
-        if (row < 0 || row >= (int) params.size()) return;
-        const auto& p = params[(size_t) row];
-
-        if (selected)
-        {
-            g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.20f));
-            g.fillRect (0, 0, w, h);
-            g.setColour (PatchCraftLookAndFeel::accent());
-            g.fillRect (0, 0, 2, h);
-        }
-
-        // Bullet circle
-        g.setColour (PatchCraftLookAndFeel::textDim());
-        g.fillEllipse (8.0f, h * 0.5f - 3.0f, 6.0f, 6.0f);
-
-        g.setColour (selected ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::text());
-        g.setFont (juce::Font (12.0f));
-        g.drawText (p.id, 22, 0, w - 90, h, juce::Justification::centredLeft);
-
-        g.setColour (PatchCraftLookAndFeel::text());
-        g.drawText (formatValue (p), w - 80, 0, 70, h, juce::Justification::centredRight);
-    }
-
-    void ParametersComponent::listBoxItemClicked (int row, const juce::MouseEvent&)
-    {
-        auto& params = owner.getProject().getParameters().getAll();
-        if (row < 0 || row >= (int) params.size()) return;
-        // Select the layout element bound to this parameter id, if any.
-        for (auto& el : owner.getProject().getLayout().getAll())
-        {
-            if (el.parameterId == params[(size_t) row].id)
-            {
-                owner.setSelectedElementId (el.id);
-                return;
-            }
-        }
-    }
-
-} // namespace patchcraft
+}

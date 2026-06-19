@@ -98,6 +98,594 @@ namespace patchcraft
             juce::TextButton closeBtn { "Close" };
         };
 
+        //====================================================================
+        // Chop Studio: a focused beatmaker view. Large waveform with draggable
+        // slice markers + a live 4x4 pad bank that auditions each slice.
+        //====================================================================
+
+        // Waveform display that renders arbitrary slice markers and lets the
+        // user add (double-click), move (drag) and delete (double-click on a
+        // marker) them. Single click auditions the slice under the cursor.
+        class ChopWaveformView : public juce::Component
+        {
+        public:
+            void setSource (const juce::AudioBuffer<float>* b, double rate, int start, int end)
+            {
+                buffer = b;
+                sampleRate = rate;
+                regionStart = start;
+                regionEnd = juce::jmax (start + 1, end);
+                rebuildPeaks();
+                repaint();
+            }
+
+            std::vector<int>* slices = nullptr;     // interior markers (sorted)
+            std::function<void()> onSlicesChanged;
+            std::function<void (int sliceIndex)> onAuditionSlice;
+            int playingSlice = -1;
+
+            void paint (juce::Graphics& g) override
+            {
+                auto area = getLocalBounds();
+                g.setColour (PatchCraftLookAndFeel::panel());
+                g.fillRoundedRectangle (area.toFloat(), 6.0f);
+
+                if (buffer == nullptr || peaks.empty())
+                {
+                    g.setColour (PatchCraftLookAndFeel::textDim());
+                    g.drawText ("No sample loaded", area, juce::Justification::centred);
+                    return;
+                }
+
+                const auto bounds = area.reduced (2);
+                const float midY = (float) bounds.getCentreY();
+                const float halfH = (float) bounds.getHeight() * 0.46f;
+
+                // Highlight the currently playing slice region.
+                if (playingSlice >= 0)
+                {
+                    const auto b = fullBoundaries();
+                    if (playingSlice + 1 < (int) b.size())
+                    {
+                        const int x0 = sampleToX (b[(size_t) playingSlice]);
+                        const int x1 = sampleToX (b[(size_t) playingSlice + 1]);
+                        g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.18f));
+                        g.fillRect (juce::Rectangle<int> (x0, bounds.getY(), juce::jmax (1, x1 - x0), bounds.getHeight()));
+                    }
+                }
+
+                // Waveform.
+                g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.85f));
+                for (int x = 0; x < (int) peaks.size(); ++x)
+                {
+                    const float mn = peaks[(size_t) x].first;
+                    const float mx = peaks[(size_t) x].second;
+                    const float y0 = midY - mx * halfH;
+                    const float y1 = midY - mn * halfH;
+                    g.drawVerticalLine (bounds.getX() + x, y0, y1);
+                }
+
+                // Slice markers + numbering.
+                const auto b = fullBoundaries();
+                for (int i = 0; i < (int) b.size(); ++i)
+                {
+                    const int x = sampleToX (b[(size_t) i]);
+                    const bool edge = (i == 0 || i == (int) b.size() - 1);
+                    g.setColour (edge ? PatchCraftLookAndFeel::textDim()
+                                      : PatchCraftLookAndFeel::textBright());
+                    g.fillRect (juce::Rectangle<int> (x - (edge ? 0 : 1), bounds.getY(),
+                                                      edge ? 1 : 2, bounds.getHeight()));
+
+                    if (i < (int) b.size() - 1)
+                    {
+                        const int x2 = sampleToX (b[(size_t) i + 1]);
+                        g.setColour (PatchCraftLookAndFeel::textDim());
+                        g.setFont (juce::FontOptions (11.0f));
+                        g.drawText (juce::String (i + 1),
+                                    juce::Rectangle<int> (x + 3, bounds.getY() + 2, juce::jmax (10, x2 - x - 6), 14),
+                                    juce::Justification::topLeft);
+                    }
+                }
+            }
+
+            void mouseDown (const juce::MouseEvent& e) override
+            {
+                if (buffer == nullptr || slices == nullptr)
+                    return;
+
+                draggingMarker = markerIndexNear (e.x);
+                if (draggingMarker < 0)
+                {
+                    // Single click auditions the slice region under the cursor.
+                    const int sample = xToSample (e.x);
+                    const auto b = fullBoundaries();
+                    for (int i = 0; i + 1 < (int) b.size(); ++i)
+                        if (sample >= b[(size_t) i] && sample < b[(size_t) i + 1])
+                        {
+                            if (onAuditionSlice) onAuditionSlice (i);
+                            break;
+                        }
+                }
+            }
+
+            void mouseDrag (const juce::MouseEvent& e) override
+            {
+                if (draggingMarker < 0 || slices == nullptr)
+                    return;
+
+                const int idx = draggingMarker;          // index into *slices
+                if (idx >= (int) slices->size())
+                    return;
+
+                const int lower = idx > 0 ? (*slices)[(size_t) idx - 1] : regionStart;
+                const int upper = idx + 1 < (int) slices->size() ? (*slices)[(size_t) idx + 1] : regionEnd;
+                const int minGap = juce::jmax (16, (int) (sampleRate * 0.001));
+                (*slices)[(size_t) idx] = juce::jlimit (lower + minGap, upper - minGap, xToSample (e.x));
+                if (onSlicesChanged) onSlicesChanged();
+                repaint();
+            }
+
+            void mouseUp (const juce::MouseEvent&) override { draggingMarker = -1; }
+
+            void mouseDoubleClick (const juce::MouseEvent& e) override
+            {
+                if (buffer == nullptr || slices == nullptr)
+                    return;
+
+                const int near = markerIndexNear (e.x);
+                if (near >= 0 && near < (int) slices->size())
+                {
+                    slices->erase (slices->begin() + near);     // delete marker
+                }
+                else
+                {
+                    const int sample = xToSample (e.x);
+                    const int minGap = juce::jmax (16, (int) (sampleRate * 0.001));
+                    if (sample > regionStart + minGap && sample < regionEnd - minGap)
+                    {
+                        slices->push_back (sample);
+                        std::sort (slices->begin(), slices->end());
+                    }
+                }
+                if (onSlicesChanged) onSlicesChanged();
+                repaint();
+            }
+
+            std::vector<int> fullBoundaries() const
+            {
+                std::vector<int> b;
+                b.push_back (regionStart);
+                if (slices != nullptr)
+                    for (int s : *slices)
+                        if (s > regionStart && s < regionEnd)
+                            b.push_back (s);
+                b.push_back (regionEnd);
+                std::sort (b.begin(), b.end());
+                b.erase (std::unique (b.begin(), b.end()), b.end());
+                return b;
+            }
+
+            void resized() override { rebuildPeaks(); }
+
+        private:
+            int sampleToX (int sample) const
+            {
+                const auto w = juce::jmax (1, getWidth() - 4);
+                const double t = (double) (sample - regionStart) / (double) juce::jmax (1, regionEnd - regionStart);
+                return 2 + (int) std::round (t * w);
+            }
+
+            int xToSample (int x) const
+            {
+                const auto w = juce::jmax (1, getWidth() - 4);
+                const double t = juce::jlimit (0.0, 1.0, (double) (x - 2) / (double) w);
+                return regionStart + (int) std::round (t * (regionEnd - regionStart));
+            }
+
+            int markerIndexNear (int x) const
+            {
+                if (slices == nullptr)
+                    return -1;
+                for (int i = 0; i < (int) slices->size(); ++i)
+                    if (std::abs (sampleToX ((*slices)[(size_t) i]) - x) <= 6)
+                        return i;
+                return -1;
+            }
+
+            void rebuildPeaks()
+            {
+                peaks.clear();
+                if (buffer == nullptr || buffer->getNumSamples() <= 0)
+                    return;
+
+                const int w = juce::jmax (1, getWidth() - 4);
+                peaks.resize ((size_t) w, { 0.0f, 0.0f });
+                const int ch = juce::jmax (1, buffer->getNumChannels());
+                const int regionLen = juce::jmax (1, regionEnd - regionStart);
+
+                for (int x = 0; x < w; ++x)
+                {
+                    const int s0 = regionStart + (int) ((juce::int64) x * regionLen / w);
+                    const int s1 = regionStart + (int) ((juce::int64) (x + 1) * regionLen / w);
+                    float mn = 0.0f, mx = 0.0f;
+                    for (int s = s0; s < s1 && s < buffer->getNumSamples(); ++s)
+                    {
+                        float v = 0.0f;
+                        for (int c = 0; c < ch; ++c)
+                            v += buffer->getSample (c, s);
+                        v /= (float) ch;
+                        mn = juce::jmin (mn, v);
+                        mx = juce::jmax (mx, v);
+                    }
+                    peaks[(size_t) x] = { mn, mx };
+                }
+            }
+
+            const juce::AudioBuffer<float>* buffer = nullptr;
+            double sampleRate = 44100.0;
+            int regionStart = 0;
+            int regionEnd = 1;
+            int draggingMarker = -1;
+            std::vector<std::pair<float, float>> peaks;
+        };
+
+        // Simple 4x4 performance pad bank.
+        class ChopPadGrid : public juce::Component
+        {
+        public:
+            int padCount = 0;
+            int playingPad = -1;
+            std::function<void (int)> onPad;
+
+            void paint (juce::Graphics& g) override
+            {
+                auto area = getLocalBounds();
+                const int cols = 4, rows = 4;
+                const int gap = 6;
+                const int cw = (area.getWidth() - gap * (cols - 1)) / cols;
+                const int ch = (area.getHeight() - gap * (rows - 1)) / rows;
+
+                for (int i = 0; i < 16; ++i)
+                {
+                    const int r = i / cols, c = i % cols;
+                    juce::Rectangle<int> pad (area.getX() + c * (cw + gap),
+                                              area.getY() + r * (ch + gap), cw, ch);
+                    const bool active = i < padCount;
+                    juce::Colour fill = active ? PatchCraftLookAndFeel::accent().withAlpha (0.30f)
+                                               : PatchCraftLookAndFeel::panel();
+                    if (i == playingPad)
+                        fill = PatchCraftLookAndFeel::accent();
+                    g.setColour (fill);
+                    g.fillRoundedRectangle (pad.toFloat(), 5.0f);
+                    g.setColour (active ? PatchCraftLookAndFeel::textBright()
+                                        : PatchCraftLookAndFeel::textDim().withAlpha (0.4f));
+                    g.drawRoundedRectangle (pad.toFloat(), 5.0f, 1.0f);
+                    g.setFont (juce::FontOptions (13.0f).withStyle ("bold"));
+                    g.drawText (juce::String (i + 1), pad, juce::Justification::centred);
+                }
+            }
+
+            void mouseDown (const juce::MouseEvent& e) override
+            {
+                const int cols = 4, rows = 4, gap = 6;
+                auto area = getLocalBounds();
+                const int cw = (area.getWidth() - gap * (cols - 1)) / cols;
+                const int ch = (area.getHeight() - gap * (rows - 1)) / rows;
+                for (int i = 0; i < 16; ++i)
+                {
+                    const int r = i / cols, c = i % cols;
+                    juce::Rectangle<int> pad (area.getX() + c * (cw + gap),
+                                              area.getY() + r * (ch + gap), cw, ch);
+                    if (pad.contains (e.getPosition()) && i < padCount && onPad)
+                    {
+                        onPad (i);
+                        break;
+                    }
+                }
+            }
+        };
+
+        class ChopStudioPanel : public juce::Component,
+                                public juce::AudioIODeviceCallback
+        {
+        public:
+            ChopStudioPanel (juce::AudioDeviceManager& dm,
+                             std::function<bool (juce::String&)> ensureAudioFn)
+                : deviceManager (dm), ensureAudio (std::move (ensureAudioFn))
+            {
+                title.setText ("Chop Studio", juce::dontSendNotification);
+                title.setFont (juce::FontOptions (18.0f).withStyle ("bold"));
+                title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
+                addAndMakeVisible (title);
+
+                info.setFont (juce::FontOptions (12.0f));
+                info.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+                info.setText ("Double-click waveform to add a slice. Drag markers to move, double-click a marker to delete. Click a pad to audition.",
+                              juce::dontSendNotification);
+                addAndMakeVisible (info);
+
+                gridBox.addItem ("1/4", 1);
+                gridBox.addItem ("1/8", 2);
+                gridBox.addItem ("1/16", 3);
+                gridBox.addItem ("1/32", 4);
+                gridBox.setSelectedId (3, juce::dontSendNotification);
+                addAndMakeVisible (gridBox);
+
+                for (auto* b : { &detectBtn, &sliceBtn, &transientBtn, &clearBtn, &applyBtn, &closeBtn })
+                {
+                    b->getProperties().set ("smallButton", true);
+                    addAndMakeVisible (*b);
+                }
+                applyBtn.getProperties().set ("primaryAction", true);
+
+                addAndMakeVisible (waveform);
+                addAndMakeVisible (pads);
+
+                waveform.slices = &slices;
+                waveform.onSlicesChanged = [this] { refreshFromSlices(); };
+                waveform.onAuditionSlice = [this] (int s) { auditionSlice (s); };
+                pads.onPad = [this] (int p) { auditionSlice (p); };
+
+                detectBtn.onClick = [this] { doDetect(); };
+                sliceBtn.onClick = [this] { doSliceGrid(); };
+                transientBtn.onClick = [this] { doTransient(); };
+                clearBtn.onClick = [this] { slices.clear(); refreshFromSlices(); };
+                applyBtn.onClick = [this]
+                {
+                    if (onApply)
+                        onApply (waveform.fullBoundaries(),
+                                 detectedBpm > 0.0 ? detectedBpm
+                                                   : (baseZone.bpm > 0.0f ? (double) baseZone.bpm : 0.0));
+                };
+            }
+
+            ~ChopStudioPanel() override
+            {
+                if (callbackActive)
+                    deviceManager.removeAudioCallback (this);
+            }
+
+            void setSource (const juce::AudioBuffer<float>& b, double rate,
+                            const juce::File& folder, const SampleZoneDef& base)
+            {
+                sourceBuffer = b;
+                sourceRate = rate > 0.0 ? rate : 44100.0;
+                projectFolder = folder;
+                baseZone = base;
+
+                const int len = sourceBuffer.getNumSamples();
+                regionStart = juce::jlimit (0, juce::jmax (0, len - 1), base.sampleStart);
+                regionEnd = base.sampleEnd > regionStart ? juce::jmin (len, base.sampleEnd) : len;
+                slices.clear();
+                waveform.setSource (&sourceBuffer, sourceRate, regionStart, regionEnd);
+                refreshFromSlices();
+                updateInfo();
+            }
+
+            std::function<void (const std::vector<int>& boundaries, double bpm)> onApply;
+
+            void resized() override
+            {
+                auto r = getLocalBounds().reduced (14);
+                auto header = r.removeFromTop (26);
+                title.setBounds (header.removeFromLeft (200));
+                info.setBounds (header);
+                r.removeFromTop (8);
+
+                auto toolbar = r.removeFromTop (32);
+                auto place = [&] (juce::Component& c, int w) { c.setBounds (toolbar.removeFromLeft (w).reduced (2, 2)); toolbar.removeFromLeft (4); };
+                place (detectBtn, 130);
+                place (gridBox, 70);
+                place (sliceBtn, 110);
+                place (transientBtn, 130);
+                place (clearBtn, 96);
+                closeBtn.setBounds (toolbar.removeFromRight (74).reduced (2, 2));
+                toolbar.removeFromRight (4);
+                applyBtn.setBounds (toolbar.removeFromRight (150).reduced (2, 2));
+
+                r.removeFromTop (10);
+                auto padArea = r.removeFromBottom (juce::jmin (220, r.getHeight() / 2));
+                pads.setBounds (padArea.reduced (2));
+                r.removeFromBottom (8);
+                waveform.setBounds (r);
+            }
+
+            void paint (juce::Graphics& g) override
+            {
+                g.fillAll (PatchCraftLookAndFeel::bg());
+            }
+
+            // AudioIODeviceCallback ----------------------------------------
+            void audioDeviceAboutToStart (juce::AudioIODevice* device) override
+            {
+                auditionRate = device != nullptr ? device->getCurrentSampleRate() : 44100.0;
+                auditionBlock = device != nullptr ? device->getCurrentBufferSizeSamples() : 512;
+                auditionChannels = device != nullptr
+                    ? juce::jmax (1, device->getActiveOutputChannels().countNumberOfSetBits()) : 2;
+                const juce::SpinLock::ScopedLockType lock (engineLock);
+                if (engine != nullptr)
+                    engine->prepare (auditionRate, auditionBlock, auditionChannels);
+            }
+
+            void audioDeviceStopped() override
+            {
+                const juce::SpinLock::ScopedLockType lock (engineLock);
+                if (engine != nullptr)
+                    engine->reset();
+            }
+
+            void audioDeviceIOCallbackWithContext (const float* const*, int,
+                                                   float* const* outputChannelData, int numOutputChannels,
+                                                   int numSamples, const juce::AudioIODeviceCallbackContext&) override
+            {
+                juce::AudioBuffer<float> output (outputChannelData, numOutputChannels, numSamples);
+                output.clear();
+                const juce::SpinLock::ScopedTryLockType lock (engineLock);
+                if (lock.isLocked() && engine != nullptr)
+                {
+                    engine->setRenderContext (RenderContext::forBlock (auditionRate, numSamples, auditionBlock,
+                                                                       0, numOutputChannels, 120.0));
+                    engine->process (output, 0, numSamples);
+                }
+            }
+
+            // Toolbar buttons (public so the launcher can rename/customise).
+            juce::TextButton detectBtn { "Detect BPM & Key" };
+            juce::TextButton sliceBtn { "Slice to Grid" };
+            juce::TextButton transientBtn { "Slice Transients" };
+            juce::TextButton clearBtn { "Clear Slices" };
+            juce::TextButton applyBtn { "Apply to Sample Map" };
+            juce::TextButton closeBtn { "Close" };
+
+        private:
+            void refreshFromSlices()
+            {
+                pads.padCount = (int) waveform.fullBoundaries().size() - 1;
+                pads.repaint();
+                rebuildAuditionEngine();
+            }
+
+            void updateInfo()
+            {
+                juce::String txt = baseZone.samplePath;
+                if (detectedBpm > 0.0)
+                    txt += "   |   " + juce::String (detectedBpm, 1) + " BPM";
+                if (detectedKey.isNotEmpty())
+                    txt += "   |   key " + detectedKey;
+                title.setText ("Chop Studio", juce::dontSendNotification);
+                info.setText (txt.isNotEmpty() ? txt
+                              : juce::String ("Double-click waveform to add a slice. Drag to move, double-click a marker to delete."),
+                              juce::dontSendNotification);
+            }
+
+            void doDetect()
+            {
+                const auto file = SampleMap::resolveSamplePath (projectFolder, baseZone.samplePath);
+                const auto analysis = SampleMap::analyseClipFile (file);
+                detectedBpm = analysis.bpm;
+                detectedKey = analysis.keyName();
+                if (detectedBpm > 0.0)
+                    baseZone.bpm = (float) detectedBpm;
+                updateInfo();
+            }
+
+            void doSliceGrid()
+            {
+                double bpm = detectedBpm > 0.0 ? detectedBpm : (baseZone.bpm > 0.0f ? (double) baseZone.bpm : 0.0);
+                if (bpm <= 0.0)
+                {
+                    doDetect();
+                    bpm = detectedBpm > 0.0 ? detectedBpm : 120.0;
+                }
+
+                const int per = juce::jlimit (1, 4, gridBox.getSelectedId());
+                const int slicesPerBeat = per == 1 ? 1 : per == 2 ? 2 : per == 3 ? 4 : 8;
+                const auto b = SampleMap::sliceByBeatGrid (regionStart, regionEnd, sourceRate, bpm, slicesPerBeat);
+
+                slices.clear();
+                for (int s : b)
+                    if (s > regionStart && s < regionEnd)
+                        slices.push_back (s);
+                refreshFromSlices();
+            }
+
+            void doTransient()
+            {
+                const auto onsets = SampleMap::detectOnsets (sourceBuffer, sourceRate, regionStart, regionEnd, 16);
+                slices.clear();
+                for (int s : onsets)
+                    if (s > regionStart && s < regionEnd)
+                        slices.push_back (s);
+                std::sort (slices.begin(), slices.end());
+                refreshFromSlices();
+            }
+
+            void rebuildAuditionEngine()
+            {
+                const auto boundaries = waveform.fullBoundaries();
+                const int count = juce::jmin (16, (int) boundaries.size() - 1);
+                if (count <= 0)
+                    return;
+
+                auto newEngine = std::make_unique<SampleSynthEngine>();
+                newEngine->prepare (auditionRate, auditionBlock, auditionChannels);
+
+                SampleMap temp;
+                for (int i = 0; i < count; ++i)
+                {
+                    auto z = baseZone;
+                    z.sampleStart = boundaries[(size_t) i];
+                    z.sampleEnd = boundaries[(size_t) i + 1];
+                    const int note = juce::jlimit (0, 127, 60 + i);
+                    z.lowNote = z.highNote = z.rootNote = note;
+                    z.lowVelocity = 1;
+                    z.highVelocity = 127;
+                    z.loopEnabled = false;
+                    z.playMode = 1;
+                    z.oneShot = true;
+                    temp.getZones().push_back (z);
+                }
+                newEngine->loadFromPack (projectFolder, temp);
+
+                const juce::SpinLock::ScopedLockType lock (engineLock);
+                engine = std::move (newEngine);
+            }
+
+            void auditionSlice (int sliceIndex)
+            {
+                juce::String error;
+                if (! callbackActive)
+                {
+                    if (! ensureAudio (error))
+                    {
+                        info.setText ("Audio unavailable: " + error, juce::dontSendNotification);
+                        return;
+                    }
+                    deviceManager.addAudioCallback (this);
+                    callbackActive = true;
+                    rebuildAuditionEngine();
+                }
+
+                const int note = juce::jlimit (0, 127, 60 + sliceIndex);
+                {
+                    const juce::SpinLock::ScopedLockType lock (engineLock);
+                    if (engine != nullptr)
+                    {
+                        engine->allNotesOff();
+                        engine->noteOn (note, 0.92f);
+                    }
+                }
+                waveform.playingSlice = sliceIndex;
+                pads.playingPad = sliceIndex;
+                waveform.repaint();
+                pads.repaint();
+            }
+
+            juce::Label title, info;
+            juce::ComboBox gridBox;
+            ChopWaveformView waveform;
+            ChopPadGrid pads;
+
+            juce::AudioBuffer<float> sourceBuffer;
+            double sourceRate = 44100.0;
+            juce::File projectFolder;
+            SampleZoneDef baseZone;
+            int regionStart = 0;
+            int regionEnd = 1;
+            std::vector<int> slices;
+            double detectedBpm = 0.0;
+            juce::String detectedKey;
+
+            juce::AudioDeviceManager& deviceManager;
+            std::function<bool (juce::String&)> ensureAudio;
+            std::unique_ptr<SampleSynthEngine> engine;
+            juce::SpinLock engineLock;
+            bool callbackActive = false;
+            double auditionRate = 44100.0;
+            int auditionBlock = 512;
+            int auditionChannels = 2;
+        };
+
         static bool isSupportedSampleEditorAudioFile (const juce::File& file)
         {
             const auto ext = file.getFileExtension().toLowerCase();
@@ -316,13 +904,26 @@ namespace patchcraft
         easySummaryLabel.setFont (juce::FontOptions (11.0f));
         easySummaryLabel.setJustificationType (juce::Justification::centredRight);
         easySummaryLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
-        easyMapTypeBox.setTextWhenNothingSelected ("Choose map type...");
-        easyMapTypeBox.addItem ("Keyboard Map - pitched samples", 1);
-        easyMapTypeBox.addItem ("Drum Pads - one-shots to pads", 2);
-        easyMapTypeBox.addItem ("Slice / Glitch - chop selected sample", 3);
-        easyMapTypeBox.addItem ("Remix Kit - performance kit", 4);
+        easyImportBtn.setButtonText ("Import / Drop");
+        easyKeyboardMapBtn.setButtonText ("Build Keyboard");
+        easyMapTypeBox.setTextWhenNothingSelected ("Map type...");
+        easyMapTypeBox.addItem ("Keyboard", 1);
+        easyMapTypeBox.addItem ("Drum Pads", 2);
+        easyMapTypeBox.addItem ("Slices / Chops", 3);
+        easyMapTypeBox.addItem ("Remix Kit", 4);
         easyMapTypeBox.setSelectedId (1, juce::dontSendNotification);
-        easyMapTypeBox.setTooltip ("Choose what PatchCraft should build from imported samples. This replaces the old separate kit buttons.");
+        easyMapTypeBox.setTooltip ("Choose how the imported samples should become an instrument.");
+        easyMapTypeBox.onChange = [this]
+        {
+            switch (easyMapTypeBox.getSelectedId())
+            {
+                case 2:  easyKeyboardMapBtn.setButtonText ("Build Pads"); break;
+                case 3:  easyKeyboardMapBtn.setButtonText ("Build Slices"); break;
+                case 4:  easyKeyboardMapBtn.setButtonText ("Build Remix"); break;
+                case 1:
+                default: easyKeyboardMapBtn.setButtonText ("Build Keyboard"); break;
+            }
+        };
 
         for (auto* button : { &easyImportBtn, &easyKeyboardMapBtn, &easyDrumKitBtn,
                               &easyGlitchKitBtn, &easyRemixKitBtn, &easyPlayModeBtn, &easyAuditionBtn, &easyStopBtn,
@@ -381,8 +982,8 @@ namespace patchcraft
         midiSyncToggle.setTooltip ("Sync this zone's MIDI loop to the DAW transport and tempo.");
         easyModeBtn.setTooltip ("Show the guided Easy Sample Builder workflow.");
         advancedModeBtn.setTooltip ("Show the full Sample Mapper editor with zone, velocity, RR, playback, and waveform tools.");
-        easyImportBtn.setTooltip ("Import samples into the current map. Then choose a map type and press Build Map.");
-        easyKeyboardMapBtn.setTooltip ("Build the selected map type: keyboard, drum pads, sliced glitch kit, or remix performance kit.");
+        easyImportBtn.setTooltip ("Import samples or drag audio directly onto pads, keys, or zones.");
+        easyKeyboardMapBtn.setTooltip ("Build the selected map type from the imported samples. Drum pads use one sample per pad unless Stack Pads is enabled.");
         easyDrumKitBtn.setTooltip ("Legacy shortcut hidden in Easy mode. Use the map-type dropdown instead.");
         easyGlitchKitBtn.setTooltip ("Legacy shortcut hidden in Easy mode. Use the map-type dropdown instead.");
         easyRemixKitBtn.setTooltip ("Legacy shortcut hidden in Easy mode. Use the map-type dropdown instead.");
@@ -1004,6 +1605,39 @@ namespace patchcraft
         titleRow.removeFromRight (196);
         g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.9f));
         g.fillRect (titleRow.withY (titleRow.getBottom() + 4).withHeight (2).reduced (0, 0));
+
+        r.removeFromTop (42);
+        auto hintRow = r.removeFromTop (juce::jmax (28, r.getHeight()));
+        const int gap = 8;
+        const int cardW = juce::jmax (160, (hintRow.getWidth() - gap * 2) / 3);
+        auto drawHint = [&] (juce::Rectangle<int> area, const juce::String& title,
+                             const juce::String& body, juce::Colour accent)
+        {
+            g.setColour (juce::Colour (0xff070b10));
+            g.fillRoundedRectangle (area.toFloat(), 7.0f);
+            g.setColour (accent.withAlpha (0.62f));
+            g.drawRoundedRectangle (area.toFloat().reduced (0.5f), 7.0f, 1.0f);
+            auto text = area.reduced (9, 5);
+            g.setColour (accent);
+            g.setFont (juce::FontOptions (10.5f).withStyle ("Bold"));
+            g.drawText (title, text.removeFromTop (15), juce::Justification::centredLeft, true);
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (juce::FontOptions (9.5f));
+            g.drawFittedText (body, text, juce::Justification::centredLeft, 2);
+        };
+
+        drawHint (hintRow.removeFromLeft (cardW), "DROP TO BUILD",
+                  "Audio onto pads = one-shot kit. Audio onto keys/zones = playable map.",
+                  PatchCraftLookAndFeel::accent());
+        hintRow.removeFromLeft (gap);
+        drawHint (hintRow.removeFromLeft (cardW), "ONE PAD, ONE SAMPLE",
+                  stackPadsToggle.getToggleState() ? "Stack Pads is on: repeated pads become RR layers."
+                                                   : "Stack Pads is off: drops replace the pad slot.",
+                  juce::Colour (0xff70e58f));
+        hintRow.removeFromLeft (gap);
+        drawHint (hintRow, "MIDI + SAMPLES",
+                  "Drop MIDI on a zone to drive that sample in runtime.",
+                  juce::Colour (0xffb889ff));
     }
 
     void SampleMapEditor::setEasyMode (bool shouldUseEasyMode)
@@ -1228,7 +1862,7 @@ namespace patchcraft
 
     void SampleMapEditor::setPlayModeEnabled (bool enabled)
     {
-        if (enabled == playModeEnabled && (! enabled || auditionEngine != nullptr))
+        if (enabled == playModeEnabled && ! enabled)
             return;
 
         if (! enabled)
@@ -1265,10 +1899,18 @@ namespace patchcraft
 
     void SampleMapEditor::triggerPreviewNoteOn (int midiNote, float velocity, bool selectMappedZone)
     {
-        if (! playModeEnabled)
-            setPlayModeEnabled (true);
-        if (! playModeEnabled)
+        juce::String error;
+        if (! ensureAuditionEngineForMap (error))
+        {
+            waveformStatus.setText ("Pad/key preview unavailable: " + error, juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
             return;
+        }
+
+        playModeEnabled = true;
+        updateMidiCallbackRegistration();
+        playModeBtn.setToggleState (true, juce::dontSendNotification);
+        easyPlayModeBtn.setToggleState (true, juce::dontSendNotification);
 
         midiNote = juce::jlimit (0, 127, midiNote);
         velocity = juce::jlimit (0.01f, 1.0f, velocity);
@@ -1294,6 +1936,10 @@ namespace patchcraft
 
     void SampleMapEditor::stopPreviewNotesOnly()
     {
+        {
+            const juce::ScopedLock guard (hardwareMidiLock);
+            hardwareMidiBuffer.clear();
+        }
         const juce::SpinLock::ScopedLockType lock (auditionLock);
         if (auditionEngine != nullptr)
             auditionEngine->allNotesOff();
@@ -1476,7 +2122,7 @@ namespace patchcraft
                 if (result != 1 || safeThis == nullptr)
                     return;
 
-                safeThis->owner.getProject().setEngineType ("sample");
+                safeThis->activateSamplerEngineForMap();
                 safeThis->refresh();
             });
     }
@@ -1556,6 +2202,58 @@ namespace patchcraft
     void SampleMapEditor::goToTestFromHealth()
     {
         owner.setBottomTab (BottomPanel::Page::Test);
+    }
+
+    void SampleMapEditor::activateSamplerEngineForMap()
+    {
+        auto& project = owner.getProject();
+        if (project.getEngineType() == "sample")
+            return;
+
+        project.getManifest().engine = "sample";
+        project.getParameters().ensureRegistryMetadata ("sample");
+        auto& graph = project.getDspGraph();
+        if (! graph.userConfigured || graph.blocks.empty())
+        {
+            graph.resetForEngine ("sample");
+            graph.userConfigured = true;
+        }
+        else
+        {
+            bool hasSampleSource = false;
+            for (auto& block : graph.blocks)
+            {
+                if (block.section != "source")
+                    continue;
+
+                const bool sampleSource = block.type.containsIgnoreCase ("sample")
+                                       || block.type.containsIgnoreCase ("sampler")
+                                       || block.type.containsIgnoreCase ("slice")
+                                       || block.type.containsIgnoreCase ("chop");
+                hasSampleSource = hasSampleSource || sampleSource;
+                if (! sampleSource)
+                    block.enabled = false;
+            }
+
+            if (! hasSampleSource)
+            {
+                DspBlock sample;
+                sample.id = "sample_source_" + juce::String ((int) graph.blocks.size() + 1);
+                sample.section = "source";
+                sample.type = "sample";
+                sample.name = "Sample Mapper Source";
+                sample.targetId = "volume";
+                sample.enabled = true;
+                sample.values["volume"] = 0.86f;
+                sample.values["pan"] = 0.50f;
+                sample.values["sampleStart"] = 0.0f;
+                sample.values["sampleLength"] = 1.0f;
+                sample.values["samplePitch"] = 0.0f;
+                graph.blocks.insert (graph.blocks.begin(), std::move (sample));
+                graph.edges.clear();
+            }
+        }
+        project.notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
     }
 
     void SampleMapEditor::paintZoneGrid (juce::Graphics& g, juce::Rectangle<int> bounds)
@@ -1771,7 +2469,7 @@ namespace patchcraft
 
         if (easyMode)
         {
-            easyGuideBounds = r.removeFromTop (96);
+            easyGuideBounds = r.removeFromTop (124);
             auto guide = easyGuideBounds.reduced (12, 10);
             auto titleRow = guide.removeFromTop (28);
             auto modeArea = titleRow.removeFromRight (190);
@@ -1785,7 +2483,7 @@ namespace patchcraft
             recorderBounds = {};
             layoutRecorder ({});
             guide.removeFromTop (8);
-            auto actionRow = guide.removeFromTop (36);
+            auto actionRow = guide.removeFromTop (38);
 
             auto placeEasyButton = [] (juce::Rectangle<int>& row, juce::Component& button, int width)
             {
@@ -1794,19 +2492,19 @@ namespace patchcraft
                 row.removeFromLeft (4);
             };
 
-            placeEasyButton (actionRow, easyImportBtn, 128);
-            placeEasyButton (actionRow, libraryDrawerBtn, 84);
-            easyMapTypeBox.setBounds (actionRow.removeFromLeft (juce::jmin (190, actionRow.getWidth())).reduced (2, 4));
+            placeEasyButton (actionRow, easyImportBtn, 118);
+            placeEasyButton (actionRow, libraryDrawerBtn, 78);
+            easyMapTypeBox.setBounds (actionRow.removeFromLeft (juce::jmin (138, actionRow.getWidth())).reduced (2, 4));
             actionRow.removeFromLeft (4);
-            placeEasyButton (actionRow, easyKeyboardMapBtn, 116);
-            placeEasyButton (actionRow, selectAllBtn, 78);
-            placeEasyButton (actionRow, smartTrimBtn, 88);
-            placeEasyButton (actionRow, easyPlayModeBtn, 100);
-            placeEasyButton (actionRow, easyAuditionBtn, 94);
-            placeEasyButton (actionRow, easyStopBtn, 52);
-            placeEasyButton (actionRow, stackPadsToggle, 120);
-            placeEasyButton (actionRow, easyTestBtn, 94);
-            placeEasyButton (actionRow, easyClearBtn, 64);
+            placeEasyButton (actionRow, easyKeyboardMapBtn, 120);
+            placeEasyButton (actionRow, stackPadsToggle, 106);
+            placeEasyButton (actionRow, smartTrimBtn, 74);
+            placeEasyButton (actionRow, easyPlayModeBtn, 82);
+            placeEasyButton (actionRow, easyAuditionBtn, 82);
+            placeEasyButton (actionRow, easyStopBtn, 50);
+            placeEasyButton (actionRow, easyTestBtn, 82);
+            placeEasyButton (actionRow, selectAllBtn, 72);
+            placeEasyButton (actionRow, easyClearBtn, 58);
 
             spanOnDropToggle.setBounds ({});
             importLowVelocityStepper.setBounds ({});
@@ -1894,7 +2592,7 @@ namespace patchcraft
                 waveformViewer->setBounds (waveformArea);
             workspace.removeFromBottom (4);
 
-            drumPadBounds = workspace.removeFromLeft (juce::jlimit (220, 300, workspace.getWidth() / 4)).reduced (0, 2);
+            drumPadBounds = workspace.removeFromLeft (juce::jlimit (260, 340, workspace.getWidth() / 4)).reduced (0, 2);
             workspace.removeFromLeft (8);
 
             gridBounds = workspace;
@@ -2716,28 +3414,7 @@ namespace patchcraft
 
     juce::File SampleMapEditor::resolveSampleFile (const SampleZoneDef& zone) const
     {
-        if (zone.samplePath.isEmpty())
-            return {};
-        if (juce::File::isAbsolutePath (zone.samplePath))
-            return juce::File (zone.samplePath);
-
-        auto projectFolder = owner.getProject().getProjectFolder();
-        if (projectFolder.isDirectory())
-        {
-            auto direct = projectFolder.getChildFile (zone.samplePath);
-            if (direct.existsAsFile())
-                return direct;
-
-            auto samples = projectFolder.getChildFile ("samples").getChildFile (zone.samplePath);
-            if (samples.existsAsFile())
-                return samples;
-
-            auto assets = projectFolder.getChildFile ("assets").getChildFile (zone.samplePath);
-            if (assets.existsAsFile())
-                return assets;
-        }
-
-        return juce::File (zone.samplePath);
+        return SampleMap::resolveSamplePath (owner.getProject().getProjectFolder(), zone.samplePath);
     }
 
     bool SampleMapEditor::loadWaveformForZone (const SampleZoneDef& zone, juce::String& status)
@@ -2912,6 +3589,24 @@ namespace patchcraft
         const juce::SpinLock::ScopedTryLockType lock (auditionLock);
         if (lock.isLocked() && auditionEngine != nullptr)
         {
+            juce::MidiBuffer liveMidi;
+            {
+                const juce::ScopedLock guard (hardwareMidiLock);
+                liveMidi.addEvents (hardwareMidiBuffer, 0, numSamples, 0);
+                hardwareMidiBuffer.clear();
+            }
+
+            for (const auto metadata : liveMidi)
+            {
+                const auto message = metadata.getMessage();
+                if (message.isNoteOn())
+                    auditionEngine->noteOn (message.getNoteNumber(), message.getFloatVelocity());
+                else if (message.isNoteOff())
+                    auditionEngine->noteOff (message.getNoteNumber());
+                else if (message.isAllNotesOff() || message.isAllSoundOff())
+                    auditionEngine->allNotesOff();
+            }
+
             auditionEngine->setRenderContext (RenderContext::forBlock (auditionSampleRate,
                                                                        numSamples,
                                                                        auditionBlockSize,
@@ -2983,30 +3678,24 @@ namespace patchcraft
 
     void SampleMapEditor::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& message)
     {
-        if (playModeEnabled && (message.isNoteOn() || message.isNoteOff()))
+        if (playModeEnabled && (message.isNoteOn() || message.isNoteOff()
+                                || message.isAllNotesOff() || message.isAllSoundOff()))
         {
-            const int note = message.getNoteNumber();
+            {
+                const juce::ScopedLock guard (hardwareMidiLock);
+                hardwareMidiBuffer.addEvent (message, 0);
+            }
+
             if (message.isNoteOn())
             {
-                const float velocity = message.getFloatVelocity();
-                {
-                    const juce::SpinLock::ScopedLockType lock (auditionLock);
-                    if (auditionEngine != nullptr)
-                        auditionEngine->noteOn (note, velocity);
-                }
-
+                const int note = message.getNoteNumber();
+                const int velocity = juce::jlimit (1, 127, juce::roundToInt (message.getFloatVelocity() * 127.0f));
                 juce::Component::SafePointer<SampleMapEditor> safeThis (this);
                 juce::MessageManager::callAsync ([safeThis, note, velocity]
                 {
                     if (safeThis != nullptr)
-                        safeThis->selectZoneForMidi (note, juce::jlimit (1, 127, juce::roundToInt (velocity * 127.0f)));
+                        safeThis->selectZoneForMidi (note, velocity);
                 });
-            }
-            else
-            {
-                const juce::SpinLock::ScopedLockType lock (auditionLock);
-                if (auditionEngine != nullptr)
-                    auditionEngine->noteOff (note);
             }
         }
 
@@ -4125,8 +4814,7 @@ namespace patchcraft
                     if (anyParsedRoot && spanMappedRoots)
                         owner.getProject().getSampleMap().autoMapByRootNotes();
                     commitSampleMapEdit ("Import samples", std::move (before));
-                    if (owner.getProject().getEngineType() != "sample")
-                        owner.getProject().setEngineType ("sample");
+                    activateSamplerEngineForMap();
                     refresh();
                     if (playModeEnabled)
                     {
@@ -4239,8 +4927,14 @@ namespace patchcraft
         auto before = map.getZones();
         map.autoMapDrumPads (startNote, padCount, stackPadsToggle.getToggleState());
         commitSampleMapEdit ("Auto-map drum pads", std::move (before));
-        if (owner.getProject().getEngineType() != "sample")
-            owner.getProject().setEngineType ("sample");
+        activateSamplerEngineForMap();
+        scrollOffset = juce::jlimit (0, 127, startNote - 2);
+        if (playModeEnabled)
+        {
+            stopPreviewNotesOnly();
+            juce::String error;
+            ensureAuditionEngineForMap (error);
+        }
         refresh();
         const auto rootName = juce::MidiMessage::getMidiNoteName (startNote, true, true, 4);
         waveformStatus.setText ("Mapped imported samples to pads starting at " + rootName
@@ -4347,8 +5041,7 @@ namespace patchcraft
                 auto before = map.getZones();
                 map.autoMapByRootNotes();
                 commitSampleMapEdit ("Build multi-sample patch", std::move (before));
-                if (owner.getProject().getEngineType() != "sample")
-                    owner.getProject().setEngineType ("sample");
+                activateSamplerEngineForMap();
                 refresh();
                 waveformStatus.setText ("Built multi-sample patch — zones spread across the keyboard by root note.",
                                          juce::dontSendNotification);
@@ -4479,8 +5172,7 @@ namespace patchcraft
         zones.erase (zones.begin() + selectedZone);
         zones.insert (zones.begin() + selectedZone, slices.begin(), slices.end());
         commitSampleMapEdit ("Create glitch kit", std::move (before));
-        if (owner.getProject().getEngineType() != "sample")
-            owner.getProject().setEngineType ("sample");
+        activateSamplerEngineForMap();
         juce::Array<int> firstSlice;
         firstSlice.add (selectedZone);
         setSelectedZones (firstSlice, true);
@@ -4513,6 +5205,25 @@ namespace patchcraft
         menu.addItem (13, "Transient chop selected sample (up to 8)", hasSelection);
         menu.addItem (14, "Transient chop selected sample (up to 16)", hasSelection);
         menu.addItem (8, "Merge selected with next matching sample", canMergeNext);
+        menu.addSeparator();
+        menu.addSectionHeader ("Beatmaker");
+        menu.addItem (49, "Open Chop Studio...", hasSelection);
+        menu.addItem (40, "Detect tempo & key", hasSelection);
+        {
+            juce::PopupMenu gridMenu;
+            gridMenu.addItem (41, "1/4 notes");
+            gridMenu.addItem (42, "1/8 notes");
+            gridMenu.addItem (43, "1/16 notes");
+            gridMenu.addItem (44, "1/32 notes");
+            menu.addSubMenu ("Slice to beat grid", gridMenu, hasSelection);
+
+            juce::PopupMenu playModeMenu;
+            playModeMenu.addItem (45, "Gate (release on note-off)");
+            playModeMenu.addItem (46, "Trigger (one-shot)");
+            playModeMenu.addItem (47, "Hold (latch)");
+            playModeMenu.addItem (48, "Loop");
+            menu.addSubMenu ("Pad play mode", playModeMenu, hasSelection);
+        }
         menu.addSeparator();
         menu.addSectionHeader ("Precision Editor");
         menu.addItem (26, "Open large waveform editor...", hasSelection);
@@ -4672,6 +5383,19 @@ namespace patchcraft
                 {
                     fabricateRoundRobinVariations (4);
                 }
+                else if (result == 40)
+                {
+                    detectTempoAndKeyForSelected();
+                }
+                else if (result == 41) { sliceSelectedZoneToGrid (1); }
+                else if (result == 42) { sliceSelectedZoneToGrid (2); }
+                else if (result == 43) { sliceSelectedZoneToGrid (4); }
+                else if (result == 44) { sliceSelectedZoneToGrid (8); }
+                else if (result == 45) { setPlayModeForSelected (0); }
+                else if (result == 46) { setPlayModeForSelected (1); }
+                else if (result == 47) { setPlayModeForSelected (2); }
+                else if (result == 48) { setPlayModeForSelected (3); }
+                else if (result == 49) { showChopStudio(); }
             });
     }
 
@@ -4807,8 +5531,7 @@ namespace patchcraft
         }
 
         commitSampleMapEdit ("Apply drum one-shot recipe", std::move (before));
-        if (owner.getProject().getEngineType() != "sample")
-            owner.getProject().setEngineType ("sample");
+        activateSamplerEngineForMap();
 
         refresh();
         waveformStatus.setText ("Applied Drum One-Shot recipe to " + juce::String (indexes.size()) + " zone"
@@ -5136,8 +5859,7 @@ namespace patchcraft
         }
 
         commitSampleMapEdit ("Fabricate round robin variations", std::move (before));
-        if (owner.getProject().getEngineType() != "sample")
-            owner.getProject().setEngineType ("sample");
+        activateSamplerEngineForMap();
 
         setSelectedZones (newSelection, true);
         refresh();
@@ -5646,6 +6368,195 @@ namespace patchcraft
         chopSelectedZoneAtSlicePoints (points, "Transient Chops");
     }
 
+    void SampleMapEditor::detectTempoAndKeyForSelected()
+    {
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        if (selectedZone < 0 || selectedZone >= (int) zones.size())
+        {
+            waveformStatus.setText ("Select a zone to detect tempo and key.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        const auto file = resolveSampleFile (zones[(size_t) selectedZone]);
+        if (! file.existsAsFile())
+        {
+            waveformStatus.setText ("Detect tempo/key needs a resolvable sample file.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        const auto analysis = SampleMap::analyseClipFile (file);
+
+        juce::StringArray parts;
+        if (analysis.bpm > 0.0)
+        {
+            auto before = zones;
+            const float detectedBpm = (float) analysis.bpm;
+            for (int index : editableZoneIndexes())
+                if (index >= 0 && index < (int) zones.size())
+                    zones[(size_t) index].bpm = detectedBpm;
+            commitSampleMapEdit ("Detect tempo", std::move (before));
+            parts.add (juce::String (analysis.bpm, 1) + " BPM");
+        }
+        else
+        {
+            parts.add ("tempo: n/a");
+        }
+
+        const auto keyName = analysis.keyName();
+        parts.add (keyName.isNotEmpty() ? ("key " + keyName) : juce::String ("key: n/a"));
+
+        refresh();
+        waveformStatus.setText ("Detected " + parts.joinIntoString ("  |  ") + ".", juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+    }
+
+    void SampleMapEditor::sliceSelectedZoneToGrid (int slicesPerBeat)
+    {
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        if (selectedZone < 0 || selectedZone >= (int) zones.size())
+            return;
+
+        slicesPerBeat = juce::jlimit (1, 8, slicesPerBeat);
+        auto base = zones[(size_t) selectedZone];
+
+        if (selectedWaveformBuffer.getNumSamples() <= 0
+            || resolveSampleFile (base).getFullPathName() != loadedWaveformPath)
+        {
+            juce::String status;
+            loadWaveformForZone (base, status);
+        }
+
+        const int sampleLength = selectedWaveformBuffer.getNumSamples();
+        if (sampleLength <= 0)
+        {
+            waveformStatus.setText ("Slice to grid needs a loaded sample waveform.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        double bpm = base.bpm > 0.0f ? (double) base.bpm : 0.0;
+        if (bpm <= 0.0)
+        {
+            const auto analysis = SampleMap::analyseClipFile (resolveSampleFile (base));
+            bpm = analysis.bpm > 0.0 ? analysis.bpm : 120.0;
+        }
+
+        const int sourceStart = juce::jlimit (0, sampleLength - 1, base.sampleStart);
+        const int sourceEnd = base.sampleEnd > sourceStart
+            ? juce::jlimit (sourceStart + 1, sampleLength, base.sampleEnd)
+            : sampleLength;
+
+        auto points = SampleMap::sliceByBeatGrid (sourceStart, sourceEnd, selectedWaveformRate, bpm, slicesPerBeat);
+        if (points.size() < 3)
+        {
+            waveformStatus.setText ("Slice to grid produced too few slices. Detect a tempo or trim the sample first.",
+                                    juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        commitSliceBoundariesAsPadBank (points, bpm, "Beat Grid");
+    }
+
+    void SampleMapEditor::commitSliceBoundariesAsPadBank (const std::vector<int>& boundaries,
+                                                          double bpm, const juce::String& label)
+    {
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        if (selectedZone < 0 || selectedZone >= (int) zones.size() || boundaries.size() < 2)
+            return;
+
+        auto base = zones[(size_t) selectedZone];
+
+        // Cap to a 16-pad (4x4) bank and to playable keys above the root.
+        const int startKey = juce::jlimit (0, 127, base.rootNote);
+        const int maxPlayableSlices = juce::jmax (1, juce::jmin (16, 128 - startKey));
+        const int sliceCount = juce::jmin ((int) boundaries.size() - 1, maxPlayableSlices);
+        if (sliceCount <= 0)
+            return;
+
+        const int fadeSamples = juce::jmax (1, juce::roundToInt (selectedWaveformRate * 0.003));
+
+        std::vector<SampleZoneDef> slices;
+        slices.reserve ((size_t) sliceCount);
+        for (int i = 0; i < sliceCount; ++i)
+        {
+            const int sliceStart = boundaries[(size_t) i];
+            const int sliceEnd = boundaries[(size_t) i + 1];
+            if (sliceEnd <= sliceStart)
+                continue;
+
+            auto slice = base;
+            const int note = juce::jlimit (0, 127, startKey + i);
+            slice.sampleStart = sliceStart;
+            slice.sampleEnd = sliceEnd;
+            slice.loopEnabled = false;
+            slice.loopStart = 0;
+            slice.loopEnd = 0;
+            slice.fadeInStart = slice.sampleStart;
+            slice.fadeInLength = juce::jmin (slice.sampleEnd - slice.sampleStart, fadeSamples);
+            slice.fadeOutLength = juce::jmin (slice.sampleEnd - slice.sampleStart, fadeSamples);
+            slice.fadeOutStart = slice.sampleEnd - slice.fadeOutLength;
+            slice.lowNote = note;
+            slice.highNote = note;
+            slice.rootNote = note;
+            slice.padIndex = i;             // lay out as a 4x4 performance bank
+            slice.playMode = 1;             // Trigger / one-shot is the chop default
+            if (bpm > 0.0)
+                slice.bpm = (float) bpm;
+            slice.roundRobinGroup = 0;
+            slice.roundRobinIndex = i + 1;
+            slice.group = label;
+            slices.push_back (slice);
+        }
+
+        if (slices.empty())
+            return;
+
+        auto before = zones;
+        zones.erase (zones.begin() + selectedZone);
+        zones.insert (zones.begin() + selectedZone, slices.begin(), slices.end());
+        commitSampleMapEdit ("Slice sample into pads", std::move (before));
+        refresh();
+
+        const juce::String bpmText = bpm > 0.0 ? (" at " + juce::String (bpm, 1) + " BPM") : juce::String();
+        waveformStatus.setText ("Created " + juce::String ((int) slices.size()) + " " + label
+                                + " pads" + bpmText + ".", juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+    }
+
+    void SampleMapEditor::setPlayModeForSelected (int playMode)
+    {
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        auto indexes = editableZoneIndexes();
+        if (indexes.isEmpty())
+        {
+            waveformStatus.setText ("Select a zone to set its play mode.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        playMode = juce::jlimit (0, 3, playMode);
+        auto before = zones;
+        for (int index : indexes)
+            if (index >= 0 && index < (int) zones.size())
+            {
+                zones[(size_t) index].playMode = playMode;
+                // Keep the legacy one-shot flag aligned so older readers behave.
+                zones[(size_t) index].oneShot = (playMode == 1 || playMode == 2);
+                if (playMode == 3)
+                    zones[(size_t) index].loopEnabled = true;
+            }
+        commitSampleMapEdit ("Set zone play mode", std::move (before));
+        refresh();
+
+        static const char* names[4] = { "Gate", "Trigger", "Hold", "Loop" };
+        waveformStatus.setText ("Play mode set to " + juce::String (names[playMode]) + " on "
+                                + juce::String (indexes.size()) + " zone(s).", juce::dontSendNotification);
+        waveformStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
+    }
+
     void SampleMapEditor::mergeSelectedZoneWithNext()
     {
         auto& zones = owner.getProject().getSampleMap().getZones();
@@ -5852,6 +6763,56 @@ namespace patchcraft
 
         juce::DialogWindow::LaunchOptions options;
         options.dialogTitle = "Precision Sample Editor";
+        options.content.setOwned (panel);
+        options.componentToCentreAround = this;
+        options.dialogBackgroundColour = PatchCraftLookAndFeel::bg();
+        options.escapeKeyTriggersCloseButton = true;
+        options.useNativeTitleBar = false;
+        options.resizable = true;
+        options.launchAsync();
+    }
+
+    void SampleMapEditor::showChopStudio()
+    {
+        auto& zones = owner.getProject().getSampleMap().getZones();
+        if (selectedZone < 0 || selectedZone >= (int) zones.size())
+        {
+            waveformStatus.setText ("Select a sample zone before opening Chop Studio.", juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        juce::String status;
+        if (! loadWaveformForZone (zones[(size_t) selectedZone], status))
+        {
+            waveformStatus.setText ("Chop Studio could not load sample: " + status, juce::dontSendNotification);
+            waveformStatus.setColour (juce::Label::textColourId, juce::Colour (0xffe6504a));
+            return;
+        }
+
+        auto* panel = new ChopStudioPanel (owner.getAudio().getDeviceManager(),
+                                           [this] (juce::String& e) { return owner.getAudio().ensureOpen (e); });
+        panel->setSize (1040, 660);
+        panel->setSource (selectedWaveformBuffer, selectedWaveformRate,
+                          owner.getProject().getProjectFolder(), zones[(size_t) selectedZone]);
+
+        juce::Component::SafePointer<SampleMapEditor> safeThis (this);
+        panel->onApply = [safeThis, panel] (const std::vector<int>& boundaries, double bpm)
+        {
+            if (safeThis == nullptr)
+                return;
+            safeThis->commitSliceBoundariesAsPadBank (boundaries, bpm, "Chop");
+            if (auto* window = panel->findParentComponentOfClass<juce::DialogWindow>())
+                window->exitModalState (0);
+        };
+        panel->closeBtn.onClick = [panel]
+        {
+            if (auto* window = panel->findParentComponentOfClass<juce::DialogWindow>())
+                window->exitModalState (0);
+        };
+
+        juce::DialogWindow::LaunchOptions options;
+        options.dialogTitle = "Chop Studio";
         options.content.setOwned (panel);
         options.componentToCentreAround = this;
         options.dialogBackgroundColour = PatchCraftLookAndFeel::bg();

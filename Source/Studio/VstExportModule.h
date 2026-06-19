@@ -41,6 +41,7 @@ namespace patchcraft
             juce::String version       { "1.0.0" };
             juce::File   outputFolder;          // where the .vst3 bundle is written
             bool         installToSystemVst3 = false;
+            bool         exportAsMidiEffect = false;
         };
 
         struct ExportResult

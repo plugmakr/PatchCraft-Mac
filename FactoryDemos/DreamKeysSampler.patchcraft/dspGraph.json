@@ -28,9 +28,9 @@
         "filterCutoff": 2400,
         "filterResonance": 0.08,
         "attack": 0.01,
-        "decay": 0.12,
-        "sustain": 0.38,
-        "release": 0.4
+        "decay": 0.35,
+        "sustain": 0.55,
+        "release": 0.55
       }
     },
     {

@@ -19,6 +19,7 @@ namespace patchcraft
     */
     class BrandingLabPage : public juce::Component,
                             public juce::DragAndDropTarget,
+                            public juce::FileDragAndDropTarget,
                             private juce::Timer
     {
     public:
@@ -38,6 +39,8 @@ namespace patchcraft
         TestPage* getTestPage() const noexcept { return testPage.get(); }
         bool isInterestedInDragSource (const SourceDetails& details) override;
         void itemDropped (const SourceDetails& details) override;
+        bool isInterestedInFileDrag (const juce::StringArray& files) override;
+        void filesDropped (const juce::StringArray& files, int x, int y) override;
 
     private:
         StudioMainComponent& owner;
@@ -165,17 +168,13 @@ namespace patchcraft
         bool syncingFromManifest = false;
         bool pendingProjectNotify = false;
         int  ticksSinceLastEdit = 0;
+        int  runtimeDropStatusTicks = 0;
         std::unique_ptr<juce::FileChooser> logoChooser;
         std::unique_ptr<TestPage> testPage;
+        juce::Label runtimeDropStatusLabel;
         juce::ToggleButton showFormToggle { "Show Branding Form" };
-        juce::TextButton playerFileBtn { "File" };
         juce::TextButton playerLibraryBtn { "Library" };
-        juce::TextButton playerViewBtn { "View" };
-        juce::TextButton playerToolsBtn { "Tools" };
         juce::TextButton playerSoundBtn { "Sound" };
-        juce::TextButton playerRackBtn { "Rack" };
-        juce::TextButton playerControlBtn { "Control" };
-        juce::TextButton playerMidiClipBtn { "MIDI Clip" };
         juce::TextButton playerPlayBtn { "Play" };
         juce::TextButton playerStopBtn { "Stop" };
         juce::Label playerBpmLabel;
@@ -201,13 +200,10 @@ namespace patchcraft
         void chooseImagePath (juce::TextEditor& targetEditor, const juce::String& title);
         void showPlayerPreviewPanel (const juce::String& title, const juce::String& body);
         void showPlayerSoundPanel();
-        void showPlayerRackPanel();
-        void showPlayerControlPanel();
-        void showRuntimeRoutingPanel();
         void showPlayerLibraryPanel();
-        void showPlayerFileMenu();
-        void showPlayerToolsMenu();
         void showPlayerPresetMenu();
         void paintPlayerPreview (juce::Graphics&, juce::Rectangle<int> r);
+        void importRuntimeFilesAt (const juce::StringArray& paths, juce::Point<int> localPosition);
+        void showRuntimeDropStatus (const juce::String& message, bool warning);
     };
 }

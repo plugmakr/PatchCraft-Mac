@@ -25,7 +25,7 @@
       "enabled": true,
       "targetId": "filterCutoff",
       "values": {
-        "filterCutoff": 2400,
+        "filterCutoff": 2400.0,
         "filterResonance": 0.08,
         "attack": 0.002,
         "decay": 0.12,
@@ -50,6 +50,46 @@
         "tapeMix": 0.0,
         "chorusMix": 0.0,
         "multiTapMix": 0.0
+      }
+    },
+    {
+      "id": "drum_machine",
+      "section": "mod",
+      "type": "drumMachine",
+      "name": "Analog House Drum Sequencer",
+      "enabled": true,
+      "targetId": "filterCutoff",
+      "values": {
+        "rate": 1.0,
+        "sync": 1.0,
+        "dmTracks": 8.0,
+        "dmSteps": 16.0,
+        "dmPattern": 0.0,
+        "dmTransport": 1.0,
+        "dmTriggerPadSlots": 1.0,
+        "dmSwing": 0.06,
+        "dmProbability": 1.0,
+        "dmSongMode": 0.0,
+        "dmChainLength": 4.0,
+        "dmSeed": 16001.0,
+        "dmChain0": 0.0,
+        "dmChain1": 1.0,
+        "dmChain2": 2.0,
+        "dmChain3": 3.0,
+        "dmChain4": 0.0,
+        "dmChain5": 1.0,
+        "dmChain6": 2.0,
+        "dmChain7": 3.0
+      },
+      "metadata": {
+        "dmTrack0Label": "Kick",
+        "dmTrack1Label": "Snare",
+        "dmTrack2Label": "Closed Hat",
+        "dmTrack3Label": "Open Hat",
+        "dmTrack4Label": "Clap",
+        "dmTrack5Label": "Low Tom",
+        "dmTrack6Label": "Perc",
+        "dmTrack7Label": "Crash"
       }
     }
   ],

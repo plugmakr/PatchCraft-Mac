@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "instrumentName": "Analog House Drums",
   "creator": "AudiCode",
-  "description": "A sample-based drum machine demo with pads, pattern grid, tuning, and mix controls.",
+  "description": "Sample drum machine with 4×4 pads, FL-style 8-lane pattern grid, pattern banks, mute/solo lanes, and song mode.",
   "category": "Drum Machine",
   "engine": "sample",
   "backgroundImage": "assets/background-clean.png",
