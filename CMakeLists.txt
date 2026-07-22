@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
 project(PatchCraft
-    VERSION 0.1.0
+    VERSION 1.0.0
     DESCRIPTION "PatchCraft - Instrument Builder + Player platform"
     LANGUAGES CXX C)
 
@@ -61,6 +61,7 @@ add_library(PatchCraftCore STATIC
     Source/Shared/PatchCraftPackWriter.cpp
     Source/Shared/PatchCraftLookAndFeel.cpp
     Source/Shared/SampleMap.cpp
+    Source/Shared/SampleSliceUtils.cpp
     Source/Shared/SampleVoice.cpp
     Source/Shared/SampleSynthEngine.cpp
     Source/Shared/SynthEngine.cpp
@@ -82,6 +83,7 @@ add_library(PatchCraftCore STATIC
     Source/Shared/EngineFactory.cpp
     Source/Shared/MultiInstrumentEngine.cpp
     Source/Shared/InstrumentTemplates.cpp
+    Source/Shared/ProductRecipes.cpp
     Source/Shared/ArpStepSequencerTemplate.cpp
     Source/Shared/ParameterModel.cpp
     Source/Shared/PresetGenerator.cpp
@@ -96,8 +98,15 @@ add_library(PatchCraftCore STATIC
     Source/Shared/LibraryScanner.cpp
     Source/Shared/SfzImporter.cpp
     Source/Shared/LicenseValidator.cpp
+    Source/Shared/PluginClubApi.cpp
     Source/Shared/PluginClubPublisher.cpp
     Source/Shared/PScriptEngine.cpp
+    Source/Shared/PScriptShare.cpp
+    Source/Shared/SoundStack.cpp
+    Source/Shared/TutorialHelpRegistry.cpp
+    Source/Shared/TutorialHelp.cpp
+    Source/Shared/LaunchReadiness.cpp
+    Source/Shared/LayoutBindingHelper.cpp
 )
 
 target_include_directories(PatchCraftCore PUBLIC Source/Shared)
@@ -177,7 +186,7 @@ if(PATCHCRAFT_BUILD_STUDIO)
         PRODUCT_NAME "PatchCraft Studio"
         COMPANY_NAME "PatchCraft"
         BUNDLE_ID "com.patchcraft.studio"
-        VERSION "0.1.0")
+        VERSION "${PROJECT_VERSION}")
 
     juce_generate_juce_header(PatchCraftStudio)
     if(APPLE)
@@ -192,15 +201,24 @@ if(PATCHCRAFT_BUILD_STUDIO)
         Source/Studio/Main.cpp
         Source/Studio/StudioApplication.cpp
         Source/Studio/StudioMainComponent.cpp
+        Source/Studio/ScriptEditorComponent.cpp
         Source/Player/PluginProcessor.cpp
         Source/Player/PluginEditor.cpp
         Source/Player/PlayerGuiRenderer.cpp
+        Source/Player/PlayerLookAndFeel.cpp
         Source/Player/LibraryBrowser.cpp
         Source/Studio/TopToolbar.cpp
         Source/Studio/ElementPalette.cpp
         Source/Studio/AiImageBuilderComponent.cpp
         Source/Studio/AnimationLabPage.cpp
         Source/Studio/BrandingLabPage.cpp
+        Source/Studio/ChopLabPage.cpp
+        Source/Studio/BuildLabPage.cpp
+        Source/Studio/ProjectWizardDialog.cpp
+        Source/Studio/ChopStudioPanel.cpp
+        Source/Studio/PackRuntimeHost.cpp
+        Source/Studio/PlayerPreviewChrome.cpp
+        Source/Studio/CustomerPreviewOverlay.cpp
         Source/Studio/BuiltAssetLibraryComponent.cpp
         Source/Studio/ExpansionLibraryPanel.cpp
         Source/Studio/LayersPanel.cpp
@@ -231,12 +249,15 @@ if(PATCHCRAFT_BUILD_STUDIO)
         Source/Studio/SampleMapEditor.cpp
         Source/Studio/ProjectBrowserPage.cpp
         Source/Studio/ExpansionsPage.cpp
-        Source/Studio/VstExportModule.cpp)
+        Source/Studio/VstExportModule.cpp
+        Source/Studio/TutorialModeOverlay.cpp)
 
     target_link_libraries(PatchCraftStudio PRIVATE PatchCraftCore)
 
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/FactoryDemos")
         add_custom_command(TARGET PatchCraftStudio POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E remove_directory
+                "$<TARGET_FILE_DIR:PatchCraftStudio>/FactoryDemos"
             COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${CMAKE_CURRENT_SOURCE_DIR}/FactoryDemos"
                 "$<TARGET_FILE_DIR:PatchCraftStudio>/FactoryDemos"
@@ -333,7 +354,7 @@ if(PATCHCRAFT_BUILD_PLAYER)
         NEEDS_MIDI_OUTPUT FALSE
         VST3_CATEGORIES Instrument Sampler
         COPY_PLUGIN_AFTER_BUILD FALSE
-        VERSION "0.1.0")
+        VERSION "${PROJECT_VERSION}")
 
     juce_generate_juce_header(PatchCraftPlayer)
 
@@ -364,7 +385,7 @@ if(PATCHCRAFT_BUILD_PLAYER_FX)
         NEEDS_MIDI_OUTPUT FALSE
         VST3_CATEGORIES Fx
         COPY_PLUGIN_AFTER_BUILD FALSE
-        VERSION "0.1.0")
+        VERSION "${PROJECT_VERSION}")
 
     # JUCE's effect target can keep this property false in generated metadata
     # unless it is explicitly set on the target. FX patches still need MIDI
@@ -388,7 +409,7 @@ endif()
 # Release checklist target
 # ---------------------------------------------------------------------------
 set(PATCHCRAFT_RELEASE_CHECK_TARGETS PatchCraftAudioSmokeTests)
-if(PATCHCRAFT_STAGE_VST_EXPANSION)
+if(PATCHCRAFT_BUILD_PLAYER AND PATCHCRAFT_BUILD_PLAYER_FX)
     list(APPEND PATCHCRAFT_RELEASE_CHECK_TARGETS PatchCraftVstExportSmokeTest)
 endif()
 if(PATCHCRAFT_BUILD_STUDIO)
@@ -401,8 +422,19 @@ if(PATCHCRAFT_BUILD_PLAYER_FX)
     list(APPEND PATCHCRAFT_RELEASE_CHECK_TARGETS PatchCraftPlayerFX_Standalone PatchCraftPlayerFX_VST3)
 endif()
 
-add_custom_target(PatchCraftReleaseChecklist
-    DEPENDS ${PATCHCRAFT_RELEASE_CHECK_TARGETS})
+if(PATCHCRAFT_BUILD_STUDIO AND PATCHCRAFT_BUILD_PLAYER AND PATCHCRAFT_BUILD_PLAYER_FX)
+    add_custom_target(PatchCraftReleaseChecklist
+        COMMAND ${CMAKE_COMMAND} -E chdir
+            "$<TARGET_FILE_DIR:PatchCraftStudio>"
+            "$<TARGET_FILE:PatchCraftAudioSmokeTests>"
+        COMMAND "$<TARGET_FILE:PatchCraftVstExportSmokeTest>"
+        DEPENDS ${PATCHCRAFT_RELEASE_CHECK_TARGETS}
+        COMMENT "Running PatchCraft audio and VST export release verification"
+        VERBATIM)
+else()
+    add_custom_target(PatchCraftReleaseChecklist
+        DEPENDS ${PATCHCRAFT_RELEASE_CHECK_TARGETS})
+endif()
 
 if(PATCHCRAFT_BUILD_STUDIO)
     add_custom_target(PatchCraftRcBundle

@@ -61,7 +61,11 @@ namespace patchcraft
             std::atomic<float> delayTime      { 0.30f };
             std::atomic<float> delayFeedback  { 0.40f };
             std::atomic<float> delayMix       { 0.0f };
+            std::atomic<float> delayEnabled   { 1.0f };
+            std::atomic<float> delayType      { 3.0f };
             std::atomic<float> reverbMix      { 0.0f };
+            std::atomic<float> reverbEnabled   { 1.0f };
+            std::atomic<float> reverbType      { 2.0f };
             std::atomic<float> volume         { 1.0f };
             std::atomic<float> expression     { 1.0f };
             std::atomic<float> pan            { 0.0f };
@@ -79,6 +83,10 @@ namespace patchcraft
         AudioUtilityProcessor utility;
         juce::dsp::DelayLine<float> delay { 192000 };
         juce::dsp::Reverb           reverb;
+
+        double tapeLfoPhase = 0.0;
+        float lastFbL = 0.0f;
+        float lastFbR = 0.0f;
 
         juce::AudioBuffer<float> dryBuffer;
         std::vector<float> delayScratch;

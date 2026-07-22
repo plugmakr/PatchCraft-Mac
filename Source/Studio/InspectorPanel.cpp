@@ -1,8 +1,11 @@
 #include "InspectorPanel.h"
 #include "StudioMainComponent.h"
+#include "ScriptEditorComponent.h"
 #include "PatchCraftLookAndFeel.h"
 #include "CanvasEditor.h"
 #include "MidiPlaygroundPattern.h"
+#include "SoundStack.h"
+#include "TutorialHelp.h"
 
 #include <algorithm>
 #include <memory>
@@ -271,7 +274,16 @@ namespace patchcraft
         styleSection (lblParameterSection, "PARAMETER BINDING");
         styleSection (lblStyleSection, "VISUAL STYLE");
         styleSection (lblSpecialSection, "ADVANCED ELEMENT TOOLS");
+        styleSection (lblPlayerPreviewSection, "PLAYER PREVIEW");
 
+        styleLabel (lblPlayerPreviewHelp,
+                    "These settings ship with the pack and control the actual DAW Player chrome. The authored Design canvas remains the Player center.",
+                    juce::Justification::centredLeft, 11.0f);
+        lblPlayerPreviewHelp.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+        styleLabel (lblPlayerShell, "Shell");
+        styleLabel (lblPlayerRuntime, "Runtime");
+        styleLabel (lblPlayerTopBar, "Top Bar");
+        styleLabel (lblPlayerRightPanel, "Right Panel");
         styleLabel (lblType,        "Type");
         styleLabel (lblId,          "ID");
         styleLabel (lblPos,         "Position");
@@ -310,6 +322,7 @@ namespace patchcraft
         styleLabel (lblStep,        "Step");
         styleLabel (lblValType,     "Value Type");
         styleLabel (lblSmoothing,   "Smoothing");
+        styleLabel (lblPscriptAttach, "pScript File");
         styleLabel (lblPosX,        "X", juce::Justification::centred, 11.0f);
         styleLabel (lblPosY,        "Y", juce::Justification::centred, 11.0f);
         styleLabel (lblSizeW,       "W", juce::Justification::centred, 11.0f);
@@ -383,13 +396,15 @@ namespace patchcraft
         for (auto* l : { &lblType, &lblId, &lblPos, &lblSize, &lblParam, &lblDropZoneLink, &lblLabel, &lblAction,
                          &lblValFmt, &lblStyle, &lblKnobStyle, &lblMin, &lblMax,
                          &lblLayoutSection, &lblParameterSection, &lblStyleSection, &lblSpecialSection,
+                         &lblPlayerPreviewSection, &lblPlayerPreviewHelp, &lblPlayerShell,
+                         &lblPlayerRuntime, &lblPlayerTopBar, &lblPlayerRightPanel,
                          &lblOpacity, &lblState, &lblShapeKind, &lblCorner, &lblStroke,
                          &lblShadow, &lblGlow, &lblBlur, &lblAudioReactive,
                          &lblAudioReactiveMode, &lblAudioReactiveAmount,
                          &lblAnimationMode, &lblAnimationRate,
                          &lblLabelPosition, &lblLabelOffsetX, &lblLabelOffsetY,
                          &lblLabelSpacing, &lblLabelSize, &lblContentPadding, &lblBgColour, &lblBorderColour, &lblAccentColour,
-                         &lblDefault, &lblStep, &lblValType, &lblSmoothing,
+                         &lblDefault, &lblStep, &lblValType, &lblSmoothing, &lblPscriptAttach,
                          &lblActions, &lblPosX, &lblPosY, &lblSizeW, &lblSizeH,
                          &lblAsset, &lblGroup, &lblTabs, &lblContainerManager, &lblContainerChildren,
                          &lblFilmstripPath, &lblFilmstripFrames,
@@ -413,7 +428,8 @@ namespace patchcraft
         {
             addAndMakeVisible (*l);
             if (l == &lblDrumGrid || l == &lblArpLane || l == &lblSeqLane || l == &lblMixer || l == &lblMacroEditor
-                || l == &lblModMatrixEditor || l == &lblGranularEditor || l == &lblContainerManager)
+                || l == &lblModMatrixEditor || l == &lblGranularEditor || l == &lblContainerManager
+                || l == &lblPlayerPreviewSection)
                 l->setInterceptsMouseClicks (false, false);
         }
 
@@ -441,6 +457,15 @@ namespace patchcraft
             e->setIndents (6, 4);
 
         addAndMakeVisible (parameterBox);
+        pscriptAttachStatus.setInterceptsMouseClicks (false, false);
+        pscriptAttachStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+        pscriptAttachBtn.getProperties().set ("smallButton", true);
+        pscriptDetachBtn.getProperties().set ("smallButton", true);
+        pscriptAttachBtn.onClick = [this] { owner.attachPscriptFileToSelectedControl(); };
+        pscriptDetachBtn.onClick = [this] { owner.detachPscriptFromSelectedControl(); };
+        addAndMakeVisible (pscriptAttachStatus);
+        addAndMakeVisible (pscriptAttachBtn);
+        addAndMakeVisible (pscriptDetachBtn);
         addAndMakeVisible (dropZoneLinkBox);
         dropZoneLinkBox.setTooltip ("Connect this control to a specific Sample Drop Zone. Dropping a sample on that zone creates sample-map zones and grouped controls with this same link.");
         dropZoneLinkBox.onChange = [this] { writeFromUi(); };
@@ -870,6 +895,46 @@ namespace patchcraft
         copyTabsAsReferenceToggle.setTooltip ("When enabled, Copy Selection To All Tabs creates linked copies. Moving or editing one linked copy updates the matching copies on the other tabs.");
         addAndMakeVisible (copyTabsAsReferenceToggle);
 
+        for (auto* toggle : { &playerShowTopBarToggle, &playerShowLeftSidebarToggle, &playerShowFooterToggle,
+                              &playerShowRightPanelToggle, &playerShowKeyboardToggle,
+                              &playerShowPackMenuToggle, &playerAllowPackLoadingToggle,
+                              &playerShowLibraryToggle, &playerAllowMidiLearnToggle,
+                              &playerShowAboutToggle, &playerShowTooltipsToggle,
+                              &playerTopBrowseToggle, &playerTopSaveToggle,
+                              &playerTopSettingsToggle, &playerTopCategoryToggle,
+                              &playerTopFavoriteToggle, &playerTopPresetNavToggle,
+                              &playerTopMasterToggle, &playerTopMeterToggle,
+                              &playerRightMacrosToggle, &playerRightEffectsToggle,
+                              &playerRightSendsToggle, &playerRightUtilityToggle })
+        {
+            toggle->setTooltip ("Controls the exported Player and Brand Preview. Changes update the preview pack.");
+            addAndMakeVisible (*toggle);
+            toggle->onClick = [this] { writePlayerPreviewFromUi(); };
+        }
+        playerShowTopBarToggle.setTooltip ("Show the Player top bar above the authored instrument UI.");
+        playerShowLeftSidebarToggle.setTooltip ("Show the Player preset/library browser rail.");
+        playerShowFooterToggle.setTooltip ("Show the Player status/license footer.");
+        playerShowRightPanelToggle.setTooltip ("Show the Player right feature panel (macros, effects, sends, performance).");
+        playerShowKeyboardToggle.setTooltip ("Show the bottom keyboard strip with pitch/mod wheels.");
+        playerShowPackMenuToggle.setTooltip ("Show Pack/Library entry points in the Player.");
+        playerAllowPackLoadingToggle.setTooltip ("Allow the end user to load external .patchcraft packs in this Player.");
+        playerShowLibraryToggle.setTooltip ("Enable the Player library browser.");
+        playerAllowMidiLearnToggle.setTooltip ("Allow right-click MIDI Learn in exported Player controls.");
+        playerShowAboutToggle.setTooltip ("Enable About/Support/Settings surfaces in the Player.");
+        playerShowTooltipsToggle.setTooltip ("Show mouseover guidance in the Player.");
+        playerTopBrowseToggle.setTooltip ("Show Browse in the Player top bar.");
+        playerTopSaveToggle.setTooltip ("Show Save Snapshot/Preset in the Player top bar.");
+        playerTopSettingsToggle.setTooltip ("Show Settings/About in the Player top bar.");
+        playerTopCategoryToggle.setTooltip ("Show the preset category filter in the top bar.");
+        playerTopFavoriteToggle.setTooltip ("Show the favorite star in the top bar.");
+        playerTopPresetNavToggle.setTooltip ("Show previous/next preset navigation in the top bar.");
+        playerTopMasterToggle.setTooltip ("Show master volume in the top bar.");
+        playerTopMeterToggle.setTooltip ("Show output meters in the top bar.");
+        playerRightMacrosToggle.setTooltip ("Show the Player right-panel macro controls.");
+        playerRightEffectsToggle.setTooltip ("Show the Player right-panel FX quick controls.");
+        playerRightSendsToggle.setTooltip ("Show the Player right-panel send level controls.");
+        playerRightUtilityToggle.setTooltip ("Show the Player right-panel utility controls such as velocity curve, glide, voices, and CPU.");
+
         btnDuplicate.onClick = [this]
         {
             owner.duplicateSelected();
@@ -1282,7 +1347,61 @@ namespace patchcraft
         granularFreezeToggle.onClick = granularRewrite;
         granularReverseToggle.onClick = granularRewrite;
 
+        styleLabel (lblPscriptHint,
+                    "Script properties and helpers — write code in the editor below the preview.",
+                    juce::Justification::centredLeft, 10.5f);
+        addChildComponent (lblPscriptSection);
+        addChildComponent (lblPscriptHint);
+        for (auto* editor : { &pscriptReferenceView, &pscriptVariablesView, &pscriptControlsView })
+        {
+            editor->setMultiLine (true);
+            editor->setReadOnly (true);
+            editor->setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain));
+            editor->setColour (juce::TextEditor::backgroundColourId, juce::Colours::black.withAlpha (0.35f));
+            editor->setColour (juce::TextEditor::textColourId, PatchCraftLookAndFeel::textDim());
+            addChildComponent (*editor);
+        }
+        pscriptTestNoteBtn.getProperties().set ("smallButton", true);
+        pscriptTestModBtn.getProperties().set ("smallButton", true);
+        pscriptTestNoteBtn.onClick = [this]
+        {
+            if (auto* script = owner.getScriptEditor())
+                script->triggerTestEvent ("note starts");
+        };
+        pscriptTestModBtn.onClick = [this]
+        {
+            if (auto* script = owner.getScriptEditor())
+                script->triggerTestEvent ("modwheel");
+        };
+        addChildComponent (pscriptTestNoteBtn);
+        addChildComponent (pscriptTestModBtn);
+
+        enableTutorialLabels();
         refresh();
+    }
+
+    void InspectorPanel::enableTutorialLabels()
+    {
+        std::function<void (juce::Component&)> walk;
+        walk = [&] (juce::Component& component)
+        {
+            if (auto* label = dynamic_cast<juce::Label*> (&component))
+            {
+                const auto text = label->getText().trim();
+                if (text.isNotEmpty() && ! text.startsWithIgnoreCase ("v "))
+                    if (const auto* entry = TutorialHelpRegistry::lookupForLabel (text))
+                    {
+                        label->setInterceptsMouseClicks (true, false);
+                        TutorialHelp::attach (*label, entry->title, entry->body);
+                    }
+            }
+
+            for (int i = 0; i < component.getNumChildComponents(); ++i)
+                if (auto* child = component.getChildComponent (i))
+                    walk (*child);
+        };
+
+        walk (*this);
     }
 
     InspectorPanel::~InspectorPanel() = default;
@@ -1301,6 +1420,20 @@ namespace patchcraft
 
     void InspectorPanel::mouseDown (const juce::MouseEvent& event)
     {
+        if (event.mods.isCtrlDown() || event.mods.isCommandDown())
+        {
+            bool anyOpen = false;
+            for (const auto open : sectionOpen)
+                anyOpen = anyOpen || open;
+
+            for (auto& open : sectionOpen)
+                open = ! anyOpen;
+
+            resized();
+            repaint();
+            return;
+        }
+
         for (size_t i = 0; i < sectionHeaderBounds.size(); ++i)
         {
             if (! sectionHeaderBounds[i].contains (event.getPosition()))
@@ -1389,6 +1522,81 @@ namespace patchcraft
         refresh();
     }
 
+    void InspectorPanel::refreshPlayerPreviewControls()
+    {
+        const auto& manifest = owner.getProject().getManifest();
+        playerShowTopBarToggle.setToggleState (manifest.playerShowTopBar, juce::dontSendNotification);
+        playerShowLeftSidebarToggle.setToggleState (manifest.playerShowLeftSidebar, juce::dontSendNotification);
+        playerShowFooterToggle.setToggleState (manifest.playerShowFooter, juce::dontSendNotification);
+        playerShowRightPanelToggle.setToggleState (manifest.playerShowRightPanel, juce::dontSendNotification);
+        playerShowKeyboardToggle.setToggleState (manifest.playerShowKeyboard, juce::dontSendNotification);
+        playerShowPackMenuToggle.setToggleState (manifest.playerShowPackMenu, juce::dontSendNotification);
+        playerAllowPackLoadingToggle.setToggleState (manifest.playerAllowPackLoading, juce::dontSendNotification);
+        playerShowLibraryToggle.setToggleState (manifest.playerShowLibraryBrowser, juce::dontSendNotification);
+        playerAllowMidiLearnToggle.setToggleState (manifest.playerAllowMidiLearn, juce::dontSendNotification);
+        playerShowAboutToggle.setToggleState (manifest.playerShowAbout, juce::dontSendNotification);
+        playerShowTooltipsToggle.setToggleState (manifest.playerShowParameterGuidance, juce::dontSendNotification);
+        playerTopBrowseToggle.setToggleState (manifest.playerTopShowBrowse, juce::dontSendNotification);
+        playerTopSaveToggle.setToggleState (manifest.playerTopShowSave, juce::dontSendNotification);
+        playerTopSettingsToggle.setToggleState (manifest.playerTopShowSettings, juce::dontSendNotification);
+        playerTopCategoryToggle.setToggleState (manifest.playerTopShowCategory, juce::dontSendNotification);
+        playerTopFavoriteToggle.setToggleState (manifest.playerTopShowFavorite, juce::dontSendNotification);
+        playerTopPresetNavToggle.setToggleState (manifest.playerTopShowPresetNav, juce::dontSendNotification);
+        playerTopMasterToggle.setToggleState (manifest.playerTopShowMasterVolume, juce::dontSendNotification);
+        playerTopMeterToggle.setToggleState (manifest.playerTopShowOutputMeter, juce::dontSendNotification);
+        playerRightMacrosToggle.setToggleState (manifest.rightPanelShowMacros, juce::dontSendNotification);
+        playerRightEffectsToggle.setToggleState (manifest.rightPanelShowEffects, juce::dontSendNotification);
+        playerRightSendsToggle.setToggleState (manifest.rightPanelShowSends, juce::dontSendNotification);
+        playerRightUtilityToggle.setToggleState (manifest.rightPanelShowUtility, juce::dontSendNotification);
+
+        for (auto* toggle : { &playerShowTopBarToggle, &playerShowLeftSidebarToggle, &playerShowFooterToggle,
+                              &playerShowRightPanelToggle, &playerShowKeyboardToggle,
+                              &playerShowPackMenuToggle, &playerAllowPackLoadingToggle,
+                              &playerShowLibraryToggle, &playerAllowMidiLearnToggle,
+                              &playerShowAboutToggle, &playerShowTooltipsToggle,
+                              &playerTopBrowseToggle, &playerTopSaveToggle,
+                              &playerTopSettingsToggle, &playerTopCategoryToggle,
+                              &playerTopFavoriteToggle, &playerTopPresetNavToggle,
+                              &playerTopMasterToggle, &playerTopMeterToggle,
+                              &playerRightMacrosToggle, &playerRightEffectsToggle,
+                              &playerRightSendsToggle, &playerRightUtilityToggle })
+            toggle->setEnabled (true);
+    }
+
+    void InspectorPanel::writePlayerPreviewFromUi()
+    {
+        if (inhibitCallbacks)
+            return;
+
+        auto& manifest = owner.getProject().getManifest();
+        manifest.playerShowTopBar = playerShowTopBarToggle.getToggleState();
+        manifest.playerShowLeftSidebar = playerShowLeftSidebarToggle.getToggleState();
+        manifest.playerShowFooter = playerShowFooterToggle.getToggleState();
+        manifest.playerShowRightPanel = playerShowRightPanelToggle.getToggleState();
+        manifest.playerShowKeyboard = playerShowKeyboardToggle.getToggleState();
+        manifest.playerShowPackMenu = playerShowPackMenuToggle.getToggleState();
+        manifest.playerAllowPackLoading = playerAllowPackLoadingToggle.getToggleState();
+        manifest.playerShowLibraryBrowser = playerShowLibraryToggle.getToggleState();
+        manifest.playerAllowMidiLearn = playerAllowMidiLearnToggle.getToggleState();
+        manifest.playerShowAbout = playerShowAboutToggle.getToggleState();
+        manifest.playerShowParameterGuidance = playerShowTooltipsToggle.getToggleState();
+        manifest.playerTopShowBrowse = playerTopBrowseToggle.getToggleState();
+        manifest.playerTopShowSave = playerTopSaveToggle.getToggleState();
+        manifest.playerTopShowSettings = playerTopSettingsToggle.getToggleState();
+        manifest.playerTopShowCategory = playerTopCategoryToggle.getToggleState();
+        manifest.playerTopShowFavorite = playerTopFavoriteToggle.getToggleState();
+        manifest.playerTopShowPresetNav = playerTopPresetNavToggle.getToggleState();
+        manifest.playerTopShowMasterVolume = playerTopMasterToggle.getToggleState();
+        manifest.playerTopShowOutputMeter = playerTopMeterToggle.getToggleState();
+        manifest.rightPanelShowMacros = playerRightMacrosToggle.getToggleState();
+        manifest.rightPanelShowEffects = playerRightEffectsToggle.getToggleState();
+        manifest.rightPanelShowSends = playerRightSendsToggle.getToggleState();
+        manifest.rightPanelShowUtility = playerRightUtilityToggle.getToggleState();
+
+        owner.getProject().notifyChanged();
+        owner.syncExportPreview();
+    }
+
     void InspectorPanel::layoutDoubleRow (juce::Rectangle<int>& area,
                                           juce::Label& title, juce::Component& c1, juce::String,
                                           juce::Label& title2, juce::Component& c2,
@@ -1414,6 +1622,55 @@ namespace patchcraft
         header.setBounds (r.removeFromTop (32).reduced (10, 8));
         r.reduce (4, 0);
 
+        const bool scriptMode = owner.isScriptEditorActive();
+        lblPscriptSection.setVisible (scriptMode);
+        lblPscriptHint.setVisible (scriptMode);
+        pscriptReferenceView.setVisible (scriptMode);
+        pscriptVariablesView.setVisible (scriptMode);
+        pscriptControlsView.setVisible (scriptMode);
+        pscriptTestNoteBtn.setVisible (scriptMode);
+        pscriptTestModBtn.setVisible (scriptMode);
+
+        if (scriptMode)
+        {
+            hideElementInspectorContent();
+            sectionHeaderBounds.fill ({});
+            auto sectionHeader = [this, &r] (juce::Label& label, InspectorSection section, const juce::String& title)
+            {
+                label.setVisible (true);
+                r.removeFromTop (6);
+                const auto bounds = r.removeFromTop (24).reduced (6, 2);
+                sectionHeaderBounds[(size_t) section] = bounds;
+                label.setText ((isSectionOpen (section) ? "v  " : ">  ") + title, juce::dontSendNotification);
+                label.setBounds (bounds);
+            };
+
+            sectionHeader (lblPscriptSection, InspectorSection::PScript, "PSCRIPT PROPERTIES");
+            const bool pscriptOpen = isSectionOpen (InspectorSection::PScript);
+            lblPscriptHint.setVisible (pscriptOpen);
+            pscriptReferenceView.setVisible (pscriptOpen);
+            pscriptVariablesView.setVisible (pscriptOpen);
+            pscriptControlsView.setVisible (pscriptOpen);
+            pscriptTestNoteBtn.setVisible (pscriptOpen);
+            pscriptTestModBtn.setVisible (pscriptOpen);
+
+            if (pscriptOpen)
+            {
+                lblPscriptHint.setBounds (r.removeFromTop (22).reduced (8, 0));
+                auto testRow = r.removeFromTop (28).reduced (8, 2);
+                pscriptTestNoteBtn.setBounds (testRow.removeFromLeft (88));
+                pscriptTestModBtn.setBounds (testRow.removeFromLeft (88));
+                r.removeFromTop (4);
+
+                const int panelH = juce::jmax (56, r.getHeight() / 3);
+                pscriptReferenceView.setBounds (r.removeFromTop (panelH).reduced (2));
+                pscriptVariablesView.setBounds (r.removeFromTop (panelH).reduced (2));
+                pscriptControlsView.setBounds (r.reduced (2));
+            }
+
+            return;
+        }
+
         auto* el = owner.getProject().getLayout().find (owner.getSelectedElementId());
         const auto type = el != nullptr ? el->type : ElementType::Knob;
         const bool hasParam = (type == ElementType::Knob || type == ElementType::Slider
@@ -1436,6 +1693,7 @@ namespace patchcraft
         const bool isTabPanel = (type == ElementType::TabPanel);
         const bool isFramedVisual = type == ElementType::SpectrumAnalyzer
                                  || type == ElementType::EqCurve
+                                 || type == ElementType::AdsrCurve
                                  || type == ElementType::VisualFxLayer
                                  || type == ElementType::ReactiveImage
                                  || type == ElementType::SpriteAnimator
@@ -1446,6 +1704,7 @@ namespace patchcraft
                                || type == ElementType::Meter || type == ElementType::Button
                                || type == ElementType::Panel || type == ElementType::Shape
                                || type == ElementType::EqCurve
+                               || type == ElementType::AdsrCurve
                                || type == ElementType::SpectrumAnalyzer
                                || type == ElementType::ReactiveImage
                                || type == ElementType::SpriteAnimator
@@ -1464,6 +1723,7 @@ namespace patchcraft
                                                         || type == ElementType::SampleDropZone
                                                         || type == ElementType::SpectrumAnalyzer
                                                         || type == ElementType::EqCurve
+                                                        || type == ElementType::AdsrCurve
                                                         || type == ElementType::VisualFxLayer));
         const bool showColour = (type == ElementType::Panel || type == ElementType::Group
                                  || type == ElementType::Shape || type == ElementType::Button
@@ -1474,6 +1734,7 @@ namespace patchcraft
                                   || type == ElementType::MacroControl || type == ElementType::ModMatrix
                                   || type == ElementType::GranularField
                                   || type == ElementType::EqCurve
+                                  || type == ElementType::AdsrCurve
                                   || type == ElementType::SpectrumAnalyzer
                                   || type == ElementType::SampleDropZone
                                   || type == ElementType::ReactiveImage
@@ -1496,6 +1757,76 @@ namespace patchcraft
                 if (component != nullptr)
                     component->setVisible (visible);
         };
+
+        setVisibleFor ({ &lblPlayerPreviewHelp, &lblPlayerShell,
+                         &playerShowTopBarToggle, &playerShowLeftSidebarToggle, &playerShowFooterToggle,
+                         &playerShowRightPanelToggle, &playerShowKeyboardToggle,
+                         &lblPlayerRuntime, &playerShowPackMenuToggle, &playerAllowPackLoadingToggle,
+                         &playerShowLibraryToggle, &playerAllowMidiLearnToggle,
+                         &playerShowAboutToggle, &playerShowTooltipsToggle,
+                         &lblPlayerTopBar, &playerTopBrowseToggle, &playerTopSaveToggle,
+                         &playerTopSettingsToggle, &playerTopCategoryToggle,
+                         &playerTopFavoriteToggle, &playerTopPresetNavToggle,
+                         &playerTopMasterToggle, &playerTopMeterToggle,
+                         &lblPlayerPreviewSection }, false);
+        setVisibleFor ({ &lblPlayerRightPanel,
+                         &playerRightMacrosToggle, &playerRightEffectsToggle,
+                         &playerRightSendsToggle, &playerRightUtilityToggle }, false);
+
+        // Nothing selected: expose the Player frame (blueprint) controls so the
+        // Design page can author the exported Player chrome directly.
+        if (el == nullptr)
+        {
+            hideElementInspectorContent();
+            sectionHeaderBounds.fill ({});
+
+            sectionHeader (lblPlayerPreviewSection, InspectorSection::PlayerPreview, "PLAYER FRAME");
+            if (! isSectionOpen (InspectorSection::PlayerPreview))
+                return;
+
+            lblPlayerPreviewHelp.setVisible (true);
+            lblPlayerPreviewHelp.setBounds (r.removeFromTop (44).reduced (8, 2));
+
+            auto miniHeader = [&r] (juce::Label& label, const juce::String& text)
+            {
+                label.setText (text, juce::dontSendNotification);
+                label.setVisible (true);
+                r.removeFromTop (4);
+                label.setBounds (r.removeFromTop (18).reduced (8, 0));
+            };
+            auto togglePair = [&r] (juce::ToggleButton& a, juce::ToggleButton* b)
+            {
+                auto row = r.removeFromTop (24).reduced (8, 0);
+                a.setVisible (true);
+                a.setBounds (row.removeFromLeft (row.getWidth() / 2));
+                if (b != nullptr)
+                {
+                    b->setVisible (true);
+                    b->setBounds (row);
+                }
+            };
+
+            miniHeader (lblPlayerShell, "Shell");
+            togglePair (playerShowTopBarToggle, &playerShowLeftSidebarToggle);
+            togglePair (playerShowRightPanelToggle, &playerShowKeyboardToggle);
+            togglePair (playerShowFooterToggle, nullptr);
+
+            miniHeader (lblPlayerTopBar, "Top Bar");
+            togglePair (playerTopBrowseToggle, &playerTopSaveToggle);
+            togglePair (playerTopSettingsToggle, &playerTopCategoryToggle);
+            togglePair (playerTopFavoriteToggle, &playerTopPresetNavToggle);
+            togglePair (playerTopMasterToggle, &playerTopMeterToggle);
+
+            miniHeader (lblPlayerRightPanel, "Right Panel");
+            togglePair (playerRightMacrosToggle, &playerRightEffectsToggle);
+            togglePair (playerRightSendsToggle, &playerRightUtilityToggle);
+
+            miniHeader (lblPlayerRuntime, "Runtime");
+            togglePair (playerShowPackMenuToggle, &playerAllowPackLoadingToggle);
+            togglePair (playerShowLibraryToggle, &playerAllowMidiLearnToggle);
+            togglePair (playerShowAboutToggle, &playerShowTooltipsToggle);
+            return;
+        }
 
         // Common: type, id
         sectionHeader (lblLayoutSection, InspectorSection::Layout, "LAYOUT");
@@ -1573,6 +1904,10 @@ namespace patchcraft
         lblStep.setVisible (showParamControls);
         lblValType.setVisible (showParamControls);
         lblSmoothing.setVisible (showParamControls);
+        lblPscriptAttach.setVisible (showParamControls);
+        pscriptAttachStatus.setVisible (showParamControls);
+        pscriptAttachBtn.setVisible (showParamControls);
+        pscriptDetachBtn.setVisible (showParamControls);
 
         if (showParam)
         {
@@ -1587,6 +1922,13 @@ namespace patchcraft
                 }
                 if (showDropZoneLink)
                     layoutRow (r, lblDropZoneLink, &dropZoneLinkBox);
+                {
+                    auto row = r.removeFromTop (34);
+                    lblPscriptAttach.setBounds (row.removeFromLeft (110).reduced (10, 4));
+                    pscriptDetachBtn.setBounds (row.removeFromRight (62).reduced (4, 4));
+                    pscriptAttachBtn.setBounds (row.removeFromRight (72).reduced (4, 4));
+                    pscriptAttachStatus.setBounds (row.reduced (4, 4));
+                }
                 layoutRow (r, lblValFmt, &valueFormatBox);
                 // Min / Max share a row
                 {
@@ -1746,6 +2088,7 @@ namespace patchcraft
 
         const bool showSpecialSection = isDrumGrid || isArpLane || isSeqLane || isMixer || isMacroControl || isModMatrix
                                      || isGranularField || isTabPanel || showContainerManager;
+        const bool modMatrixReady = SoundStack::hasMotionBlock (owner.getProject().getDspGraph());
         const bool showAdvancedControls = showSpecialSection && isSectionOpen (InspectorSection::Advanced);
         lblSpecialSection.setVisible (showSpecialSection);
         if (showSpecialSection)
@@ -1962,12 +2305,12 @@ namespace patchcraft
         for (auto* component : { static_cast<juce::Component*> (&modRoutesEdit),
                                  static_cast<juce::Component*> (&modApplyBtn),
                                  static_cast<juce::Component*> (&modClearBtn) })
-            component->setVisible (isModMatrix && showAdvancedControls && isSectionOpen (InspectorSection::ModMatrix));
+            component->setVisible (isModMatrix && modMatrixReady && showAdvancedControls && isSectionOpen (InspectorSection::ModMatrix));
         for (auto* label : { &lblModMatrixEditor, &lblModRoutes })
-            label->setVisible (isModMatrix && showAdvancedControls
+            label->setVisible (isModMatrix && modMatrixReady && showAdvancedControls
                                && (label == &lblModMatrixEditor || isSectionOpen (InspectorSection::ModMatrix)));
 
-        if (isModMatrix && showAdvancedControls)
+        if (isModMatrix && modMatrixReady && showAdvancedControls)
         {
             r.removeFromTop (6);
             sectionHeader (lblModMatrixEditor, InspectorSection::ModMatrix, "MOD MATRIX");
@@ -2101,6 +2444,54 @@ namespace patchcraft
         }
     }
 
+    void InspectorPanel::hideElementInspectorContent()
+    {
+        for (int i = 0; i < getNumChildComponents(); ++i)
+        {
+            auto* child = getChildComponent (i);
+            if (child == &header
+                || child == &lblPscriptSection
+                || child == &lblPscriptHint
+                || child == &pscriptReferenceView
+                || child == &pscriptVariablesView
+                || child == &pscriptControlsView
+                || child == &pscriptTestNoteBtn
+                || child == &pscriptTestModBtn)
+                continue;
+
+            child->setVisible (false);
+        }
+    }
+
+    void InspectorPanel::refreshPscriptHelpers()
+    {
+        if (! owner.isScriptEditorActive())
+            return;
+
+        if (auto* script = owner.getScriptEditor())
+        {
+            const auto refText = script->getReferenceText();
+            const auto varText = script->getVariablesText();
+            juce::String controls = "// Parameter IDs (use in set / when knob handlers)\n";
+            for (const auto& id : script->getControlParameterIds())
+                controls += id + "\n";
+
+            const bool textChanged = pscriptReferenceView.getText() != refText
+                                  || pscriptVariablesView.getText() != varText
+                                  || pscriptControlsView.getText() != controls;
+
+            if (textChanged)
+            {
+                pscriptReferenceView.setText (refText, juce::dontSendNotification);
+                pscriptVariablesView.setText (varText, juce::dontSendNotification);
+                pscriptControlsView.setText (controls, juce::dontSendNotification);
+
+                if (isShowing())
+                    resized();
+            }
+        }
+    }
+
     void InspectorPanel::selectionChanged()
     {
         refresh();
@@ -2113,6 +2504,7 @@ namespace patchcraft
     void InspectorPanel::refresh()
     {
         const juce::ScopedValueSetter<bool> s (inhibitCallbacks, true);
+        refreshPlayerPreviewControls();
 
         // Re-populate parameter combo. Use dontSendNotification on clear so the
         // (otherwise async) onChange callback does not re-enter writeFromUi.
@@ -2476,6 +2868,18 @@ namespace patchcraft
                 }
         }
         dropZoneLinkBox.setSelectedId (linkedDropZoneId, juce::dontSendNotification);
+
+        if (el->pscriptFile.isNotEmpty())
+        {
+            pscriptAttachStatus.setText (juce::File (el->pscriptFile).getFileName(), juce::dontSendNotification);
+            pscriptAttachStatus.setTooltip (el->pscriptFile);
+        }
+        else
+        {
+            pscriptAttachStatus.setText ("(none — drop a .pscript file on this control)", juce::dontSendNotification);
+            pscriptAttachStatus.setTooltip ({});
+        }
+        pscriptDetachBtn.setEnabled (el->pscriptFile.isNotEmpty());
 
         // Style
         for (int i = 1; i <= styleBox.getNumItems(); ++i)

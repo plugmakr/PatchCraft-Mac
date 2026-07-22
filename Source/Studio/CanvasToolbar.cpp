@@ -33,18 +33,13 @@ namespace patchcraft
         createBtn.onClick = [this] { showQuickCreateMenu(); };
         addAndMakeVisible (createBtn);
 
-        // Section tab strip - styled as flat toggle buttons. Each tab maps
-        // explicitly to its BottomPanel::Page so removing/reordering tabs
-        // doesn't break the wiring.
+        // Ship spine — Sounds / Design / Brand / Ship.
+        // Type picking lives in Sounds; connect/bindings live in Design;
+        // preview lives in Brand; export lives in Ship.
         struct TabMap { juce::Button* btn; int page; };
         const TabMap tabs[] = {
-            { &tabMapper,   (int) BottomPanel::Page::Samples },
-            { &tabGraph,    (int) BottomPanel::Page::DSP },
-            { &tabMidi,     (int) BottomPanel::Page::MidiPlayground },
+            { &tabBuild,    (int) BottomPanel::Page::Build },
             { &tabDesign,   (int) BottomPanel::Page::Design },
-            { &tabOneShot,  (int) BottomPanel::Page::OneShotMaker },
-            { &tabBuild,    (int) BottomPanel::Page::Widgets },
-            { &tabAnimation,(int) BottomPanel::Page::Animation },
             { &tabBranding, (int) BottomPanel::Page::Branding },
             { &tabLaunch,   (int) BottomPanel::Page::Export }
         };
@@ -61,20 +56,33 @@ namespace patchcraft
             addAndMakeVisible (*b);
         }
         tabArp.setVisible (false);
-        tabDesign.setToggleState (true, juce::dontSendNotification);
+        tabOneShot.setVisible (false);
+        tabAnimation.setVisible (false);
+        tabMapper.setVisible (false);
+        tabChop.setVisible (false);
+        tabGraph.setVisible (false);
+        tabMidi.setVisible (false);
+        tabTest.setVisible (false);
+        tabBuild.setToggleState (true, juce::dontSendNotification);
 
-        designerModeToggle.setClickingTogglesState (true);
-        designerModeToggle.setToggleState (true, juce::dontSendNotification);
-        designerModeToggle.getProperties().set ("flatTab", true);
-        designerModeToggle.getProperties().set ("fontSize", 12.0);
-        designerModeToggle.getProperties().set ("bold", true);
-        designerModeToggle.onClick = [this]
+        tabBuild.setTooltip ("Sounds — pick instrument type, import samples, chop (when needed), and shape the sound.");
+        tabDesign.setTooltip ("Design — layout the Player UI and connect controls to parameters.");
+        tabBranding.setTooltip ("Brand — whitelabel chrome, artwork, and customer preview.");
+        tabLaunch.setTooltip ("Ship — readiness checks and export (pack / VST3 / Plugin.club).");
+
+        pscriptBtn.setClickingTogglesState (true);
+        pscriptBtn.getProperties().set ("flatTab", true);
+        pscriptBtn.getProperties().set ("fontSize", 12.0);
+        pscriptBtn.getProperties().set ("bold", true);
+        pscriptBtn.setTooltip ("Open the pScript editor under the Design canvas.");
+        pscriptBtn.onClick = [this]
         {
-            const bool active = designerModeToggle.getToggleState();
-            canvas.setDesignerModeActive (active);
-            designerModeToggle.setButtonText (active ? "Designer Mode" : "Player Mode");
+            if (owner.isScriptEditorActive())
+                owner.closePscriptPanel();
+            else
+                owner.focusPscriptPanel();
         };
-        addAndMakeVisible (designerModeToggle);
+        addAndMakeVisible (pscriptBtn);
 
         patchSeparator.setText ("|", juce::dontSendNotification);
         patchSeparator.setJustificationType (juce::Justification::centred);
@@ -298,7 +306,12 @@ namespace patchcraft
             orderBtn->setVisible (designActive);
             orderBtn->setEnabled (selectionCount >= 1);
         }
-        createBtn.setVisible (designActive);
+        const bool quickBuild = owner.getProject().getManifest().quickBuildMode
+                             && ! owner.isAdvancedBuildUnlocked();
+        engineLabel.setVisible (! quickBuild);
+        engineBox.setVisible (! quickBuild);
+        createBtn.setVisible (! quickBuild && designActive);
+        pscriptBtn.setVisible (! quickBuild || owner.isAdvancedBuildUnlocked());
         resized();
         repaint();
     }
@@ -306,23 +319,44 @@ namespace patchcraft
 
     void CanvasToolbar::onSectionTabClick (int index)
     {
+        owner.closePscriptPanel();
         owner.setBottomTab (static_cast<BottomPanel::Page> (index));
     }
 
     void CanvasToolbar::syncSectionTabFromOwner()
     {
         const auto p = owner.getBottomTab();
+        const bool onBuildSub = p == BottomPanel::Page::Samples
+                             || p == BottomPanel::Page::Chop
+                             || p == BottomPanel::Page::DSP
+                             || p == BottomPanel::Page::MidiPlayground
+                             || p == BottomPanel::Page::ArpStudio;
+
+        tabBuild.setToggleState    (p == BottomPanel::Page::Build || onBuildSub, juce::dontSendNotification);
         tabDesign.setToggleState   (p == BottomPanel::Page::Design,        juce::dontSendNotification);
+        tabBranding.setToggleState (p == BottomPanel::Page::Branding
+                                    || p == BottomPanel::Page::Test,       juce::dontSendNotification);
+        tabTest.setToggleState     (false, juce::dontSendNotification);
+        tabLaunch.setToggleState   (p == BottomPanel::Page::Export,         juce::dontSendNotification);
+        tabMapper.setToggleState   (p == BottomPanel::Page::Samples
+                                    || p == BottomPanel::Page::OneShotMaker, juce::dontSendNotification);
+        tabChop.setToggleState     (p == BottomPanel::Page::Chop,            juce::dontSendNotification);
         tabGraph.setToggleState    (p == BottomPanel::Page::DSP,           juce::dontSendNotification);
-        tabMapper.setToggleState   (p == BottomPanel::Page::Samples,        juce::dontSendNotification);
-        tabOneShot.setToggleState  (p == BottomPanel::Page::OneShotMaker,   juce::dontSendNotification);
         tabMidi  .setToggleState   (p == BottomPanel::Page::MidiPlayground
                                     || p == BottomPanel::Page::ArpStudio,  juce::dontSendNotification);
-        tabBuild .setToggleState   (p == BottomPanel::Page::Widgets,        juce::dontSendNotification);
-        tabAnimation.setToggleState (p == BottomPanel::Page::Animation,      juce::dontSendNotification);
-        tabBranding.setToggleState (p == BottomPanel::Page::Branding || p == BottomPanel::Page::Test, juce::dontSendNotification);
-        tabLaunch.setToggleState   (p == BottomPanel::Page::Export,         juce::dontSendNotification);
+        pscriptBtn.setToggleState  (owner.isScriptEditorActive(),          juce::dontSendNotification);
+
+        if (! tabBuild.getToggleState() && ! tabDesign.getToggleState() && ! tabBranding.getToggleState()
+            && ! tabLaunch.getToggleState())
+        {
+            tabBuild.setToggleState (true, juce::dontSendNotification);
+        }
+
         refresh();
+    }
+
+    void CanvasToolbar::syncDesignerModeToggle (bool /*designerModeActive*/)
+    {
     }
 
     void CanvasToolbar::applySelectedEngine()
@@ -687,6 +721,7 @@ namespace patchcraft
         menu.addSeparator();
         menu.addItem (2, "Playable Synth");
         menu.addItem (3, "Sample Instrument");
+        menu.addItem (7, "Sample Chopper");
         menu.addItem (4, "Drum Machine");
         menu.addItem (5, "Effect Plugin");
         menu.addSeparator();
@@ -698,6 +733,7 @@ namespace patchcraft
                 if (result == 1) showPromptCreator();
                 else if (result == 2) createStarterPlugin ("synth", "New Synth Instrument", "Playable synth starter with mapped controls, presets, and motion.");
                 else if (result == 3) createStarterPlugin ("sample", "New Sample Instrument", "Sample instrument starter with a drop zone, mapped controls, presets, and motion.");
+                else if (result == 7) owner.newSampleChopperProject();
                 else if (result == 4) createStarterPlugin ("drum", "New Drum Machine", "Drum machine starter with pads, mapped controls, presets, and motion.");
                 else if (result == 5) createStarterPlugin ("fx", "New Effect Plugin", "Effect plugin starter with mapped controls, presets, and motion.");
                 else if (result == 6) owner.setBottomTab (BottomPanel::Page::ProjectBrowser);
@@ -724,17 +760,13 @@ namespace patchcraft
         createBtn.setBounds   (r.removeFromLeft (82));
         r.removeFromLeft (12);
 
-        // Section tabs (left of right cluster) — workflow order: Sound → Graph → Perform → Layout …
-        tabMapper.setBounds (r.removeFromLeft (58));
-        tabGraph.setBounds (r.removeFromLeft (58));
-        tabMidi.setBounds (r.removeFromLeft (62));
+        // Section tabs — Sounds / Design / Brand / Ship.
+        tabBuild.setBounds (r.removeFromLeft (62));
         tabDesign.setBounds (r.removeFromLeft (58));
-        tabOneShot.setBounds (r.removeFromLeft (70));
-        tabBuild .setBounds (r.removeFromLeft (58));
-        tabAnimation.setBounds (r.removeFromLeft (48));
         tabBranding.setBounds (r.removeFromLeft (52));
         tabLaunch.setBounds (r.removeFromLeft (46));
-        designerModeToggle.setBounds (r.removeFromLeft (110));
+        if (pscriptBtn.isVisible())
+            pscriptBtn.setBounds (r.removeFromLeft (62));
 
         if (owner.getBottomTab() == BottomPanel::Page::Design)
         {

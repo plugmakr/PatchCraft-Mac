@@ -84,10 +84,14 @@ namespace patchcraft
         juce::String lastPendingMidiLearn;
         bool drumGridDragActive = false;
         bool drumGridPaintValue = false;
+        enum class PianoRollDragMode { None, NewNote, ResizeNote };
         bool pianoRollDragActive = false;
+        PianoRollDragMode pianoRollDragMode = PianoRollDragMode::None;
         juce::String pianoRollDragElementId;
         int pianoRollDragPitch = -1;
         int pianoRollDragStartStep = -1;
+        bool pianoRollDragPendingDelete = false;
+        bool pianoRollDragDidEdit = false;
         bool arpMidiDragArmed = false;
         int lastDrumGridPattern = -1;
         int lastDrumGridTrack = -1;
@@ -120,6 +124,7 @@ namespace patchcraft
         void drawHeroPlaceholder (juce::Graphics&, juce::Rectangle<int>) const;
         void drawMeter   (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
         void drawEqCurve (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
+        void drawAdsrCurve (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
         void drawSpectrumAnalyzer (juce::Graphics&, juce::Rectangle<int>, const LayoutElement&) const;
         // Curated runtime visual FX (audio-reactive special effects).
         float reactiveLevelFor (const LayoutElement&) const;
@@ -203,7 +208,7 @@ namespace patchcraft
         juce::Rectangle<int> arpLaneSoloButtonBounds (juce::Rectangle<int>) const;
         bool startArpLaneMidiDrag (const LayoutElement&);
         bool handleMixerGesture (const juce::MouseEvent&, bool drag);
-        int  padNoteAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>) const;
+        int  padNoteAt (const LayoutElement&, juce::Rectangle<int>, juce::Point<int>, int* padIndexOut = nullptr) const;
         struct RuntimeDropTarget
         {
             juce::String mappingMode { "pads" };
@@ -212,7 +217,7 @@ namespace patchcraft
             bool targeted = false;
         };
         RuntimeDropTarget runtimeDropTargetAt (juce::Point<int>) const;
-        void updateFileDragHighlight (juce::Point<int>);
+        void updateFileDragHighlight (juce::Point<int>, const juce::StringArray&);
         bool fileDragActive = false;
         juce::Rectangle<int> fileDragHighlight;
         juce::String fileDragLabel;

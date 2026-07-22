@@ -3,6 +3,9 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <juce_audio_devices/juce_audio_devices.h>
 
+#include "SoundStack.h"
+#include "BuildLabPage.h"
+
 namespace patchcraft
 {
     class StudioMainComponent;
@@ -24,6 +27,7 @@ namespace patchcraft
     class IInstrumentEngine;
     class TestPage;
     class BrandingLabPage;
+    class ChopLabPage;
     class ControlNodeEditor;
     struct SampleZoneDef;
 
@@ -41,7 +45,7 @@ namespace patchcraft
     class BottomPanel : public juce::Component
     {
     public:
-        enum class Page { Dashboard = 0, ProjectBrowser = 1, Design = 2, Samples = 3, OneShotMaker = 4, MidiPlayground = 5, ArpStudio = 6, Test = 7, DSP = 8, Widgets = 9, Animation = 10, Branding = 11, Export = 12, Expansions = 13 };
+        enum class Page { Dashboard = 0, ProjectBrowser = 1, Design = 2, Samples = 3, OneShotMaker = 4, MidiPlayground = 5, ArpStudio = 6, Test = 7, DSP = 8, Widgets = 9, Animation = 10, Branding = 11, Export = 12, Expansions = 13, Chop = 14, Build = 15 };
 
         explicit BottomPanel (StudioMainComponent& owner);
         ~BottomPanel() override;
@@ -61,14 +65,27 @@ namespace patchcraft
         juce::String getDspPatchSectionId() const;
         juce::String getDspPatchSectionLabel() const;
         void showDspBuilderTutorial();
-        // Canvas shortcut: ensure an arpeggiator block exists and open Graph.
+        // Canvas shortcut: insert a motion block and open Sound Stack.
         void addArpBlock();
+        void addMotionBlock (SoundStack::MotionKind kind);
 
         void refresh();
 
+        /** Switch to Sound Mapper and highlight the chop source zone. */
+        void selectSampleZone (int index);
+
+        /** Switch to Brand Lab and show the full Player/DAW preview. */
+        void enterDawPreviewMode();
+
+        using BuildSubPage = BuildLabPage::SubPage;
+        void setBuildSubPage (BuildSubPage);
+        BuildSubPage getBuildSubPage() const { return buildSubPage; }
+
+        SampleMapEditor* getSampleMapper() noexcept { return sampleMapper.get(); }
+
     private:
         StudioMainComponent& owner;
-        Page currentPage = Page::Dashboard;
+        Page currentPage = Page::Design;
 
         // ---- Workflow page -------------------------------------------------
         std::unique_ptr<WorkflowPage> workflowPage;
@@ -109,6 +126,13 @@ namespace patchcraft
 
         // ---- Branding Lab -------------------------------------------------
         std::unique_ptr<BrandingLabPage> brandingLab;
+
+        // ---- Build Lab (Quick Build guided workflow) -----------------------
+        std::unique_ptr<BuildLabPage> buildLab;
+        BuildSubPage buildSubPage = BuildSubPage::ImportSounds;
+
+        // ---- Chop Lab -----------------------------------------------------
+        std::unique_ptr<ChopLabPage> chopLab;
 
         // ---- Launch Center ------------------------------------------------
         std::unique_ptr<LaunchCenterPage> launchCenter;

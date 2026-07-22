@@ -1,6 +1,8 @@
 #include "SampleWaveformViewer.h"
 #include "PatchCraftLookAndFeel.h"
 
+#include <cmath>
+
 namespace patchcraft
 {
     SampleWaveformViewer::SampleWaveformViewer()
@@ -60,6 +62,19 @@ namespace patchcraft
         repaint();
     }
 
+    void SampleWaveformViewer::setBeatSnapEnabled (bool enabled)
+    {
+        beatSnapEnabled = enabled;
+        repaint();
+    }
+
+    void SampleWaveformViewer::setBeatGrid (double bpm, int divisionsPerBeat)
+    {
+        beatSnapBpm = juce::jlimit (20.0, 300.0, bpm);
+        beatSnapDivisionsPerBeat = juce::jlimit (1, 16, divisionsPerBeat);
+        repaint();
+    }
+
     void SampleWaveformViewer::paint (juce::Graphics& g)
     {
         g.fillAll (PatchCraftLookAndFeel::bg());
@@ -78,6 +93,7 @@ namespace patchcraft
         const auto rulerArea = juce::Rectangle<int> (0, 0, getWidth(), 16);
         drawTimeRuler (g, rulerArea);
         drawWaveform (g, waveformArea);
+        drawBeatGrid (g, waveformArea);
         drawLoopRegion (g, waveformArea);
         drawFadeRegions (g, waveformArea);
         drawSampleBounds (g, waveformArea);
@@ -275,6 +291,36 @@ namespace patchcraft
         }
     }
 
+    void SampleWaveformViewer::drawBeatGrid (juce::Graphics& g, juce::Rectangle<int> area)
+    {
+        if (! beatSnapEnabled || sampleBuffer.getNumSamples() <= 0 || area.isEmpty())
+            return;
+
+        const double samplesPerBeat = sampleRate * 60.0 / juce::jmax (20.0, beatSnapBpm);
+        const double stepSamples = samplesPerBeat / (double) juce::jmax (1, beatSnapDivisionsPerBeat);
+        if (stepSamples < 1.0)
+            return;
+
+        const int start = juce::jmax (0, viewOffset);
+        const int end = juce::jmin (sampleBuffer.getNumSamples(), xToSample (area.getRight()));
+        const int firstDivision = juce::jmax (0, (int) std::floor ((double) start / stepSamples));
+
+        for (int division = firstDivision; ; ++division)
+        {
+            const int sample = juce::roundToInt ((double) division * stepSamples);
+            if (sample > end)
+                break;
+
+            const int x = sampleToX (sample);
+            if (x < area.getX() || x > area.getRight())
+                continue;
+
+            const bool beat = division % beatSnapDivisionsPerBeat == 0;
+            g.setColour (PatchCraftLookAndFeel::accent().withAlpha (beat ? 0.42f : 0.18f));
+            g.drawVerticalLine (x, (float) area.getY(), (float) area.getBottom());
+        }
+    }
+
     void SampleWaveformViewer::drawSampleBounds (juce::Graphics& g, juce::Rectangle<int> area)
     {
         const int sampleStartX = sampleToX (currentZone.sampleStart);
@@ -455,9 +501,9 @@ namespace patchcraft
 
     void SampleWaveformViewer::mouseUp (const juce::MouseEvent& e)
     {
-        // Snap-to-zero-crossing on handle release. Hold Shift to keep the
-        // exact position the user dragged to. The search radius scales with
-        // visible samples-per-pixel so it always stays a few pixels' worth.
+        // Snap handles on release. Beat snap is explicit; otherwise we snap
+        // start/end/loop handles to nearby zero crossings. Hold Shift to keep
+        // the exact position the user dragged to.
         if (! e.mods.isShiftDown() && sampleBuffer.getNumSamples() > 0
             && waveformArea.getWidth() > 0)
         {
@@ -468,7 +514,8 @@ namespace patchcraft
 
             auto snap = [&] (int& dst)
             {
-                dst = snapToZeroCrossing (dst, radius);
+                dst = beatSnapEnabled ? snapToBeatGrid (dst)
+                                      : snapToZeroCrossing (dst, radius);
             };
             switch (dragMode)
             {
@@ -578,6 +625,21 @@ namespace patchcraft
             }
         }
         return best;
+    }
+
+    int SampleWaveformViewer::snapToBeatGrid (int sampleIndex) const
+    {
+        const int total = sampleBuffer.getNumSamples();
+        if (total <= 0)
+            return sampleIndex;
+
+        const double samplesPerBeat = sampleRate * 60.0 / juce::jmax (20.0, beatSnapBpm);
+        const double stepSamples = samplesPerBeat / (double) juce::jmax (1, beatSnapDivisionsPerBeat);
+        if (stepSamples < 1.0)
+            return juce::jlimit (0, total, sampleIndex);
+
+        return juce::jlimit (0, total,
+                             juce::roundToInt (std::round ((double) sampleIndex / stepSamples) * stepSamples));
     }
 
     void SampleWaveformViewer::syncScrollbar()

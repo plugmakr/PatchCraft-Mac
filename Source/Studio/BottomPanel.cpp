@@ -1,6 +1,8 @@
 #include "BottomPanel.h"
 #include "StudioMainComponent.h"
 #include "PatchCraftLookAndFeel.h"
+#include "TutorialHelp.h"
+#include "SoundStack.h"
 
 #include <algorithm>
 
@@ -13,6 +15,8 @@
 #include "ControlNodeEditor.h"
 #include "TestPage.h"
 #include "BrandingLabPage.h"
+#include "ChopLabPage.h"
+#include "BuildLabPage.h"
 #include "MidiPlaygroundPage.h"
 #include "OneShotMakerPage.h"
 #include "WorkflowPage.h"
@@ -20,7 +24,6 @@
 #include "LaunchCenterPage.h"
 #include "ExpansionsPage.h"
 #include "AnimationLabPage.h"
-#include "ArpeggiatorRuntime.h"
 #include "PatchCraftProject.h"
 
 namespace patchcraft
@@ -46,6 +49,7 @@ namespace patchcraft
         // Design page -------------------------------------------------------
         designDspHeader.setText ("CONTROL BINDINGS", juce::dontSendNotification);
         designDspHeader.setTooltip ("Select a layout control and wire it to sound, motion, MIDI, effects, and output parameters.");
+        TutorialHelp::attach (designDspHeader, "layout.controlbindings");
         designDspHeader.setFont (juce::Font (11.0f, juce::Font::bold));
         designDspHeader.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
         addAndMakeVisible (designDspHeader);
@@ -118,6 +122,14 @@ namespace patchcraft
         brandingLab = std::make_unique<BrandingLabPage> (owner);
         addChildComponent (*brandingLab);
 
+        // Build Lab ----------------------------------------------------------
+        buildLab = std::make_unique<BuildLabPage> (owner);
+        addChildComponent (*buildLab);
+
+        // Chop Lab -------------------------------------------------------------
+        chopLab = std::make_unique<ChopLabPage> (owner);
+        addChildComponent (*chopLab);
+
         // Launch Center ------------------------------------------------------
         launchCenter = std::make_unique<LaunchCenterPage> (owner);
         addChildComponent (*launchCenter);
@@ -131,6 +143,18 @@ namespace patchcraft
         addChildComponent (*globalGraphView);
 
         rebuildPageVisibility();
+    }
+
+    void BottomPanel::setBuildSubPage (BuildSubPage sub)
+    {
+        buildSubPage = sub;
+        if (buildLab != nullptr)
+            buildLab->setSubPage (sub);
+
+        if (currentPage != Page::Build)
+            setPage (Page::Build);
+        else
+            rebuildPageVisibility();
     }
 
     BottomPanel::~BottomPanel() = default;
@@ -156,6 +180,9 @@ namespace patchcraft
             else if (toPerform && ! wasPerform)
                 midiPlayground->showPlaygroundMode();
         }
+
+        if (p == Page::Build && buildLab != nullptr)
+            buildLab->setSubPage (buildSubPage);
 
         rebuildPageVisibility();
     }
@@ -202,44 +229,14 @@ namespace patchcraft
 
     void BottomPanel::addArpBlock()
     {
-        auto& graph = owner.getProject().getDspGraph();
-        bool hasArp = false;
-        for (const auto& block : graph.blocks)
-        {
-            if (block.enabled && ArpeggiatorRuntime::isArpBlock (block))
-            {
-                hasArp = true;
-                break;
-            }
-        }
+        addMotionBlock (SoundStack::MotionKind::Arp);
+    }
 
-        if (! hasArp)
-        {
-            DspBlock arpBlock;
-            arpBlock.id = "arp_" + juce::String (juce::Random::getSystemRandom().nextInt (99999));
-            arpBlock.section = "mod";
-            arpBlock.type = "arp";
-            arpBlock.name = "Arpeggiator";
-            arpBlock.enabled = true;
-            arpBlock.values = {
-                { "rate", 1.0f },
-                { "sync", 1.0f },
-                { "arpSteps", 8.0f },
-                { "arpGate", 0.55f },
-                { "arpPattern", 0.0f },
-                { "arpOctaves", 2.0f },
-                { "arpNote0", 0.0f },
-                { "arpNote1", 4.0f },
-                { "arpNote2", 7.0f },
-                { "arpNote3", 12.0f },
-                { "arpNote4", 7.0f },
-                { "arpNote5", 4.0f },
-                { "arpNote6", 10.0f },
-                { "arpNote7", 14.0f }
-            };
-            graph.blocks.push_back (std::move (arpBlock));
+    void BottomPanel::addMotionBlock (SoundStack::MotionKind kind)
+    {
+        juce::String error;
+        if (SoundStack::addMotionBlock (owner.getProject().getDspGraph(), kind, error))
             owner.getProject().notifyChanged();
-        }
 
         setPage (Page::DSP);
         if (globalGraphView)
@@ -250,6 +247,7 @@ namespace patchcraft
     {
         if (workflowPage) workflowPage->refresh();
         if (projectBrowserPage) projectBrowserPage->refresh();
+        if (buildLab) buildLab->refresh();
         if (parameters)  parameters->refresh();
         if (sampleMapper) sampleMapper->refresh();
         if (keyzones)    keyzones->refresh();
@@ -261,8 +259,11 @@ namespace patchcraft
         if (oneShotMaker) oneShotMaker->refresh();
         if (midiPlayground) midiPlayground->refresh();
         if (animationLab) animationLab->refresh();
+        if (chopLab) chopLab->refresh();
         if (launchCenter) launchCenter->refresh();
         if (expansionsPage) expansionsPage->refresh();
+        if (globalGraphView)
+            globalGraphView->rebuild();
         repaint();
     }
 
@@ -285,28 +286,45 @@ namespace patchcraft
         const bool workflow  = currentPage == Page::Dashboard;
         const bool projectBrowser = currentPage == Page::ProjectBrowser;
         const bool design    = currentPage == Page::Design;
-        const bool mapper    = currentPage == Page::Samples;
+        const bool buildPage = currentPage == Page::Build;
+        const bool mapper    = currentPage == Page::Samples || (buildPage && buildSubPage == BuildSubPage::ImportSounds);
         const bool oneShot   = currentPage == Page::OneShotMaker;
-        const bool midi      = currentPage == Page::MidiPlayground || currentPage == Page::ArpStudio;
+        const bool midi      = currentPage == Page::MidiPlayground || currentPage == Page::ArpStudio
+                               || (buildPage && buildSubPage == BuildSubPage::Perform);
         const bool test      = currentPage == Page::Test;
         const bool build     = currentPage == Page::Widgets;
         const bool animation = currentPage == Page::Animation;
         const bool brand     = currentPage == Page::Branding;
+        const bool chop      = currentPage == Page::Chop || (buildPage && buildSubPage == BuildSubPage::Chop);
         const bool launch    = currentPage == Page::Export;
         const bool expansions= currentPage == Page::Expansions;
-        const bool graph     = currentPage == Page::DSP;
+        const bool graph     = currentPage == Page::DSP || (buildPage && buildSubPage == BuildSubPage::Stack);
 
         if (workflowPage) workflowPage->setVisible (workflow);
         if (projectBrowserPage) projectBrowserPage->setVisible (projectBrowser);
+        if (buildLab)
+        {
+            buildLab->setVisible (buildPage);
+            if (buildPage)
+                buildLab->refresh();
+        }
         designDspHeader     .setVisible (design);
         if (parameters) parameters->setVisible (design);
         if (globalGraphView) globalGraphView->setVisible (graph);
 
-        btnMapperMain    .setVisible (mapper);
-        btnMapperKeyzones.setVisible (mapper);
-        btnMapperVelocity.setVisible (mapper);
-        btnMapperFull    .setVisible (mapper);
-        if (mapper) rebuildMapperSubVisibility();
+        const bool advancedMapper = owner.isAdvancedBuildUnlocked();
+        btnMapperMain    .setVisible (mapper && advancedMapper);
+        btnMapperKeyzones.setVisible (mapper && advancedMapper);
+        btnMapperVelocity.setVisible (mapper && advancedMapper);
+        btnMapperFull    .setVisible (mapper && advancedMapper);
+        if (mapper)
+        {
+            if (! advancedMapper)
+                activeMapperSubTab = 0;
+            if (sampleMapper != nullptr && ! advancedMapper)
+                sampleMapper->setEasyMode (true);
+            rebuildMapperSubVisibility();
+        }
         else
         {
             if (sampleMapper)        sampleMapper->setVisible (false);
@@ -327,18 +345,40 @@ namespace patchcraft
             brandingLab->setVisible (brand);
             if (brand)
             {
+                setPreviewActive (false);
                 brandingLab->refresh();
-                // Start the live engine + hardware MIDI callbacks immediately so a
-                // connected MIDI keyboard triggers sound and lights the on-screen
-                // keys without first requiring a mouse click in the preview.
                 brandingLab->activateTest();
             }
             else
+            {
                 brandingLab->deactivateTest();
+            }
+        }
+
+        if (chopLab)
+        {
+            chopLab->setVisible (chop);
+            if (chop)
+                chopLab->refresh();
         }
 
         resized();
         repaint();
+    }
+
+    void BottomPanel::selectSampleZone (int index)
+    {
+        activeMapperSubTab = 0;
+        if (sampleMapper != nullptr)
+            sampleMapper->selectZone (index);
+        rebuildMapperSubVisibility();
+    }
+
+    void BottomPanel::enterDawPreviewMode()
+    {
+        setPage (Page::Branding);
+        if (brandingLab != nullptr)
+            brandingLab->setDawPreviewLayout (true);
     }
 
     void BottomPanel::rebuildMapperSubVisibility()
@@ -373,6 +413,13 @@ namespace patchcraft
 
             case Page::DSP:
             {
+                if (owner.isGraphAudioListen() && ! owner.isCustomerPreviewActive())
+                {
+                    const int previewH = juce::jlimit (200, 320, juce::jmax (200, r.getHeight() / 3));
+                    auto previewStrip = r.removeFromBottom (previewH);
+                    owner.attachPackRuntimePreview (this, previewStrip);
+                    r.removeFromBottom (6);
+                }
                 if (globalGraphView) globalGraphView->setBounds (r);
                 break;
             }
@@ -387,14 +434,17 @@ namespace patchcraft
 
             case Page::Samples:
             {
-                auto top = r.removeFromTop (28);
-                btnMapperMain    .setBounds (top.removeFromLeft (130));
-                top.removeFromLeft (4);
-                btnMapperKeyzones.setBounds (top.removeFromLeft (90));
-                top.removeFromLeft (4);
-                btnMapperVelocity.setBounds (top.removeFromLeft (90));
-                top.removeFromLeft (4);
-                btnMapperFull.setBounds (top.removeFromLeft (64));
+                if (owner.isAdvancedBuildUnlocked())
+                {
+                    auto top = r.removeFromTop (28);
+                    btnMapperMain    .setBounds (top.removeFromLeft (130));
+                    top.removeFromLeft (4);
+                    btnMapperKeyzones.setBounds (top.removeFromLeft (90));
+                    top.removeFromLeft (4);
+                    btnMapperVelocity.setBounds (top.removeFromLeft (90));
+                    top.removeFromLeft (4);
+                    btnMapperFull.setBounds (top.removeFromLeft (64));
+                }
 
                 auto content = r.reduced (4);
                 if (sampleMapper)        sampleMapper->setBounds (content);
@@ -436,7 +486,17 @@ namespace patchcraft
 
             case Page::Branding:
             {
-                if (brandingLab) brandingLab->setBounds (r);
+                if (brandingLab)
+                {
+                    brandingLab->setBounds (r);
+                    brandingLab->ensurePreviewAttached();
+                }
+                break;
+            }
+
+            case Page::Chop:
+            {
+                if (chopLab) chopLab->setBounds (r);
                 break;
             }
 
@@ -449,6 +509,54 @@ namespace patchcraft
             case Page::Expansions:
             {
                 if (expansionsPage) expansionsPage->setBounds (r);
+                break;
+            }
+
+            case Page::Build:
+            {
+                const int headerH = buildLab != nullptr ? buildLab->getHeaderHeight() : 52;
+                if (buildLab)
+                    buildLab->setBounds (r.removeFromTop (headerH));
+                r.removeFromTop (4);
+
+                if (buildSubPage == BuildSubPage::ImportSounds)
+                {
+                    if (owner.isAdvancedBuildUnlocked())
+                    {
+                        auto top = r.removeFromTop (28);
+                        btnMapperMain    .setBounds (top.removeFromLeft (130));
+                        top.removeFromLeft (4);
+                        btnMapperKeyzones.setBounds (top.removeFromLeft (90));
+                        top.removeFromLeft (4);
+                        btnMapperVelocity.setBounds (top.removeFromLeft (90));
+                        top.removeFromLeft (4);
+                        btnMapperFull.setBounds (top.removeFromLeft (64));
+                    }
+
+                    auto content = r.reduced (4);
+                    if (sampleMapper) sampleMapper->setBounds (content);
+                    if (keyzones) keyzones->setBounds (content);
+                    if (velocityMap) velocityMap->setBounds (content);
+                }
+                else if (buildSubPage == BuildSubPage::Chop)
+                {
+                    if (chopLab) chopLab->setBounds (r);
+                }
+                else if (buildSubPage == BuildSubPage::Stack)
+                {
+                    if (owner.isGraphAudioListen() && ! owner.isCustomerPreviewActive())
+                    {
+                        const int previewH = juce::jlimit (200, 320, juce::jmax (200, r.getHeight() / 3));
+                        auto previewStrip = r.removeFromBottom (previewH);
+                        owner.attachPackRuntimePreview (this, previewStrip);
+                        r.removeFromBottom (6);
+                    }
+                    if (globalGraphView) globalGraphView->setBounds (r);
+                }
+                else if (buildSubPage == BuildSubPage::Perform)
+                {
+                    if (midiPlayground) midiPlayground->setBounds (r);
+                }
                 break;
             }
         }

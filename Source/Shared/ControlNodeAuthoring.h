@@ -52,6 +52,13 @@ namespace patchcraft
                                   const juce::String& sourceBlockId,
                                   const juce::String& targetBlockId,
                                   juce::String& status);
+        /** Dry-run of connectNodes rules. Returns true when a cable from source → target is allowed. */
+        static bool canConnectNodes (const PatchCraftProject& project,
+                                     const juce::String& sourceBlockId,
+                                     const juce::String& targetBlockId,
+                                     juce::String* reason = nullptr);
+        static juce::StringArray connectableTargetNames (const PatchCraftProject& project,
+                                                         const juce::String& sourceBlockId);
         static bool disconnectNodes (PatchCraftProject& project,
                                      const juce::String& sourceBlockId,
                                      const juce::String& targetBlockId,

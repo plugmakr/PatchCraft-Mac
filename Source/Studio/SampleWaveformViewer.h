@@ -45,6 +45,8 @@ namespace patchcraft
         int getViewOffset() const { return viewOffset; }
         int getSampleLength() const { return sampleBuffer.getNumSamples(); }
         double getSampleRate() const { return sampleRate; }
+        void setBeatSnapEnabled (bool enabled);
+        void setBeatGrid (double bpm, int divisionsPerBeat);
 
         std::function<void()> onZoneChanged;
 
@@ -57,6 +59,9 @@ namespace patchcraft
 
         juce::Image cachedWaveform;
         bool waveformNeedsUpdate = true;
+        bool beatSnapEnabled = false;
+        double beatSnapBpm = 120.0;
+        int beatSnapDivisionsPerBeat = 4;
 
         enum class DragMode { None, LoopStart, LoopEnd, SampleStart, SampleEnd,
                             FadeInStart, FadeInLength, FadeOutStart, FadeOutLength, View };
@@ -76,6 +81,7 @@ namespace patchcraft
         void drawLoopRegion (juce::Graphics& g, juce::Rectangle<int> area);
         void drawFadeRegions (juce::Graphics& g, juce::Rectangle<int> area);
         void drawSampleBounds (juce::Graphics& g, juce::Rectangle<int> area);
+        void drawBeatGrid (juce::Graphics& g, juce::Rectangle<int> area);
 
         int sampleToX (int sample) const;
         int xToSample (int x) const;
@@ -89,6 +95,7 @@ namespace patchcraft
 
         DragMode handleAt (juce::Point<int> pos) const;
         int snapToZeroCrossing (int sampleIndex, int searchRadius) const;
+        int snapToBeatGrid (int sampleIndex) const;
         void syncScrollbar();
         void drawTimeRuler (juce::Graphics& g, juce::Rectangle<int> rulerArea);
 

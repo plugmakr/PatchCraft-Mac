@@ -348,6 +348,104 @@ namespace patchcraft
             }
         }
 
+        static void drawAdsrCurveElement (juce::Graphics& g, juce::Rectangle<int> r, const LayoutElement& element,
+                                          const PatchCraftProject& project)
+        {
+            const auto bg = element.backgroundColour.isTransparent() ? PatchCraftLookAndFeel::panelAlt() : element.backgroundColour;
+            const auto border = element.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : element.borderColour;
+            const auto accent = element.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : element.accentColour;
+            g.setColour (bg);
+            g.fillRoundedRectangle (r.toFloat(), juce::jmax (6.0f, element.cornerRadius));
+            g.setColour (border);
+            g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (6.0f, element.cornerRadius), 1.0f);
+
+            auto area = r.reduced (10, 8);
+            auto header = area.removeFromTop (20);
+            g.setColour (accent);
+            g.setFont (juce::Font (11.0f, juce::Font::bold));
+            g.drawText (element.label.isNotEmpty() ? element.label.toUpperCase() : "ENVELOPE",
+                        header.removeFromLeft (130), juce::Justification::centredLeft, true);
+            g.setColour (PatchCraftLookAndFeel::textDim());
+            g.setFont (9.0f);
+            g.drawText ("amp adsr", header, juce::Justification::centredRight, true);
+
+            auto graphArea = area.reduced (2, 4);
+            g.setColour (PatchCraftLookAndFeel::bg().withAlpha (0.55f));
+            g.fillRoundedRectangle (graphArea.toFloat(), 5.0f);
+
+            // draw light grid lines
+            g.setColour (border.withAlpha (0.15f));
+            for (int i = 1; i < 4; ++i)
+            {
+                const int x = graphArea.getX() + (graphArea.getWidth() * i) / 4;
+                const int y = graphArea.getY() + (graphArea.getHeight() * i) / 4;
+                g.drawVerticalLine (x, (float) graphArea.getY(), (float) graphArea.getBottom());
+                g.drawHorizontalLine (y, (float) graphArea.getX(), (float) graphArea.getRight());
+            }
+
+            juce::String prefix = "";
+            if (element.parameterId.isNotEmpty() && element.parameterId.containsIgnoreCase ("attack"))
+                prefix = element.parameterId.upToFirstOccurrenceOf ("attack", false, false);
+            else if (element.parameterId.isNotEmpty() && element.parameterId.containsIgnoreCase ("adsr"))
+                prefix = element.parameterId.upToFirstOccurrenceOf ("adsr", false, false);
+
+            const auto getVal = [&] (const juce::String& baseName, float fallback) -> float
+            {
+                const auto fullId = prefix + baseName;
+                const auto* def = project.getParameters().find (fullId);
+                if (def != nullptr)
+                    return project.getLiveValues().getValue (fullId, def->defaultValue);
+                
+                const auto* fallbackDef = project.getParameters().find (baseName);
+                if (fallbackDef != nullptr)
+                    return project.getLiveValues().getValue (baseName, fallbackDef->defaultValue);
+                
+                return fallback;
+            };
+
+            const float a = juce::jlimit (0.0f, 1.0f, getVal ("attack", 0.1f) / 4.0f);
+            const float d = juce::jlimit (0.0f, 1.0f, getVal ("decay", 0.2f) / 4.0f);
+            const float s = juce::jlimit (0.0f, 1.0f, getVal ("sustain", 0.8f));
+            const float r_val = juce::jlimit (0.0f, 1.0f, getVal ("release", 0.4f) / 4.0f);
+
+            const float totalW = (float) graphArea.getWidth();
+            const float startX = (float) graphArea.getX();
+            const float startY = (float) graphArea.getBottom() - 4.0f;
+            const float topY = (float) graphArea.getY() + 4.0f;
+            const float height = startY - topY;
+
+            const float attW = 4.0f + a * (totalW * 0.22f);
+            const float decW = 4.0f + d * (totalW * 0.22f);
+            const float susW = totalW * 0.25f;
+            const float relW = 4.0f + r_val * (totalW * 0.22f);
+            const float susY = startY - s * height;
+
+            juce::Path p;
+            p.startNewSubPath (startX, startY);
+            p.lineTo (startX + attW, topY);
+            p.lineTo (startX + attW + decW, susY);
+            p.lineTo (startX + attW + decW + susW, susY);
+            p.lineTo (startX + attW + decW + susW + relW, startY);
+
+            juce::Path fillPath = p;
+            fillPath.lineTo (startX + attW + decW + susW + relW, startY);
+            fillPath.lineTo (startX, startY);
+            fillPath.closeSubPath();
+
+            juce::ColourGradient grad (accent.withAlpha (0.24f), startX, topY,
+                                       accent.withAlpha (0.01f), startX, startY, false);
+            g.setGradientFill (grad);
+            g.fillPath (fillPath);
+
+            g.setColour (accent.withAlpha (0.92f));
+            g.strokePath (p, juce::PathStrokeType (2.2f, juce::PathStrokeType::mitered, juce::PathStrokeType::rounded));
+
+            g.setColour (accent);
+            g.fillEllipse (startX + attW - 3.0f, topY - 3.0f, 6.0f, 6.0f);
+            g.fillEllipse (startX + attW + decW - 3.0f, susY - 3.0f, 6.0f, 6.0f);
+            g.fillEllipse (startX + attW + decW + susW - 3.0f, susY - 3.0f, 6.0f, 6.0f);
+        }
+
         static void drawSpectrumElement (juce::Graphics& g, juce::Rectangle<int> r, const LayoutElement& element,
                                          float outputPeak)
         {
@@ -1583,6 +1681,10 @@ namespace patchcraft
                     drawEqCurveElement (g, r, e, project.getDspGraph());
                     break;
 
+                case ElementType::AdsrCurve:
+                    drawAdsrCurveElement (g, r, e, project);
+                    break;
+
                 case ElementType::SpectrumAnalyzer:
                     drawSpectrumElement (g, r, e, audioReactiveLevel.load (std::memory_order_relaxed));
                     break;
@@ -2168,12 +2270,12 @@ namespace patchcraft
                 {
                     const int rows = e.type == ElementType::DrumPad ? 1 : juce::jlimit (1, 8, e.padRows);
                     const int cols = e.type == ElementType::DrumPad ? 1 : juce::jlimit (1, 8, e.padCols);
-                    const int gap  = e.type == ElementType::DrumPad ? 0 : 4;
+                    const int gap  = e.type == ElementType::DrumPad ? 0 : kPadGridCellGapPx;
                     const auto inner = e.type == ElementType::PadGrid ? r.reduced (4) : r;
                     if (! inner.isEmpty())
                     {
-                        const float padW = (float) (inner.getWidth()  - gap * (cols - 1)) / (float) cols;
-                        const float padH = (float) (inner.getHeight() - gap * (rows - 1)) / (float) rows;
+                        const bool squarePads = e.type == ElementType::PadGrid;
+                        const auto metrics = computePadGridMetrics (inner.toFloat(), rows, cols, gap, squarePads);
                         const auto bg = e.backgroundColour.isTransparent() ? PatchCraftLookAndFeel::panelAlt() : e.backgroundColour;
                         const auto borderC = e.borderColour.isTransparent() ? PatchCraftLookAndFeel::border() : e.borderColour;
                         const auto accent = e.accentColour.isTransparent() ? PatchCraftLookAndFeel::accent() : e.accentColour;
@@ -2181,9 +2283,8 @@ namespace patchcraft
                         {
                             for (int col = 0; col < cols; ++col)
                             {
-                                juce::Rectangle<float> pad ((float) inner.getX() + col * (padW + gap),
-                                                            (float) inner.getY() + row * (padH + gap),
-                                                            padW, padH);
+                                juce::Rectangle<float> pad = padCellRect (metrics, row, col, gap, squarePads,
+                                                                          (float) inner.getX(), (float) inner.getY());
                                 g.setColour (bg.brighter (0.04f));
                                 g.fillRoundedRectangle (pad, juce::jmax (3.0f, e.cornerRadius * 0.6f));
                                 g.setColour (accent.withAlpha (0.55f));
@@ -2199,15 +2300,15 @@ namespace patchcraft
                                     g.drawRoundedRectangle (pad.reduced (0.5f), juce::jmax (3.0f, e.cornerRadius * 0.6f), 1.8f);
                                 }
                                 g.setColour ((active ? juce::Colour (0xff0a0c10) : PatchCraftLookAndFeel::text()).withAlpha (0.85f));
-                                g.setFont (juce::Font (juce::jmin (12.0f, padH * 0.28f), juce::Font::bold));
+                                g.setFont (juce::Font (juce::jmin (12.0f, pad.getHeight() * 0.28f), juce::Font::bold));
                                 const juce::String label = e.type == ElementType::DrumPad && e.label.isNotEmpty()
                                     ? e.label : juce::String (padIdx + 1);
-                                g.drawText (label, pad.reduced (4.0f).removeFromTop (padH * 0.55f).toNearestInt(),
+                                g.drawText (label, pad.reduced (4.0f).removeFromTop (pad.getHeight() * 0.55f).toNearestInt(),
                                             juce::Justification::centred);
                                 g.setColour (PatchCraftLookAndFeel::textDim());
-                                g.setFont (juce::jmin (10.0f, padH * 0.22f));
+                                g.setFont (juce::jmin (10.0f, pad.getHeight() * 0.22f));
                                 g.drawText (juce::MidiMessage::getMidiNoteName (note, true, true, 4),
-                                            pad.reduced (4.0f).removeFromBottom (padH * 0.35f).toNearestInt(),
+                                            pad.reduced (4.0f).removeFromBottom (pad.getHeight() * 0.35f).toNearestInt(),
                                             juce::Justification::centred);
                                 juce::ignoreUnused (borderC);
                             }
@@ -2636,13 +2737,27 @@ namespace patchcraft
                 return true;
             }
 
+            if (! drag)
+            {
+                const int footerTab = ArpLaneUi::hitTestOrbitFooterTab (layout, pos);
+                if (footerTab >= 0)
+                {
+                    if (onSetMidiPlaygroundActiveBank && onSetMidiPlaygroundActiveBank (footerTab))
+                        repaint (r);
+                    return true;
+                }
+            }
+
             int lane = -1;
             int step = -1;
             if (drag && arpLaneDragActive && lastArpLane >= 0 && lastArpStep >= 0)
             {
                 lane = lastArpLane;
                 step = lastArpStep;
-                const float velocity = ArpLaneUi::velocityFromVerticalDrag (layout.content, pos.y);
+                const float velocity = layout.orbitMultiRing
+                    ? ArpLaneUi::velocityFromOrbitRadius ((pos.toFloat() - layout.centre).getDistanceFromOrigin(),
+                                                         layout.ringSize, lane)
+                    : ArpLaneUi::velocityFromVerticalDrag (layout.content, pos.y);
                 if (onSetArpLaneStep && onSetArpLaneStep (lane, step, velocity, true))
                     repaint (r);
                 return true;
@@ -2653,6 +2768,8 @@ namespace patchcraft
 
             if (! drag)
             {
+                if (onSetMidiPlaygroundActiveBank)
+                    onSetMidiPlaygroundActiveBank (lane);
                 const bool wasActive = ArpLaneUi::storedStepActive (block, lane, step, false);
                 const float velocity = ArpLaneUi::storedStepVelocity (block, lane, step);
                 if (onSetArpLaneStep && onSetArpLaneStep (lane, step, velocity, ! wasActive))
@@ -2804,19 +2921,28 @@ namespace patchcraft
     {
         const int rows = e.type == ElementType::DrumPad ? 1 : juce::jlimit (1, 8, e.padRows);
         const int cols = e.type == ElementType::DrumPad ? 1 : juce::jlimit (1, 8, e.padCols);
-        const int gap = e.type == ElementType::DrumPad ? 0 : 4;
+        const int gap = e.type == ElementType::DrumPad ? 0 : kPadGridCellGapPx;
         const auto inner = e.type == ElementType::PadGrid ? r.reduced (4) : r;
         if (inner.isEmpty() || ! inner.contains (pos))
             return -1;
 
-        const float padW = (float) (inner.getWidth() - gap * (cols - 1)) / (float) cols;
-        const float padH = (float) (inner.getHeight() - gap * (rows - 1)) / (float) rows;
-        if (padW <= 0.0f || padH <= 0.0f)
+        const bool squarePads = e.type == ElementType::PadGrid;
+        const auto metrics = computePadGridMetrics (inner.toFloat(), rows, cols, gap, squarePads);
+        if (metrics.padW <= 0.0f || metrics.padH <= 0.0f)
             return -1;
 
-        const int col = juce::jlimit (0, cols - 1, (int) ((pos.x - inner.getX()) / (padW + gap)));
-        const int row = juce::jlimit (0, rows - 1, (int) ((pos.y - inner.getY()) / (padH + gap)));
-        return juce::jlimit (0, 127, e.padBaseNote + row * cols + col);
+        for (int row = 0; row < rows; ++row)
+        {
+            for (int col = 0; col < cols; ++col)
+            {
+                const auto pad = padCellRect (metrics, row, col, gap, squarePads,
+                                              (float) inner.getX(), (float) inner.getY());
+                if (pad.contains (pos.toFloat()))
+                    return juce::jlimit (0, 127, e.padBaseNote + row * cols + col);
+            }
+        }
+
+        return -1;
     }
 
     StudioInstrumentRenderer::RuntimeDropTarget StudioInstrumentRenderer::runtimeDropTargetAt (juce::Point<int> pos) const

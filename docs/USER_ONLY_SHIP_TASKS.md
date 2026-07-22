@@ -1,14 +1,16 @@
 # User-Only Ship Tasks
 
-Date: 2026-05-21
+Date: 2026-07-16
 
 These items require your accounts, hardware, DAW environment, signing credentials, legal decisions, or production infrastructure. They cannot be fully completed from the local code checkout.
+
+The local code/build gates passed on July 16. Your four final proof groups are: DAW behavior, hardware/runtime import, live Plugin.club licensing/publishing, and signed clean-machine installation.
 
 ## Licensing And Commerce
 
 - Create the real Plugin.club seller products that will be used for launch.
-- Confirm the Plugin.club seller API key is valid for `https://plugin.club/functions/sellerImport`.
-- Confirm Plugin.club runtime activation works through `https://plugin.club/functions/deviceAuth`.
+- Confirm Plugin.club Device Auth sign-in works, then publish to `https://plugin.club/functions/v1/sellerImport`.
+- Confirm Player license activation works through `https://plugin.club/functions/v1/activateLicense`.
 - Decide the final AudiLock endpoint names, product ID strategy, public key format, activation limits, revoke/reset rules, trial rules, and migration behavior.
 - Provide the AudiLock production URL and public verification key when AudiLock is ready to replace Plugin.club as the source of truth.
 - Decide final pricing, refund policy, upgrade policy, VST Exporter addon policy, and support policy.

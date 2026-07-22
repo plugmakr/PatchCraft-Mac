@@ -5,7 +5,7 @@
 #include "AssetManager.h"
 #include "IInstrumentEngine.h"
 #include "DspRoutingEngine.h"
-#include "ArpeggiatorRuntime.h"
+#include "MidiPlaygroundRuntime.h"
 
 namespace patchcraft
 {
@@ -71,7 +71,7 @@ namespace patchcraft
         juce::AudioDeviceManager& deviceManager;
         std::unique_ptr<IInstrumentEngine> engine;
         DspRoutingEngine routingEngine;
-        ArpeggiatorRuntime arpeggiator;
+        MidiPlaygroundRuntime arpeggiator;
         juce::String engineId;
         juce::SpinLock engineLock;
         double currentSampleRate = 44100.0;

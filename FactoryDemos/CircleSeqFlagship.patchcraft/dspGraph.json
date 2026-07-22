@@ -53,6 +53,19 @@
       }
     },
     {
+      "id": "main_output",
+      "section": "out",
+      "type": "limiter",
+      "name": "Main Output",
+      "enabled": true,
+      "targetId": "volume",
+      "values": {
+        "outputLimiter": 1.0,
+        "outputCeilingDb": -1.0,
+        "outputGainDb": -3.0
+      }
+    },
+    {
       "id": "circle_engine",
       "section": "motion",
       "type": "midiPlayground",
@@ -176,7 +189,29 @@
       }
     }
   ],
-  "edges": [],
+  "edges": [
+    {
+      "id": "source_to_shape",
+      "sourceNodeId": "source",
+      "targetNodeId": "shape",
+      "signalType": "audio",
+      "enabled": true
+    },
+    {
+      "id": "shape_to_fx",
+      "sourceNodeId": "shape",
+      "targetNodeId": "fx",
+      "signalType": "audio",
+      "enabled": true
+    },
+    {
+      "id": "fx_to_main_output",
+      "sourceNodeId": "fx",
+      "targetNodeId": "main_output",
+      "signalType": "audio",
+      "enabled": true
+    }
+  ],
   "macros": [],
   "modulation": [],
   "automation": []

@@ -1,3 +1,19 @@
+    namespace
+    {
+        void scaleElementTypographyFromOriginal (LayoutElement& el, const LayoutElement& original,
+                                                 float scaleX, float scaleY)
+        {
+            if (original.labelSize > 0.0f)
+                el.labelSize = juce::jmax (6.0f, original.labelSize * scaleY);
+            el.labelSpacing = original.labelSpacing * scaleY;
+            el.labelOffsetX = original.labelOffsetX * scaleX;
+            el.labelOffsetY = original.labelOffsetY * scaleY;
+            el.contentPadding = original.contentPadding * juce::jmax (scaleX, scaleY);
+            el.cornerRadius = juce::jmax (0.0f, original.cornerRadius * juce::jmax (scaleX, scaleY));
+            el.strokeWidth = juce::jmax (0.0f, original.strokeWidth * juce::jmax (scaleX, scaleY));
+        }
+    }
+
     bool CanvasEditor::hitTestControlBody (const LayoutElement& el,
                                            juce::Rectangle<int> r,
                                            juce::Point<int> p) const
@@ -375,6 +391,61 @@
                 return;
             }
 
+            // Design is also an audition surface. Normal clicks play pads and
+            // keys through the same Pack runtime used by Brand/Test/exports;
+            // Shift keeps the existing move/resize authoring gesture.
+            if (! e.mods.isShiftDown()
+                && (it->type == ElementType::Keyboard
+                    || it->type == ElementType::DrumPad
+                    || it->type == ElementType::PadGrid))
+            {
+                int note = -1;
+                if (it->type == ElementType::Keyboard)
+                {
+                    note = canvasKeyboardNoteAt (r, e.getPosition());
+                }
+                else
+                {
+                    const int rows = it->type == ElementType::DrumPad ? 1 : juce::jlimit (1, 8, it->padRows);
+                    const int cols = it->type == ElementType::DrumPad ? 1 : juce::jlimit (1, 8, it->padCols);
+                    const int gap = it->type == ElementType::DrumPad ? 0 : kPadGridCellGapPx;
+                    const auto inner = r.reduced (it->type == ElementType::PadGrid ? 4 : 0);
+                    const bool squarePads = it->type == ElementType::PadGrid;
+                    const auto metrics = computePadGridMetrics (inner.toFloat(), rows, cols, gap, squarePads);
+                    for (int row = 0; row < rows && note < 0; ++row)
+                        for (int col = 0; col < cols && note < 0; ++col)
+                            if (padCellRect (metrics, row, col, gap, squarePads,
+                                             (float) inner.getX(), (float) inner.getY()).contains (e.getPosition().toFloat()))
+                            {
+                                const int padIndex = row * cols + col;
+                                if (const auto* zone = canvasSampleZoneForPad (owner.getProject().getSampleMap(), padIndex))
+                                    note = juce::jlimit (0, 127, zone->rootNote);
+                                else
+                                    note = juce::jlimit (0, 127, it->padBaseNote + padIndex);
+                            }
+                }
+
+                if (note >= 0)
+                {
+                    if (e.mods.isCommandDown() || e.mods.isCtrlDown())
+                        owner.toggleSelectedElementId (it->id);
+                    else
+                        owner.setSelectedElementId (it->id);
+
+                    if (auditionNote >= 0)
+                        if (auto* runtime = owner.getPackRuntime())
+                            runtime->previewNoteOff (auditionNote);
+
+                    auditionNote = note;
+                    auditionElementId = it->id;
+                    mode = DragMode::AuditionNote;
+                    if (auto* runtime = owner.getPackRuntime())
+                        runtime->previewNoteOn (note, 0.9f);
+                    repaint (r.expanded (4));
+                    return;
+                }
+            }
+
             if (it->type == ElementType::DrumGrid
                 && owner.isElementSelected (it->id)
                 && (e.mods.isAltDown() || e.mods.isShiftDown() || e.mods.isCtrlDown() || e.mods.isCommandDown())
@@ -659,6 +730,49 @@
     {
         if (mode == DragMode::None) return;
 
+        if (mode == DragMode::AuditionNote)
+        {
+            const auto* element = owner.getProject().getLayout().find (auditionElementId);
+            if (element == nullptr)
+                return;
+
+            const auto bounds = elementScreenRect (*element);
+            if (! bounds.contains (e.getPosition()))
+                return;
+
+            int nextNote = -1;
+            if (element->type == ElementType::Keyboard)
+            {
+                nextNote = canvasKeyboardNoteAt (bounds, e.getPosition());
+            }
+            else
+            {
+                const int rows = element->type == ElementType::DrumPad ? 1 : juce::jlimit (1, 8, element->padRows);
+                const int cols = element->type == ElementType::DrumPad ? 1 : juce::jlimit (1, 8, element->padCols);
+                const int gap = element->type == ElementType::DrumPad ? 0 : kPadGridCellGapPx;
+                const auto inner = bounds.reduced (element->type == ElementType::PadGrid ? 4 : 0);
+                const bool squarePads = element->type == ElementType::PadGrid;
+                const auto metrics = computePadGridMetrics (inner.toFloat(), rows, cols, gap, squarePads);
+                for (int row = 0; row < rows && nextNote < 0; ++row)
+                    for (int col = 0; col < cols && nextNote < 0; ++col)
+                        if (padCellRect (metrics, row, col, gap, squarePads,
+                                         (float) inner.getX(), (float) inner.getY()).contains (e.getPosition().toFloat()))
+                            nextNote = juce::jlimit (0, 127, element->padBaseNote + row * cols + col);
+            }
+
+            if (nextNote >= 0 && nextNote != auditionNote)
+            {
+                if (auto* runtime = owner.getPackRuntime())
+                {
+                    runtime->previewNoteOff (auditionNote);
+                    runtime->previewNoteOn (nextNote, 0.9f);
+                }
+                auditionNote = nextNote;
+                repaint (bounds.expanded (4));
+            }
+            return;
+        }
+
         const bool disableSnap = e.mods.isCtrlDown() || e.mods.isCommandDown();
         auto snap = [this, disableSnap] (int v) -> int
         {
@@ -835,6 +949,7 @@
                                 + juce::roundToInt ((float) (original.y - originalBounds.getY()) * scaleY));
                             selected->width = juce::jmax (8, snap (juce::roundToInt ((float) original.width * scaleX)));
                             selected->height = juce::jmax (8, snap (juce::roundToInt ((float) original.height * scaleY)));
+                            scaleElementTypographyFromOriginal (*selected, original, scaleX, scaleY);
                             owner.propagateLinkedElementChange (selected->id);
                         }
                     }
@@ -866,6 +981,9 @@
                 el->y = snap (newY);
                 el->width  = juce::jmax (8, snap (newW));
                 el->height = juce::jmax (8, snap (newH));
+                const float scaleX = (float) el->width / (float) juce::jmax (1, dragOriginal.width);
+                const float scaleY = (float) el->height / (float) juce::jmax (1, dragOriginal.height);
+                scaleElementTypographyFromOriginal (*el, dragOriginal, scaleX, scaleY);
                 owner.propagateLinkedElementChange (el->id);
             }
             layoutChangedDuringDrag = true;
@@ -911,6 +1029,12 @@
 
     void CanvasEditor::mouseUp (const juce::MouseEvent&)
     {
+        if (auditionNote >= 0)
+            if (auto* runtime = owner.getPackRuntime())
+                runtime->previewNoteOff (auditionNote);
+        auditionNote = -1;
+        auditionElementId.clear();
+
         const bool wasMarquee = mode == DragMode::Marquee;
         const auto previousMarquee = marqueeRect;
         const bool shouldNotify = layoutChangedDuringDrag;

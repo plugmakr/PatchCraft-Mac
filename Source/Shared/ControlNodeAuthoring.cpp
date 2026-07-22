@@ -51,11 +51,14 @@ namespace patchcraft
                 block.values["arpSteps"] = 16.0f;
                 block.values["arpGate"] = 0.58f;
                 block.values["arpLaneSwing"] = 0.0f;
+                block.values["mpRatchet"] = 1.0f;
+                block.values["arpLaneRatchet"] = 1.0f;
                 for (int step = 0; step < 16; ++step)
                 {
                     block.values["mpStep" + juce::String (step) + "On"] = (step % 2 == 0) ? 1.0f : 0.0f;
                     block.values["mpStepProb" + juce::String (step)] = 1.0f;
                     block.values["mpGate" + juce::String (step)] = 0.58f;
+                    block.values["mpStepDiv" + juce::String (step)] = 1.0f;
                 }
             }
             else if (definition.id == "delay")
@@ -440,6 +443,13 @@ namespace patchcraft
         if (parameterId == "arpLaneProbability")
             for (int step = 0; step < 128; ++step)
                 block->values["mpStepProb" + juce::String (step)] = limited;
+        if (parameterId == "arpLaneRatchet")
+        {
+            const int ratchet = juce::jlimit (1, 8, juce::roundToInt (limited));
+            block->values["mpRatchet"] = (float) ratchet;
+            for (int step = 0; step < 128; ++step)
+                block->values["mpStepDiv" + juce::String (step)] = (float) ratchet;
+        }
         block->targetId = parameterId;
         project.getDspGraph().userConfigured = true;
         project.markDirty();
@@ -506,6 +516,74 @@ namespace patchcraft
         project.markDirty();
         project.notifyChanged();
         return true;
+    }
+
+    bool ControlNodeAuthoring::canConnectNodes (const PatchCraftProject& project,
+                                                const juce::String& sourceBlockId,
+                                                const juce::String& targetBlockId,
+                                                juce::String* reason)
+    {
+        const auto* source = findBlock (project, sourceBlockId);
+        const auto* target = findBlock (project, targetBlockId);
+        if (source == nullptr || target == nullptr || source == target)
+        {
+            if (reason != nullptr)
+                *reason = "Drop the cable on another node's input port.";
+            return false;
+        }
+
+        const auto* sourceDefinition = definitionForBlock (*source);
+        const auto* targetDefinition = definitionForBlock (*target);
+        if (sourceDefinition == nullptr || targetDefinition == nullptr)
+        {
+            if (reason != nullptr)
+                *reason = "One of these nodes cannot be routed yet.";
+            return false;
+        }
+
+        if (sourceDefinition->modulationSource)
+        {
+            if (definitionCouldModConnect (*sourceDefinition, *targetDefinition))
+            {
+                if (reason != nullptr)
+                {
+                    if (sourceDefinition->id == "arp" && targetDefinition->section == "source")
+                        *reason = "Event: " + source->name + " → " + target->name;
+                    else
+                        *reason = "Modulation: " + source->name + " → " + target->name;
+                }
+                return true;
+            }
+
+            if (reason != nullptr)
+                *reason = "Modulation sources connect to Shape, FX, Sources, or Motion — not Output.";
+            return false;
+        }
+
+        if (definitionCouldAudioConnect (*sourceDefinition, *targetDefinition))
+        {
+            if (reason != nullptr)
+                *reason = "Audio: " + source->name + " → " + target->name;
+            return true;
+        }
+
+        if (reason != nullptr)
+            *reason = "Audio cables run from a source or processor into Shape, FX, or Output.";
+        return false;
+    }
+
+    juce::StringArray ControlNodeAuthoring::connectableTargetNames (const PatchCraftProject& project,
+                                                                    const juce::String& sourceBlockId)
+    {
+        juce::StringArray names;
+        for (const auto& block : project.getDspGraph().blocks)
+        {
+            if (block.id == sourceBlockId)
+                continue;
+            if (canConnectNodes (project, sourceBlockId, block.id))
+                names.add (block.name.isNotEmpty() ? block.name : block.id);
+        }
+        return names;
     }
 
     bool ControlNodeAuthoring::connectNodes (PatchCraftProject& project,

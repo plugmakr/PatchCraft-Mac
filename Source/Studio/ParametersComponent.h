@@ -6,7 +6,7 @@ namespace patchcraft
 {
     class StudioMainComponent;
 
-    /** Compact sound-path overview. Detailed editing lives in the control node editor. */
+    /** Compact control-binding strip on the Layout page. Full DSP editing lives on the Graph tab. */
     class ParametersComponent : public juce::Component
     {
     public:
@@ -21,6 +21,6 @@ namespace patchcraft
         juce::TextButton openEditor { "OPEN NODE EDITOR" };
         juce::TextButton addControl { "ADD KNOB TO CANVAS" };
         juce::Label selectionStatus;
-        juce::Rectangle<int> stageArea;
+        juce::Label hintLabel;
     };
 }

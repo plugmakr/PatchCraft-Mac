@@ -40,6 +40,9 @@ namespace patchcraft
         advancedFx.reset();
         delay.reset();
         reverb.reset();
+        tapeLfoPhase = 0.0;
+        lastFbL = 0.0f;
+        lastFbR = 0.0f;
     }
 
     void EffectEngine::setParameter (const juce::String& id, float v)
@@ -51,7 +54,11 @@ namespace patchcraft
         else if (id == "delayTime")       atomics.delayTime      = v;
         else if (id == "delayFeedback")   atomics.delayFeedback  = v;
         else if (id == "delayMix")        atomics.delayMix       = v;
+        else if (id == "delayEnabled")    atomics.delayEnabled   = v;
+        else if (id == "delayType")       atomics.delayType      = v;
         else if (id == "reverbMix")       atomics.reverbMix      = v;
+        else if (id == "reverbEnabled")   atomics.reverbEnabled  = v;
+        else if (id == "reverbType")      atomics.reverbType     = v;
         else if (id == "volume")          atomics.volume         = v;
         else if (id == "expression")      atomics.expression     = v;
         else if (id == "pan")             atomics.pan            = v;
@@ -105,14 +112,27 @@ namespace patchcraft
         advancedFx.process (buffer, startSample, numSamples);
 
         // ---- Delay ---------------------------------------------------------
+        const bool dEnabled = atomics.delayEnabled.load() >= 0.5f;
         const float dTime = juce::jlimit (0.0f, 2.0f, atomics.delayTime.load());
         const float dFb   = juce::jlimit (0.0f, 0.95f, atomics.delayFeedback.load());
-        const float dMix  = juce::jlimit (0.0f, 1.0f, atomics.delayMix.load());
+        const float dMix  = dEnabled ? juce::jlimit (0.0f, 1.0f, atomics.delayMix.load()) : 0.0f;
         const int dSamps  = juce::jmax (1, (int) (dTime * sampleRate));
         delay.setDelay ((float) dSamps);
 
+        const int dType = juce::roundToInt (atomics.delayType.load());
+
         for (int i = 0; i < numSamples; ++i)
         {
+            if (dType == 1) // Tape LFO wobble
+            {
+                tapeLfoPhase += 2.5 / sampleRate;
+                if (tapeLfoPhase > juce::MathConstants<double>::twoPi)
+                    tapeLfoPhase -= juce::MathConstants<double>::twoPi;
+                float wobble = 0.004f * std::sin (tapeLfoPhase);
+                float wSamps = dSamps * (1.0f + wobble);
+                delay.setDelay (juce::jlimit (1.0f, 190000.0f, wSamps));
+            }
+
             for (int ch = 0; ch < numChans; ++ch)
                 delayScratch[(size_t) ch] = delay.popSample (ch);
 
@@ -121,15 +141,57 @@ namespace patchcraft
                 auto* channel = buffer.getWritePointer (ch, startSample);
                 const int feedbackChannel = numChans == 1 ? 0
                     : ((ch % 2 == 0 && ch + 1 < numChans) ? ch + 1 : ch - 1);
-                delay.pushSample (ch, channel[i] + delayScratch[(size_t) feedbackChannel] * dFb);
+
+                float feedbackVal = delayScratch[(size_t) feedbackChannel] * dFb;
+
+                if (dType == 1) // Tape Saturation
+                {
+                    feedbackVal = std::tanh (feedbackVal * 1.2f) * 0.9f;
+                }
+                else if (dType == 2) // Analog Low-Pass Filter
+                {
+                    if (ch == 0)
+                    {
+                        lastFbL = lastFbL * 0.65f + feedbackVal * 0.35f;
+                        feedbackVal = std::max (-0.95f, std::min (0.95f, lastFbL));
+                    }
+                    else
+                    {
+                        lastFbR = lastFbR * 0.65f + feedbackVal * 0.35f;
+                        feedbackVal = std::max (-0.95f, std::min (0.95f, lastFbR));
+                    }
+                }
+
+                delay.pushSample (ch, channel[i] + feedbackVal);
                 channel[i] = channel[i] * (1.0f - dMix * 0.5f) + delayScratch[(size_t) ch] * dMix;
             }
         }
 
         // ---- Reverb --------------------------------------------------------
-        const float rvMix = juce::jlimit (0.0f, 1.0f, atomics.reverbMix.load());
+        const bool rvEnabled = atomics.reverbEnabled.load() >= 0.5f;
+        const float rvMix = rvEnabled ? juce::jlimit (0.0f, 1.0f, atomics.reverbMix.load()) : 0.0f;
         juce::Reverb::Parameters rp;
-        rp.roomSize = 0.6f; rp.damping = 0.4f;
+
+        const int rvType = juce::roundToInt (atomics.reverbType.load());
+        if (rvType == 1) // Shimmer
+        {
+            rp.roomSize = 0.92f;
+            rp.damping  = 0.15f;
+            rp.width    = 1.0f;
+        }
+        else if (rvType == 3) // Spring
+        {
+            rp.roomSize = 0.35f;
+            rp.damping  = 0.75f;
+            rp.width    = 0.5f;
+        }
+        else // Large Room (default)
+        {
+            rp.roomSize = 0.65f;
+            rp.damping  = 0.45f;
+            rp.width    = 0.85f;
+        }
+
         rp.wetLevel = rvMix * 0.6f;
         rp.dryLevel = 1.0f - rvMix * 0.5f;
         rp.width = 1.0f;

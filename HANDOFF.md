@@ -1,7 +1,7 @@
 # PatchCraft Studio - Current Ship Handoff
 
-**Date:** May 24, 2026
-**Status:** Release-candidate bundle verified, Windows and macOS repositories synced and pushed.
+**Date:** July 16, 2026
+**Status:** Local 1.0.0 release verification passed; fresh unsigned Windows installers built. DAW, hardware, live Plugin.club, signing, and clean-machine proof remain.
 
 ## Current Release Candidate
 
@@ -24,6 +24,8 @@
 - `ISCC.exe build-codex\dist\PatchCraftStudio-RC\installer\PatchCraftStudio-Windows.iss`
 - `ISCC.exe build-codex\dist\PatchCraftVstExpansion\installer\PatchCraftVstExpansion-Windows.iss`
 
+`PatchCraftReleaseChecklist` now runs both smoke executables automatically. The July 16 run passed the complete audio/runtime suite and instrument/FX/Composer VST export suite.
+
 ## Current Ship Notes
 
 - Multi-instrument exported packs load in Player and now show a compact layer dock with volume, pan, mute, and solo.
@@ -31,6 +33,8 @@
 - Sample Mapper has explicit `Select All` beside `Auto Trim`; Auto Trim processes the selected zones or all zones if nothing is selected.
 - Zone BPM metadata now affects sample playback when `bpmSync` is enabled, using basic tempo-ratio resampling.
 - Launch licensing uses Plugin.club now; AudiLock is documented as the future source of truth in `docs/AUDILOCK_LICENSING_PLAN.md`.
+- Player licensing now has a real activation dialog, online entitlement response handling, machine-bound cached activation, tamper rejection, real footer/control-center status, and clear publisher-support errors for misconfigured products.
+- Unlicensed instruments are silent; unlicensed Player FX bypasses incoming audio dry instead of muting the host channel. Studio Brand preview bypasses enforcement for authoring.
 - Player now includes Rack, Mixer, Snapshots/Favorites, Sound DNA, runtime import, and expanded commercial launch materials; see `docs/PLAYER_COMMERCIAL_SYSTEM.md`.
 - See `docs/SHIP_READY.md` for the release handoff and remaining manual QA.
 

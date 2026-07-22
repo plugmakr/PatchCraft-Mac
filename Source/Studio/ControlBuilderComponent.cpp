@@ -33,6 +33,21 @@ namespace patchcraft
         kindBox.onChange = [this] { rebuildVisibility(); };
         addAndMakeVisible (kindBox);
 
+        galleryTitle.setText ("Widget Gallery", juce::dontSendNotification);
+        galleryTitle.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+        galleryTitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
+        addAndMakeVisible (galleryTitle);
+
+        galleryHint.setText ("Select a factory widget, then edit it here.", juce::dontSendNotification);
+        galleryHint.setFont (juce::FontOptions (10.5f));
+        galleryHint.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+        addAndMakeVisible (galleryHint);
+
+        galleryList.setRowHeight (34);
+        galleryList.setColour (juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
+        galleryList.setOutlineThickness (0);
+        addAndMakeVisible (galleryList);
+
         newAssetButton.setTooltip ("Reset the active builder to a clean default asset.");
         duplicateButton.setTooltip ("Duplicate the current builder asset into the Design page Library.");
         exportButton.setTooltip ("Render the current builder asset into the Design page Library.");
@@ -103,7 +118,75 @@ namespace patchcraft
         sliderBuilder->setVisible (kindBox.getSelectedId() == 2);
         meterBuilder->setVisible  (kindBox.getSelectedId() == 3);
         aiImageBuilder->setVisible (kindBox.getSelectedId() == 4);
+        selectedGalleryRow = juce::jlimit (0, juce::jmax (0, getNumRows() - 1), selectedGalleryRow);
+        galleryList.updateContent();
+        galleryList.selectRow (selectedGalleryRow);
         resized();
+    }
+
+    juce::StringArray ControlBuilderComponent::getCurrentGalleryNames() const
+    {
+        if (kindBox.getSelectedId() == 1) return KnobBuilderComponent::galleryPresetNames();
+        if (kindBox.getSelectedId() == 2) return SliderBuilderComponent::galleryPresetNames();
+        if (kindBox.getSelectedId() == 3) return MeterBuilderComponent::galleryPresetNames();
+        return {};
+    }
+
+    void ControlBuilderComponent::applyGalleryPreset (int row)
+    {
+        const auto names = getCurrentGalleryNames();
+        if (row < 0 || row >= names.size())
+            return;
+
+        selectedGalleryRow = row;
+        galleryList.selectRow (row);
+        if (kindBox.getSelectedId() == 1 && knobBuilder != nullptr)
+            knobBuilder->applyGalleryPreset (row);
+        else if (kindBox.getSelectedId() == 2 && sliderBuilder != nullptr)
+            sliderBuilder->applyGalleryPreset (row);
+        else if (kindBox.getSelectedId() == 3 && meterBuilder != nullptr)
+            meterBuilder->applyGalleryPreset (row);
+        galleryList.repaint();
+    }
+
+    int ControlBuilderComponent::getNumRows()
+    {
+        return getCurrentGalleryNames().size();
+    }
+
+    void ControlBuilderComponent::paintListBoxItem (int rowNumber, juce::Graphics& g, int width, int height, bool rowIsSelected)
+    {
+        const auto names = getCurrentGalleryNames();
+        if (rowNumber < 0 || rowNumber >= names.size())
+            return;
+
+        auto row = juce::Rectangle<int> (0, 0, width, height).reduced (3, 3);
+        const auto accent = kindBox.getSelectedId() == 2 ? juce::Colour (0xff48c7e8)
+                          : kindBox.getSelectedId() == 3 ? juce::Colour (0xff69d77a)
+                                                         : PatchCraftLookAndFeel::accent();
+        g.setColour (rowIsSelected ? PatchCraftLookAndFeel::raised() : PatchCraftLookAndFeel::panelAlt());
+        g.fillRoundedRectangle (row.toFloat(), 6.0f);
+        g.setColour ((rowIsSelected ? accent : PatchCraftLookAndFeel::border()).withAlpha (rowIsSelected ? 0.9f : 0.65f));
+        g.drawRoundedRectangle (row.toFloat().reduced (0.5f), 6.0f, 1.0f);
+
+        auto text = row.reduced (9, 0);
+        g.setColour (accent);
+        g.fillEllipse ((float) text.getX(), (float) text.getCentreY() - 3.0f, 6.0f, 6.0f);
+        text.removeFromLeft (14);
+        g.setColour (rowIsSelected ? PatchCraftLookAndFeel::textBright() : PatchCraftLookAndFeel::text());
+        g.setFont (juce::FontOptions (11.0f, rowIsSelected ? juce::Font::bold : juce::Font::plain));
+        g.drawFittedText (names[rowNumber], text, juce::Justification::centredLeft, 1);
+    }
+
+    void ControlBuilderComponent::listBoxItemClicked (int row, const juce::MouseEvent&)
+    {
+        applyGalleryPreset (row);
+    }
+
+    void ControlBuilderComponent::listBoxItemDoubleClicked (int row, const juce::MouseEvent&)
+    {
+        applyGalleryPreset (row);
+        exportButton.triggerClick();
     }
 
     void ControlBuilderComponent::paint (juce::Graphics& g)
@@ -114,6 +197,10 @@ namespace patchcraft
         g.fillRect (top);
         g.setColour (PatchCraftLookAndFeel::borderSoft());
         g.drawHorizontalLine (top.getBottom() - 1, 0.0f, (float) getWidth());
+
+        auto gallery = getLocalBounds().withTrimmedTop (54).reduced (10);
+        gallery = gallery.removeFromLeft (juce::jlimit (190, 250, gallery.getWidth() / 5));
+        PatchCraftLookAndFeel::drawPanel (g, gallery, 8.0f);
     }
 
     void ControlBuilderComponent::resized()
@@ -131,6 +218,12 @@ namespace patchcraft
         kindLabel.setBounds (top.removeFromRight (44).reduced (0, 8));
 
         r = r.reduced (10);
+        auto gallery = r.removeFromLeft (juce::jlimit (190, 250, r.getWidth() / 5)).reduced (10, 8);
+        galleryTitle.setBounds (gallery.removeFromTop (22));
+        galleryHint.setBounds (gallery.removeFromTop (34));
+        gallery.removeFromTop (6);
+        galleryList.setBounds (gallery);
+        r.removeFromLeft (8);
         knobBuilder->setBounds   (r);
         sliderBuilder->setBounds (r);
         meterBuilder->setBounds  (r);

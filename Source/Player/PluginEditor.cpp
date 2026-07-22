@@ -77,6 +77,143 @@ namespace patchcraft
             return font;
         }
 
+        static juce::Colour alphaColour (juce::Colour colour, float alpha)
+        {
+            return colour.withAlpha (juce::jlimit (0.0f, 1.0f, alpha));
+        }
+
+        static void drawPlayerTitleTheme (juce::Graphics& g,
+                                          juce::Rectangle<int> chrome,
+                                          const Manifest& manifest,
+                                          juce::Colour panel,
+                                          juce::Colour bg,
+                                          juce::Colour accent,
+                                          juce::Colour border)
+        {
+            const auto theme = manifest.playerTitleBarTheme;
+            if (theme.equalsIgnoreCase ("no-chrome") || chrome.isEmpty())
+                return;
+
+            auto rect = chrome.toFloat();
+            const auto darkPanel = panel.darker (0.18f);
+            const auto glow = accent.withAlpha (0.18f);
+
+            if (theme.equalsIgnoreCase ("minimal"))
+            {
+                g.setColour (accent.withAlpha (0.65f));
+                g.fillRoundedRectangle (rect.withHeight (2.0f), 1.0f);
+                g.setColour (border.withAlpha (0.42f));
+                g.fillRect (chrome.withHeight (1).withY (chrome.getBottom() - 1));
+                return;
+            }
+
+            if (theme.equalsIgnoreCase ("glass"))
+            {
+                juce::ColourGradient gradient (panel.withAlpha (0.62f), rect.getX(), rect.getY(),
+                                               bg.withAlpha (0.20f), rect.getRight(), rect.getBottom(), false);
+                g.setGradientFill (gradient);
+                g.fillRoundedRectangle (rect, 13.0f);
+                g.setColour (juce::Colours::white.withAlpha (0.13f));
+                g.drawRoundedRectangle (rect.reduced (0.5f), 13.0f, 1.2f);
+                g.setColour (accent.withAlpha (0.42f));
+                g.fillRoundedRectangle (rect.reduced (10.0f, 6.0f).withHeight (1.5f), 0.75f);
+                return;
+            }
+
+            if (theme.equalsIgnoreCase ("neon-strip"))
+            {
+                g.setColour (bg.withAlpha (0.35f));
+                g.fillRoundedRectangle (rect, 9.0f);
+                g.setColour (accent.withAlpha (0.88f));
+                g.fillRoundedRectangle (rect.withHeight (3.0f), 1.5f);
+                g.setColour (accent.contrasting (0.30f).withAlpha (0.50f));
+                g.fillRoundedRectangle (rect.withTrimmedTop (rect.getHeight() - 3.0f), 1.5f);
+                g.setColour (accent.withAlpha (0.55f));
+                g.drawRoundedRectangle (rect.reduced (0.5f), 9.0f, 1.0f);
+                return;
+            }
+
+            if (theme.equalsIgnoreCase ("split-brand"))
+            {
+                g.setColour (darkPanel.withAlpha (0.95f));
+                g.fillRoundedRectangle (rect, 10.0f);
+                auto brand = rect.withWidth (juce::jmin (rect.getWidth() * 0.34f, 380.0f));
+                g.setColour (accent.withAlpha (0.25f));
+                g.fillRoundedRectangle (brand, 10.0f);
+                g.setColour (accent.withAlpha (0.95f));
+                g.fillRoundedRectangle (brand.withWidth (4.0f), 2.0f);
+                g.setColour (border.withAlpha (0.72f));
+                g.drawRoundedRectangle (rect.reduced (0.5f), 10.0f, 1.0f);
+                return;
+            }
+
+            if (theme.equalsIgnoreCase ("logo-rail"))
+            {
+                g.setColour (darkPanel.withAlpha (0.96f));
+                g.fillRoundedRectangle (rect, 8.0f);
+                g.setColour (accent.withAlpha (0.90f));
+                g.fillRoundedRectangle (rect.withWidth (70.0f), 8.0f);
+                g.setColour (border.withAlpha (0.65f));
+                g.drawRoundedRectangle (rect.reduced (0.5f), 8.0f, 1.0f);
+                return;
+            }
+
+            if (theme.equalsIgnoreCase ("compact-daw") || theme.equalsIgnoreCase ("dark-utility"))
+            {
+                g.setColour (panel.withAlpha (0.98f));
+                g.fillRoundedRectangle (rect, 5.0f);
+                g.setColour (border.withAlpha (0.78f));
+                g.drawRoundedRectangle (rect.reduced (0.5f), 5.0f, 1.0f);
+                g.setColour (accent.withAlpha (0.72f));
+                g.fillRect (chrome.reduced (8, 0).withHeight (2));
+                return;
+            }
+
+            if (theme.equalsIgnoreCase ("clean-pro"))
+            {
+                g.setColour (panel.withAlpha (0.94f));
+                g.fillRoundedRectangle (rect, 12.0f);
+                g.setColour (juce::Colours::white.withAlpha (0.10f));
+                g.fillRoundedRectangle (rect.reduced (1.0f).withHeight (rect.getHeight() * 0.48f), 11.0f);
+                g.setColour (border.withAlpha (0.82f));
+                g.drawRoundedRectangle (rect.reduced (0.5f), 12.0f, 1.0f);
+                return;
+            }
+
+            if (theme.equalsIgnoreCase ("artist-card") || theme.equalsIgnoreCase ("banner") || theme.equalsIgnoreCase ("wide-banner"))
+            {
+                juce::ColourGradient gradient (panel.withAlpha (0.96f), rect.getX(), rect.getY(),
+                                               accent.withAlpha (0.22f), rect.getRight(), rect.getBottom(), false);
+                g.setGradientFill (gradient);
+                g.fillRoundedRectangle (rect, 14.0f);
+                g.setColour (accent.withAlpha (0.80f));
+                g.drawRoundedRectangle (rect.reduced (0.5f), 14.0f, 1.2f);
+                g.setColour (glow);
+                g.fillRoundedRectangle (rect.reduced (12.0f, 9.0f).removeFromRight (rect.getWidth() * 0.34f), 8.0f);
+                return;
+            }
+
+            if (theme.equalsIgnoreCase ("bottom-tools"))
+            {
+                g.setColour (darkPanel.withAlpha (0.98f));
+                g.fillRoundedRectangle (rect, 10.0f);
+                g.setColour (accent.withAlpha (0.74f));
+                g.fillRoundedRectangle (rect.withY (rect.getBottom() - 4.0f).withHeight (3.0f), 1.5f);
+                g.setColour (border.withAlpha (0.72f));
+                g.drawRoundedRectangle (rect.reduced (0.5f), 10.0f, 1.0f);
+                return;
+            }
+
+            juce::ColourGradient gradient (panel.withAlpha (0.96f), rect.getX(), rect.getY(),
+                                           bg.withAlpha (0.78f), rect.getRight(), rect.getBottom(), false);
+            g.setGradientFill (gradient);
+            g.fillRoundedRectangle (rect, 10.0f);
+            g.setColour (border.withAlpha (0.72f));
+            g.drawRoundedRectangle (rect.reduced (0.5f), 10.0f, 1.0f);
+            g.setColour (accent.withAlpha (0.78f));
+            g.fillRoundedRectangle (rect.withHeight (2.0f), 1.0f);
+        }
+
         static juce::String cleanedSectionName (juce::String section)
         {
             section = section.trim();
@@ -369,6 +506,1865 @@ namespace patchcraft
                 || parameter.name.containsIgnoreCase ("bypass");
         }
     }
+
+    // =========================================================================
+    // PREMIUM UNIFIED PLAYER COMPONENTS
+    // =========================================================================
+
+
+
+    class PlayerLeftSidebar : public juce::Component,
+                              public juce::TextEditor::Listener,
+                              private juce::ListBoxModel
+    {
+    public:
+        explicit PlayerLeftSidebar (PlayerEditor& editorToUse)
+            : editor (editorToUse)
+        {
+            libTab.setButtonText ("LIBRARY");
+            libTab.setClickingTogglesState (true);
+            libTab.setToggleState (true, juce::dontSendNotification);
+            libTab.onClick = [this] {
+                libTab.setToggleState (true, juce::dontSendNotification);
+                favTab.setToggleState (false, juce::dontSendNotification);
+                showFavorites = false;
+                refreshList();
+            };
+            addAndMakeVisible (libTab);
+
+            favTab.setButtonText ("FAVORITES");
+            favTab.setClickingTogglesState (true);
+            favTab.onClick = [this] {
+                favTab.setToggleState (true, juce::dontSendNotification);
+                libTab.setToggleState (false, juce::dontSendNotification);
+                showFavorites = true;
+                refreshList();
+            };
+            addAndMakeVisible (favTab);
+
+            searchEditor.setTextToShowWhenEmpty ("Search presets...", juce::Colour (0xff505866));
+            searchEditor.addListener (this);
+            addAndMakeVisible (searchEditor);
+
+            categories = { "All", "Pads", "Keys", "Leads", "Basses", "Plucks", "Strings", "Percussion" };
+            for (int i = 0; i < categories.size(); ++i)
+            {
+                auto* btn = new juce::TextButton (categories[i]);
+                btn->setClickingTogglesState (true);
+                if (i == 0) btn->setToggleState (true, juce::dontSendNotification);
+                btn->onClick = [this, btn, i] {
+                    for (auto* cb : catButtons) cb->setToggleState (false, juce::dontSendNotification);
+                    btn->setToggleState (true, juce::dontSendNotification);
+                    activeCategory = categories[i];
+                    refreshList();
+                };
+                catButtons.add (btn);
+                addAndMakeVisible (btn);
+            }
+
+            presetListBox.setModel (this);
+            addAndMakeVisible (presetListBox);
+
+            presetCardName.setFont (juce::Font (13.0f, juce::Font::bold));
+            presetCardName.setColour (juce::Label::textColourId, juce::Colours::white);
+            addAndMakeVisible (presetCardName);
+
+            presetCardDetails.setText ("Size: 19 MB", juce::dontSendNotification);
+            presetCardDetails.setFont (juce::Font (10.0f));
+            presetCardDetails.setColour (juce::Label::textColourId, juce::Colour (0xff8d96a3));
+            addAndMakeVisible (presetCardDetails);
+
+            refreshList();
+        }
+
+        ~PlayerLeftSidebar() override
+        {
+            catButtons.clear();
+        }
+
+        void selectCategory (const juce::String& name)
+        {
+            for (int i = 0; i < categories.size(); ++i)
+            {
+                if (categories[i].equalsIgnoreCase (name))
+                {
+                    for (auto* cb : catButtons) cb->setToggleState (false, juce::dontSendNotification);
+                    catButtons[i]->setToggleState (true, juce::dontSendNotification);
+                    activeCategory = categories[i];
+                    refreshList();
+                    break;
+                }
+            }
+        }
+
+        void textEditorTextChanged (juce::TextEditor&) override
+        {
+            refreshList();
+        }
+
+        void refreshList()
+        {
+            filteredPresets.clear();
+            const auto allPresets = editor.proc.getPresetNames();
+            const auto searchString = searchEditor.getText();
+
+            int selectedRow = -1;
+            const auto currentIdx = editor.proc.getCurrentPresetIndex();
+            const auto currentName = currentIdx >= 0 ? editor.proc.getPresetName (currentIdx) : "";
+
+            for (int i = 0; i < allPresets.size(); ++i)
+            {
+                const auto name = allPresets[i];
+                if (showFavorites && editor.favoritePresetNames.count (name.toStdString()) == 0)
+                    continue;
+
+                if (searchString.isNotEmpty() && ! name.containsIgnoreCase (searchString))
+                    continue;
+
+                if (activeCategory != "All")
+                {
+                    if (activeCategory == "Pads" && ! name.containsIgnoreCase ("pad") && ! name.containsIgnoreCase ("shimmer"))
+                        continue;
+                    if (activeCategory == "Keys" && ! name.containsIgnoreCase ("key") && ! name.containsIgnoreCase ("piano"))
+                        continue;
+                    if (activeCategory == "Leads" && ! name.containsIgnoreCase ("lead"))
+                        continue;
+                    if (activeCategory == "Basses" && ! name.containsIgnoreCase ("bass"))
+                        continue;
+                }
+
+                if (name == currentName)
+                    selectedRow = filteredPresets.size();
+
+                filteredPresets.add (name);
+            }
+
+            presetListBox.updateContent();
+            if (selectedRow >= 0)
+                presetListBox.selectRow (selectedRow, false, false);
+            else
+                presetListBox.deselectAllRows();
+
+            presetListBox.repaint();
+
+            const auto idx = editor.proc.getCurrentPresetIndex();
+            if (idx >= 0)
+                presetCardName.setText (editor.proc.getPresetName (idx), juce::dontSendNotification);
+            else
+                presetCardName.setText ("--", juce::dontSendNotification);
+        }
+
+        int getNumRows() override { return filteredPresets.size(); }
+
+        void paintListBoxItem (int rowNumber, juce::Graphics& g, int width, int height, bool rowIsSelected) override
+        {
+            if (rowNumber < 0 || rowNumber >= filteredPresets.size())
+                return;
+
+            if (rowIsSelected)
+            {
+                g.setColour (editor.getAccentColor().withAlpha (0.22f));
+                g.fillRoundedRectangle (2.0f, 2.0f, (float) width - 4.0f, (float) height - 4.0f, 4.0f);
+                g.setColour (editor.getAccentColor());
+                g.drawRoundedRectangle (2.5f, 2.5f, (float) width - 5.0f, (float) height - 5.0f, 4.0f, 1.0f);
+            }
+            else
+            {
+                g.setColour (editor.getPanelColor().withAlpha (0.35f));
+                g.fillRoundedRectangle (2.0f, 2.0f, (float) width - 4.0f, (float) height - 4.0f, 4.0f);
+            }
+
+            g.setFont (juce::Font (12.0f));
+            g.setColour (rowIsSelected ? editor.getTextColor() : editor.getTextDimColor());
+            g.drawText (filteredPresets[rowNumber], 8, 0, width - 16, height, juce::Justification::centredLeft, true);
+        }
+
+        void selectedRowsChanged (int lastRowSelected) override
+        {
+            if (lastRowSelected >= 0 && lastRowSelected < filteredPresets.size())
+            {
+                const auto name = filteredPresets[lastRowSelected];
+                juce::MessageManager::callAsync ([this, name]
+                {
+                    const auto allPresets = editor.proc.getPresetNames();
+                    const int realIdx = allPresets.indexOf (name);
+                    if (realIdx >= 0 && realIdx != editor.proc.getCurrentPresetIndex())
+                    {
+                        editor.proc.applyPresetByIndex (realIdx);
+                        editor.packChanged();
+                    }
+                });
+            }
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            g.fillAll (editor.getBgColor());
+            
+            g.setColour (editor.getBorderColor());
+            g.fillRect (getWidth() - 1, 0, 1, getHeight());
+
+            auto cardArea = getLocalBounds().removeFromBottom (60).reduced (10, 4);
+            g.setColour (editor.getPanelColor());
+            g.fillRoundedRectangle (cardArea.toFloat(), 6.0f);
+            g.setColour (editor.getBorderColor());
+            g.drawRoundedRectangle (cardArea.toFloat(), 6.0f, 1.0f);
+        }
+
+        void resized() override
+        {
+            auto bounds = getLocalBounds();
+            
+            auto tabLine = bounds.removeFromTop (36).reduced (10, 4);
+            libTab.setBounds (tabLine.removeFromLeft (tabLine.getWidth() / 2 - 2));
+            favTab.setBounds (tabLine.removeFromRight (tabLine.getWidth()));
+
+            searchEditor.setBounds (bounds.removeFromTop (28).reduced (10, 2));
+
+            auto catArea = bounds.removeFromTop (72).reduced (10, 4);
+            const int cellW = catArea.getWidth() / 4;
+            const int cellH = catArea.getHeight() / 2;
+            for (int i = 0; i < catButtons.size(); ++i)
+            {
+                const int row = i / 4;
+                const int col = i % 4;
+                catButtons[i]->setBounds (catArea.getX() + col * cellW + 1, catArea.getY() + row * cellH + 1, cellW - 2, cellH - 2);
+            }
+
+            bounds.removeFromBottom (60);
+            presetListBox.setBounds (bounds.reduced (10, 4));
+
+            auto cardArea = getLocalBounds().removeFromBottom (60).reduced (10, 4);
+            presetCardName.setBounds (cardArea.getX() + 10, cardArea.getY() + 10, cardArea.getWidth() - 20, 18);
+            presetCardDetails.setBounds (cardArea.getX() + 10, cardArea.getY() + 28, cardArea.getWidth() - 20, 14);
+        }
+
+    private:
+        PlayerEditor& editor;
+        juce::TextButton libTab;
+        juce::TextButton favTab;
+        juce::TextEditor searchEditor;
+        juce::ListBox presetListBox;
+        
+        juce::Label presetCardName;
+        juce::Label presetCardDetails;
+
+        juce::StringArray categories;
+        juce::OwnedArray<juce::TextButton> catButtons;
+        juce::StringArray filteredPresets;
+        juce::String activeCategory = "All";
+        bool showFavorites = false;
+    };
+
+    class PlayerTopBar : public juce::Component,
+                         private juce::Timer
+    {
+    public:
+        explicit PlayerTopBar (PlayerEditor& editorToUse)
+            : editor (editorToUse)
+        {
+            // logo
+            logoLabel.setText ("PATCHCRAFT", juce::dontSendNotification);
+            logoLabel.setFont (juce::Font (16.0f, juce::Font::bold));
+            logoLabel.setColour (juce::Label::textColourId, juce::Colour (0xffffffff));
+            addAndMakeVisible (logoLabel);
+
+            // preset name & bank info
+            presetNameLabel.setFont (juce::Font (14.0f, juce::Font::bold));
+            presetNameLabel.setColour (juce::Label::textColourId, juce::Colour (0xffffffff));
+            addAndMakeVisible (presetNameLabel);
+
+            bankNameLabel.setFont (juce::Font (10.0f));
+            bankNameLabel.setColour (juce::Label::textColourId, juce::Colour (0xff8d96a3));
+            addAndMakeVisible (bankNameLabel);
+
+            // browse and save buttons
+            browseBtn.setButtonText ("Browse");
+            browseBtn.onClick = [this] { editor.toggleLibrary(); };
+            addAndMakeVisible (browseBtn);
+
+            saveBtn.setButtonText ("Save");
+            saveBtn.onClick = [this] {
+                juce::AlertWindow::showOkCancelBox (juce::AlertWindow::QuestionIcon,
+                    "Save Preset",
+                    "Do you want to save the current settings as a new preset?",
+                    "Save", "Cancel", this,
+                    juce::ModalCallbackFunction::create ([this] (int result) {
+                        if (result != 0) {
+                            const auto name = "User Preset " + juce::String (editor.proc.getPresetCount() + 1);
+                            editor.proc.saveUserSnapshot (name, false);
+                            editor.packChanged();
+                        }
+                    }));
+            };
+            addAndMakeVisible (saveBtn);
+
+            // settings gear
+            settingsBtn.setButtonText ("S");
+            settingsBtn.setTooltip ("Global Settings");
+            settingsBtn.onClick = [this] { editor.showAboutDialog(); };
+            addAndMakeVisible (settingsBtn);
+
+            // category dropdown
+            categoryBox.addItem ("All", 1);
+            categoryBox.addItem ("Pads", 2);
+            categoryBox.addItem ("Keys", 3);
+            categoryBox.addItem ("Leads", 4);
+            categoryBox.setSelectedId (1);
+            categoryBox.onChange = [this] {
+                if (editor.leftSidebar != nullptr)
+                    editor.leftSidebar->selectCategory (categoryBox.getText());
+            };
+            addAndMakeVisible (categoryBox);
+
+            // prev / next preset buttons
+            prevBtn.setButtonText ("<");
+            prevBtn.onClick = [this] {
+                editor.proc.applyPresetOffset (-1);
+                editor.packChanged();
+            };
+            addAndMakeVisible (prevBtn);
+
+            nextBtn.setButtonText (">");
+            nextBtn.onClick = [this] {
+                editor.proc.applyPresetOffset (1);
+                editor.packChanged();
+            };
+            addAndMakeVisible (nextBtn);
+
+            // favorite star
+            favBtn.setButtonText ("*");
+            favBtn.setClickingTogglesState (true);
+            favBtn.onClick = [this] {
+                const auto name = editor.proc.getPresetName (editor.proc.getCurrentPresetIndex());
+                if (favBtn.getToggleState())
+                    editor.favoritePresetNames.insert (name.toStdString());
+                else
+                    editor.favoritePresetNames.erase (name.toStdString());
+                if (editor.leftSidebar != nullptr)
+                    editor.leftSidebar->refreshList();
+            };
+            addAndMakeVisible (favBtn);
+
+            // volume & output meters
+            volSlider.setSliderStyle (juce::Slider::LinearBar);
+            volSlider.setRange (0.0, 1.25, 0.01);
+            volSlider.setValue (1.0);
+            volSlider.onValueChange = [this] {
+                editor.proc.setPackParameterFromUi ("volume", (float) volSlider.getValue());
+            };
+            addAndMakeVisible (volSlider);
+
+            volLabel.setText ("VOL", juce::dontSendNotification);
+            volLabel.setFont (juce::Font (10.0f));
+            volLabel.setColour (juce::Label::textColourId, juce::Colour (0xff8d96a3));
+            addAndMakeVisible (volLabel);
+
+            startTimerHz (24);
+            updatePresetCard();
+        }
+
+        ~PlayerTopBar() override
+        {
+            stopTimer();
+        }
+
+        void updatePresetCard()
+        {
+            presetNameLabel.setColour (juce::Label::textColourId, editor.getTextColor());
+            bankNameLabel.setColour (juce::Label::textColourId, editor.getTextDimColor());
+            logoLabel.setColour (juce::Label::textColourId, editor.getTextColor());
+
+            const auto* pack = editor.proc.getPack();
+            const auto* manifest = pack != nullptr ? &pack->manifest : nullptr;
+            const bool hideTitleText = manifest != nullptr
+                                    && manifest->playerTitleTextPlacement.equalsIgnoreCase ("hidden");
+            logoLabel.setVisible (! hideTitleText);
+            bankNameLabel.setVisible (! hideTitleText);
+
+            if (manifest != nullptr)
+            {
+                logoLabel.setText (playerInstrumentName (pack), juce::dontSendNotification);
+                const auto subtitle = manifest->playerTagline.isNotEmpty()
+                    ? manifest->playerTagline
+                    : (manifest->creator.isNotEmpty() ? manifest->creator : manifest->instrumentName);
+                bankNameLabel.setText (subtitle, juce::dontSendNotification);
+                logoLabel.setFont (playerChromeFont (manifest->playerTitleFontFamily, 16.0f, true));
+                bankNameLabel.setFont (playerChromeFont (manifest->playerTitleFontFamily, 10.0f, false));
+            }
+            else
+            {
+                logoLabel.setText ("PATCHCRAFT", juce::dontSendNotification);
+                bankNameLabel.setText ("PatchCraft", juce::dontSendNotification);
+            }
+
+            const auto currentIdx = editor.proc.getCurrentPresetIndex();
+            if (currentIdx >= 0)
+            {
+                presetNameLabel.setText (editor.proc.getPresetName (currentIdx), juce::dontSendNotification);
+                const auto name = editor.proc.getPresetName (currentIdx).toStdString();
+                favBtn.setToggleState (editor.favoritePresetNames.count (name) > 0, juce::dontSendNotification);
+            }
+            else
+            {
+                presetNameLabel.setText ("No Preset Loaded", juce::dontSendNotification);
+                bankNameLabel.setText ("--", juce::dontSendNotification);
+            }
+        }
+
+        void updateChromeVisibility()
+        {
+            const auto* pack = editor.proc.getPack();
+            const auto* manifest = pack != nullptr ? &pack->manifest : nullptr;
+
+            const bool showBrowse = manifest == nullptr || (manifest->playerTopShowBrowse
+                                && manifest->playerShowLibraryBrowser
+                                && manifest->playerShowPackMenu
+                                && manifest->playerAllowPackLoading);
+            const bool showSave = manifest == nullptr || manifest->playerTopShowSave;
+            const bool showSettings = manifest == nullptr || (manifest->playerTopShowSettings && manifest->playerShowAbout);
+            const bool showCategory = manifest == nullptr || manifest->playerTopShowCategory;
+            const bool showFavorite = manifest == nullptr || manifest->playerTopShowFavorite;
+            const bool showPresetNav = manifest == nullptr || manifest->playerTopShowPresetNav;
+            const bool showMaster = manifest == nullptr || manifest->playerTopShowMasterVolume;
+            showOutputMeter = manifest == nullptr || manifest->playerTopShowOutputMeter;
+
+            browseBtn.setVisible (showBrowse);
+            saveBtn.setVisible (showSave);
+            settingsBtn.setVisible (showSettings);
+            categoryBox.setVisible (showCategory);
+            favBtn.setVisible (showFavorite);
+            prevBtn.setVisible (showPresetNav);
+            nextBtn.setVisible (showPresetNav);
+            volSlider.setVisible (showMaster);
+            volLabel.setVisible (showMaster);
+
+            const auto buttonStyle = manifest != nullptr ? manifest->playerTitleButtonStyle : juce::String ("outlined");
+            auto applyButtonStyle = [&] (juce::TextButton& button)
+            {
+                const auto accent = editor.getAccentColor();
+                const auto panel = editor.getPanelColor();
+                const auto text = editor.getTextColor();
+                if (buttonStyle.equalsIgnoreCase ("filled"))
+                {
+                    button.setColour (juce::TextButton::buttonColourId, accent.withAlpha (0.86f));
+                    button.setColour (juce::TextButton::buttonOnColourId, accent.brighter (0.12f));
+                    button.setColour (juce::TextButton::textColourOffId, editor.getBgColor().contrasting (0.82f));
+                    button.setColour (juce::TextButton::textColourOnId, editor.getBgColor().contrasting (0.95f));
+                }
+                else if (buttonStyle.equalsIgnoreCase ("minimal"))
+                {
+                    button.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+                    button.setColour (juce::TextButton::buttonOnColourId, accent.withAlpha (0.16f));
+                    button.setColour (juce::TextButton::textColourOffId, text);
+                    button.setColour (juce::TextButton::textColourOnId, accent.brighter (0.20f));
+                }
+                else
+                {
+                    button.setColour (juce::TextButton::buttonColourId, panel.withAlpha (0.82f));
+                    button.setColour (juce::TextButton::buttonOnColourId, panel.brighter (0.12f));
+                    button.setColour (juce::TextButton::textColourOffId, text);
+                    button.setColour (juce::TextButton::textColourOnId, text.brighter (0.18f));
+                }
+            };
+
+            for (auto* button : { &browseBtn, &saveBtn, &settingsBtn, &prevBtn, &nextBtn, &favBtn })
+                applyButtonStyle (*button);
+            categoryBox.setColour (juce::ComboBox::backgroundColourId, editor.getPanelColor().withAlpha (0.82f));
+            categoryBox.setColour (juce::ComboBox::textColourId, editor.getTextColor());
+            categoryBox.setColour (juce::ComboBox::outlineColourId, editor.getBorderColor());
+            categoryBox.setColour (juce::ComboBox::arrowColourId, editor.getAccentColor());
+
+            resized();
+            repaint();
+        }
+
+        void timerCallback() override
+        {
+            const float peak = editor.proc.getOutputPeak();
+            leftPeak = juce::jlimit (0.0f, 1.0f, peak);
+            rightPeak = juce::jlimit (0.0f, 1.0f, peak * 0.95f + 0.05f * (float) std::rand() / RAND_MAX);
+            if (showOutputMeter)
+                repaint (meterArea);
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            const auto* pack = editor.proc.getPack();
+            const auto* manifest = pack != nullptr ? &pack->manifest : nullptr;
+            const auto chrome = playerChromeBoundsFor (getLocalBounds(), pack).reduced (10, 8);
+            if (manifest != nullptr)
+            {
+                const auto theme = manifest->playerTitleBarTheme;
+                const bool noChrome = theme.equalsIgnoreCase ("no-chrome");
+                bool drewBanner = false;
+                if (! noChrome && titleThemeUsesBannerArtwork (theme) && manifest->playerTitleBannerImage.isNotEmpty())
+                {
+                    const auto file = juce::File::isAbsolutePath (manifest->playerTitleBannerImage)
+                        ? juce::File (manifest->playerTitleBannerImage)
+                        : pack->rootFolder.getChildFile (manifest->playerTitleBannerImage);
+                    if (const auto banner = editor.assets.loadImage (file); banner.isValid())
+                    {
+                        g.drawImage (banner, chrome.toFloat());
+                        drewBanner = true;
+                    }
+                }
+
+                if (! drewBanner)
+                    drawPlayerTitleTheme (g, chrome, *manifest, editor.getPanelColor(), editor.getBgColor(),
+                                          editor.getAccentColor(), editor.getBorderColor());
+            }
+
+            auto logoRect = juce::Rectangle<int> (12, 13, kPlayerTitleBarArtworkSize, kPlayerTitleBarArtworkSize).reduced (5);
+            bool drewLogoImage = false;
+            if (manifest != nullptr && manifest->playerLogoImage.isNotEmpty())
+            {
+                const auto file = juce::File::isAbsolutePath (manifest->playerLogoImage)
+                    ? juce::File (manifest->playerLogoImage)
+                    : pack->rootFolder.getChildFile (manifest->playerLogoImage);
+                if (const auto logo = editor.assets.loadImage (file); logo.isValid())
+                {
+                    g.drawImageWithin (logo, logoRect.getX(), logoRect.getY(), logoRect.getWidth(), logoRect.getHeight(),
+                                       juce::RectanglePlacement::centred);
+                    drewLogoImage = true;
+                }
+            }
+
+            if (! drewLogoImage)
+            {
+                const auto diamondRect = logoRect.toFloat().reduced (4.0f);
+                g.setColour (editor.getAccentColor());
+                juce::Path diamond;
+                diamond.startNewSubPath (diamondRect.getCentreX(), diamondRect.getY());
+                diamond.lineTo (diamondRect.getRight(), diamondRect.getCentreY());
+                diamond.lineTo (diamondRect.getCentreX(), diamondRect.getBottom());
+                diamond.lineTo (diamondRect.getX(), diamondRect.getCentreY());
+                diamond.closeSubPath();
+                g.fillPath (diamond);
+                g.setColour (juce::Colours::white.withAlpha (0.4f));
+                g.strokePath (diamond, juce::PathStrokeType (1.5f));
+            }
+
+            if (showOutputMeter)
+            {
+                g.setColour (editor.getBgColor());
+                g.fillRoundedRectangle (meterArea.toFloat(), 3.0f);
+
+                const int totalBars = 10;
+                const int barH = 3;
+                const int gapY = 2;
+                const int xL = meterArea.getX() + 4;
+                const int xR = meterArea.getRight() - 10;
+                const int barW = 6;
+
+                auto drawLedBar = [&] (int x, float val) {
+                    const int activeCount = juce::roundToInt (val * totalBars);
+                    for (int i = 0; i < totalBars; ++i) {
+                        const int y = meterArea.getBottom() - 4 - (i + 1) * (barH + gapY);
+                        if (i < activeCount) {
+                            if (i < 6) g.setColour (juce::Colour (0xff5fb37b));
+                            else if (i < 8) g.setColour (juce::Colour (0xffe6a13f));
+                            else g.setColour (juce::Colour (0xffe94560));
+                        } else {
+                            g.setColour (editor.getBorderColor().brighter (0.05f));
+                        }
+                        g.fillRect (x, y, barW, barH);
+                    }
+                };
+
+                drawLedBar (xL, leftPeak);
+                drawLedBar (xR, rightPeak);
+            }
+        }
+
+        void resized() override
+        {
+            const auto* pack = editor.proc.getPack();
+            const auto* manifest = pack != nullptr ? &pack->manifest : nullptr;
+            const auto chrome = playerChromeBoundsFor (getLocalBounds(), pack).reduced (12, 8);
+            const auto placement = manifest != nullptr ? manifest->playerTitleTextPlacement : juce::String ("left");
+            const auto theme = manifest != nullptr ? manifest->playerTitleBarTheme : juce::String ("classic");
+            const int brandW = playerTitleBrandWidth (theme, chrome.getWidth());
+            int brandX = chrome.getX() + 44;
+            if (placement.equalsIgnoreCase ("center"))
+                brandX = chrome.getCentreX() - brandW / 2;
+            else if (placement.equalsIgnoreCase ("right"))
+                brandX = chrome.getRight() - brandW - 12;
+            const int minBrandX = chrome.getX() + 44;
+            const int maxBrandX = juce::jmax (minBrandX, chrome.getRight() - juce::jmax (80, brandW));
+            brandX = juce::jlimit (minBrandX, maxBrandX, brandX);
+
+            logoLabel.setBounds (brandX, chrome.getY() + 8, juce::jmax (110, brandW), 22);
+            bankNameLabel.setBounds (brandX, chrome.getY() + 31, juce::jmax (110, brandW), 16);
+
+            const int cardX = juce::jlimit (brandX + 160, chrome.getRight() - 260, brandX + brandW + 16);
+            presetNameLabel.setBounds (cardX, chrome.getY() + 7, 220, 22);
+
+            const int rightBoundary = getWidth() - 10;
+            int rightReserved = 10;
+            if (showOutputMeter)
+            {
+                meterArea = juce::Rectangle<int> (rightBoundary - 30, 8, 20, 56);
+                rightReserved += 42;
+            }
+            else
+            {
+                meterArea = {};
+            }
+
+            if (volSlider.isVisible())
+            {
+                volSlider.setBounds (rightBoundary - rightReserved - 90, 26, 80, 20);
+                volLabel.setBounds (rightBoundary - rightReserved - 125, 26, 30, 20);
+                rightReserved += 128;
+            }
+
+            int x = cardX + 225;
+            auto placeButton = [&x] (juce::Component& c, int width)
+            {
+                if (! c.isVisible())
+                    return;
+                c.setBounds (x, 26, width, 20);
+                x += width + 5;
+            };
+
+            placeButton (favBtn, 20);
+            placeButton (prevBtn, 20);
+            placeButton (nextBtn, 20);
+
+            x = juce::jmax (x + 14, 500);
+            const int maxRight = rightBoundary - rightReserved - 8;
+            auto placeWide = [&x, maxRight] (juce::Component& c, int width)
+            {
+                if (! c.isVisible())
+                    return;
+                if (x + width > maxRight)
+                {
+                    c.setBounds (0, 0, 0, 0);
+                    return;
+                }
+                c.setBounds (x, 24, width, 24);
+                x += width + 8;
+            };
+
+            placeWide (categoryBox, 100);
+            placeWide (browseBtn, 84);
+            placeWide (saveBtn, 64);
+            placeWide (settingsBtn, 32);
+        }
+
+    private:
+        PlayerEditor& editor;
+        juce::Label logoLabel;
+        juce::Label presetNameLabel;
+        juce::Label bankNameLabel;
+        juce::TextButton browseBtn;
+        juce::TextButton saveBtn;
+        juce::TextButton settingsBtn;
+        juce::TextButton prevBtn;
+        juce::TextButton nextBtn;
+        juce::TextButton favBtn;
+        juce::ComboBox categoryBox;
+        juce::Slider volSlider;
+        juce::Label volLabel;
+
+        juce::Rectangle<int> meterArea;
+        float leftPeak = 0.0f;
+        float rightPeak = 0.0f;
+        bool showOutputMeter = true;
+    };
+
+    class PlayerCenterPanel : public juce::Component,
+                              private juce::Timer
+    {
+    public:
+        explicit PlayerCenterPanel (PlayerEditor& editorToUse)
+            : editor (editorToUse)
+        {
+            struct KnobSetup { juce::Slider* slider; juce::Label* label; juce::String name; juce::uint32 color; };
+            const KnobSetup setups[] = {
+                { &attackSlider, &attackLabel, "ATTACK", 0xff2bbdc7 },
+                { &releaseSlider, &releaseLabel, "RELEASE", 0xff2b8ac7 },
+                { &filterSlider, &filterLabel, "FILTER", 0xfff5a623 },
+                { &spaceSlider, &spaceLabel, "SPACE", 0xff6c7ed6 },
+                { &motionSlider, &motionLabel, "MOTION", 0xff8e6cd6 },
+                { &textureSlider, &textureLabel, "TEXTURE", 0xffd66cbd },
+                { &volumeSlider, &volumeLabel, "VOLUME", 0xff5fb37b },
+                { &panSlider, &panLabel, "PAN", 0xff9da5b3 }
+            };
+
+            for (const auto& s : setups)
+            {
+                s.slider->setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+                s.slider->setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+                s.slider->getProperties().set ("accentColor", (int) s.color);
+                s.slider->setRange (0.0, 1.0, 0.001);
+                s.slider->setValue (0.5);
+                addAndMakeVisible (s.slider);
+
+                s.label->setText (s.name, juce::dontSendNotification);
+                s.label->setFont (juce::Font (10.0f, juce::Font::bold));
+                s.label->setJustificationType (juce::Justification::centred);
+                s.label->setColour (juce::Label::textColourId, juce::Colour (0xff8d96a3));
+                addAndMakeVisible (s.label);
+            }
+
+            attackSlider.onValueChange  = [this] { setParam ("attack", attackSlider.getValue()); };
+            releaseSlider.onValueChange = [this] { setParam ("release", releaseSlider.getValue()); };
+            filterSlider.onValueChange  = [this] { setParam ("filterCutoff", filterSlider.getValue()); };
+            spaceSlider.onValueChange   = [this] { setParam ("reverbMix", spaceSlider.getValue()); };
+            motionSlider.onValueChange  = [this] { setParam ("chorusMix", motionSlider.getValue()); };
+            textureSlider.onValueChange = [this] { setParam ("lofiMix", textureSlider.getValue()); };
+            volumeSlider.onValueChange  = [this] { setParam ("volume", volumeSlider.getValue()); };
+            panSlider.onValueChange     = [this] { setParam ("pan", panSlider.getValue()); };
+
+            const juce::String tabNames[] = { "MAIN", "LAYERS", "FX", "MOD", "ARP" };
+            for (int i = 0; i < 5; ++i)
+            {
+                auto* btn = new juce::TextButton (tabNames[i]);
+                btn->setClickingTogglesState (true);
+                if (i == 0) btn->setToggleState (true, juce::dontSendNotification);
+                btn->onClick = [this, btn, i] {
+                    for (auto* tb : tabButtons) tb->setToggleState (false, juce::dontSendNotification);
+                    btn->setToggleState (true, juce::dontSendNotification);
+                    activeTabIdx = i;
+                    updateVisibility();
+                };
+                tabButtons.add (btn);
+                addAndMakeVisible (btn);
+            }
+
+            pitchWheel.setSliderStyle (juce::Slider::LinearVertical);
+            pitchWheel.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+            pitchWheel.setRange (-1.0, 1.0, 0.01);
+            pitchWheel.setValue (0.0);
+            pitchWheel.onValueChange = [this] {
+                editor.proc.setPackParameterFromUi ("pitchWheel", (float) pitchWheel.getValue());
+            };
+            addAndMakeVisible (pitchWheel);
+
+            modWheel.setSliderStyle (juce::Slider::LinearVertical);
+            modWheel.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+            modWheel.setRange (0.0, 1.0, 0.01);
+            modWheel.setValue (0.0);
+            modWheel.onValueChange = [this] {
+                editor.proc.setPackParameterFromUi ("modWheel", (float) modWheel.getValue());
+            };
+            addAndMakeVisible (modWheel);
+
+            pitchLabel.setText ("PITCH", juce::dontSendNotification);
+            pitchLabel.setFont (juce::Font (8.0f));
+            pitchLabel.setColour (juce::Label::textColourId, juce::Colour (0xff8d96a3));
+            addAndMakeVisible (pitchLabel);
+
+            modLabel.setText ("MOD", juce::dontSendNotification);
+            modLabel.setFont (juce::Font (8.0f));
+            modLabel.setColour (juce::Label::textColourId, juce::Colour (0xff8d96a3));
+            addAndMakeVisible (modLabel);
+
+            startTimerHz (30);
+            updateKnobsFromProcessor();
+            updateColours();
+        }
+
+        void updateColours()
+        {
+            auto txtDim = editor.getTextDimColor();
+
+            attackLabel.setColour (juce::Label::textColourId, txtDim);
+            releaseLabel.setColour (juce::Label::textColourId, txtDim);
+            filterLabel.setColour (juce::Label::textColourId, txtDim);
+            spaceLabel.setColour (juce::Label::textColourId, txtDim);
+            motionLabel.setColour (juce::Label::textColourId, txtDim);
+            textureLabel.setColour (juce::Label::textColourId, txtDim);
+            volumeLabel.setColour (juce::Label::textColourId, txtDim);
+            panLabel.setColour (juce::Label::textColourId, txtDim);
+
+            pitchLabel.setColour (juce::Label::textColourId, txtDim);
+            modLabel.setColour (juce::Label::textColourId, txtDim);
+
+            repaint();
+        }
+
+        ~PlayerCenterPanel() override
+        {
+            stopTimer();
+            tabButtons.clear();
+        }
+
+        void updateKnobsFromProcessor()
+        {
+            attackSlider.setValue (getParam ("attack"), juce::dontSendNotification);
+            releaseSlider.setValue (getParam ("release"), juce::dontSendNotification);
+            filterSlider.setValue (getParam ("filterCutoff"), juce::dontSendNotification);
+            spaceSlider.setValue (getParam ("reverbMix"), juce::dontSendNotification);
+            motionSlider.setValue (getParam ("chorusMix"), juce::dontSendNotification);
+            textureSlider.setValue (getParam ("lofiMix"), juce::dontSendNotification);
+            volumeSlider.setValue (getParam ("volume"), juce::dontSendNotification);
+            panSlider.setValue (getParam ("pan"), juce::dontSendNotification);
+        }
+
+        void setParam (const juce::String& keyword, float value)
+        {
+            const auto id = findParameterIdLike (keyword);
+            if (id.isNotEmpty())
+                editor.proc.setPackParameterFromUi (id, value);
+        }
+
+        float getParam (const juce::String& keyword)
+        {
+            const auto id = findParameterIdLike (keyword);
+            if (id.isNotEmpty())
+                return editor.proc.getPackParameterValue (id);
+            return 0.5f;
+        }
+
+        juce::String findParameterIdLike (const juce::String& keyword) const
+        {
+            if (const auto* pack = editor.proc.getPack())
+            {
+                for (const auto& param : pack->parameters.getAll())
+                    if (param.id.equalsIgnoreCase (keyword) || param.name.equalsIgnoreCase (keyword))
+                        return param.id;
+                for (const auto& param : pack->parameters.getAll())
+                    if (param.id.containsIgnoreCase (keyword) || param.name.containsIgnoreCase (keyword))
+                        return param.id;
+            }
+            return {};
+        }
+
+        void timerCallback() override
+        {
+            if (editor.proc.decayNoteHighlightLevels())
+                repaint (keyboardArea);
+            
+            repaint (heroArea);
+        }
+
+        void updateVisibility()
+        {
+            const bool showKnobs = (activeTabIdx == 0);
+            
+            juce::Slider* sliders[] = { &attackSlider, &releaseSlider, &filterSlider, &spaceSlider,
+                                        &motionSlider, &textureSlider, &volumeSlider, &panSlider };
+            juce::Label* labels[] = { &attackLabel, &releaseLabel, &filterLabel, &spaceLabel,
+                                      &motionLabel, &textureLabel, &volumeLabel, &panLabel };
+            for (int i = 0; i < 8; ++i)
+            {
+                sliders[i]->setVisible (showKnobs);
+                labels[i]->setVisible (showKnobs);
+            }
+        }
+
+        int getNoteAtPosition (juce::Point<int> pos) const
+        {
+            if (! keyboardArea.contains (pos))
+                return -1;
+
+            const int startNote = 24;
+            const int endNote = 96;
+            const int numKeys = 43;
+            const float keyW = (float) (keyboardArea.getWidth() - 10) / numKeys;
+
+            int whiteIdx = 0;
+            for (int note = startNote; note <= endNote; ++note)
+            {
+                const bool isBlack = (note % 12 == 1 || note % 12 == 3 || note % 12 == 6 || note % 12 == 8 || note % 12 == 10);
+                if (isBlack)
+                {
+                    const float x = keyboardArea.getX() + 5 + whiteIdx * keyW - (keyW * 0.3f);
+                    const auto keyRect = juce::Rectangle<float> (x, (float) keyboardArea.getY(), keyW * 0.6f, (float) keyboardArea.getHeight() * 0.62f);
+                    if (keyRect.contains (pos.toFloat()))
+                        return note;
+                }
+                else
+                {
+                    whiteIdx++;
+                }
+            }
+
+            whiteIdx = 0;
+            for (int note = startNote; note <= endNote; ++note)
+            {
+                const bool isBlack = (note % 12 == 1 || note % 12 == 3 || note % 12 == 6 || note % 12 == 8 || note % 12 == 10);
+                if (! isBlack)
+                {
+                    const float x = keyboardArea.getX() + 5 + whiteIdx * keyW;
+                    const auto keyRect = juce::Rectangle<float> (x, (float) keyboardArea.getY(), keyW - 1.0f, (float) keyboardArea.getHeight());
+                    if (keyRect.contains (pos.toFloat()))
+                        return note;
+                    whiteIdx++;
+                }
+            }
+
+            return -1;
+        }
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            const int note = getNoteAtPosition (e.getPosition());
+            if (note >= 0)
+            {
+                currentPlayingNote = note;
+                editor.proc.handleNoteOn (note, 0.8f);
+                repaint (keyboardArea);
+            }
+        }
+
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            const int note = getNoteAtPosition (e.getPosition());
+            if (note >= 0 && note != currentPlayingNote)
+            {
+                if (currentPlayingNote >= 0)
+                    editor.proc.handleNoteOff (currentPlayingNote);
+                
+                currentPlayingNote = note;
+                editor.proc.handleNoteOn (note, 0.8f);
+                repaint (keyboardArea);
+            }
+        }
+
+        void mouseUp (const juce::MouseEvent&) override
+        {
+            if (currentPlayingNote >= 0)
+            {
+                editor.proc.handleNoteOff (currentPlayingNote);
+                currentPlayingNote = -1;
+                repaint (keyboardArea);
+            }
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            g.fillAll (editor.getBgColor());
+
+            g.setColour (editor.getPanelColor());
+            g.fillRect (heroArea);
+
+            juce::Image heroImg = AssetManager::renderDefaultHeroImage (heroArea.getWidth(), heroArea.getHeight());
+            if (heroImg.isValid())
+            {
+                g.drawImage (heroImg, heroArea.toFloat(), juce::RectanglePlacement::fillDestination);
+                g.setColour (editor.getBgColor().withAlpha (0.67f));
+                g.fillRect (heroArea);
+            }
+
+            const float cx = heroArea.getCentreX();
+            const float cy = heroArea.getCentreY();
+            const float radius = 52.0f;
+            
+            g.setColour (editor.getAccentColor().withAlpha (0.12f));
+            g.fillEllipse (cx - radius - 8, cy - radius - 8, (radius + 8) * 2, (radius + 8) * 2);
+
+            g.setColour (editor.getAccentColor());
+            g.drawEllipse (cx - radius, cy - radius, radius * 2, radius * 2, 1.8f);
+
+            const float low = editor.proc.getAudioLowBand() * 20.0f;
+            const float mid = editor.proc.getAudioMidBand() * 15.0f;
+            const float high = editor.proc.getAudioHighBand() * 10.0f;
+
+            juce::Path wave;
+            const int numPoints = 64;
+            for (int i = 0; i <= numPoints; ++i)
+            {
+                const float angle = juce::MathConstants<float>::pi * 2.0f * (i / (float) numPoints);
+                const float mod = (i % 2 == 0 ? low : (i % 3 == 0 ? mid : high)) * (0.3f + 0.7f * (float) std::rand() / RAND_MAX);
+                const float r = radius + mod;
+                const float x = cx + std::cos (angle) * r;
+                const float y = cy + std::sin (angle) * r;
+                if (i == 0) wave.startNewSubPath (x, y);
+                else wave.lineTo (x, y);
+            }
+            wave.closeSubPath();
+            g.setColour (editor.getAccentColor().withAlpha (0.4f));
+            g.strokePath (wave, juce::PathStrokeType (1.5f));
+
+            g.setColour (editor.getPanelColor());
+            g.fillRoundedRectangle (keyboardArea.toFloat(), 4.0f);
+
+            const int startNote = 24;
+            const int endNote = 96;
+            const int numKeys = 43;
+            const float keyW = (float) (keyboardArea.getWidth() - 10) / numKeys;
+            const float keyH = (float) keyboardArea.getHeight();
+
+            int whiteIdx = 0;
+            for (int note = startNote; note <= endNote; ++note)
+            {
+                const bool isBlack = (note % 12 == 1 || note % 12 == 3 || note % 12 == 6 || note % 12 == 8 || note % 12 == 10);
+                if (! isBlack)
+                {
+                    const float x = keyboardArea.getX() + 5 + whiteIdx * keyW;
+                    const auto keyRect = juce::Rectangle<float> (x, (float) keyboardArea.getY(), keyW - 1.0f, keyH);
+                    
+                    const float activeLevel = editor.proc.getNoteHighlightLevel (note);
+                    if (activeLevel > 0.0f)
+                    {
+                        g.setColour (editor.getAccentColor().interpolatedWith (juce::Colours::white, 0.4f).withAlpha (activeLevel));
+                        g.fillRoundedRectangle (keyRect, 2.0f);
+                    }
+                    else
+                    {
+                        g.setColour (juce::Colour (0xfff0f2f5));
+                        g.fillRoundedRectangle (keyRect, 2.0f);
+                    }
+                    g.setColour (editor.getBgColor().darker (0.05f));
+                    g.drawRoundedRectangle (keyRect, 2.0f, 1.0f);
+
+                    whiteIdx++;
+                }
+            }
+
+            whiteIdx = 0;
+            for (int note = startNote; note <= endNote; ++note)
+            {
+                const bool isBlack = (note % 12 == 1 || note % 12 == 3 || note % 12 == 6 || note % 12 == 8 || note % 12 == 10);
+                if (isBlack)
+                {
+                    const float x = keyboardArea.getX() + 5 + whiteIdx * keyW - (keyW * 0.3f);
+                    const auto keyRect = juce::Rectangle<float> (x, (float) keyboardArea.getY(), keyW * 0.6f, keyH * 0.62f);
+
+                    const float activeLevel = editor.proc.getNoteHighlightLevel (note);
+                    if (activeLevel > 0.0f)
+                    {
+                        g.setColour (editor.getAccentColor().brighter (0.2f).withAlpha (activeLevel));
+                        g.fillRoundedRectangle (keyRect, 2.0f);
+                    }
+                    else
+                    {
+                        g.setColour (editor.getPanelColor().brighter (0.04f));
+                        g.fillRoundedRectangle (keyRect, 2.0f);
+                    }
+                    g.setColour (editor.getBgColor().darker (0.05f));
+                    g.drawRoundedRectangle (keyRect, 2.0f, 1.0f);
+                }
+                else
+                {
+                    whiteIdx++;
+                }
+            }
+        }
+
+        void resized() override
+        {
+            auto bounds = getLocalBounds();
+            heroArea = bounds.removeFromTop (220);
+
+            keyboardArea = bounds.removeFromBottom (108).reduced (46, 6);
+            
+            const int wheelY = keyboardArea.getY();
+            const int wheelH = keyboardArea.getHeight();
+            constexpr int labelHeight = 16;
+            constexpr int wheelWidth = 20;
+            constexpr int wheelGap = 8;
+            const int wheelBodyHeight = juce::jmax (24, wheelH - labelHeight - 4);
+            pitchWheel.setBounds (6, wheelY, wheelWidth, wheelBodyHeight);
+            pitchLabel.setBounds (2, wheelY + wheelBodyHeight + 2, wheelWidth + 8, labelHeight);
+
+            modWheel.setBounds (6 + wheelWidth + wheelGap, wheelY, wheelWidth, wheelBodyHeight);
+            modLabel.setBounds (2 + wheelWidth + wheelGap, wheelY + wheelBodyHeight + 2, wheelWidth + 8, labelHeight);
+
+            auto tabsArea = bounds.removeFromBottom (32).reduced (10, 2);
+            const int tabW = tabsArea.getWidth() / 5;
+            for (int i = 0; i < tabButtons.size(); ++i)
+                tabButtons[i]->setBounds (tabsArea.getX() + i * tabW, tabsArea.getY(), tabW - 4, tabsArea.getHeight());
+
+            auto knobsArea = bounds.reduced (30, 8);
+            const int cellW = knobsArea.getWidth() / 4;
+            const int cellH = knobsArea.getHeight() / 2;
+
+            juce::Slider* sliders[] = { &attackSlider, &releaseSlider, &filterSlider, &spaceSlider,
+                                        &motionSlider, &textureSlider, &volumeSlider, &panSlider };
+            juce::Label* labels[] = { &attackLabel, &releaseLabel, &filterLabel, &spaceLabel,
+                                      &motionLabel, &textureLabel, &volumeLabel, &panLabel };
+
+            for (int i = 0; i < 8; ++i)
+            {
+                const int row = i / 4;
+                const int col = i % 4;
+                const int x = knobsArea.getX() + col * cellW;
+                const int y = knobsArea.getY() + row * cellH;
+                sliders[i]->setBounds (x + cellW / 2 - 24, y + 2, 48, 48);
+                labels[i]->setBounds (x + 2, y + 50, cellW - 4, 14);
+            }
+        }
+
+    private:
+        PlayerEditor& editor;
+        juce::Slider attackSlider, releaseSlider, filterSlider, spaceSlider,
+                     motionSlider, textureSlider, volumeSlider, panSlider;
+        juce::Label attackLabel, releaseLabel, filterLabel, spaceLabel,
+                    motionLabel, textureLabel, volumeLabel, panLabel;
+
+        juce::OwnedArray<juce::TextButton> tabButtons;
+        juce::Slider pitchWheel, modWheel;
+        juce::Label pitchLabel, modLabel;
+
+        juce::Rectangle<int> heroArea;
+        juce::Rectangle<int> keyboardArea;
+        int activeTabIdx = 0;
+        int currentPlayingNote = -1;
+    };
+
+    class VelocityCurveComponent : public juce::Component,
+                                   public juce::TooltipClient
+    {
+    public:
+        VelocityCurveComponent()
+        {
+        }
+
+        juce::String getTooltip() override
+        {
+            return "Adjust MIDI Velocity response curve.";
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            auto bounds = getLocalBounds().toFloat();
+            g.setColour (juce::Colour (0xff11131a));
+            g.fillRoundedRectangle (bounds, 4.0f);
+
+            g.setColour (juce::Colour (0xff1c212b));
+            g.drawRoundedRectangle (bounds, 4.0f, 1.0f);
+
+            juce::Path p;
+            p.startNewSubPath (0.0f, bounds.getHeight());
+            
+            const int steps = 24;
+            for (int i = 1; i <= steps; ++i)
+            {
+                const float x = (i / (float) steps) * bounds.getWidth();
+                const float t = i / (float) steps;
+                const float y = (1.0f - std::pow (t, curvePower)) * bounds.getHeight();
+                p.lineTo (x, y);
+            }
+
+            g.setColour (juce::Colour (0xff8e6cd6));
+            g.strokePath (p, juce::PathStrokeType (2.0f));
+            
+            p.lineTo (bounds.getWidth(), bounds.getHeight());
+            p.closeSubPath();
+            juce::ColourGradient grad (juce::Colour (0xff8e6cd6).withAlpha (0.24f), 0.0f, 0.0f,
+                                       juce::Colours::transparentBlack, 0.0f, bounds.getHeight(), false);
+            g.setGradientFill (grad);
+            g.fillPath (p);
+        }
+
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            const float dy = (float) e.y / getHeight();
+            curvePower = juce::jlimit (0.2f, 4.0f, 1.0f + (0.5f - dy) * 3.0f);
+            repaint();
+        }
+
+    private:
+        float curvePower = 1.0f;
+    };
+
+    class PlayerRightPanel : public juce::Component
+    {
+    public:
+        explicit PlayerRightPanel (PlayerEditor& editorToUse)
+            : editor (editorToUse)
+        {
+            const juce::String macroNames[] = { "TONE", "WASH", "DRIVE", "WIDTH", "MOVEMENT", "PHASER", "DELAY", "REVERB" };
+            for (int i = 0; i < 8; ++i)
+            {
+                auto* s = new juce::Slider();
+                s->setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+                s->setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+                s->getProperties().set ("accentColor", (int) 0xff8e6cd6);
+                s->setRange (0.0, 1.0, 0.01);
+                s->setValue (0.4);
+                s->onValueChange = [this, s, i] {
+                    editor.proc.setPackParameterFromUi ("macro" + juce::String (i + 1), (float) s->getValue());
+                };
+                macroSliders.add (s);
+                addAndMakeVisible (s);
+
+                auto* l = new juce::Label();
+                l->setText (macroNames[i], juce::dontSendNotification);
+                l->setFont (juce::Font (8.0f, juce::Font::bold));
+                l->setJustificationType (juce::Justification::centred);
+                l->setColour (juce::Label::textColourId, juce::Colour (0xff8d96a3));
+                macroLabels.add (l);
+                addAndMakeVisible (l);
+            }
+
+            struct FxSetup { juce::ToggleButton* toggle; juce::ComboBox* combo; juce::String name; juce::StringArray options; };
+            const FxSetup fxSetups[] = {
+                { &delayToggle, &delayCombo, "DELAY", { "Tape Delay", "Analog Delay", "Digital Delay" } },
+                { &reverbToggle, &reverbCombo, "REVERB", { "Shimmer Hall", "Large Room", "Spring Reverb" } },
+                { &chorusToggle, &chorusCombo, "CHORUS", { "Dimension Chorus", "Ensemble Chorus", "Classic Chorus" } }
+            };
+
+            for (const auto& f : fxSetups)
+            {
+                f.toggle->setButtonText (f.name);
+                f.toggle->setToggleState (true, juce::dontSendNotification);
+                f.toggle->onClick = [this] { updateFxState(); };
+                addAndMakeVisible (f.toggle);
+
+                for (int idx = 0; idx < f.options.size(); ++idx)
+                    f.combo->addItem (f.options[idx], idx + 1);
+                f.combo->setSelectedId (1);
+                f.combo->onChange = [this] { updateFxState(); };
+                addAndMakeVisible (f.combo);
+            }
+
+            const juce::String sendNames[] = { "DELAY", "REVERB", "CHORUS", "MASTER" };
+            for (int i = 0; i < 4; ++i)
+            {
+                auto* s = new juce::Slider();
+                s->setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+                s->setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+                s->getProperties().set ("accentColor", (int) 0xff8e6cd6);
+                s->setRange (0.0, 1.0, 0.01);
+                s->setValue (0.5);
+                s->onValueChange = [this, s, i] {
+                    const juce::String paramKeys[] = { "delayMix", "reverbMix", "chorusMix", "volume" };
+                    editor.proc.setPackParameterFromUi (paramKeys[i], (float) s->getValue());
+                };
+                sendSliders.add (s);
+                addAndMakeVisible (s);
+
+                auto* l = new juce::Label();
+                l->setText (sendNames[i], juce::dontSendNotification);
+                l->setFont (juce::Font (8.0f, juce::Font::bold));
+                l->setJustificationType (juce::Justification::centred);
+                l->setColour (juce::Label::textColourId, juce::Colour (0xff8d96a3));
+                sendLabels.add (l);
+                addAndMakeVisible (l);
+            }
+
+            addAndMakeVisible (velCurve);
+            velCurveLabel.setText ("VELOCITY CURVE", juce::dontSendNotification);
+            velCurveLabel.setFont (juce::Font (8.0f, juce::Font::bold));
+            velCurveLabel.setColour (juce::Label::textColourId, juce::Colour (0xff8d96a3));
+            addAndMakeVisible (velCurveLabel);
+
+            glideSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+            glideSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+            glideSlider.getProperties().set ("accentColor", (int) 0xff8e6cd6);
+            glideSlider.setRange (0.0, 1000.0, 1.0);
+            glideSlider.setValue (120.0);
+            glideSlider.onValueChange = [this] {
+                editor.proc.setPackParameterFromUi ("glideTime", (float) glideSlider.getValue());
+                glideValLabel.setText (juce::String ((int) glideSlider.getValue()) + " ms", juce::dontSendNotification);
+            };
+            addAndMakeVisible (glideSlider);
+
+            glideLabel.setText ("GLIDE", juce::dontSendNotification);
+            glideLabel.setFont (juce::Font (8.0f, juce::Font::bold));
+            glideLabel.setColour (juce::Label::textColourId, juce::Colour (0xff8d96a3));
+            addAndMakeVisible (glideLabel);
+
+            glideValLabel.setText ("120 ms", juce::dontSendNotification);
+            glideValLabel.setFont (juce::Font (8.0f));
+            glideValLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+            addAndMakeVisible (glideValLabel);
+
+            voicesBox.addItem ("Mono", 1);
+            voicesBox.addItem ("4 Voices", 2);
+            voicesBox.addItem ("8 Voices", 3);
+            voicesBox.addItem ("16 Voices", 4);
+            voicesBox.setSelectedId (4);
+            voicesBox.onChange = [this] {
+                const int counts[] = { 1, 4, 8, 16 };
+                editor.proc.setPackParameterFromUi ("polyphony", (float) counts[voicesBox.getSelectedId() - 1]);
+            };
+            addAndMakeVisible (voicesBox);
+
+            voicesLabel.setText ("VOICES", juce::dontSendNotification);
+            voicesLabel.setFont (juce::Font (8.0f, juce::Font::bold));
+            voicesLabel.setColour (juce::Label::textColourId, juce::Colour (0xff8d96a3));
+            addAndMakeVisible (voicesLabel);
+
+            cpuLabel.setText ("CPU: 12%", juce::dontSendNotification);
+            cpuLabel.setFont (juce::Font (9.0f));
+            cpuLabel.setColour (juce::Label::textColourId, juce::Colour (0xff8d96a3));
+            addAndMakeVisible (cpuLabel);
+
+            updateFxState();
+            updateColours();
+        }
+
+        void updateColours()
+        {
+            auto txtDim = editor.getTextDimColor();
+            auto txt = editor.getTextColor();
+            auto accent = editor.getAccentColor();
+
+            if (const auto* pack = editor.proc.getPack())
+            {
+                for (int i = 0; i < 8; ++i)
+                {
+                    if (i < pack->manifest.rightPanelMacroNames.size() && i < macroLabels.size())
+                    {
+                        const auto name = pack->manifest.rightPanelMacroNames[i];
+                        if (name.isNotEmpty())
+                            macroLabels[i]->setText (name, juce::dontSendNotification);
+                    }
+                }
+            }
+
+            for (auto* s : macroSliders)
+                s->getProperties().set ("accentColor", (int) accent.getARGB());
+            for (auto* l : macroLabels)
+                l->setColour (juce::Label::textColourId, txtDim);
+
+            for (auto* s : sendSliders)
+                s->getProperties().set ("accentColor", (int) accent.getARGB());
+            for (auto* l : sendLabels)
+                l->setColour (juce::Label::textColourId, txtDim);
+
+            velCurveLabel.setColour (juce::Label::textColourId, txtDim);
+            glideLabel.setColour (juce::Label::textColourId, txtDim);
+            glideValLabel.setColour (juce::Label::textColourId, txt);
+            glideSlider.getProperties().set ("accentColor", (int) accent.getARGB());
+            voicesLabel.setColour (juce::Label::textColourId, txtDim);
+            cpuLabel.setColour (juce::Label::textColourId, txtDim);
+
+            repaint();
+        }
+
+        ~PlayerRightPanel() override
+        {
+            macroSliders.clear();
+            macroLabels.clear();
+            sendSliders.clear();
+            sendLabels.clear();
+        }
+
+        void updateFxState()
+        {
+            editor.proc.setPackParameterFromUi ("delayEnabled", delayToggle.getToggleState() ? 1.0f : 0.0f);
+            editor.proc.setPackParameterFromUi ("reverbEnabled", reverbToggle.getToggleState() ? 1.0f : 0.0f);
+            editor.proc.setPackParameterFromUi ("chorusEnabled", chorusToggle.getToggleState() ? 1.0f : 0.0f);
+            
+            editor.proc.setPackParameterFromUi ("delayType", (float) delayCombo.getSelectedId());
+            editor.proc.setPackParameterFromUi ("reverbType", (float) reverbCombo.getSelectedId());
+            editor.proc.setPackParameterFromUi ("chorusType", (float) chorusCombo.getSelectedId());
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            g.fillAll (editor.getBgColor());
+            
+            g.setColour (editor.getBorderColor());
+            g.fillRect (0, 0, 1, getHeight());
+
+            g.setColour (editor.getAccentColor());
+            g.setFont (juce::Font (11.0f, juce::Font::bold));
+
+            const auto* pack = editor.proc.getPack();
+            const bool showMacros = pack == nullptr || pack->manifest.rightPanelShowMacros;
+            const bool showEffects = pack == nullptr || pack->manifest.rightPanelShowEffects;
+            const bool showSends = pack == nullptr || pack->manifest.rightPanelShowSends;
+
+            int currentY = 8;
+
+            if (showMacros)
+            {
+                g.drawText ("MACROS", 16, currentY, 120, 16, juce::Justification::centredLeft);
+                const int mKnobW = 42;
+                const int gapY = 6;
+                currentY = currentY + 20 + 2 * (mKnobW + 20) + gapY + 12;
+            }
+
+            if (showEffects)
+            {
+                g.drawText ("EFFECTS", 16, currentY, 120, 16, juce::Justification::centredLeft);
+                currentY = currentY + 20 + 60 + 22 + 16;
+            }
+
+            if (showSends)
+            {
+                g.drawText ("SEND LEVELS", 16, currentY, 120, 16, juce::Justification::centredLeft);
+            }
+        }
+
+        void resized() override
+        {
+            const auto* pack = editor.proc.getPack();
+            const bool showMacros = pack == nullptr || pack->manifest.rightPanelShowMacros;
+            const bool showEffects = pack == nullptr || pack->manifest.rightPanelShowEffects;
+            const bool showSends = pack == nullptr || pack->manifest.rightPanelShowSends;
+            const bool showUtility = pack == nullptr || pack->manifest.rightPanelShowUtility;
+
+            // Visibility setting
+            for (auto* s : macroSliders) s->setVisible (showMacros);
+            for (auto* l : macroLabels) l->setVisible (showMacros);
+
+            delayToggle.setVisible (showEffects);
+            delayCombo.setVisible (showEffects);
+            reverbToggle.setVisible (showEffects);
+            reverbCombo.setVisible (showEffects);
+            chorusToggle.setVisible (showEffects);
+            chorusCombo.setVisible (showEffects);
+
+            for (auto* s : sendSliders) s->setVisible (showSends);
+            for (auto* l : sendLabels) l->setVisible (showSends);
+
+            velCurveLabel.setVisible (showUtility);
+            velCurve.setVisible (showUtility);
+            glideLabel.setVisible (showUtility);
+            glideSlider.setVisible (showUtility);
+            glideValLabel.setVisible (showUtility);
+            voicesLabel.setVisible (showUtility);
+            voicesBox.setVisible (showUtility);
+            cpuLabel.setVisible (showUtility);
+
+            int currentY = 8;
+
+            if (showMacros)
+            {
+                const int mKnobW = 42;
+                const int gapX = 14;
+                const int gapY = 6;
+                const int startY = currentY + 20;
+                for (int i = 0; i < 8; ++i)
+                {
+                    const int row = i / 4;
+                    const int col = i % 4;
+                    const int x = 16 + col * (mKnobW + gapX);
+                    const int y = startY + row * (mKnobW + 20 + gapY);
+                    macroSliders[i]->setBounds (x, y, mKnobW, mKnobW);
+                    macroLabels[i]->setBounds (x - 6, y + mKnobW + 2, mKnobW + 12, 12);
+                }
+                currentY = startY + 2 * (mKnobW + 20) + gapY + 12;
+            }
+
+            if (showEffects)
+            {
+                const int startY = currentY + 20;
+                delayToggle.setBounds (16, startY, 78, 22);
+                delayCombo.setBounds (100, startY, 180, 22);
+
+                reverbToggle.setBounds (16, startY + 30, 78, 22);
+                reverbCombo.setBounds (100, startY + 30, 180, 22);
+
+                chorusToggle.setBounds (16, startY + 60, 78, 22);
+                chorusCombo.setBounds (100, startY + 60, 180, 22);
+
+                currentY = startY + 60 + 22 + 16;
+            }
+
+            if (showSends)
+            {
+                const int startY = currentY + 20;
+                const int sKnobW = 44;
+                const int sGapX = 18;
+                for (int i = 0; i < 4; ++i)
+                {
+                    const int x = 16 + i * (sKnobW + sGapX);
+                    sendSliders[i]->setBounds (x, startY, sKnobW, sKnobW);
+                    sendLabels[i]->setBounds (x - 6, startY + sKnobW + 2, sKnobW + 12, 12);
+                }
+                currentY = startY + sKnobW + 14 + 16;
+            }
+
+            if (showUtility)
+            {
+                const int startY = currentY + 4;
+                velCurveLabel.setBounds (16, startY, 120, 12);
+                velCurve.setBounds (16, startY + 16, 120, 72);
+
+                glideLabel.setBounds (152, startY + 2, 40, 12);
+                glideSlider.setBounds (152, startY + 16, 40, 40);
+                glideValLabel.setBounds (152, startY + 58, 40, 12);
+
+                voicesLabel.setBounds (206, startY + 2, 50, 12);
+                voicesBox.setBounds (206, startY + 16, 78, 22);
+                cpuLabel.setBounds (206, startY + 48, 78, 22);
+            }
+        }
+
+    private:
+        PlayerEditor& editor;
+        juce::OwnedArray<juce::Slider> macroSliders;
+        juce::OwnedArray<juce::Label> macroLabels;
+
+        juce::ToggleButton delayToggle, reverbToggle, chorusToggle;
+        juce::ComboBox delayCombo, reverbCombo, chorusCombo;
+
+        juce::OwnedArray<juce::Slider> sendSliders;
+        juce::OwnedArray<juce::Label> sendLabels;
+
+        VelocityCurveComponent velCurve;
+        juce::Label velCurveLabel;
+
+        juce::Slider glideSlider;
+        juce::Label glideLabel, glideValLabel;
+        juce::ComboBox voicesBox;
+        juce::Label voicesLabel, cpuLabel;
+    };
+
+    class PlayerFooter : public juce::Component
+    {
+    public:
+        explicit PlayerFooter (PlayerEditor& editorToUse)
+            : editor (editorToUse)
+        {
+            verLabel.setText ("v1.0.0", juce::dontSendNotification);
+            verLabel.setFont (juce::Font (10.0f));
+            verLabel.setColour (juce::Label::textColourId, juce::Colour (0xff505866));
+            addAndMakeVisible (verLabel);
+
+            statusLabel.setText ("Ready", juce::dontSendNotification);
+            statusLabel.setFont (juce::Font (10.0f));
+            statusLabel.setColour (juce::Label::textColourId, juce::Colour (0xffa6acb5));
+            statusLabel.setJustificationType (juce::Justification::centred);
+            addAndMakeVisible (statusLabel);
+
+            licLabel.setText ("License not required", juce::dontSendNotification);
+            licLabel.setFont (juce::Font (10.0f));
+            licLabel.setColour (juce::Label::textColourId, juce::Colour (0xff5fb37b));
+            licLabel.setJustificationType (juce::Justification::centredRight);
+            addAndMakeVisible (licLabel);
+
+            updateColours();
+            refreshLicense();
+        }
+
+        void updateColours()
+        {
+            auto txtDim = editor.getTextDimColor();
+            auto txt = editor.getTextColor();
+            auto accent = editor.getAccentColor();
+
+            verLabel.setColour (juce::Label::textColourId, txtDim);
+            statusLabel.setColour (juce::Label::textColourId, txt);
+            licLabel.setColour (juce::Label::textColourId, accent);
+        }
+
+        void setStatus (const juce::String& msg)
+        {
+            statusLabel.setText (msg, juce::dontSendNotification);
+        }
+
+        void refreshLicense()
+        {
+            const auto text = editor.proc.getLicenseStatusText();
+            licLabel.setText (text, juce::dontSendNotification);
+            licLabel.setTooltip (text + ". Open Settings / About to activate or review support details.");
+            licLabel.setColour (juce::Label::textColourId,
+                                editor.proc.isLicenseAuthorized()
+                                    ? editor.getAccentColor()
+                                    : juce::Colour (0xffffa62b));
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            g.fillAll (editor.getBgColor());
+            
+            g.setColour (editor.getBorderColor());
+            g.fillRect (0, 0, getWidth(), 1);
+        }
+
+        void resized() override
+        {
+            verLabel.setBounds (10, 4, 80, 20);
+            statusLabel.setBounds (100, 4, getWidth() - 200, 20);
+            licLabel.setBounds (getWidth() - 170, 4, 160, 20);
+        }
+
+    private:
+        PlayerEditor& editor;
+        juce::Label verLabel, statusLabel, licLabel;
+    };
+
+    /**
+        Bottom performance strip: octave shift, pitch/mod wheels and a playable
+        keyboard. Mirrors the exported Player blueprint frame.
+    */
+    class PlayerKeyboardStrip : public juce::Component,
+                                private juce::Timer
+    {
+    public:
+        explicit PlayerKeyboardStrip (PlayerEditor& editorToUse)
+            : editor (editorToUse)
+        {
+            octUpBtn.setButtonText ("+");
+            octUpBtn.setTooltip ("Shift on-screen keyboard up one octave.");
+            octUpBtn.onClick = [this] { setOctaveShift (octaveShift + 1); };
+            addAndMakeVisible (octUpBtn);
+
+            octDownBtn.setButtonText ("-");
+            octDownBtn.setTooltip ("Shift on-screen keyboard down one octave.");
+            octDownBtn.onClick = [this] { setOctaveShift (octaveShift - 1); };
+            addAndMakeVisible (octDownBtn);
+
+            octLabel.setText ("0", juce::dontSendNotification);
+            octLabel.setJustificationType (juce::Justification::centred);
+            octLabel.setFont (juce::Font (10.0f, juce::Font::bold));
+            addAndMakeVisible (octLabel);
+
+            pitchWheel.setSliderStyle (juce::Slider::LinearVertical);
+            pitchWheel.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+            pitchWheel.setRange (-1.0, 1.0, 0.01);
+            pitchWheel.setValue (0.0);
+            pitchWheel.setDoubleClickReturnValue (true, 0.0);
+            pitchWheel.onValueChange = [this] {
+                editor.proc.setPackParameterFromUi ("pitchWheel", (float) pitchWheel.getValue());
+            };
+            pitchWheel.onDragEnd = [this] {
+                pitchWheel.setValue (0.0, juce::sendNotification);
+            };
+            addAndMakeVisible (pitchWheel);
+
+            modWheel.setSliderStyle (juce::Slider::LinearVertical);
+            modWheel.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+            modWheel.setRange (0.0, 1.0, 0.01);
+            modWheel.setValue (0.0);
+            modWheel.onValueChange = [this] {
+                editor.proc.setPackParameterFromUi ("modWheel", (float) modWheel.getValue());
+            };
+            addAndMakeVisible (modWheel);
+
+            pitchLabel.setText ("PITCH", juce::dontSendNotification);
+            pitchLabel.setJustificationType (juce::Justification::centred);
+            pitchLabel.setFont (juce::Font (8.0f, juce::Font::bold));
+            addAndMakeVisible (pitchLabel);
+
+            modLabel.setText ("MOD", juce::dontSendNotification);
+            modLabel.setJustificationType (juce::Justification::centred);
+            modLabel.setFont (juce::Font (8.0f, juce::Font::bold));
+            addAndMakeVisible (modLabel);
+
+            updateColours();
+            startTimerHz (24);
+        }
+
+        ~PlayerKeyboardStrip() override
+        {
+            stopTimer();
+        }
+
+        void updateColours()
+        {
+            const auto txtDim = editor.getTextDimColor();
+            octLabel.setColour (juce::Label::textColourId, txtDim);
+            pitchLabel.setColour (juce::Label::textColourId, txtDim);
+            modLabel.setColour (juce::Label::textColourId, txtDim);
+            repaint();
+        }
+
+        void setOctaveShift (int newShift)
+        {
+            releaseHeldNote();
+            octaveShift = juce::jlimit (-3, 3, newShift);
+            octLabel.setText ((octaveShift > 0 ? "+" : "") + juce::String (octaveShift), juce::dontSendNotification);
+            repaint();
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            g.fillAll (editor.getBgColor());
+            g.setColour (editor.getBorderColor());
+            g.fillRect (0, 0, getWidth(), 1);
+
+            g.setColour (editor.getPanelColor());
+            g.fillRoundedRectangle (keyboardArea.toFloat(), 4.0f);
+
+            const float keyW = whiteKeyWidth();
+            const float keyH = (float) keyboardArea.getHeight() - 8.0f;
+            const float keyY = (float) keyboardArea.getY() + 4.0f;
+
+            int whiteIdx = 0;
+            for (int note = kFirstNote; note <= kLastNote; ++note)
+            {
+                if (! isBlackKey (note))
+                {
+                    const float x = (float) keyboardArea.getX() + 5.0f + whiteIdx * keyW;
+                    const auto keyRect = juce::Rectangle<float> (x, keyY, keyW - 1.0f, keyH);
+
+                    const float activeLevel = editor.proc.getNoteHighlightLevel (note + octaveShift * 12);
+                    if (activeLevel > 0.0f)
+                        g.setColour (editor.getAccentColor().interpolatedWith (juce::Colours::white, 0.4f).withAlpha (juce::jmax (0.35f, activeLevel)));
+                    else
+                        g.setColour (juce::Colour (0xfff0f2f5));
+                    g.fillRoundedRectangle (keyRect, 2.0f);
+                    g.setColour (editor.getBgColor().darker (0.05f));
+                    g.drawRoundedRectangle (keyRect, 2.0f, 1.0f);
+
+                    if (note % 12 == 0)
+                    {
+                        g.setColour (juce::Colour (0xff70768a));
+                        g.setFont (juce::Font (8.0f));
+                        g.drawText ("C" + juce::String (note / 12 - 1),
+                                    juce::roundToInt (x), juce::roundToInt (keyY + keyH - 12.0f),
+                                    juce::roundToInt (keyW), 10, juce::Justification::centred);
+                    }
+
+                    ++whiteIdx;
+                }
+            }
+
+            whiteIdx = 0;
+            for (int note = kFirstNote; note <= kLastNote; ++note)
+            {
+                if (isBlackKey (note))
+                {
+                    const float x = (float) keyboardArea.getX() + 5.0f + whiteIdx * keyW - keyW * 0.3f;
+                    const auto keyRect = juce::Rectangle<float> (x, keyY, keyW * 0.6f, keyH * 0.62f);
+
+                    const float activeLevel = editor.proc.getNoteHighlightLevel (note + octaveShift * 12);
+                    if (activeLevel > 0.0f)
+                        g.setColour (editor.getAccentColor().brighter (0.2f).withAlpha (juce::jmax (0.35f, activeLevel)));
+                    else
+                        g.setColour (editor.getPanelColor().brighter (0.04f));
+                    g.fillRoundedRectangle (keyRect, 2.0f);
+                    g.setColour (editor.getBgColor().darker (0.05f));
+                    g.drawRoundedRectangle (keyRect, 2.0f, 1.0f);
+                }
+                else
+                {
+                    ++whiteIdx;
+                }
+            }
+        }
+
+        void resized() override
+        {
+            auto bounds = getLocalBounds().reduced (8, 6);
+
+            auto leftCluster = bounds.removeFromLeft (96);
+            auto octColumn = leftCluster.removeFromLeft (30);
+            octUpBtn.setBounds (octColumn.removeFromTop (22));
+            octLabel.setBounds (octColumn.removeFromTop (16));
+            octDownBtn.setBounds (octColumn.removeFromTop (22));
+
+            leftCluster.removeFromLeft (6);
+            constexpr int labelHeight = 12;
+            auto pitchColumn = leftCluster.removeFromLeft (26);
+            pitchLabel.setBounds (pitchColumn.removeFromBottom (labelHeight));
+            pitchWheel.setBounds (pitchColumn);
+
+            leftCluster.removeFromLeft (4);
+            auto modColumn = leftCluster.removeFromLeft (26);
+            modLabel.setBounds (modColumn.removeFromBottom (labelHeight));
+            modWheel.setBounds (modColumn);
+
+            bounds.removeFromLeft (6);
+            keyboardArea = bounds;
+        }
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            triggerNoteAt (e.getPosition());
+        }
+
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            const int note = noteAtPosition (e.getPosition());
+            if (note >= 0 && note != heldNote)
+            {
+                releaseHeldNote();
+                heldNote = note;
+                editor.proc.handleNoteOn (note, 0.8f);
+                repaint (keyboardArea);
+            }
+        }
+
+        void mouseUp (const juce::MouseEvent&) override
+        {
+            releaseHeldNote();
+        }
+
+    private:
+        static constexpr int kFirstNote = 24; // C1
+        static constexpr int kLastNote = 96;  // C7
+        static constexpr int kNumWhiteKeys = 43;
+
+        static bool isBlackKey (int note)
+        {
+            const int n = note % 12;
+            return n == 1 || n == 3 || n == 6 || n == 8 || n == 10;
+        }
+
+        float whiteKeyWidth() const
+        {
+            return (float) (keyboardArea.getWidth() - 10) / (float) kNumWhiteKeys;
+        }
+
+        int noteAtPosition (juce::Point<int> pos) const
+        {
+            if (! keyboardArea.contains (pos))
+                return -1;
+
+            const float keyW = whiteKeyWidth();
+            const float keyH = (float) keyboardArea.getHeight() - 8.0f;
+            const float keyY = (float) keyboardArea.getY() + 4.0f;
+
+            int whiteIdx = 0;
+            for (int note = kFirstNote; note <= kLastNote; ++note)
+            {
+                if (isBlackKey (note))
+                {
+                    const float x = (float) keyboardArea.getX() + 5.0f + whiteIdx * keyW - keyW * 0.3f;
+                    if (juce::Rectangle<float> (x, keyY, keyW * 0.6f, keyH * 0.62f).contains (pos.toFloat()))
+                        return juce::jlimit (0, 127, note + octaveShift * 12);
+                }
+                else
+                {
+                    ++whiteIdx;
+                }
+            }
+
+            whiteIdx = 0;
+            for (int note = kFirstNote; note <= kLastNote; ++note)
+            {
+                if (! isBlackKey (note))
+                {
+                    const float x = (float) keyboardArea.getX() + 5.0f + whiteIdx * keyW;
+                    if (juce::Rectangle<float> (x, keyY, keyW - 1.0f, keyH).contains (pos.toFloat()))
+                        return juce::jlimit (0, 127, note + octaveShift * 12);
+                    ++whiteIdx;
+                }
+            }
+
+            return -1;
+        }
+
+        void triggerNoteAt (juce::Point<int> pos)
+        {
+            const int note = noteAtPosition (pos);
+            if (note >= 0)
+            {
+                releaseHeldNote();
+                heldNote = note;
+                editor.proc.handleNoteOn (note, 0.8f);
+                repaint (keyboardArea);
+            }
+        }
+
+        void releaseHeldNote()
+        {
+            if (heldNote >= 0)
+            {
+                editor.proc.handleNoteOff (heldNote);
+                heldNote = -1;
+                repaint (keyboardArea);
+            }
+        }
+
+        void timerCallback() override
+        {
+            repaint (keyboardArea);
+        }
+
+        PlayerEditor& editor;
+        juce::TextButton octUpBtn, octDownBtn;
+        juce::Label octLabel;
+        juce::Slider pitchWheel, modWheel;
+        juce::Label pitchLabel, modLabel;
+        juce::Rectangle<int> keyboardArea;
+        int octaveShift = 0;
+        int heldNote = -1;
+    };
 
     class PlayerPerformancePanel : public juce::Component,
                                    private juce::Timer
@@ -1567,9 +3563,7 @@ namespace patchcraft
             drawField (graphics, area, "Presets", juce::String (processor.getPresetCount()));
             drawField (graphics, area, "Runtime", juce::String (processor.getActiveVoiceCount()) + " voices, "
                 + juce::String (processor.getLoadedSampleCount()) + " samples");
-            drawField (graphics, area, "License", pack != nullptr && pack->manifest.licenseRequired
-                ? "Required" + (pack->manifest.trialDays > 0 ? " / " + juce::String (pack->manifest.trialDays) + " day trial" : juce::String())
-                : "Not required");
+            drawField (graphics, area, "License", processor.getLicenseStatusText());
             drawField (graphics, area, "Support", pack != nullptr && pack->manifest.playerSupportUrl.isNotEmpty()
                 ? pack->manifest.playerSupportUrl
                 : (pack != nullptr && pack->manifest.playerSupportEmail.isNotEmpty()
@@ -2515,45 +4509,36 @@ namespace patchcraft
     {
         setLookAndFeel (&laf);
 
-        // Build the renderer + buttons BEFORE calling setSize/setResizable -
-        // setSize triggers resized() synchronously, and resized() dereferences
-        // renderer->setBounds(...). If we set size first, that's a null deref.
+        topBar = std::make_unique<PlayerTopBar> (*this);
+        addAndMakeVisible (*topBar);
+
+        leftSidebar = std::make_unique<PlayerLeftSidebar> (*this);
+        addAndMakeVisible (*leftSidebar);
+
+        centerPanel = std::make_unique<PlayerCenterPanel> (*this);
+        addChildComponent (*centerPanel);
+        centerPanel->setVisible (false);
+
+        rightPanel = std::make_unique<PlayerRightPanel> (*this);
+        addAndMakeVisible (*rightPanel);
+
+        footer = std::make_unique<PlayerFooter> (*this);
+        addAndMakeVisible (*footer);
+
+        keyboardStrip = std::make_unique<PlayerKeyboardStrip> (*this);
+        addAndMakeVisible (*keyboardStrip);
+
         renderer = std::make_unique<PlayerGuiRenderer> (proc, assets);
-        renderer->onPresetBrowserRequested = [this]
-        {
-            showPresetMenu();
-        };
-        renderer->onRuntimeImportReport = [this] (const juce::String& report)
-        {
-            userImportVisible = true;
-            if (userImportPanel != nullptr)
-            {
-                userImportPanel->setLastReport (report);
-                userImportPanel->refresh();
-            }
-            refreshPresetControls();
-            if (performancePanel != nullptr)
-                performancePanel->rebuild();
-            if (controlCenter != nullptr)
-                controlCenter->rebuild();
-            resized();
-            repaint();
-        };
         addAndMakeVisible (*renderer);
 
-        // Library browser (hidden by default)
-        libraryBrowser = std::make_unique<LibraryBrowser> (proc.getLibraryScanner(),
-            LibraryBrowser::PackFilter::Any
-        );
+        libraryBrowser = std::make_unique<LibraryBrowser> (proc.getLibraryScanner(), LibraryBrowser::PackFilter::Any);
         libraryBrowser->onPackSelected = [this] (const juce::File& folder) {
             juce::String err;
             if (proc.loadPack (folder, err))
             {
                 libraryVisible = false;
-                controlCenterVisible = false;
                 libraryBrowser->setVisible (false);
-                renderer->setVisible (true);
-                resized();
+                packChanged();
             }
             else
             {
@@ -2569,66 +4554,10 @@ namespace patchcraft
         libraryBrowser->onClose = [this] {
             libraryVisible = false;
             libraryBrowser->setVisible (false);
-            renderer->setVisible (true);
             resized();
         };
         libraryBrowser->setVisible (false);
         addAndMakeVisible (*libraryBrowser);
-
-        performancePanel = std::make_unique<PlayerPerformancePanel> (proc);
-        performancePanel->onClose = [this]
-        {
-            performanceVisible = false;
-            resized();
-        };
-        performancePanel->onToggleFloat = [this] (bool shouldFloat)
-        {
-            performanceFloating = shouldFloat;
-            resized();
-        };
-        performancePanel->setVisible (false);
-        addAndMakeVisible (*performancePanel);
-
-        controlCenter = std::make_unique<PlayerControlCenter> (proc);
-        controlCenter->onClose = [this]
-        {
-            controlCenterVisible = false;
-            resized();
-        };
-        controlCenter->onOpenLibrary = [this]
-        {
-            controlCenterVisible = false;
-            toggleLibrary();
-        };
-        controlCenter->onOpenEngine = [this]
-        {
-            controlCenterVisible = false;
-            if (! performanceVisible)
-                togglePerformancePanel();
-            else
-                resized();
-        };
-        controlCenter->setVisible (false);
-        addAndMakeVisible (*controlCenter);
-
-        userImportPanel = std::make_unique<PlayerUserImportPanel> (proc);
-        userImportPanel->onClose = [this]
-        {
-            userImportVisible = false;
-            resized();
-        };
-        userImportPanel->onContentChanged = [this]
-        {
-            refreshPresetControls();
-            if (performancePanel != nullptr)
-                performancePanel->rebuild();
-            if (controlCenter != nullptr)
-                controlCenter->rebuild();
-            if (renderer != nullptr)
-                renderer->rebuild();
-        };
-        userImportPanel->setVisible (false);
-        addAndMakeVisible (*userImportPanel);
 
         presetLoadingLabel.setJustificationType (juce::Justification::centred);
         presetLoadingLabel.setInterceptsMouseClicks (false, false);
@@ -2639,80 +4568,9 @@ namespace patchcraft
         presetLoadingLabel.setVisible (false);
         addAndMakeVisible (presetLoadingLabel);
 
-        addAndMakeVisible (loadBtn);
-        loadBtn.getProperties().set ("accent", true);
-        loadBtn.onClick = [this] { showLoadDialog(); };
-
-        libraryBtn.setButtonText ("LIB");
-        performanceBtn.setButtonText ("SOUND");
-        controlBtn.setButtonText ("CTRL");
-
-        addAndMakeVisible (libraryBtn);
-        libraryBtn.getProperties().set ("accent", true);
-       #if PATCHCRAFT_PLAYER_FX
-        libraryBtn.setTooltip ("Open the instrument library. FX Player passes host audio through when previewing instrument packs.");
-       #else
-        libraryBtn.setTooltip ("Open the instrument library.");
-       #endif
-        libraryBtn.onClick = [this] { toggleLibrary(); };
-
-        prevPresetBtn.setTooltip ("Load previous preset.");
-        prevPresetBtn.onClick = [this]
-        {
-            const int count = proc.getPresetCount();
-            int current = proc.getCurrentPresetIndex();
-            if (count <= 0)
-                return;
-            if (current < 0)
-                current = 0;
-            const int next = (current - 1 + count) % count;
-            showPresetLoading (proc.getPresetName (next));
-            if (proc.applyPresetByIndex (next))
-            {
-                refreshPresetControls();
-                if (performancePanel != nullptr)
-                    performancePanel->rebuild();
-                renderer->repaint();
-            }
-        };
-        addAndMakeVisible (prevPresetBtn);
-
-        presetBtn.setTooltip ("Open this instrument's preset list.");
-        presetBtn.onClick = [this] { showPresetMenu(); };
-        addAndMakeVisible (presetBtn);
-
-        nextPresetBtn.setTooltip ("Load next preset.");
-        nextPresetBtn.onClick = [this]
-        {
-            const int count = proc.getPresetCount();
-            int current = proc.getCurrentPresetIndex();
-            if (count <= 0)
-                return;
-            if (current < 0)
-                current = 0;
-            const int next = (current + 1) % count;
-            showPresetLoading (proc.getPresetName (next));
-            if (proc.applyPresetByIndex (next))
-            {
-                refreshPresetControls();
-                if (performancePanel != nullptr)
-                    performancePanel->rebuild();
-                renderer->repaint();
-            }
-        };
-        addAndMakeVisible (nextPresetBtn);
-
-        addAndMakeVisible (performanceBtn);
-        performanceBtn.setTooltip ("Open live sound controls for this instrument.");
-        performanceBtn.onClick = [this] { togglePerformancePanel(); };
-
-        controlBtn.setTooltip ("Open instrument info, mix, routing, and MIDI controls.");
-        controlBtn.onClick = [this] { toggleControlCenter(); };
-        addAndMakeVisible (controlBtn);
-
-        setSize (1280, 800 + kPlayerMenuBarHeight);
+        setSize (1280, 720);
         setResizable (true, true);
-        setResizeLimits (720, 520, 2400, 1800);
+        setResizeLimits (1024, 600, 2400, 1800);
 
         proc.addEditorListener (this);
         packChanged();
@@ -2724,401 +4582,219 @@ namespace patchcraft
         setLookAndFeel (nullptr);
     }
 
+    juce::Colour PlayerEditor::getBgColor() const
+    {
+        const auto* pack = proc.getPack();
+        return pack != nullptr ? pack->manifest.playerBackgroundColour : juce::Colour (0xff07080a);
+    }
+
+    juce::Colour PlayerEditor::getPanelColor() const
+    {
+        const auto* pack = proc.getPack();
+        return pack != nullptr ? pack->manifest.playerPanelColour : juce::Colour (0xff0a0b12);
+    }
+
+    juce::Colour PlayerEditor::getAccentColor() const
+    {
+        const auto* pack = proc.getPack();
+        return pack != nullptr ? pack->manifest.playerAccentColour : juce::Colour (0xff8e6cd6);
+    }
+
+    juce::Colour PlayerEditor::getTextColor() const
+    {
+        const auto* pack = proc.getPack();
+        return pack != nullptr ? pack->manifest.playerTextColour : juce::Colours::white;
+    }
+
+    juce::Colour PlayerEditor::getTextDimColor() const
+    {
+        const auto* pack = proc.getPack();
+        return pack != nullptr ? pack->manifest.playerTextDimColour : juce::Colour (0xff8d96a3);
+    }
+
+    juce::Colour PlayerEditor::getBorderColor() const
+    {
+        const auto* pack = proc.getPack();
+        return pack != nullptr ? pack->manifest.playerBorderColour : juce::Colour (0xff1c212c);
+    }
+
     void PlayerEditor::paint (juce::Graphics& g)
     {
-        if (const auto* pack = proc.getPack())
-            g.fillAll (pack->manifest.playerBackgroundColour);
-        else
-            g.fillAll (PatchCraftLookAndFeel::bg());
-
-        const auto* pack = proc.getPack();
-        auto fullTopBar = getLocalBounds().removeFromTop (kPlayerMenuBarHeight);
-        auto bar = playerChromeBoundsFor (fullTopBar, pack);
-        auto titleArea = bar.removeFromTop (kPlayerTitleAreaHeight);
-        auto toolbarArea = bar;
-        const auto titleTheme = pack != nullptr ? pack->manifest.playerTitleBarTheme : juce::String ("classic");
-        const auto titlePlacement = pack != nullptr ? pack->manifest.playerTitleTextPlacement : juce::String ("left");
-        const auto titleFontFamily = pack != nullptr ? pack->manifest.playerTitleFontFamily : juce::String ("Default");
-        const auto accent = pack != nullptr ? pack->manifest.playerAccentColour : PatchCraftLookAndFeel::accent();
-        const auto panel = pack != nullptr ? pack->manifest.playerPanelColour : juce::Colour (0xff0b0d11);
-        const auto bg = pack != nullptr ? pack->manifest.playerBackgroundColour : juce::Colour (0xff07090c);
-
-        auto themeTitleTop = titleTheme == "clean-pro" ? panel.brighter (0.22f)
-                           : titleTheme == "dark-utility" ? panel.darker (0.25f)
-                           : titleTheme == "glass" ? panel.withAlpha (0.65f)
-                           : panel.brighter (0.06f);
-        auto themeTitleBottom = titleTheme == "aurora" ? accent.interpolatedWith (bg, 0.62f)
-                              : titleTheme == "minimal" ? bg.darker (0.15f)
-                              : titleTheme == "compact-daw" ? panel.darker (0.12f)
-                              : bg.darker (0.08f);
-        juce::ColourGradient gradient (themeTitleTop,
-                                       (float) titleArea.getX(), (float) titleArea.getY(),
-                                       themeTitleBottom,
-                                       (float) titleArea.getRight(), (float) titleArea.getBottom(),
-                                       false);
-        g.setGradientFill (gradient);
-        g.fillRect (titleArea);
-        g.setColour (panel.withAlpha (0.94f));
-        g.fillRect (toolbarArea);
-        const bool useFullTitleBackground = pack != nullptr
-                                         && pack->manifest.playerTitleBannerImage.isNotEmpty()
-                                         && titleThemeUsesBannerArtwork (titleTheme);
-        if (useFullTitleBackground)
-        {
-            const auto bannerFile = juce::File::isAbsolutePath (pack->manifest.playerTitleBannerImage)
-                ? juce::File (pack->manifest.playerTitleBannerImage)
-                : pack->rootFolder.getChildFile (pack->manifest.playerTitleBannerImage);
-            if (auto banner = assets.loadImage (bannerFile); banner.isValid())
-            {
-                g.drawImage (banner, titleArea.toFloat(), juce::RectanglePlacement::fillDestination);
-                g.setColour (juce::Colour (0x8805070a));
-                g.fillRect (titleArea);
-            }
-        }
-        if ((titleTheme == "minimal" || titleTheme == "no-chrome") && ! useFullTitleBackground)
-        {
-            g.setColour (bg);
-            g.fillRect (titleArea);
-        }
-        if (titleTheme == "glass" && ! useFullTitleBackground)
-        {
-            g.setColour (accent.withAlpha (0.08f));
-            g.fillRect (titleArea.reduced (12, 8));
-        }
-        if (titleTheme == "dark-utility")
-        {
-            g.setColour (panel.darker (0.42f));
-            g.fillRect (titleArea);
-            g.setColour (accent.withAlpha (0.38f));
-            g.fillRect (titleArea.withBottom (titleArea.getBottom()).withHeight (2));
-        }
-        if (titleTheme == "compact-daw")
-        {
-            g.setColour (panel.brighter (0.05f));
-            g.fillRect (titleArea.reduced (0, 8));
-        }
-        if (titleTheme == "neon-strip" || titleTheme == "aurora")
-        {
-            g.setColour (accent.withAlpha (0.82f));
-            g.fillRoundedRectangle (titleArea.withHeight (3).toFloat(), 2.0f);
-        }
-        if (titleTheme == "split-brand")
-        {
-            g.setColour (accent.withAlpha (0.88f));
-            g.fillRect (titleArea.withWidth (5));
-        }
-        if (titleTheme == "logo-rail")
-        {
-            g.setColour (accent.withAlpha (0.14f));
-            g.fillRect (titleArea.withWidth (96));
-            g.setColour (accent.withAlpha (0.72f));
-            g.drawVerticalLine (96, 4.0f, (float) titleArea.getBottom() - 5.0f);
-        }
-
-        if (titleTheme != "no-chrome")
-        {
-            g.setColour (PatchCraftLookAndFeel::borderSoft().withAlpha (0.82f));
-            g.fillRect (toolbarArea.withHeight (1));
-            g.setColour (bg.withAlpha (0.42f));
-            g.fillRect (toolbarArea.withTrimmedTop (1));
-            auto toolWell = toolbarArea.reduced (10, 5);
-            const auto corner = titleTheme == "compact-daw" || titleTheme == "dark-utility" ? 2.0f
-                              : 6.0f;
-            g.setColour ((titleTheme == "glass" ? panel.withAlpha (0.58f)
-                                                : panel.withAlpha (0.96f)));
-            if (titleTheme == "minimal")
-                g.fillRect (toolWell.withHeight (1));
-            else
-                g.fillRoundedRectangle (toolWell.toFloat(), corner);
-            g.setColour ((titleTheme == "neon-strip" ? accent : PatchCraftLookAndFeel::borderSoft()).withAlpha (0.72f));
-            if (titleTheme != "minimal")
-                g.drawRoundedRectangle (toolWell.toFloat().reduced (0.5f), corner, 1.0f);
-        }
-
-        const int bannerWidth = playerTitleBrandWidth (titleTheme, titleArea.getWidth());
-        const auto brandFrame = juce::Rectangle<int> (titleArea.getX() + 10,
-                                                      titleArea.getY() + 10,
-                                                      bannerWidth,
-                                                      52);
-        const auto artworkBounds = brandFrame.withWidth (kPlayerTitleBarArtworkSize)
-                                             .withHeight (kPlayerTitleBarArtworkSize)
-                                             .withY (titleArea.getY() + (titleArea.getHeight() - kPlayerTitleBarArtworkSize) / 2);
-        auto brand = (titleTheme == "logo-rail" || titleTheme == "no-chrome")
-            ? brandFrame.reduced (0, 1)
-            : brandFrame.withTrimmedLeft (kPlayerTitleBarArtworkSize + 8).reduced (0, 1);
-        bool drewLogo = false;
-        bool drewTitleBanner = false;
-        if (pack != nullptr && bannerWidth > 0)
-        {
-            if (pack->manifest.playerTitleBannerImage.isNotEmpty()
-                && ! useFullTitleBackground)
-            {
-                const auto bannerFile = juce::File::isAbsolutePath (pack->manifest.playerTitleBannerImage)
-                    ? juce::File (pack->manifest.playerTitleBannerImage)
-                    : pack->rootFolder.getChildFile (pack->manifest.playerTitleBannerImage);
-                if (auto banner = assets.loadImage (bannerFile); banner.isValid())
-                {
-                    g.saveState();
-                    juce::Path clip;
-                    clip.addRoundedRectangle (brandFrame.toFloat(), 7.0f);
-                    g.reduceClipRegion (clip);
-                    g.drawImage (banner, brandFrame.toFloat(), juce::RectanglePlacement::fillDestination);
-                    g.setColour (juce::Colour (0xaa05070a));
-                    g.fillRoundedRectangle (brandFrame.toFloat(), 7.0f);
-                    g.restoreState();
-                    g.setColour (PatchCraftLookAndFeel::borderSoft().withAlpha (0.86f));
-                    g.drawRoundedRectangle (brandFrame.toFloat().reduced (0.5f), 7.0f, 1.0f);
-                    drewTitleBanner = true;
-                    brand = brandFrame.reduced (11, 3);
-                }
-            }
-
-            auto artworkPath = pack->manifest.playerLogoImage;
-            if (artworkPath.isEmpty())
-                artworkPath = pack->manifest.libraryThumbnail;
-
-            if (! drewTitleBanner && artworkPath.isNotEmpty() && titleTheme != "no-chrome")
-            {
-                const auto logoFile = juce::File::isAbsolutePath (artworkPath)
-                    ? juce::File (artworkPath)
-                    : pack->rootFolder.getChildFile (artworkPath);
-                if (auto logo = assets.loadImage (logoFile); logo.isValid())
-                {
-                    g.saveState();
-                    juce::Path clip;
-                    clip.addRoundedRectangle (artworkBounds.toFloat(), 5.0f);
-                    g.reduceClipRegion (clip);
-                    g.drawImage (logo, artworkBounds.toFloat(), juce::RectanglePlacement::fillDestination);
-                    g.restoreState();
-                    g.setColour (PatchCraftLookAndFeel::borderSoft().withAlpha (0.75f));
-                    g.drawRoundedRectangle (artworkBounds.toFloat(), 5.0f, 1.0f);
-                    drewLogo = true;
-                }
-            }
-        }
-        if (! drewTitleBanner && ! drewLogo && bannerWidth > 0 && titleTheme != "no-chrome")
-        {
-            const auto fallbackName = pack != nullptr ? playerInstrumentName (pack) : juce::String ("Instrument");
-            const auto initial = fallbackName.isNotEmpty() ? fallbackName.substring (0, 1).toUpperCase() : juce::String ("P");
-            g.setColour ((pack != nullptr ? pack->manifest.playerAccentColour : PatchCraftLookAndFeel::accent()).withAlpha (0.22f));
-            g.fillRoundedRectangle (artworkBounds.toFloat().reduced (1.0f), 5.0f);
-            g.setColour (pack != nullptr ? pack->manifest.playerAccentColour : PatchCraftLookAndFeel::accent());
-            g.setFont (playerChromeFont (titleFontFamily, (float) artworkBounds.getHeight() * 0.52f, true));
-            g.drawText (initial, artworkBounds, juce::Justification::centred, true);
-        }
-
-        const auto brandName = pack != nullptr
-            ? playerInstrumentName (pack)
-            : juce::String ("PATCHCRAFT");
-        const auto tagline = pack != nullptr && pack->manifest.playerTagline.isNotEmpty()
-            ? pack->manifest.playerTagline
-            : juce::String();
-        if (titlePlacement != "hidden")
-        {
-            const auto justify = titlePlacement == "center" ? juce::Justification::centred
-                               : titlePlacement == "right"  ? juce::Justification::centredRight
-                                                            : juce::Justification::centredLeft;
-            if (titlePlacement == "center")
-                brand = juce::Rectangle<int> (titleArea.getX() + titleArea.getWidth() / 2 - 190,
-                                              brand.getY(), 380, brand.getHeight());
-            else if (titlePlacement == "right")
-                brand = juce::Rectangle<int> (titleArea.getRight() - 390, brand.getY(), 240, brand.getHeight());
-
-            g.setColour (PatchCraftLookAndFeel::textBright());
-            g.setFont (playerChromeFont (titleFontFamily, titleTheme == "artist-card" ? 16.5f : 15.0f, true));
-            g.drawText (brandName, brand.removeFromTop (drewTitleBanner ? 17 : 19), justify, true);
-            if (tagline.isNotEmpty())
-            {
-                g.setColour (PatchCraftLookAndFeel::textDim());
-                g.setFont (playerChromeFont (titleFontFamily, 10.0f, true));
-                g.drawText (tagline.toUpperCase(), brand, justify, true);
-            }
-        }
+        g.fillAll (getBgColor());
     }
 
     void PlayerEditor::resized()
     {
-        if (renderer == nullptr) return;
-
-        auto r = getLocalBounds();
-        auto topBar = r.removeFromTop (kPlayerMenuBarHeight);
-        auto contentBounds = r;
-        const auto* pack = proc.getPack();
-        const bool showPackMenu = pack == nullptr || pack->manifest.playerShowPackMenu;
-        const bool showLibrary = pack == nullptr || pack->manifest.playerShowLibraryBrowser;
-        const auto titleButtonStyle = pack != nullptr && pack->manifest.playerTitleButtonStyle.isNotEmpty()
-            ? pack->manifest.playerTitleButtonStyle
-            : juce::String ("outlined");
-        for (auto* button : { &libraryBtn, &performanceBtn, &controlBtn,
-                              &prevPresetBtn, &presetBtn, &nextPresetBtn })
-        {
-            button->getProperties().set ("corner", titleButtonStyle == "square" ? 2.0 : (titleButtonStyle == "pill" ? 12.0 : 5.0));
-            if (pack != nullptr)
-            {
-                button->setColour (juce::TextButton::buttonColourId,
-                                   titleButtonStyle == "minimal" ? juce::Colours::transparentBlack
-                                   : titleButtonStyle == "filled" ? pack->manifest.playerAccentColour.withAlpha (0.28f)
-                                                                  : pack->manifest.playerPanelColour.brighter (0.04f));
-                button->setColour (juce::TextButton::textColourOffId, pack->manifest.playerTextColour);
-            }
-        }
+        auto bounds = getLocalBounds();
 
         if (libraryVisible)
         {
-            libraryBrowser->setBounds (contentBounds);
-            renderer->setVisible (false);
-            libraryBrowser->setVisible (true);
-            if (performancePanel != nullptr)
-                performancePanel->setVisible (false);
-            if (controlCenter != nullptr)
-                controlCenter->setVisible (false);
-            if (userImportPanel != nullptr)
-                userImportPanel->setVisible (false);
+            if (libraryBrowser != nullptr)
+            {
+                libraryBrowser->setBounds (bounds);
+                libraryBrowser->setVisible (true);
+            }
+            if (topBar != nullptr) topBar->setVisible (false);
+            if (leftSidebar != nullptr) leftSidebar->setVisible (false);
+            if (centerPanel != nullptr) centerPanel->setVisible (false);
+            if (rightPanel != nullptr) rightPanel->setVisible (false);
+            if (footer != nullptr) footer->setVisible (false);
+            if (keyboardStrip != nullptr) keyboardStrip->setVisible (false);
+            if (renderer != nullptr) renderer->setVisible (false);
+            return;
         }
-        else
-        {
-            auto renderBounds = contentBounds;
-            const bool showPerformance = performanceVisible && pack != nullptr && performancePanel != nullptr;
-            if (showPerformance)
-            {
-                performancePanel->setFloating (false);
-                performancePanel->setBounds (contentBounds.reduced (10));
-                performancePanel->setVisible (true);
-            }
-            else if (performancePanel != nullptr)
-            {
-                performancePanel->setVisible (false);
-            }
 
-            renderer->setBounds (renderBounds);
-            renderer->setVisible (true);
+        if (libraryBrowser != nullptr)
             libraryBrowser->setVisible (false);
-            if (performancePanel != nullptr && performancePanel->isVisible())
-                performancePanel->toFront (false);
 
-            if (controlCenter != nullptr)
-            {
-                controlCenter->setBounds (contentBounds);
-                controlCenter->setVisible (controlCenterVisible && pack != nullptr);
-                if (controlCenter->isVisible())
-                    controlCenter->toFront (false);
-            }
-
-            if (userImportPanel != nullptr)
-            {
-                userImportPanel->setBounds (contentBounds);
-                userImportPanel->setVisible (userImportVisible && pack != nullptr);
-                if (userImportPanel->isVisible())
-                    userImportPanel->toFront (false);
-            }
+        if (topBar != nullptr)
+        {
+            const auto* pack = proc.getPack();
+            const bool showTopBar = pack == nullptr || pack->manifest.playerShowTopBar;
+            topBar->setVisible (showTopBar);
+            if (showTopBar)
+                topBar->setBounds (bounds.removeFromTop (72));
+            else
+                topBar->setBounds ({});
         }
 
-        const auto chromeBar = playerChromeBoundsFor (topBar, pack);
-        auto toolbarArea = chromeBar.withTop (chromeBar.getY() + kPlayerTitleAreaHeight);
-        auto toolWell = toolbarArea.reduced (14, 5);
-        const int buttonH = juce::jlimit (26, 32, toolWell.getHeight() - 2);
-        const int buttonY = toolWell.getY() + (toolWell.getHeight() - buttonH) / 2;
-        const bool runtimeVisible = pack != nullptr && ! libraryVisible;
-        const bool compact = chromeBar.getWidth() < 980;
-        const bool narrow = chromeBar.getWidth() < 760;
-        const int gap = narrow ? 6 : compact ? 9 : 12;
-        int leftX = toolWell.getX();
-
-        auto placeLeft = [&] (juce::TextButton& button, bool visible, int width)
+        if (footer != nullptr)
         {
-            button.setVisible (visible);
-            if (visible)
-            {
-                button.setBounds (leftX, buttonY, width, buttonH);
-                leftX += width + gap;
-            }
-            else
-            {
-                button.setBounds ({});
-            }
-        };
+            const auto* pack = proc.getPack();
+            const bool showFooter = pack == nullptr || pack->manifest.playerShowFooter;
+            footer->setVisible (showFooter);
+            if (showFooter)
+                footer->setBounds (bounds.removeFromBottom (28));
+        }
 
-        placeLeft (libraryBtn, showLibrary, narrow ? 58 : compact ? 64 : 72);
-
-        int rightX = toolWell.getRight();
-        auto placeRight = [&] (juce::TextButton& button, bool visible, int width)
+        if (leftSidebar != nullptr)
         {
-            button.setVisible (visible);
-            if (visible)
-            {
-                rightX -= width;
-                button.setBounds (rightX, buttonY, width, buttonH);
-                rightX -= gap;
-            }
+            const auto* pack = proc.getPack();
+            const bool showLeft = pack == nullptr || pack->manifest.playerShowLeftSidebar;
+            leftSidebar->setVisible (showLeft);
+            if (showLeft)
+                leftSidebar->setBounds (bounds.removeFromLeft (260));
+        }
+
+        if (rightPanel != nullptr)
+        {
+            const auto* pack = proc.getPack();
+            const bool anySection = pack == nullptr
+                                 || pack->manifest.rightPanelShowMacros
+                                 || pack->manifest.rightPanelShowEffects
+                                 || pack->manifest.rightPanelShowSends
+                                 || pack->manifest.rightPanelShowUtility;
+            const bool showRight = (pack == nullptr || pack->manifest.playerShowRightPanel) && anySection;
+            rightPanel->setVisible (showRight);
+            if (showRight)
+                rightPanel->setBounds (bounds.removeFromRight (300));
             else
-            {
-                button.setBounds ({});
-            }
-        };
+                rightPanel->setBounds ({});
+        }
 
-        placeRight (controlBtn, runtimeVisible, narrow ? 64 : compact ? 72 : 82);
-        placeRight (performanceBtn, runtimeVisible, narrow ? 72 : compact ? 82 : 92);
+        if (keyboardStrip != nullptr)
+        {
+            const auto* pack = proc.getPack();
+            const bool showKeyboard = pack == nullptr || pack->manifest.playerShowKeyboard;
+            keyboardStrip->setVisible (showKeyboard);
+            if (showKeyboard)
+                keyboardStrip->setBounds (bounds.removeFromBottom (96));
+            else
+                keyboardStrip->setBounds ({});
+        }
 
-        const bool hasPresets = pack != nullptr && proc.getPresetCount() > 0;
-        const int presetAreaX = leftX + gap;
-        const int presetAreaWidth = juce::jmax (0, rightX - leftX - gap * 2);
-        const int presetWidth = juce::jlimit (96, 240, presetAreaWidth - 62);
-        const int presetX = presetAreaX + juce::jmax (0, (presetAreaWidth - presetWidth - 62) / 2);
-        prevPresetBtn.setBounds (presetX, buttonY, 26, buttonH);
-        presetBtn.setBounds (presetX + 31, buttonY, presetWidth, buttonH);
-        nextPresetBtn.setBounds (presetX + 36 + presetWidth, buttonY, 26, buttonH);
+        if (centerPanel != nullptr)
+        {
+            centerPanel->setVisible (false);
+            centerPanel->setBounds ({});
+        }
 
-        prevPresetBtn.setVisible (hasPresets && ! libraryVisible && presetAreaWidth >= 170);
-        presetBtn.setVisible (hasPresets && ! libraryVisible && presetAreaWidth >= 170);
-        nextPresetBtn.setVisible (hasPresets && ! libraryVisible && presetAreaWidth >= 170);
-        loadBtn.setVisible (false);
+        if (renderer != nullptr)
+        {
+            renderer->setBounds (bounds);
+            renderer->setVisible (true);
+        }
 
-        const int overlayW = juce::jmin (540, juce::jmax (280, contentBounds.getWidth() - 80));
+        const int overlayW = juce::jmin (540, juce::jmax (280, getWidth() - 80));
         const int overlayH = 72;
-        presetLoadingLabel.setBounds (juce::Rectangle<int> (overlayW, overlayH).withCentre (contentBounds.getCentre()));
+        presetLoadingLabel.setBounds (juce::Rectangle<int> (overlayW, overlayH).withCentre (getLocalBounds().getCentre()));
         if (presetLoadingLabel.isVisible())
             presetLoadingLabel.toFront (false);
     }
 
     void PlayerEditor::resizeToCurrentPackCanvas()
     {
-        int width = 1280;
-        int height = 800 + kPlayerMenuBarHeight;
-
-        if (const auto* loadedPack = proc.getPack())
-        {
-            width = juce::jlimit (640, 1920, loadedPack->canvasSize.width);
-            height = juce::jlimit (420, 1200, loadedPack->canvasSize.height + kPlayerMenuBarHeight);
-        }
-
-        const int minWidth = juce::jlimit (640, 1200, width / 2);
-        const int minHeight = juce::jlimit (420, 900, height / 2);
-        const int maxWidth = juce::jlimit (width, 2600, width * 2);
-        const int maxHeight = juce::jlimit (height, 1900, height * 2);
-
-        setResizable (true, true);
-        setResizeLimits (minWidth, minHeight, maxWidth, maxHeight);
-        if (getWidth() != width || getHeight() != height)
-            setSize (width, height);
+        if (getWidth() != 1280 || getHeight() != 720)
+            setSize (1280, 720);
     }
 
     void PlayerEditor::packChanged()
     {
-        refreshTooltipWindowState();
-        resizeToCurrentPackCanvas();
-        renderer->rebuild();
+        const auto* pack = proc.getPack();
+        if (pack != nullptr)
+        {
+            const auto& m = pack->manifest;
+            laf.setColour (juce::ResizableWindow::backgroundColourId, m.playerBackgroundColour);
+            laf.setColour (juce::DocumentWindow::backgroundColourId, m.playerBackgroundColour);
+            laf.setColour (juce::TextButton::buttonColourId, m.playerPanelColour.brighter (0.04f));
+            laf.setColour (juce::TextButton::buttonOnColourId, m.playerAccentColour);
+            laf.setColour (juce::TextButton::textColourOffId, m.playerTextDimColour);
+            laf.setColour (juce::TextButton::textColourOnId, m.playerTextColour);
+            laf.setColour (juce::ComboBox::backgroundColourId, m.playerPanelColour);
+            laf.setColour (juce::ComboBox::textColourId, m.playerTextColour);
+            laf.setColour (juce::ComboBox::outlineColourId, m.playerBorderColour);
+            laf.setColour (juce::ComboBox::buttonColourId, m.playerPanelColour.darker (0.1f));
+            laf.setColour (juce::ComboBox::arrowColourId, m.playerAccentColour);
+            laf.setColour (juce::Slider::rotarySliderFillColourId, m.playerAccentColour);
+            laf.setColour (juce::Slider::rotarySliderOutlineColourId, m.playerBorderColour);
+            laf.setColour (juce::Slider::thumbColourId, m.playerAccentColour);
+            laf.setColour (juce::Slider::trackColourId, m.playerAccentColour.withAlpha (0.5f));
+            laf.setColour (juce::Slider::backgroundColourId, m.playerPanelColour);
+            laf.setColour (juce::Label::textColourId, m.playerTextColour);
+            laf.setColour (juce::TextEditor::backgroundColourId, m.playerPanelColour);
+            laf.setColour (juce::TextEditor::textColourId, m.playerTextColour);
+            laf.setColour (juce::TextEditor::outlineColourId, m.playerBorderColour);
+            laf.setColour (juce::ListBox::backgroundColourId, m.playerBackgroundColour);
+            laf.setColour (juce::ListBox::textColourId, m.playerTextDimColour);
+        }
+
+        if (topBar != nullptr)
+        {
+            topBar->updatePresetCard();
+            topBar->updateChromeVisibility();
+        }
+
+        if (leftSidebar != nullptr)
+            leftSidebar->refreshList();
+
+        if (centerPanel != nullptr)
+        {
+            centerPanel->updateKnobsFromProcessor();
+            centerPanel->updateColours();
+        }
+
+        if (renderer != nullptr)
+        {
+            renderer->rebuild();
+            renderer->setVisible (true);
+        }
+
+        if (rightPanel != nullptr)
+        {
+            rightPanel->updateColours();
+            rightPanel->resized(); // section visibility follows the manifest
+        }
+
+        if (keyboardStrip != nullptr)
+            keyboardStrip->updateColours();
+
+        if (footer != nullptr)
+        {
+            footer->updateColours();
+            footer->refreshLicense();
+        }
+
         presetLoadingLabel.setVisible (false);
-        loadBtn.setVisible (false);
-        libraryBtn.setVisible (proc.getPack() == nullptr || proc.getPack()->manifest.playerShowLibraryBrowser);
-        performanceBtn.setVisible (proc.getPack() != nullptr);
-        controlBtn.setVisible (false);
-        if (performancePanel != nullptr)
-            performancePanel->rebuild();
-        if (controlCenter != nullptr)
-            controlCenter->rebuild();
-        if (userImportPanel != nullptr)
-            userImportPanel->refresh();
-        refreshPresetControls();
         resized();
         repaint();
     }
@@ -3752,10 +5428,14 @@ namespace patchcraft
 
         struct AboutPanel final : public juce::Component
         {
-            explicit AboutPanel (Manifest manifestIn)
-                : manifest (std::move (manifestIn))
+            AboutPanel (Manifest manifestIn,
+                        juce::String licenseStatusIn,
+                        std::function<void()> activateActionIn)
+                : manifest (std::move (manifestIn)),
+                  licenseStatus (std::move (licenseStatusIn)),
+                  activateAction (std::move (activateActionIn))
             {
-                setSize (620, 440);
+                setSize (660, 460);
 
                 auto wireUrlButton = [this] (juce::TextButton& button, const juce::String& label, const juce::String& url)
                 {
@@ -3775,6 +5455,15 @@ namespace patchcraft
                                manifest.salesCheckoutUrl.isNotEmpty()
                                     ? manifest.salesCheckoutUrl
                                     : (manifest.playerStoreUrl.isNotEmpty() ? manifest.playerStoreUrl : manifest.website));
+                activateButton.setButtonText ("Activate License");
+                activateButton.setTooltip ("Validate a buyer license key with the publisher's activation server.");
+                activateButton.setVisible (manifest.licenseRequired);
+                activateButton.onClick = [this]
+                {
+                    if (activateAction)
+                        activateAction();
+                };
+                addAndMakeVisible (activateButton);
                 closeButton.setButtonText ("Close");
                 closeButton.onClick = [this]
                 {
@@ -3829,9 +5518,7 @@ namespace patchcraft
                 drawRow ("Built For", manifest.playerClientName);
                 drawRow ("Website", manifest.website);
                 drawRow ("Support Email", manifest.playerSupportEmail);
-                drawRow ("License", manifest.licenseRequired
-                    ? "License required" + (manifest.trialDays > 0 ? " / trial available" : juce::String())
-                    : "No license required");
+                drawRow ("License", licenseStatus);
                 body.removeFromTop (8);
 
                 if (manifest.description.isNotEmpty() || manifest.playerLegalText.isNotEmpty())
@@ -3876,12 +5563,17 @@ namespace patchcraft
                 manualButton.setBounds (buttons.removeFromRight (86));
                 buttons.removeFromRight (8);
                 supportButton.setBounds (buttons.removeFromRight (86));
+                if (activateButton.isVisible())
+                    activateButton.setBounds (buttons.removeFromLeft (132));
             }
 
             Manifest manifest;
+            juce::String licenseStatus;
+            std::function<void()> activateAction;
             juce::TextButton supportButton { "Support" };
             juce::TextButton manualButton { "Manual" };
             juce::TextButton storeButton { "Store" };
+            juce::TextButton activateButton { "Activate License" };
             juce::TextButton closeButton { "Close" };
         };
 
@@ -3892,8 +5584,118 @@ namespace patchcraft
         options.useNativeTitleBar = true;
         options.resizable = false;
         options.componentToCentreAround = this;
-        options.content.setOwned (new AboutPanel (pack->manifest));
+        juce::Component::SafePointer<PlayerEditor> safeThis (this);
+        options.content.setOwned (new AboutPanel (pack->manifest,
+                                                  proc.getLicenseStatusText(),
+                                                  [safeThis]
+                                                  {
+                                                      if (auto* editor = safeThis.getComponent())
+                                                          editor->showLicenseActivationDialog();
+                                                  }));
         options.launchAsync();
+    }
+
+    void PlayerEditor::showLicenseActivationDialog()
+    {
+        const auto* pack = proc.getPack();
+        if (pack == nullptr || ! pack->manifest.licenseRequired)
+        {
+            juce::AlertWindow::showAsync (
+                juce::MessageBoxOptions()
+                    .withTitle ("License")
+                    .withMessage ("This product does not require activation.")
+                    .withButton ("OK"),
+                nullptr);
+            return;
+        }
+
+        if (pack->manifest.licenseProductId.trim().isEmpty()
+            || pack->manifest.licenseServerUrl.trim().isEmpty())
+        {
+            const auto support = pack->manifest.playerSupportEmail.isNotEmpty()
+                ? pack->manifest.playerSupportEmail
+                : juce::String ("the publisher's support address");
+            juce::AlertWindow::showAsync (
+                juce::MessageBoxOptions()
+                    .withTitle ("License Setup Error")
+                    .withMessage ("This product is missing its license product ID or activation URL. Contact " + support + ".")
+                    .withIconType (juce::MessageBoxIconType::WarningIcon)
+                    .withButton ("OK"),
+                nullptr);
+            return;
+        }
+
+        auto* dialog = new juce::AlertWindow ("Activate " + playerInstrumentName (pack),
+                                              "Enter the license key supplied by the publisher. Activation is tied to this product"
+                                                  + juce::String (pack->manifest.licenseBindToMachine ? " and this machine." : "."),
+                                              juce::MessageBoxIconType::QuestionIcon,
+                                              this);
+        dialog->addTextEditor ("licenseKey", {}, "License key:");
+        dialog->addButton ("Activate", 1, juce::KeyPress (juce::KeyPress::returnKey));
+        dialog->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+        juce::Component::SafePointer<PlayerEditor> safeThis (this);
+        const auto info = proc.getLicenseInfo();
+        dialog->enterModalState (true,
+            juce::ModalCallbackFunction::create ([dialog, safeThis, info] (int result)
+            {
+                std::unique_ptr<juce::AlertWindow> owned (dialog);
+                if (result != 1)
+                    return;
+
+                const auto key = owned->getTextEditorContents ("licenseKey").trim();
+                if (key.isEmpty())
+                {
+                    juce::AlertWindow::showAsync (
+                        juce::MessageBoxOptions()
+                            .withTitle ("Activation")
+                            .withMessage ("Enter a license key before activating.")
+                            .withIconType (juce::MessageBoxIconType::WarningIcon)
+                            .withButton ("OK"),
+                        nullptr);
+                    return;
+                }
+
+                if (auto* editor = safeThis.getComponent())
+                    if (editor->footer != nullptr)
+                        editor->footer->setStatus ("Activating license...");
+
+                juce::Thread::launch ([safeThis, info, key]
+                {
+                    juce::String diagnostic;
+                    auto status = LicenseValidator::activateOnline (info, key, 20000, diagnostic);
+                    juce::MessageManager::callAsync ([safeThis, status = std::move (status)] () mutable
+                    {
+                        auto* editor = safeThis.getComponent();
+                        if (editor == nullptr)
+                            return;
+
+                        editor->proc.applyLicenseActivationStatus (status);
+                        if (editor->footer != nullptr)
+                        {
+                            editor->footer->setStatus (status.authorized ? "Ready" : "Activation required");
+                            editor->footer->refreshLicense();
+                        }
+                        editor->repaint();
+
+                        juce::AlertWindow::showAsync (
+                            juce::MessageBoxOptions()
+                                .withTitle (status.authorized ? "Activation Complete" : "Activation Failed")
+                                .withMessage (status.authorized
+                                    ? (status.ownerName.isNotEmpty()
+                                        ? "Licensed to " + status.ownerName + "."
+                                        : juce::String ("This product is now activated on this machine."))
+                                    : (status.message.isNotEmpty()
+                                        ? status.message
+                                        : juce::String ("The license server did not authorize this product.")))
+                                .withIconType (status.authorized
+                                    ? juce::MessageBoxIconType::InfoIcon
+                                    : juce::MessageBoxIconType::WarningIcon)
+                                .withButton ("OK"),
+                            nullptr);
+                    });
+                });
+            }));
     }
 
     void PlayerEditor::refreshPresetControls()

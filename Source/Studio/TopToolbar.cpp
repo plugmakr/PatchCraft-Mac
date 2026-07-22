@@ -205,7 +205,7 @@ namespace patchcraft
 #if PATCHCRAFT_ENABLE_AI_STUDIO
         addBtn (btnAiAssist,      "AI Assist",      "aiAssist",       [this] { owner.aiAssist(); });
 #endif
-        addBtn (btnPreview,       "Preview",        "preview",        [this] { owner.togglePreview(); }, true);
+        addBtn (btnPreview,       "Preview", "preview", [this] { owner.togglePreview(); }, true);
         addBtn (btnExport,        "Export Pack",    "export",
             [this]
             {
@@ -241,13 +241,28 @@ namespace patchcraft
         presetBox.setTextWhenNothingSelected ("Graph Templates...");
         presetBox.onChange = [this]
         {
-            if (presetBox.getSelectedId() == 0) return;
-            juce::String message;
-            if (ControlNodeAuthoring::applyPreset (owner.getProject(), presetBox.getText(), message))
+            if (presetBox.getSelectedId() == 0 || ! presetBox.isEnabled())
+                return;
+
+            const auto templateName = presetBox.getText();
+            presetBox.setEnabled (false);
+
+            juce::Component::SafePointer<TopToolbar> safeThis (this);
+            juce::MessageManager::callAsync ([safeThis, templateName]
             {
-                presetBox.setSelectedId (0, juce::dontSendNotification);
-                presetBox.setTextWhenNothingSelected ("Graph Templates...");
-            }
+                if (auto* toolbar = safeThis.getComponent())
+                {
+                    juce::String message;
+                    const bool ok = ControlNodeAuthoring::applyPreset (toolbar->owner.getProject(), templateName, message);
+                    toolbar->presetBox.setSelectedId (0, juce::dontSendNotification);
+                    toolbar->presetBox.setTextWhenNothingSelected ("Graph Templates...");
+                    toolbar->presetBox.setEnabled (true);
+                    if (ok)
+                        toolbar->owner.getProject().notifyChanged();
+                    toolbar->resized();
+                    juce::ignoreUnused (message);
+                }
+            });
         };
         addAndMakeVisible (presetBox);
 
@@ -270,10 +285,13 @@ namespace patchcraft
                   : PatchCraftLookAndFeel::textDim());
     }
 
-    void TopToolbar::setPreviewActive (bool active)
+    void TopToolbar::setPreviewActive (bool active, const juce::String& idleLabel)
     {
         previewActive = active;
-        btnPreview->label = active ? "Stop" : "Preview";
+        if (active)
+            btnPreview->label = idleLabel == "Listen" ? "Stop Listen" : "Exit Preview";
+        else
+            btnPreview->label = idleLabel;
         repaint();
     }
 

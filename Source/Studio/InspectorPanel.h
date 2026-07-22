@@ -29,6 +29,8 @@ namespace patchcraft
 
         void selectionChanged();
         void refresh();
+        void refreshPscriptHelpers();
+        void enableTutorialLabels();
 
     private:
         StudioMainComponent& owner;
@@ -92,6 +94,49 @@ namespace patchcraft
         juce::TextButton btnCopyNoParams { "Copy -P" };
         juce::TextButton btnPaste     { "Paste" };
         juce::TextButton btnAllTabs   { "All Tabs" };
+
+        juce::Label lblPlayerPreviewSection;
+        juce::Label lblPlayerPreviewHelp;
+        juce::Label lblPlayerShell;
+        juce::ToggleButton playerShowTopBarToggle { "Top Bar" };
+        juce::ToggleButton playerShowLeftSidebarToggle { "Left Browser" };
+        juce::ToggleButton playerShowFooterToggle { "Footer" };
+        juce::ToggleButton playerShowRightPanelToggle { "Right Panel" };
+        juce::ToggleButton playerShowKeyboardToggle { "Keyboard" };
+        juce::Label lblPlayerRuntime;
+        juce::ToggleButton playerShowPackMenuToggle { "Pack Menu" };
+        juce::ToggleButton playerAllowPackLoadingToggle { "Load Packs" };
+        juce::ToggleButton playerShowLibraryToggle { "Library" };
+        juce::ToggleButton playerAllowMidiLearnToggle { "MIDI Learn" };
+        juce::ToggleButton playerShowAboutToggle { "About" };
+        juce::ToggleButton playerShowTooltipsToggle { "Tooltips" };
+        juce::Label lblPlayerTopBar;
+        juce::ToggleButton playerTopBrowseToggle { "Browse" };
+        juce::ToggleButton playerTopSaveToggle { "Save" };
+        juce::ToggleButton playerTopSettingsToggle { "Settings" };
+        juce::ToggleButton playerTopCategoryToggle { "Category" };
+        juce::ToggleButton playerTopFavoriteToggle { "Favorite" };
+        juce::ToggleButton playerTopPresetNavToggle { "Preset Nav" };
+        juce::ToggleButton playerTopMasterToggle { "Volume" };
+        juce::ToggleButton playerTopMeterToggle { "Meter" };
+        juce::Label lblPlayerRightPanel;
+        juce::ToggleButton playerRightMacrosToggle { "Macros" };
+        juce::ToggleButton playerRightEffectsToggle { "FX" };
+        juce::ToggleButton playerRightSendsToggle { "Sends" };
+        juce::ToggleButton playerRightUtilityToggle { "Utility" };
+
+        juce::Label lblPscriptSection;
+        juce::TextEditor pscriptReferenceView;
+        juce::TextEditor pscriptVariablesView;
+        juce::TextEditor pscriptControlsView;
+        juce::TextButton pscriptTestNoteBtn { "Test Note" };
+        juce::TextButton pscriptTestModBtn { "Mod Wheel" };
+        juce::Label lblPscriptHint;
+        juce::Label lblPscriptAttach;
+        juce::Label pscriptAttachStatus;
+        juce::TextButton pscriptAttachBtn { "Attach..." };
+        juce::TextButton pscriptDetachBtn { "Detach" };
+
         juce::ToggleButton copyTabsAsReferenceToggle { "Copy as linked reference" };
         juce::TextButton btnDelete    { "Delete" };
         juce::TextButton btnForward   { "Forward" };
@@ -232,7 +277,8 @@ namespace patchcraft
 
         enum class InspectorSection
         {
-            Layout = 0,
+            PlayerPreview = 0,
+            Layout,
             Parameter,
             Style,
             Advanced,
@@ -245,11 +291,12 @@ namespace patchcraft
             ModMatrix,
             Granular,
             Container,
+            PScript,
             Count
         };
 
         std::array<bool, (size_t) InspectorSection::Count> sectionOpen {{
-            true, true, true, true, true, true, true, true, true, true, true, true, true
+            true, true, true, true, true, true, true, true, true, true, true, true, true, true, true
         }};
         std::array<juce::Rectangle<int>, (size_t) InspectorSection::Count> sectionHeaderBounds {};
 
@@ -259,6 +306,8 @@ namespace patchcraft
         void hookCombo (juce::ComboBox& c, std::function<void (int)>);
 
         void writeFromUi();
+        void writePlayerPreviewFromUi();
+        void refreshPlayerPreviewControls();
         void showColourPicker (const juce::String& title, juce::TextEditor& target, juce::Colour current);
         void layoutRow (juce::Rectangle<int>& area, juce::Label& label,
                         juce::Component* control, int height = 26);
@@ -295,6 +344,7 @@ namespace patchcraft
         void setGranularValue (const juce::String& parameterId, float value, bool notify = true);
         void refreshGranularControls();
         void writeGranularControlsFromUi();
+        void hideElementInspectorContent();
 
         // Persistent labels (rebuilt at construction)
         juce::Label lblType, lblId, lblPos, lblSize, lblParam, lblDropZoneLink, lblLabel, lblAction,

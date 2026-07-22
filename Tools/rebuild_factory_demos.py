@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import math
 import random
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,20 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 ROOT = Path(__file__).resolve().parents[1]
 FACTORY = ROOT / "FactoryDemos"
 W, H = 1280, 800
+PLAYER_CANVAS_W, PLAYER_CANVAS_H = 960, 600
+
+# These controls belong to the shared exported Player frame. Factory instruments
+# author only the centre canvas, otherwise Brand Preview shows duplicate preset,
+# keyboard, wheel, volume, and output controls.
+PLAYER_FRAME_ELEMENT_IDS = {
+    "presets",
+    "keyboard",
+    "pitchwheel",
+    "modwheel",
+    "global_volume",
+    "global_pan",
+    "output_value",
+}
 
 
 def rgba(hex_rgb: str, alpha: int = 255) -> tuple[int, int, int, int]:
@@ -387,7 +402,58 @@ def demo_hint_elements(pack: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
-def base_layout(pack: dict[str, Any]) -> list[dict[str, Any]]:
+def finalize_player_canvas(layout: dict[str, Any]) -> None:
+    """Convert a legacy full-player layout into the authored centre canvas.
+
+    Builders still use the original 1280x800 coordinate system because it keeps
+    their panel math readable. This final pass removes shared Player controls and
+    scales the instrument face to the 960x600 centre-canvas contract. At the
+    default 1280x720 Player size that canvas fits the available 720x450 region
+    exactly, so labels and controls remain crisp instead of being unpredictably
+    letterboxed or squeezed.
+    """
+    sx = PLAYER_CANVAS_W / W
+    sy = PLAYER_CANVAS_H / H
+    elements = [
+        e for e in layout.get("elements", [])
+        if e.get("id") not in PLAYER_FRAME_ELEMENT_IDS
+    ]
+    for e in elements:
+        for key, scale in (("x", sx), ("width", sx), ("y", sy), ("height", sy)):
+            if key in e:
+                e[key] = max(1 if key in ("width", "height") else 0,
+                             int(round(float(e[key]) * scale)))
+        if "cornerRadius" in e:
+            e["cornerRadius"] = max(1, int(round(float(e["cornerRadius"]) * min(sx, sy))))
+        if "labelSize" in e:
+            e["labelSize"] = max(8.0, round(float(e["labelSize"]) * min(sx, sy), 2))
+
+    # Legacy layouts reserved the first ~100 authored pixels for an in-canvas
+    # title/preset row. That row now lives in PlayerTopBar, so reclaim the space.
+    content = [e for e in elements if e.get("id") != "background"]
+    if content:
+        min_y = min(e.get("y", 0) for e in content)
+        max_y = max(e.get("y", 0) + e.get("height", 0) for e in content)
+        y_shift = 18 - min_y
+        if max_y + y_shift > PLAYER_CANVAS_H - 18:
+            y_shift -= max_y + y_shift - (PLAYER_CANVAS_H - 18)
+        for e in content:
+            e["y"] = max(0, e.get("y", 0) + y_shift)
+
+    layout["canvas"] = {"width": PLAYER_CANVAS_W, "height": PLAYER_CANVAS_H}
+    layout["elements"] = elements
+
+
+def reposition_wheels(els: list[dict[str, Any]], *, x_pitch: int = 44, x_mod: int = 88,
+                      y: int = 658, height: int = 96) -> None:
+    for e in els:
+        if e.get("id") == "pitchwheel":
+            e.update({"x": x_pitch, "y": y, "height": height})
+        elif e.get("id") == "modwheel":
+            e.update({"x": x_mod, "y": y, "height": height})
+
+
+def base_layout(pack: dict[str, Any], *, include_wheels: bool = True) -> list[dict[str, Any]]:
     accent = pack["accent"]
     els = [
         {"id": "background", "type": "image", "x": 0, "y": 0, "width": W, "height": H,
@@ -395,12 +461,15 @@ def base_layout(pack: dict[str, Any]) -> list[dict[str, Any]]:
         # The Player chrome (logo + name + tagline) already brands the product, so
         # the instrument face stays clean — no duplicated/oversized in-canvas title.
         dropdown("presets", "Preset", "", 974, 38, 248, 34, accent=accent, group="brand"),
-        slider("pitchwheel", "Pitch", "modWheel", 52, 612, 34, 118, accent=accent, group="global"),
-        slider("modwheel", "Mod", "expression", 96, 612, 34, 118, accent=accent, group="global"),
-        knob("global_volume", "Volume", "volume", 1126, 596, accent=accent, size=72, group="global"),
-        knob("global_pan", "Pan", "pan", 1126, 690, accent=pack["accent2"], size=72, group="global"),
-        value_display("output_value", "Out", "outputGainDb", 1028, 704, 82, 34, accent=accent, group="global"),
+        knob("global_volume", "Volume", "volume", 1190, 578, accent=accent, size=64, group="global"),
+        knob("global_pan", "Pan", "pan", 1190, 668, accent=pack["accent2"], size=64, group="global"),
+        value_display("output_value", "Out", "outputGainDb", 1096, 648, 82, 34, accent=accent, group="global"),
     ]
+    if include_wheels:
+        els[2:2] = [
+            slider("pitchwheel", "Pitch", "modWheel", 44, 658, 34, 96, accent=accent, group="global"),
+            slider("modwheel", "Mod", "expression", 88, 658, 34, 96, accent=accent, group="global"),
+        ]
     els += demo_hint_elements(pack)
     return els
 
@@ -411,7 +480,7 @@ def synth_layout(pack: dict[str, Any]) -> dict[str, Any]:
     els = base_layout(pack)
     source_frame = (54, 112, 360, 250)
     visual_frame = (430, 112, 752, 250)
-    deck_frame = (54, 384, 1000, 244)
+    deck_frame = (54, 384, 920, 244)
     spectrum_w = 430 if step_arp else 700
     els += [
         shape("source_frame", *source_frame, bg="bb090d14", border=accent, radius=16, glow=0.12, group="source"),
@@ -466,9 +535,9 @@ def drums_layout(pack: dict[str, Any]) -> dict[str, Any]:
         [0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],
     ]
-    pad_frame = (52, 112, 452, 430)
-    grid_frame = (524, 112, 658, 210)
-    mix_frame = (524, 360, 658, 268)
+    pad_frame = (52, 112, 500, 488)
+    grid_frame = (572, 112, 610, 210)
+    mix_frame = (572, 360, 610, 268)
     els += [
         shape("pad_frame", *pad_frame, bg="bb080b10", border=accent, radius=18, group="pads", glow=0.14),
         shape("grid_frame", *grid_frame, bg="bb080b10", border=accent2, radius=16, group="pattern"),
@@ -476,11 +545,11 @@ def drums_layout(pack: dict[str, Any]) -> dict[str, Any]:
         label("pad_title", "DRUM PADS", pad_frame[0] + 26, pad_frame[1] + 18, 200, 22, colour="ffeef6ff", size=14, group="pads"),
         label("grid_title", "PATTERN", grid_frame[0] + 26, grid_frame[1] + 16, 200, 22, colour="ffeef6ff", size=14, group="pattern"),
         label("mix_title", "KIT MIX", mix_frame[0] + 26, mix_frame[1] + 16, 200, 22, colour="ffeef6ff", size=14, group="mix"),
-        {"id": "pad_bank", "type": "padGrid", "x": pad_frame[0] + 26, "y": pad_frame[1] + 58, "width": 400, "height": 336,
+        {"id": "pad_bank", "type": "padGrid", "x": pad_frame[0] + 30, "y": pad_frame[1] + 54, "width": 440, "height": 440,
          "parameterId": "pad1Volume", "padRows": 4, "padCols": 4, "padBaseNote": 36,
          "accentColour": accent, "backgroundColour": "dd06090f", "borderColour": "66505b72",
          "label": "Pads", "labelPosition": "hidden", "groupId": "pads"},
-        {"id": "drum_pattern", "type": "drumGrid", "x": grid_frame[0] + 24, "y": grid_frame[1] + 50, "width": 610, "height": 138,
+        {"id": "drum_pattern", "type": "drumGrid", "x": grid_frame[0] + 20, "y": grid_frame[1] + 50, "width": 570, "height": 138,
          "parameterId": "pad1Volume", "drumTracks": 8, "drumSteps": 16, "drumPattern": pattern,
          "accentColour": accent2, "backgroundColour": "dd06090f", "borderColour": "66505b72",
          "label": "Pattern", "labelPosition": "hidden", "groupId": "pattern"},
@@ -502,7 +571,7 @@ def sampler_layout(pack: dict[str, Any]) -> dict[str, Any]:
     els = base_layout(pack)
     wave_frame = (54, 112, 756, 250)
     drop_frame = (826, 112, 356, 250)
-    deck_frame = (54, 384, 1000, 244)
+    deck_frame = (54, 384, 920, 244)
     els += [
         shape("wave_frame", *wave_frame, bg="bb080b10", border=accent, radius=18, group="sample", glow=0.13),
         shape("drop_frame", *drop_frame, bg="aa0a1018", border=accent2, radius=18, group="drop"),
@@ -510,9 +579,12 @@ def sampler_layout(pack: dict[str, Any]) -> dict[str, Any]:
         label("wave_title", "SAMPLE PERFORMANCE", wave_frame[0] + 24, wave_frame[1] + 18, 280, 22, colour="ffeef6ff", size=14, group="sample"),
         label("drop_title", "DROP SAMPLE", drop_frame[0] + 24, drop_frame[1] + 18, 220, 22, colour="ffeef6ff", size=14, group="drop"),
         label("deck_title", "SHAPE / GRAIN / FX", deck_frame[0] + 24, deck_frame[1] + 16, 280, 22, colour="ffeef6ff", size=14, group="edit"),
-        {"id": "waveform", "type": "waveform", "x": wave_frame[0] + 24, "y": wave_frame[1] + 52, "width": 708, "height": 150,
+        {"id": "waveform", "type": "waveform", "x": wave_frame[0] + 24, "y": wave_frame[1] + 52, "width": 430, "height": 150,
          "parameterId": "sampleStart", "accentColour": accent, "backgroundColour": "cc06090f",
          "borderColour": "66505b72", "label": "Waveform", "labelPosition": "hidden", "groupId": "sample"},
+        {"id": "granular_cloud", "type": "granular", "x": wave_frame[0] + 472, "y": wave_frame[1] + 52, "width": 260, "height": 150,
+         "parameterId": "granularOn", "accentColour": accent2, "backgroundColour": "cc06090f",
+         "borderColour": accent2, "label": "Granular Cloud", "labelPosition": "hidden", "groupId": "sample"},
         {"id": "sample_drop", "type": "sampleDropZone", "x": drop_frame[0] + 24, "y": drop_frame[1] + 52, "width": 308, "height": 134,
          "parameterId": "sampleStart", "accentColour": accent2, "backgroundColour": "cc06090f",
          "borderColour": accent2, "label": "Drop Sample", "labelPosition": "hidden", "groupId": "drop"},
@@ -534,7 +606,7 @@ def sampler_layout(pack: dict[str, Any]) -> dict[str, Any]:
 def circle_layout(pack: dict[str, Any]) -> dict[str, Any]:
     accent, accent2 = pack["accent"], pack["accent2"]
     els = base_layout(pack)
-    deck_frame = (48, 572, 1114, 200)
+    deck_frame = (48, 440, 920, 200)
     els += [
         shape("orbit_field", 48, 112, 790, 446, bg="bb070b12", border=accent, radius=22, group="orbit", glow=0.16),
         shape("lane_panel", 862, 112, 300, 446, bg="aa0a1018", border=accent2, radius=18, group="lanes"),
@@ -586,12 +658,13 @@ def circle_layout(pack: dict[str, Any]) -> dict[str, Any]:
         ("delayMix", "Delay"), ("delayFeedback", "FB"), ("reverbMix", "Space"), ("lfoAmount", "Motion"),
         ("macro_motion", "Morph"), ("macro_tone", "Tone"), ("macro_character", "Accent"), ("macro_space", "FX"),
     ], deck_frame, cols=12, accent=accent, group="circle_controls")
+    reposition_wheels(els)
     return {"canvas": {"width": W, "height": H}, "elements": els}
 
 
 def echocraft_layout(pack: dict[str, Any]) -> dict[str, Any]:
     accent, accent2 = pack["accent"], pack["accent2"]
-    els = base_layout(pack)
+    els = base_layout(pack, include_wheels=False)
     els += [
         shape("delay_row", 130, 128, 1008, 214, bg="bb07090d", border="66505b72", radius=12, group="delay"),
         shape("routing_frame", 130, 374, 524, 178, bg="bb07090d", border=accent, radius=12, group="routing"),
@@ -625,13 +698,16 @@ def echocraft_layout(pack: dict[str, Any]) -> dict[str, Any]:
         ("tapeDrive", "Tape"), ("tapeFlutter", "Flutter"), ("chorusMix", "Chorus"), ("phaserMix", "Phaser"),
         ("dynMix", "Ducking"), ("dynThresholdDb", "Thresh"), ("spectralTilt", "Tilt"), ("convolutionMix", "Space"),
         ("multiTapSpread", "Spread"), ("reverbMix", "Reverb"), ("volume", "Output"), ("pan", "Pan"),
-    ], (30, 600, 1218, 190), cols=8, accent=accent, group="fx_controls", top_pad=8)
+    ], (30, 600, 1140, 190), cols=7, accent=accent, group="fx_controls", top_pad=8)
+    for e in els:
+        if e.get("id") == "output_value":
+            e.update({"x": 1104, "y": 628})
     return {"canvas": {"width": W, "height": H}, "elements": els}
 
 
 def modular_fx_layout(pack: dict[str, Any]) -> dict[str, Any]:
     accent, accent2 = pack["accent"], pack["accent2"]
-    els = base_layout(pack)
+    els = base_layout(pack, include_wheels=False)
     els += [
         shape("node_field", 64, 126, 734, 436, bg="bb080b10", border=accent2, radius=18, group="nodes", glow=0.12),
         shape("macro_field", 828, 126, 334, 436, bg="aa0a1018", border=accent, radius=18, group="macros"),
@@ -655,10 +731,10 @@ def modular_fx_layout(pack: dict[str, Any]) -> dict[str, Any]:
         ("macro_motion", "Motion"), ("macro_tone", "Tone"), ("macro_character", "Crush"), ("macro_space", "Wide"),
     ], (828, 126, 334, 436), cols=4, accent=accent, group="motion_fx")
     els += [
-        slider("input_trim", "Input", "inputTrimDb", 96, 608, 250, 44, accent=accent2, group="bottom"),
-        slider("feedback", "Feedback", "delayFeedback", 374, 608, 250, 44, accent=accent, group="bottom"),
-        slider("width", "Width", "stereoWidth", 652, 608, 250, 44, accent=accent2, group="bottom"),
-        slider("output", "Output", "outputGainDb", 930, 608, 250, 44, accent=accent, group="bottom"),
+        slider("input_trim", "Input", "inputTrimDb", 96, 608, 220, 44, accent=accent2, group="bottom"),
+        slider("feedback", "Feedback", "delayFeedback", 334, 608, 220, 44, accent=accent, group="bottom"),
+        slider("width", "Width", "stereoWidth", 572, 608, 220, 44, accent=accent2, group="bottom"),
+        slider("output", "Output", "outputGainDb", 810, 608, 220, 44, accent=accent, group="bottom"),
     ]
     return {"canvas": {"width": W, "height": H}, "elements": els}
 
@@ -734,6 +810,8 @@ def seed_step_pattern(values: dict[str, float], pattern: dict[str, Any]) -> None
     values["arpLaneProbability"] = 1.0
     values["projectBpm"] = 120.0
     values["bpmSync"] = 1.0
+    values["mpActiveBank"] = 0.0
+    values["mpMultiLane"] = 1.0
     for step in range(16):
         values[f"mpStep{step}On"] = float(pattern["on"][step])
         values[f"arpNote{step}"] = float(pattern["notes"][step])
@@ -771,6 +849,33 @@ def step_arp_block_values(pattern: dict[str, Any]) -> dict[str, float]:
         values[f"mpVelocity{step}"] = float(pattern["velocity"][step])
         values[f"mpGate{step}"] = pattern["gate"]
         values[f"mpStepProb{step}"] = 1.0
+
+    # Pitch uses unprefixed keys (promoted to bank 0 at runtime). Seed Filter/Pan/FX/Slice
+    # control rings so orbit tabs have audible motion without stacking note voices.
+    for lane, role in ((2, 1), (3, 2), (4, 3), (5, 4)):
+        values[f"mpBank{lane}_mpLaneTarget"] = float(role)
+        values[f"mpBank{lane}_arpSteps"] = 16.0
+        values[f"mpBank{lane}_rate"] = pattern["rate"]
+        if role == 3:
+            values[f"mpBank{lane}_mpLaneFxTarget"] = 0.0  # delay
+        if role == 4:
+            values[f"mpBank{lane}_mpSampleControl"] = 1.0
+            values[f"mpBank{lane}_mpSampleSliceCount"] = 16.0
+        for step in range(16):
+            on = 1.0 if pattern["on"][step] else (1.0 if step % 4 == 0 else 0.0)
+            amount = 0.35 + 0.45 * ((step + role) % 5) / 4.0
+            values[f"mpBank{lane}_mpStep{step}On"] = on
+            values[f"mpBank{lane}_mpVelocity{step}"] = amount
+            values[f"mpBank{lane}_mpGate{step}"] = pattern["gate"]
+            values[f"mpBank{lane}_mpStepProb{step}"] = 1.0
+            if role == 1:
+                values[f"mpBank{lane}_mpAutoFilter{step}"] = amount
+            elif role == 2:
+                values[f"mpBank{lane}_mpAutoPan{step}"] = amount * 2.0 - 1.0
+            elif role == 3:
+                values[f"mpBank{lane}_mpAutoFxSend{step}"] = amount * 0.65
+            else:
+                values[f"mpBank{lane}_mpSampleSlice{step}"] = float(step % 16)
     return values
 
 
@@ -1016,37 +1121,37 @@ def beatforge_layout(pack: dict[str, Any]) -> dict[str, Any]:
     accent, accent2 = pack["accent"], pack["accent2"]
     els = base_layout(pack)
     arp_pattern = [1, 0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1]
+    pad_frame = (52, 112, 500, 488)
+    arp_frame = (52, 620, 500, 156)
+    pad_size = 440
     els += [
-        # Left: chop pads.
-        shape("pad_frame", 52, 126, 452, 300, bg="bb080b10", border=accent, radius=18, glow=0.14, group="pads"),
-        label("pad_title", "CHOP PADS", 78, 144, 220, 22, colour="ffeef6ff", size=14, group="pads"),
-        {"id": "pad_bank", "type": "padGrid", "x": 78, "y": 180, "width": 400, "height": 230,
+        shape("pad_frame", *pad_frame, bg="bb080b10", border=accent, radius=18, glow=0.14, group="pads"),
+        label("pad_title", "CHOP PADS", 78, 130, 220, 22, colour="ffeef6ff", size=14, group="pads"),
+        {"id": "pad_bank", "type": "padGrid", "x": 82, "y": 166, "width": pad_size, "height": pad_size,
          "parameterId": "pad1Volume", "padRows": 4, "padCols": 4, "padBaseNote": 36,
          "accentColour": accent, "backgroundColour": "dd06090f", "borderColour": "66505b72",
          "label": "Pads", "labelPosition": "hidden", "groupId": "pads"},
-        # Left lower: step arp orbit.
-        shape("arp_frame", 52, 438, 452, 192, bg="aa0a1018", border=accent2, radius=16, group="arp"),
-        label("arp_title", "STEP ARP", 78, 452, 220, 20, colour="ffeef6ff", size=13, group="arp"),
-        {"id": "step_orbit", "type": "arpLane", "x": 76, "y": 478, "width": 404, "height": 142,
+        shape("arp_frame", *arp_frame, bg="aa0a1018", border=accent2, radius=16, group="arp"),
+        label("arp_title", "STEP ARP", 78, arp_frame[1] + 14, 220, 20, colour="ffeef6ff", size=13, group="arp"),
+        {"id": "step_orbit", "type": "arpLane", "x": 76, "y": arp_frame[1] + 36, "width": 452, "height": 108,
          "label": "Steps", "parameterId": "arpLaneRate", "accentColour": accent2,
          "backgroundColour": "cc05080d", "borderColour": accent2, "labelPosition": "hidden",
          "arpLaneIndex": 0, "arpLaneSteps": 16, "arpLaneMode": "multiRing", "arpLaneTarget": "notes",
          "arpLanePattern": arp_pattern, "groupId": "arp"},
-        # Right top: sample performance + chop tools.
-        shape("sample_frame", 524, 126, 704, 202, bg="bb080b10", border=accent, radius=18, glow=0.12, group="sample"),
-        label("sample_title", "SAMPLE PERFORMANCE  -  CHOP & FLIP", 548, 144, 460, 22,
+        shape("sample_frame", 572, 126, 656, 202, bg="bb080b10", border=accent, radius=18, glow=0.12, group="sample"),
+        label("sample_title", "SAMPLE PERFORMANCE  -  CHOP & FLIP", 596, 144, 460, 22,
               colour="ffeef6ff", size=14, group="sample"),
-        {"id": "waveform", "type": "waveform", "x": 548, "y": 178, "width": 548, "height": 118,
+        {"id": "waveform", "type": "waveform", "x": 596, "y": 178, "width": 488, "height": 118,
          "parameterId": "sampleStart", "accentColour": accent, "backgroundColour": "cc06090f",
          "borderColour": "66505b72", "label": "Waveform", "labelPosition": "hidden", "groupId": "sample"},
-        {"id": "sample_drop", "type": "sampleDropZone", "x": 1108, "y": 172, "width": 104, "height": 128,
+        {"id": "sample_drop", "type": "sampleDropZone", "x": 1096, "y": 172, "width": 116, "height": 128,
          "parameterId": "sampleStart", "accentColour": accent2, "backgroundColour": "cc06090f",
          "borderColour": accent2, "label": "Drop", "labelPosition": "hidden", "groupId": "sample"},
-        button("grain_toggle", "GRAIN", "granularOn", 548, 302, 86, 20, accent=accent2, group="sample"),
-        dropdown("slice_select", "Slices", "sampleSliceCount", 648, 300, 104, 24, accent=accent, group="sample"),
+        button("grain_toggle", "GRAIN", "granularOn", 596, 302, 86, 20, accent=accent2, group="sample"),
+        dropdown("slice_select", "Slices", "sampleSliceCount", 696, 300, 104, 24, accent=accent, group="sample"),
         # Right lower: sound / motion / FX control bank.
-        shape("control_frame", 524, 344, 704, 300, bg="aa0a1018", border=accent, radius=16, group="controls"),
-        label("control_title", "SOUND  /  MOTION  /  FX", 548, 358, 340, 20, colour="ffeef6ff", size=13, group="controls"),
+        shape("control_frame", 572, 344, 656, 300, bg="aa0a1018", border=accent, radius=16, group="controls"),
+        label("control_title", "SOUND  /  MOTION  /  FX", 596, 358, 340, 20, colour="ffeef6ff", size=13, group="controls"),
         {"id": "keyboard", "type": "keyboard", "x": 180, "y": 662, "width": 838, "height": 74,
          "parameterId": "expression", "accentColour": accent, "backgroundColour": "dd06090f",
          "borderColour": "66505b72", "label": "Keyboard", "labelPosition": "hidden", "groupId": "global"},
@@ -1058,7 +1163,7 @@ def beatforge_layout(pack: dict[str, Any]) -> dict[str, Any]:
         ("attack", "Atk"), ("release", "Rel"), ("arpLaneRate", "Rate"),
         ("arpLaneGate", "Gate"), ("arpLaneSwing", "Swing"), ("arpLaneProbability", "Chance"),
         ("delayMix", "Delay"), ("reverbMix", "Space"), ("macro_motion", "Motion"),
-    ], (524, 344, 704, 300), cols=6, accent=accent, group="bf_controls")
+    ], (572, 344, 656, 300), cols=6, accent=accent, group="bf_controls")
     return {"canvas": {"width": W, "height": H}, "elements": els}
 
 
@@ -1145,7 +1250,7 @@ def keysflagship_layout(pack: dict[str, Any]) -> dict[str, Any]:
         {"id": "spectrum", "type": "spectrumAnalyzer", "x": 562, "y": 400, "width": 640, "height": 56,
          "parameterId": "macro_motion", "accentColour": accent2, "backgroundColour": "cc06090f",
          "borderColour": "66505b72", "label": "Motion", "labelPosition": "hidden", "groupId": "fx"},
-        {"id": "keyboard", "type": "keyboard", "x": 200, "y": 652, "width": 880, "height": 78,
+        {"id": "keyboard", "type": "keyboard", "x": 200, "y": 652, "width": 860, "height": 78,
          "parameterId": "expression", "accentColour": accent, "backgroundColour": "dd06090f",
          "borderColour": "66505b72", "label": "Keyboard", "labelPosition": "hidden", "groupId": "global"},
     ]
@@ -1158,6 +1263,253 @@ def keysflagship_layout(pack: dict[str, Any]) -> dict[str, Any]:
         ("chorusMix", "Chorus"), ("tapeMix", "Tape"), ("multiTapMix", "Taps"), ("macro_space", "Space"),
     ], (538, 462, 688, 166), cols=4, accent=accent2, group="kf_fx", top_pad=6)
     return {"canvas": {"width": W, "height": H}, "elements": els}
+
+
+def megasynth_layout(pack: dict[str, Any]) -> dict[str, Any]:
+    """Nebula Prime: the flagship tabbed synth. Five pages — Main, Osc, Motion,
+    Arp, FX — over hand-crafted artwork, showing every major PatchCraft feature:
+    dual osc + sub + wavetable, LFO/vibrato motion, macros, a 16-step arp orbit,
+    and the full studio FX rack."""
+    accent, accent2 = pack["accent"], pack["accent2"]
+    els = base_layout(pack)
+    panel_bg = "cc070a12"
+    panel_bg2 = "bb0a0e18"
+
+    els.append({
+        "id": "tabs", "type": "tabPanel", "x": 54, "y": 112, "width": 1172, "height": 48,
+        "label": "Pages", "labelPosition": "hidden",
+        "tabs": ["Main", "Osc", "Motion", "Arp", "FX"],
+        "accentColour": accent, "backgroundColour": "d8070a11",
+        "borderColour": "66505b72", "groupId": "",
+    })
+
+    # ---------------- MAIN ----------------
+    hero = (54, 176, 748, 300)
+    perform = (818, 176, 408, 300)
+    deck = (54, 492, 1172, 284)
+    els += [
+        shape("main_hero_frame", *hero, bg=panel_bg, border=accent, radius=16, glow=0.14, group="main"),
+        label("main_hero_title", "NEBULA ENGINE", hero[0] + 24, hero[1] + 16, 260, 22, colour="ffeef6ff", size=14, group="main"),
+        value_display("main_bpm", "BPM", "projectBpm", hero[0] + 540, hero[1] + 14, 92, 28, accent=accent, group="main"),
+        button("main_sync", "SYNC", "bpmSync", hero[0] + 646, hero[1] + 14, 78, 28, accent=accent2, group="main"),
+        {"id": "main_spectrum", "type": "spectrumAnalyzer", "x": hero[0] + 24, "y": hero[1] + 54,
+         "width": hero[2] - 48, "height": hero[3] - 78, "parameterId": "macro_motion",
+         "accentColour": accent, "backgroundColour": "cc05070d", "borderColour": "55505b72",
+         "label": "Spectrum", "labelPosition": "hidden", "groupId": "main"},
+        shape("main_perform_frame", *perform, bg=panel_bg2, border=accent2, radius=16, group="main"),
+        label("main_perform_title", "ENVELOPE + MACROS", perform[0] + 24, perform[1] + 16, 260, 22, colour="ffeef6ff", size=13, group="main"),
+        {"id": "main_adsr", "type": "adsrCurve", "x": perform[0] + 24, "y": perform[1] + 46,
+         "width": perform[2] - 48, "height": 118, "parameterId": "attack",
+         "accentColour": accent2, "backgroundColour": "cc05070d", "borderColour": "55505b72",
+         "label": "Envelope", "labelPosition": "hidden", "groupId": "main"},
+        shape("main_deck_frame", *deck, bg=panel_bg, border=accent, radius=16, group="main"),
+        label("main_deck_title", "PERFORMANCE DECK", deck[0] + 24, deck[1] + 14, 260, 22, colour="ffeef6ff", size=13, group="main"),
+    ]
+    els += knob_grid([
+        ("macro_motion", "Motion"), ("macro_tone", "Tone"),
+        ("macro_character", "Color"), ("macro_space", "Space"),
+    ], (perform[0], perform[1] + 168, perform[2], perform[3] - 176), cols=4, accent=accent2, group="main", top_pad=6)
+    els += knob_grid([
+        ("filterCutoff", "Cutoff"), ("filterResonance", "Res"), ("attack", "Attack"), ("decay", "Decay"),
+        ("sustain", "Sustain"), ("release", "Release"), ("lfoRate", "LFO Rate"), ("lfoAmount", "LFO Amt"),
+        ("delayMix", "Delay"), ("reverbMix", "Reverb"), ("stereoWidth", "Width"), ("arpLaneRate", "Arp Rate"),
+    ], deck, cols=6, accent=accent, group="main")
+
+    # ---------------- OSC ----------------
+    osc1 = (54, 176, 380, 290)
+    osc2 = (450, 176, 380, 290)
+    osc3 = (846, 176, 380, 290)
+    env = (54, 492, 568, 284)
+    filt = (646, 492, 580, 284)
+    els += [
+        shape("osc1_frame", *osc1, bg=panel_bg, border=accent, radius=16, glow=0.10, group="osc"),
+        label("osc1_title", "OSCILLATOR 1", osc1[0] + 24, osc1[1] + 16, 220, 22, colour="ffeef6ff", size=13, group="osc"),
+        dropdown("osc1_wave", "Wave", "oscType", osc1[0] + 24, osc1[1] + 48, 160, 30, accent=accent, group="osc"),
+        shape("osc2_frame", *osc2, bg=panel_bg, border=accent2, radius=16, glow=0.10, group="osc"),
+        label("osc2_title", "OSCILLATOR 2", osc2[0] + 24, osc2[1] + 16, 220, 22, colour="ffeef6ff", size=13, group="osc"),
+        dropdown("osc2_wave", "Wave", "osc2Type", osc2[0] + 24, osc2[1] + 48, 160, 30, accent=accent2, group="osc"),
+        shape("osc3_frame", *osc3, bg=panel_bg2, border=accent, radius=16, group="osc"),
+        label("osc3_title", "SUB + WAVETABLE", osc3[0] + 24, osc3[1] + 16, 240, 22, colour="ffeef6ff", size=13, group="osc"),
+        button("osc_wt_toggle", "WAVETABLE", "wtEnabled", osc3[0] + 24, osc3[1] + 48, 150, 30, accent=accent2, group="osc"),
+        shape("env_frame", *env, bg=panel_bg, border=accent2, radius=16, group="osc"),
+        label("env_title", "AMP ENVELOPE", env[0] + 24, env[1] + 14, 220, 22, colour="ffeef6ff", size=13, group="osc"),
+        {"id": "osc_adsr", "type": "adsrCurve", "x": env[0] + 24, "y": env[1] + 44,
+         "width": 240, "height": env[3] - 76, "parameterId": "attack",
+         "accentColour": accent2, "backgroundColour": "cc05070d", "borderColour": "55505b72",
+         "label": "Envelope", "labelPosition": "hidden", "groupId": "osc"},
+        shape("filt_frame", *filt, bg=panel_bg, border=accent, radius=16, group="osc"),
+        label("filt_title", "FILTER", filt[0] + 24, filt[1] + 14, 220, 22, colour="ffeef6ff", size=13, group="osc"),
+        {"id": "osc_eq", "type": "eqCurve", "x": filt[0] + 24, "y": filt[1] + 44,
+         "width": 250, "height": filt[3] - 76, "parameterId": "filterCutoff",
+         "accentColour": accent, "backgroundColour": "cc05070d", "borderColour": "55505b72",
+         "label": "Filter Curve", "labelPosition": "hidden", "groupId": "osc"},
+    ]
+    els += knob_grid([("octave", "Octave"), ("detune", "Detune")],
+                     (osc1[0], osc1[1] + 92, osc1[2], osc1[3] - 104), cols=2, accent=accent, group="osc", top_pad=10)
+    els += knob_grid([("osc2Detune", "Detune 2"), ("oscBlend", "Blend")],
+                     (osc2[0], osc2[1] + 92, osc2[2], osc2[3] - 104), cols=2, accent=accent2, group="osc", top_pad=10)
+    els += knob_grid([("subBlend", "Sub"), ("wtPosition", "WT Pos"), ("wtMorph", "WT Morph"), ("wtLevel", "WT Level")],
+                     (osc3[0], osc3[1] + 92, osc3[2], osc3[3] - 104), cols=2, accent=accent, group="osc", top_pad=10)
+    els += knob_grid([("attack", "Attack"), ("decay", "Decay"), ("sustain", "Sustain"), ("release", "Release")],
+                     (env[0] + 272, env[1] + 36, env[2] - 288, env[3] - 52), cols=2, accent=accent2, group="osc", top_pad=8)
+    els += knob_grid([("filterCutoff", "Cutoff"), ("filterResonance", "Resonance"), ("velocitySensitivity", "Vel Sens"), ("expression", "Express")],
+                     (filt[0] + 282, filt[1] + 36, filt[2] - 298, filt[3] - 52), cols=2, accent=accent, group="osc", top_pad=8)
+
+    # ---------------- MOTION ----------------
+    lfo = (54, 176, 568, 290)
+    mac = (646, 176, 580, 290)
+    perf2 = (54, 492, 1172, 284)
+    els += [
+        shape("lfo_frame", *lfo, bg=panel_bg, border=accent, radius=16, glow=0.10, group="motion"),
+        label("lfo_title", "LFO + VIBRATO", lfo[0] + 24, lfo[1] + 16, 240, 22, colour="ffeef6ff", size=13, group="motion"),
+        {"id": "motion_scope", "type": "spectrumAnalyzer", "x": lfo[0] + 24, "y": lfo[1] + 46,
+         "width": lfo[2] - 48, "height": 96, "parameterId": "lfoAmount",
+         "accentColour": accent, "backgroundColour": "cc05070d", "borderColour": "55505b72",
+         "label": "Motion Scope", "labelPosition": "hidden", "groupId": "motion"},
+        shape("mac_frame", *mac, bg=panel_bg2, border=accent2, radius=16, group="motion"),
+        label("mac_title", "MACRO CONTROLS", mac[0] + 24, mac[1] + 16, 240, 22, colour="ffeef6ff", size=13, group="motion"),
+        shape("perf2_frame", *perf2, bg=panel_bg, border=accent, radius=16, group="motion"),
+        label("perf2_title", "PERFORMANCE + OUTPUT", perf2[0] + 24, perf2[1] + 14, 300, 22, colour="ffeef6ff", size=13, group="motion"),
+        value_display("motion_bpm", "BPM", "projectBpm", perf2[0] + 24, perf2[1] + 48, 100, 30, accent=accent, group="motion"),
+        button("motion_sync", "HOST SYNC", "bpmSync", perf2[0] + 24, perf2[1] + 92, 100, 30, accent=accent2, group="motion"),
+        button("motion_retrig", "RETRIGGER", "retrigger", perf2[0] + 24, perf2[1] + 136, 100, 30, accent=accent, group="motion"),
+        {"id": "motion_meter", "type": "meter", "x": perf2[0] + 24, "y": perf2[1] + 196, "width": 100, "height": 22,
+         "parameterId": "volume", "accentColour": accent, "backgroundColour": "cc04070b",
+         "borderColour": "55505b72", "label": "Out", "labelPosition": "hidden", "groupId": "motion"},
+    ]
+    els += knob_grid([("lfoRate", "LFO Rate"), ("lfoAmount", "LFO Amount"), ("vibratoRate", "Vib Rate"), ("vibratoDepth", "Vib Depth")],
+                     (lfo[0], lfo[1] + 150, lfo[2], lfo[3] - 162), cols=4, accent=accent, group="motion", top_pad=6)
+    els += knob_grid([("macro_motion", "Motion"), ("macro_tone", "Tone"), ("macro_character", "Color"), ("macro_space", "Space")],
+                     (mac[0], mac[1] + 40, mac[2], mac[3] - 56), cols=2, accent=accent2, group="motion", top_pad=8)
+    els += knob_grid([
+        ("velocitySensitivity", "Vel Sens"), ("stereoWidth", "Width"), ("pan", "Pan"),
+        ("volume", "Level"), ("outputGainDb", "Output"), ("outputCeilingDb", "Ceiling"),
+    ], (perf2[0] + 148, perf2[1] + 32, perf2[2] - 172, perf2[3] - 48), cols=6, accent=accent, group="motion", top_pad=8)
+
+    # ---------------- ARP ----------------
+    orbit = (54, 176, 640, 600)
+    arpc = (710, 176, 516, 600)
+    els += [
+        shape("orbit_frame", *orbit, bg=panel_bg, border=accent, radius=18, glow=0.16, group="arp"),
+        label("orbit_title", "16-STEP ORBIT  -  CLICK STEPS TO EDIT", orbit[0] + 24, orbit[1] + 16, 420, 22, colour="ffeef6ff", size=13, group="arp"),
+        {"id": "arp_orbit", "type": "arpLane", "x": orbit[0] + 24, "y": orbit[1] + 48,
+         "width": orbit[2] - 48, "height": orbit[3] - 72, "label": "Steps",
+         "parameterId": "arpLaneRate", "accentColour": accent,
+         "backgroundColour": "ee070a10", "borderColour": "ff4a5568", "labelPosition": "hidden",
+         "arpLaneIndex": 0, "arpLaneSteps": 16, "arpLaneMode": "multiRing",
+         "arpLaneTarget": "notes", "groupId": "arp"},
+        shape("arpc_frame", *arpc, bg=panel_bg2, border=accent2, radius=18, group="arp"),
+        label("arpc_title", "ARP ENGINE", arpc[0] + 24, arpc[1] + 16, 240, 22, colour="ffeef6ff", size=13, group="arp"),
+        value_display("arp_bpm", "BPM", "projectBpm", arpc[0] + 24, arpc[1] + 48, 110, 30, accent=accent, group="arp"),
+        button("arp_sync", "HOST SYNC", "bpmSync", arpc[0] + 150, arpc[1] + 48, 120, 30, accent=accent2, group="arp"),
+    ]
+    els += knob_grid([
+        ("arpLaneRate", "Rate"), ("arpLaneGate", "Gate"), ("arpLaneSwing", "Swing"), ("arpLaneProbability", "Chance"),
+        ("filterCutoff", "Cutoff"), ("filterResonance", "Res"), ("attack", "Attack"), ("release", "Release"),
+    ], (arpc[0], arpc[1] + 92, arpc[2], arpc[3] - 116), cols=2, accent=accent2, group="arp", top_pad=10)
+
+    # ---------------- FX ----------------
+    fx_delay = (54, 176, 380, 290)
+    fx_space = (450, 176, 380, 290)
+    fx_color = (846, 176, 380, 290)
+    fx_rack = (54, 492, 1172, 284)
+    els += [
+        shape("fxd_frame", *fx_delay, bg=panel_bg, border=accent, radius=16, group="fx"),
+        label("fxd_title", "DELAY", fx_delay[0] + 24, fx_delay[1] + 16, 200, 22, colour="ffeef6ff", size=13, group="fx"),
+        shape("fxs_frame", *fx_space, bg=panel_bg, border=accent2, radius=16, group="fx"),
+        label("fxs_title", "SPACE", fx_space[0] + 24, fx_space[1] + 16, 200, 22, colour="ffeef6ff", size=13, group="fx"),
+        shape("fxc_frame", *fx_color, bg=panel_bg, border=accent, radius=16, group="fx"),
+        label("fxc_title", "COLOR", fx_color[0] + 24, fx_color[1] + 16, 200, 22, colour="ffeef6ff", size=13, group="fx"),
+        shape("fxr_frame", *fx_rack, bg=panel_bg2, border=accent2, radius=16, group="fx"),
+        label("fxr_title", "TEXTURE RACK", fx_rack[0] + 24, fx_rack[1] + 14, 260, 22, colour="ffeef6ff", size=13, group="fx"),
+    ]
+    els += knob_grid([("delayTime", "Time"), ("delayFeedback", "Feedback"), ("delayMix", "Mix"), ("multiTapMix", "Multi Tap")],
+                     (fx_delay[0], fx_delay[1] + 40, fx_delay[2], fx_delay[3] - 56), cols=2, accent=accent, group="fx", top_pad=8)
+    els += knob_grid([("reverbMix", "Reverb"), ("convolutionSize", "Size"), ("convolutionMix", "Space"), ("multiTapSpread", "Spread")],
+                     (fx_space[0], fx_space[1] + 40, fx_space[2], fx_space[3] - 56), cols=2, accent=accent2, group="fx", top_pad=8)
+    els += knob_grid([("chorusMix", "Chorus"), ("phaserMix", "Phaser"), ("tapeMix", "Tape"), ("vinylMix", "Vinyl")],
+                     (fx_color[0], fx_color[1] + 40, fx_color[2], fx_color[3] - 56), cols=2, accent=accent, group="fx", top_pad=8)
+    els += knob_grid([
+        ("tapeDrive", "Drive"), ("tapeFlutter", "Flutter"), ("lofiBits", "Bits"), ("lofiRate", "Rate"),
+        ("lofiMix", "LoFi"), ("spectralTilt", "Tilt"), ("spectralMix", "Tilt Mix"), ("stereoWidth", "Width"),
+    ], fx_rack, cols=8, accent=accent2, group="fx")
+    return {"canvas": {"width": W, "height": H}, "elements": els}
+
+
+def nebula_prime_presets() -> list[dict[str, Any]]:
+    """Flagship preset bank: 20 distinct patches spanning arps, plucks, pads,
+    basses, keys, and wavetable textures — every one seeds a musical step
+    pattern so holding a chord instantly performs."""
+    specs = [
+        # name, osc, osc2, blend, oct, det, det2, sub, wt(on,pos,morph,lvl),
+        # atk, dec, sus, rel, cutoff, res, lfoR, lfoA, vibR, vibD, tags
+        ("Nebula Init", 1, 0, 0.10, 0, 4, -3, 0.10, (0, .25, .2, 0), .004, .24, .30, .32, 5600, .16, 1.0, .22, 5.2, 0.0, ["lead"]),
+        ("Prime Pulse Arp", 0, 2, 0.14, 0, 6, -6, 0.08, (0, .25, .2, 0), .002, .20, .16, .24, 4800, .24, 2.0, .28, 5.0, 0.0, ["arp"]),
+        ("Ion Trail Pluck", 1, 2, 0.08, 0, 5, -5, 0.02, (0, .25, .2, 0), .001, .22, .12, .22, 6400, .28, 4.0, .20, 5.5, 0.0, ["pluck"]),
+        ("Violet Horizon Pad", 0, 3, 0.20, 0, 9, -8, 0.16, (0, .25, .2, 0), .85, 1.9, .82, 3.2, 2400, .12, 0.25, .18, 4.6, .08, ["pad"]),
+        ("Dark Matter Bass", 2, 0, 0.06, -1, 0, 0, 0.26, (0, .25, .2, 0), .002, .18, .40, .18, 1400, .40, 1.0, .16, 5.0, 0.0, ["bass"]),
+        ("Plasma Wave Lead", 1, 0, 0.09, 1, 8, -7, 0.04, (1, .40, .35, .60), .004, .32, .68, .70, 7800, .20, 6.0, .32, 5.8, .12, ["lead", "wavetable"]),
+        ("Crystal Orbit", 0, 0, 0.05, 1, 2, 8, 0.00, (0, .25, .2, 0), .001, .55, .30, .90, 9600, .10, 8.0, .18, 6.0, 0.0, ["bell", "arp"]),
+        ("Gravity Well", 1, 3, 0.18, -1, 11, -10, 0.22, (1, .62, .5, .45), 1.4, 2.4, .86, 4.8, 1900, .14, 0.5, .20, 4.2, .10, ["pad", "cinematic"]),
+        ("Photon Stab", 2, 1, 0.12, 0, 4, -4, 0.06, (0, .25, .2, 0), .002, .16, .10, .18, 5200, .34, 2.0, .30, 5.2, 0.0, ["stab", "arp"]),
+        ("Aurora Borealis", 0, 1, 0.16, 0, 7, -6, 0.12, (1, .30, .65, .55), .60, 1.6, .78, 2.8, 3200, .14, 0.5, .24, 4.8, .14, ["pad", "wavetable"]),
+        ("Neon Circuit", 1, 2, 0.10, 0, 10, -9, 0.04, (0, .25, .2, 0), .002, .24, .20, .26, 5900, .30, 4.0, .34, 5.4, 0.0, ["arp", "sequence"]),
+        ("Solar Keys", 0, 1, 0.11, 0, 3, -3, 0.09, (0, .25, .2, 0), .012, .44, .52, .60, 4300, .16, 1.0, .16, 5.0, .06, ["keys"]),
+        ("Void Drone", 1, 0, 0.22, -2, 13, -12, 0.28, (1, .75, .40, .50), 2.0, 2.6, .90, 5.6, 1600, .18, 0.25, .18, 4.0, .12, ["drone", "cinematic"]),
+        ("Comet Chaser", 1, 0, 0.07, 1, 14, -9, 0.03, (0, .25, .2, 0), .003, .34, .72, 1.0, 8200, .22, 6.0, .26, 5.6, .08, ["lead", "festival"]),
+        ("Stellar Nursery", 0, 3, 0.24, 0, 8, -2, 0.05, (1, .20, .80, .65), .35, 1.5, .70, 2.4, 4100, .18, 0.5, .28, 4.4, .16, ["texture", "wavetable"]),
+        ("Quantum Funk", 1, 2, 0.13, 0, 5, -5, 0.07, (0, .25, .2, 0), .002, .18, .14, .20, 4500, .32, 2.0, .28, 5.2, 0.0, ["funk", "arp"]),
+        ("Event Horizon", 2, 0, 0.05, -1, 0, 0, 0.18, (0, .25, .2, 0), .004, .22, .36, .24, 2100, .38, 1.0, .22, 5.0, 0.0, ["bass", "acid"]),
+        ("Silk Nebula", 0, 1, 0.15, 0, 6, -6, 0.11, (0, .25, .2, 0), 1.1, 2.2, .84, 4.2, 2800, .10, 0.25, .14, 4.6, .10, ["pad", "ambient"]),
+        ("Radiant Hook", 1, 0, 0.08, 1, 6, -6, 0.02, (0, .25, .2, 0), .004, .30, .66, .74, 8600, .18, 8.0, .22, 5.8, .06, ["lead", "hook"]),
+        ("Deep Field", 3, 1, 0.10, 0, 5, -9, 0.06, (1, .55, .30, .40), .006, .46, .48, .96, 4700, .24, 1.0, .24, 4.8, .08, ["keys", "wavetable"]),
+    ]
+    fx_moves = [
+        # delayMix, reverbMix, chorusMix, tapeMix, lofiMix, convolutionMix, multiTapMix, width
+        (0.14, 0.16, 0.00, 0.00, 0.00, 0.00, 0.00, 1.05),
+        (0.10, 0.08, 0.06, 0.00, 0.00, 0.00, 0.00, 1.10),
+        (0.18, 0.12, 0.00, 0.08, 0.00, 0.00, 0.10, 1.00),
+        (0.22, 0.42, 0.14, 0.00, 0.00, 0.24, 0.00, 1.35),
+        (0.04, 0.05, 0.00, 0.10, 0.06, 0.00, 0.00, 0.90),
+        (0.16, 0.24, 0.10, 0.00, 0.00, 0.10, 0.00, 1.20),
+        (0.26, 0.30, 0.00, 0.00, 0.00, 0.00, 0.16, 1.25),
+        (0.12, 0.52, 0.18, 0.12, 0.00, 0.34, 0.00, 1.45),
+        (0.08, 0.06, 0.00, 0.00, 0.08, 0.00, 0.00, 1.00),
+        (0.20, 0.46, 0.22, 0.08, 0.00, 0.28, 0.00, 1.40),
+    ]
+    bpms = [124, 126, 128, 90, 122, 128, 132, 76, 116, 84, 130, 104, 68, 128, 92, 112, 124, 78, 128, 108]
+    out = []
+    for i, s in enumerate(specs):
+        (name, osc, osc2, blend, octv, det, det2, sub, wt,
+         atk, dec, sus, rel, cutoff, res, lfo_r, lfo_a, vib_r, vib_d, tags) = s
+        wt_on, wt_pos, wt_morph, wt_lvl = wt
+        fx = fx_moves[i % len(fx_moves)]
+        pattern = STEP_PATTERNS[i % len(STEP_PATTERNS)]
+        values = {
+            "oscType": float(osc), "osc2Type": float(osc2), "oscBlend": blend, "octave": float(octv),
+            "detune": float(det), "osc2Detune": float(det2), "subBlend": sub,
+            "wtEnabled": float(wt_on), "wtPosition": wt_pos, "wtMorph": wt_morph, "wtLevel": wt_lvl,
+            "attack": atk, "decay": dec, "sustain": sus, "release": rel,
+            "filterCutoff": float(cutoff), "filterResonance": res,
+            "lfoRate": lfo_r, "lfoAmount": lfo_a, "vibratoRate": vib_r, "vibratoDepth": vib_d,
+            "delayTime": [0.25, 0.1875, 0.375, 0.5, 0.125][i % 5],
+            "delayFeedback": 0.18 + (i % 5) * 0.05,
+            "delayMix": fx[0], "reverbMix": fx[1], "chorusMix": fx[2], "tapeMix": fx[3],
+            "lofiMix": fx[4], "convolutionMix": fx[5], "convolutionSize": 0.3 + (i % 4) * 0.15,
+            "multiTapMix": fx[6], "stereoWidth": fx[7],
+            "volume": 0.74, "outputGainDb": -3.5, "projectBpm": float(bpms[i]),
+            "velocitySensitivity": 0.4 + (i % 4) * 0.1,
+            "macro_motion": (i % 8) / 8.0, "macro_tone": 0.3 + (i % 6) * 0.09,
+            "macro_character": 0.2 + (i % 7) * 0.1, "macro_space": fx[1],
+        }
+        seed_step_pattern(values, pattern)
+        values["projectBpm"] = float(bpms[i])
+        out.append(preset(
+            name,
+            f"{pattern['desc']} Flagship patch at {bpms[i]} BPM — explore the Osc, Motion, Arp, and FX pages.",
+            values, ["flagship"] + tags + ["synth"], default=(i == 0),
+        ))
+    return out
 
 
 def dsp_graph(engine: str, name: str, defaults: dict[str, float], *,
@@ -1194,6 +1546,18 @@ def dsp_graph(engine: str, name: str, defaults: dict[str, float], *,
              "chorusMix": defaults.get("chorusMix", 0.0),
              "multiTapMix": defaults.get("multiTapMix", 0.0),
          }},
+        {"id": "main_output", "section": "out", "type": "limiter", "name": "Main Output",
+         "enabled": True, "targetId": "volume", "values": {
+             "outputLimiter": 1.0, "outputCeilingDb": -1.0, "outputGainDb": -3.0,
+         }},
+    ]
+    edges = [
+        {"id": "source_to_shape", "sourceNodeId": "source", "targetNodeId": "shape",
+         "signalType": "audio", "enabled": True},
+        {"id": "shape_to_fx", "sourceNodeId": "shape", "targetNodeId": "fx",
+         "signalType": "audio", "enabled": True},
+        {"id": "fx_to_main_output", "sourceNodeId": "fx", "targetNodeId": "main_output",
+         "signalType": "audio", "enabled": True},
     ]
     if "CircleSEQ" in name:
         values = {"sync": 1.0, "rate": 1.0, "arpSteps": 16.0, "mpActiveBank": 0.0,
@@ -1262,7 +1626,7 @@ def dsp_graph(engine: str, name: str, defaults: dict[str, float], *,
                        "name": "Piano Roll Clip", "enabled": True, "targetId": "filterCutoff",
                        "values": piano_roll_block_values(),
                        "metadata": {"notes": piano_roll_notes()}})
-    return {"blocks": blocks, "edges": [], "macros": [], "modulation": [], "automation": []}
+    return {"blocks": blocks, "edges": edges, "macros": [], "modulation": [], "automation": []}
 
 
 def manifest(pack: dict[str, Any], default_preset: str) -> dict[str, Any]:
@@ -1290,6 +1654,23 @@ def manifest(pack: dict[str, Any], default_preset: str) -> dict[str, Any]:
         "playerTitleButtonStyle": "pill",
         "playerTitleFontFamily": "Segoe UI",
         "playerShowPatchCraftBranding": False,
+        "playerShowTopBar": True,
+        "playerShowLeftSidebar": True,
+        "playerShowRightPanel": True,
+        "playerShowKeyboard": pack["engine"] != "fx" and pack["kind"] not in {"drums", "beatforge"},
+        "playerShowFooter": True,
+        "playerTopShowBrowse": True,
+        "playerTopShowSave": True,
+        "playerTopShowSettings": True,
+        "playerTopShowCategory": True,
+        "playerTopShowFavorite": True,
+        "playerTopShowPresetNav": True,
+        "playerTopShowMasterVolume": True,
+        "playerTopShowOutputMeter": True,
+        "rightPanelShowMacros": True,
+        "rightPanelShowEffects": True,
+        "rightPanelShowSends": True,
+        "rightPanelShowUtility": True,
     }
 
 
@@ -1463,6 +1844,19 @@ def sample_presets(kind: str) -> list[dict[str, Any]]:
     return out
 
 
+def granular_vocal_presets() -> list[dict[str, Any]]:
+    presets = sample_presets("vocal")
+    for index, item in enumerate(presets):
+        values = item["values"]
+        values["granularOn"] = 1.0
+        values["granularDensity"] = round(0.28 + (index % 6) * 0.09, 5)
+        values["granularSizeMs"] = float(48 + (index % 8) * 18)
+        values["granularScan"] = round(-0.65 + (index % 7) * 0.2, 5)
+        values["granularTexture"] = round(0.25 + (index % 5) * 0.14, 5)
+        item["tags"] = sorted(set(item["tags"] + ["granular", "vocal"]))
+    return presets
+
+
 def circle_presets() -> list[dict[str, Any]]:
     base = synth_presets()[:24]
     names = [
@@ -1517,11 +1911,43 @@ def _soft_glow(size: tuple[int, int], box: tuple[int, int, int, int],
     return layer.filter(ImageFilter.GaussianBlur(blur))
 
 
+def load_custom_master(pack: dict[str, Any], assets: Path) -> Image.Image | None:
+    """Flagship packs can ship hand-crafted artwork as assets/background-master.png.
+    The master is cover-cropped to the authored canvas so the generator never
+    overwrites it with the procedural gradient."""
+    if not pack.get("custom_background"):
+        return None
+    src = assets / "background-master.png"
+    if not src.exists():
+        return None
+    img = Image.open(src).convert("RGBA")
+    scale = max(W / img.width, H / img.height)
+    nw, nh = int(img.width * scale + 0.5), int(img.height * scale + 0.5)
+    img = img.resize((nw, nh), Image.LANCZOS)
+    left, top = (nw - W) // 2, (nh - H) // 2
+    return img.crop((left, top, left + W, top + H))
+
+
 def draw_background(pack: dict[str, Any], out: Path) -> None:
     """Clean, professional instrument backdrop: a smooth vertical gradient with
     two soft accent glows and a subtle top sheen. No clutter, no structural
     outlines — the runtime UI controls are the visual focus."""
     out.mkdir(parents=True, exist_ok=True)
+    master = load_custom_master(pack, out)
+    if master is not None:
+        # Gentle bottom shade keeps knob labels readable over bright artwork.
+        shade = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        sd = ImageDraw.Draw(shade, "RGBA")
+        sd.rectangle((0, H - 220, W, H), fill=(0, 0, 0, 46))
+        master = Image.alpha_composite(master, shade.filter(ImageFilter.GaussianBlur(40)))
+        for name in ("background-clean.png", "background.png", "background-with-ui.png",
+                     "background-sectioned.png", "background-clean-source.png"):
+            master.save(out / name)
+        make_banner(pack, out / "player-title-banner.png")
+        make_library_art(pack, out / "library-artwork.png", (720, 420), master=master)
+        make_library_art(pack, out / "thumbnail.png", (512, 320), master=master)
+        make_library_art(pack, out / "player-library-modal.png", (900, 620), master=master)
+        return
     c1, c2 = rgba(pack["bg"]), rgba(pack["bg2"])
     base = Image.new("RGBA", (W, H), (c1[0], c1[1], c1[2], 255))
     draw = ImageDraw.Draw(base, "RGBA")
@@ -1560,18 +1986,32 @@ def make_banner(pack: dict[str, Any], path: Path) -> None:
     img = Image.new("RGBA", (1224, 96), rgba(pack["bg"], 255))
     d = ImageDraw.Draw(img, "RGBA")
     d.rounded_rectangle((0, 0, 1223, 95), radius=14, fill=rgba(pack["bg2"], 240), outline=rgba(pack["accent_rgb"], 180), width=2)
-    d.rounded_rectangle((22, 22, 72, 72), radius=10, fill=rgba(pack["accent_rgb"], 80), outline=rgba(pack["accent_rgb"], 200), width=1)
-    d.text((39, 31), pack["display"][0], fill=rgba("f5f7ff"), font=font(26, True), anchor="la")
-    d.text((92, 22), pack["display"], fill=rgba("f5f7ff"), font=font(22, True))
-    d.text((94, 54), pack["tagline"], fill=rgba("aab5c4"), font=font(13))
-    d.text((1094, 26), "v1.0", fill=rgba("aab5c4"), font=font(12))
-    d.text((1062, 52), "DAW ready", fill=rgba("dce4f2"), font=font(13))
+    # The live Player draws the product name, tagline, version, and controls.
+    # Banner artwork is deliberately decorative so text is never rendered twice.
+    d.rounded_rectangle((18, 18, 76, 76), radius=12, fill=rgba(pack["accent_rgb"], 55), outline=rgba(pack["accent_rgb"], 150), width=1)
+    d.line((92, 47, 1180, 47), fill=rgba(pack["accent2_rgb"], 32), width=1)
     path.parent.mkdir(parents=True, exist_ok=True)
     img.save(path)
 
 
-def make_library_art(pack: dict[str, Any], path: Path, size: tuple[int, int]) -> None:
+def make_library_art(pack: dict[str, Any], path: Path, size: tuple[int, int], *,
+                     master: Image.Image | None = None) -> None:
     w, h = size
+    if master is not None:
+        scale = max(w / master.width, h / master.height)
+        nw, nh = int(master.width * scale + 0.5), int(master.height * scale + 0.5)
+        img = master.resize((nw, nh), Image.LANCZOS).crop(
+            ((nw - w) // 2, (nh - h) // 2, (nw - w) // 2 + w, (nh - h) // 2 + h))
+        shade = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        ImageDraw.Draw(shade, "RGBA").rectangle((0, 0, w, h // 2), fill=(0, 0, 0, 70))
+        img = Image.alpha_composite(img, shade.filter(ImageFilter.GaussianBlur(30)))
+        d = ImageDraw.Draw(img, "RGBA")
+        d.rounded_rectangle((24, 24, w - 24, h - 24), radius=20, outline=rgba(pack["accent_rgb"], 180), width=2)
+        d.text((44, 42), pack["display"], fill=rgba("f5f7ff"), font=font(max(20, w // 20), True))
+        d.text((46, 78), pack["tagline"], fill=rgba("cdd6e6"), font=font(max(12, w // 42)))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        img.save(path)
+        return
     img = Image.new("RGBA", size, rgba(pack["bg"], 255))
     d = ImageDraw.Draw(img, "RGBA")
     for y in range(h):
@@ -1667,6 +2107,18 @@ def write_pack(pack: dict[str, Any], layout: dict[str, Any], presets: list[dict[
         write_json(folder / "midiMappings.json", {"mappings": []})
     if not (folder / "mappings.json").exists():
         write_json(folder / "mappings.json", {"zones": []})
+    if pack["folder"] == "RomplurDrumMachine.patchcraft":
+        # Romplur is a distinct UI/preset product built on the factory drum
+        # recordings. Keep it self-contained so export never depends on another
+        # pack's relative path.
+        source_pack = FACTORY / "AnalogHouseDrums.patchcraft"
+        source_samples = source_pack / "samples"
+        target_samples = folder / "samples"
+        target_samples.mkdir(parents=True, exist_ok=True)
+        for sample in source_samples.glob("*"):
+            if sample.is_file():
+                shutil.copy2(sample, target_samples / sample.name)
+        shutil.copy2(source_pack / "mappings.json", folder / "mappings.json")
     if (folder / "project.json").exists():
         project = json.loads((folder / "project.json").read_text(encoding="utf-8"))
         project["manifest"] = manifest(pack, presets[0]["name"])
@@ -1680,6 +2132,16 @@ def write_pack(pack: dict[str, Any], layout: dict[str, Any], presets: list[dict[
 
 PACKS = [
     {
+        "folder": "NebulaPrimeSynth.patchcraft", "display": "Nebula Prime", "engine": "synth",
+        "kind": "megasynth", "category": "Flagship Synth Instrument", "theme": "wide-banner", "placement": "left",
+        "description": "The PatchCraft flagship: a five-page tabbed synth with dual oscillators, sub + wavetable layer, LFO and vibrato motion, macro controls, an editable 16-step arp orbit, and a full studio FX rack over hand-crafted nebula artwork.",
+        "tagline": "Five-page flagship synth — dual osc, wavetable, motion, arp, FX",
+        "try_hint": "1) Hold a chord on the Main page  2) Explore the Osc / Motion / Arp / FX tabs  3) Ride the macros",
+        "tags": ["synth", "flagship", "wavetable", "arp", "tabbed"], "accent": "ff33e9f3", "accent2": "ff8a63ff",
+        "accent_rgb": "33e9f3", "accent2_rgb": "8a63ff", "bg": "07090f", "bg2": "0d1220", "line": "24586a",
+        "step_arp": True, "tabbed": True, "custom_background": True, "preset_builder": "nebula_prime",
+    },
+    {
         "folder": "AuroraArpSynth.patchcraft", "display": "Aurora Arp Synth", "engine": "synth",
         "kind": "synth", "category": "Synth Instrument", "theme": "wide-banner", "placement": "left",
         "description": "Hold a chord and hear a true step arp — twelve musical synth+pattern presets with orbit preview.",
@@ -1688,6 +2150,15 @@ PACKS = [
         "tags": ["synth", "arp", "melodic", "true-arp"], "accent": "ff62f7d2", "accent2": "ff8a63ff",
         "accent_rgb": "62f7d2", "accent2_rgb": "8a63ff", "bg": "05080d", "bg2": "121b27", "line": "2b4e63",
         "step_arp": True, "preset_builder": "aurora_arp",
+    },
+    {
+        "folder": "AuroraFlagship.patchcraft", "display": "Aurora Flagship", "engine": "synth",
+        "kind": "synth", "category": "Flagship Synth Instrument", "theme": "wide-banner", "placement": "left",
+        "description": "Flagship cinematic synth demo rebuilt as a clean single-page instrument with source, motion, tone, and FX controls.",
+        "tagline": "Cinematic synth layers with motion macros and clean player UI",
+        "try_hint": "1) Pick a cinematic preset  2) Hold wide chords  3) Move Motion + Space",
+        "tags": ["synth", "cinematic", "flagship", "motion"], "accent": "ff33e9f3", "accent2": "ffff63b8",
+        "accent_rgb": "33e9f3", "accent2_rgb": "ff63b8", "bg": "05090d", "bg2": "101b24", "line": "24586a",
     },
     {
         "folder": "AnalogHouseDrums.patchcraft", "display": "Analog House Drums", "engine": "sample",
@@ -1699,6 +2170,15 @@ PACKS = [
         "accent_rgb": "ffa51f", "accent2_rgb": "ff4f9a", "bg": "09070b", "bg2": "1d1018", "line": "583d22",
     },
     {
+        "folder": "RomplurDrumMachine.patchcraft", "display": "Romplur Drum Machine", "engine": "sample",
+        "kind": "drums", "category": "Drum Machine", "theme": "split-brand", "placement": "left",
+        "description": "Performance drum instrument with sixteen large pads, editable sequencing, per-kit shaping, and production-ready effects.",
+        "tagline": "Sixteen performance pads with sequencing and kit shaping",
+        "try_hint": "1) Trigger pads  2) Edit the pattern  3) Shape tune, tone, swing, and room",
+        "tags": ["drums", "sample", "pads", "sequencer"], "accent": "ff58d7ff", "accent2": "ffff8a45",
+        "accent_rgb": "58d7ff", "accent2_rgb": "ff8a45", "bg": "05080b", "bg2": "101c24", "line": "28546b",
+    },
+    {
         "folder": "DreamKeysSampler.patchcraft", "display": "Dream Keys Sampler", "engine": "sample",
         "kind": "sampler", "category": "Sample Instrument", "theme": "wide-banner", "placement": "center",
         "description": "Tape-style keys with waveform editing, drop zone, granular texture, and distinct musical presets.",
@@ -1706,6 +2186,16 @@ PACKS = [
         "try_hint": "1) Load a preset  2) Play the keyboard  3) Move Start/Length + Grain",
         "tags": ["sampler", "keys", "sample"], "accent": "ff7ef7a8", "accent2": "ff6ab7ff",
         "accent_rgb": "7ef7a8", "accent2_rgb": "6ab7ff", "bg": "05090b", "bg2": "10201a", "line": "245c47",
+    },
+    {
+        "folder": "GranularVocalClouds.patchcraft", "display": "Granular Vocal Clouds", "engine": "sample",
+        "kind": "sampler", "category": "Granular Sample Instrument", "theme": "wide-banner", "placement": "center",
+        "description": "Playable vocal sampler with a large waveform, direct sample replacement, granular cloud shaping, and performance FX.",
+        "tagline": "Drop, tune, grain, and perform cinematic vocal textures",
+        "try_hint": "1) Drop a vocal sample  2) Play the keyboard  3) Shape Density, Scan, Motion, and Space",
+        "tags": ["sampler", "granular", "vocal", "cinematic"], "accent": "ffb66cff", "accent2": "ff55e6d2",
+        "accent_rgb": "b66cff", "accent2_rgb": "55e6d2", "bg": "08050d", "bg2": "1a1024", "line": "573b73",
+        "preset_builder": "granular_vocal",
     },
     {
         "folder": "CircleSeqFlagship.patchcraft", "display": "CircleSEQ Flagship", "engine": "synth",
@@ -1724,6 +2214,15 @@ PACKS = [
         "try_hint": "1) Press PLAY  2) Click the piano roll to edit chords  3) Switch sound presets",
         "tags": ["pianoroll", "chords", "midi", "composer", "keys"], "accent": "ff6ab7ff", "accent2": "ffb98cff",
         "accent_rgb": "6ab7ff", "accent2_rgb": "b98cff", "bg": "05070d", "bg2": "121626", "line": "2c3a63",
+    },
+    {
+        "folder": "HarmonyComposer.patchcraft", "display": "Harmony Composer", "engine": "synth",
+        "kind": "pianoroll", "category": "Chord / MIDI Instrument", "theme": "wide-banner", "placement": "left",
+        "description": "Harmony-focused composer demo rebuilt with the same clean runtime piano roll and sound controls as ChordCraft.",
+        "tagline": "Composer-ready chords, keys, and musical macro controls",
+        "try_hint": "1) Press PLAY  2) Edit the roll  3) Shape Cutoff, Motion, and Space",
+        "tags": ["pianoroll", "harmony", "composer", "midi"], "accent": "ff43e0c0", "accent2": "ffffc857",
+        "accent_rgb": "43e0c0", "accent2_rgb": "ffc857", "bg": "050b0b", "bg2": "10211f", "line": "26665d",
     },
     {
         "folder": "ArpStepSequencer.patchcraft", "display": "Arp Step Sequencer", "engine": "synth",
@@ -1775,16 +2274,40 @@ PACKS = [
 ]
 
 
-def validate_layout(layout: dict[str, Any]) -> None:
+def validate_layout(layout: dict[str, Any], *, allow_tabs: bool = False) -> None:
     controls = [e for e in layout["elements"] if e.get("type") in {
         "knob", "slider", "button", "dropdown", "padGrid", "drumGrid", "keyboard", "mixer",
         "macroControl", "modMatrix", "eqCurve", "spectrumAnalyzer", "sampleDropZone",
         "runtimeSampleLibrary", "pitchWheel", "modWheel", "arpLane", "meter", "valueDisplay",
     }]
-    if any(e.get("type") == "tabPanel" for e in layout["elements"]):
+    tab_panels = [e for e in layout["elements"] if e.get("type") == "tabPanel"]
+    if tab_panels and not allow_tabs:
         raise RuntimeError("factory demo layout still contains tabPanel")
-    if len(controls) < 24:
+    if allow_tabs:
+        if not tab_panels:
+            raise RuntimeError("tabbed demo has no tabPanel element")
+        valid_groups = {""}
+        for panel in tab_panels:
+            tabs = panel.get("tabs", [])
+            if len(tabs) < 2:
+                raise RuntimeError(f"tabPanel {panel.get('id')} needs at least 2 tabs")
+            valid_groups |= {t.lower().replace(" ", "_") for t in tabs}
+        for e in layout["elements"]:
+            group = e.get("groupId", "")
+            if group not in valid_groups:
+                raise RuntimeError(f"element {e.get('id')} targets unknown tab group '{group}'")
+    if len(controls) < 16:
         raise RuntimeError(f"layout only has {len(controls)} runtime controls")
+    canvas = layout["canvas"]
+    for e in layout["elements"]:
+        if e.get("id") in PLAYER_FRAME_ELEMENT_IDS:
+            raise RuntimeError(f"shared Player control leaked into centre canvas: {e.get('id')}")
+        if e.get("x", 0) < 0 or e.get("y", 0) < 0:
+            raise RuntimeError(f"element starts outside canvas: {e.get('id')}")
+        if e.get("x", 0) + e.get("width", 0) > canvas["width"]:
+            raise RuntimeError(f"element exceeds canvas width: {e.get('id')}")
+        if e.get("y", 0) + e.get("height", 0) > canvas["height"]:
+            raise RuntimeError(f"element exceeds canvas height: {e.get('id')}")
     for e in controls:
         if e.get("action") or e.get("id") == "presets":
             continue
@@ -1792,11 +2315,13 @@ def validate_layout(layout: dict[str, Any]) -> None:
             raise RuntimeError(f"runtime control has no parameterId: {e.get('id')}")
 
 
-def normalize_layout_groups(layout: dict[str, Any]) -> None:
-    # Factory demos are custom single-page products. Non-main group ids are
+def normalize_layout_groups(layout: dict[str, Any], *, tabbed: bool = False) -> None:
+    # Most factory demos are custom single-page products. Non-main group ids are
     # treated as tab visibility targets by Studio/Player, so keep all generated
-    # controls on the main page unless an actual tabbed demo is intentionally
-    # generated.
+    # controls on the main page. Tabbed demos author real tab groups and are
+    # left untouched.
+    if tabbed:
+        return
     for element in layout.get("elements", []):
         if element.get("groupId"):
             element["groupId"] = "main"
@@ -1818,6 +2343,7 @@ def validate_presets(presets: list[dict[str, Any]]) -> None:
 
 def main() -> None:
     builders = {
+        "megasynth": (megasynth_layout, nebula_prime_presets),
         "synth": (synth_layout, synth_presets),
         "drums": (drums_layout, lambda: sample_presets("drums")),
         "sampler": (sampler_layout, lambda: sample_presets("keys")),
@@ -1831,18 +2357,20 @@ def main() -> None:
     }
     preset_overrides = {
         "aurora_arp": aurora_arp_presets,
+        "granular_vocal": granular_vocal_presets,
+        "nebula_prime": nebula_prime_presets,
     }
     for pack in PACKS:
         layout_builder, preset_builder = builders[pack["kind"]]
         layout = layout_builder(pack)
+        finalize_player_canvas(layout)
         override = pack.get("preset_builder")
         presets = preset_overrides[override]() if override else preset_builder()
-        normalize_layout_groups(layout)
-        validate_layout(layout)
+        normalize_layout_groups(layout, tabbed=bool(pack.get("tabbed")))
+        validate_layout(layout, allow_tabs=bool(pack.get("tabbed")))
         validate_presets(presets)
         write_pack(pack, layout, presets)
         print(f"rebuilt {pack['display']}: {len(layout['elements'])} elements, {len(presets)} presets")
-
 
 if __name__ == "__main__":
     main()

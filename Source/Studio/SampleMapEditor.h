@@ -3,6 +3,8 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "SampleMap.h"
+#include "DspRoutingEngine.h"
+#include "LiveValueStore.h"
 
 namespace patchcraft
 {
@@ -26,7 +28,8 @@ namespace patchcraft
                             public juce::ListBoxModel,
                             public juce::FileDragAndDropTarget,
                             public juce::DragAndDropTarget,
-                            private juce::Timer
+                            private juce::Timer,
+                            private LiveValueStore::Listener
     {
     public:
         SampleMapEditor (StudioMainComponent& owner);
@@ -35,9 +38,23 @@ namespace patchcraft
         void paint (juce::Graphics&) override;
         void resized() override;
         void refresh();
+        void setLibraryDrawerOpen (bool shouldOpen);
+        bool isLibraryDrawerOpen() const noexcept          { return libraryDrawerOpen; }
         int getSelectedZoneIndex() const                   { return selectedZone; }
         const SampleZoneDef* getSelectedZone() const;
         void selectZone (int index);
+        void setEasyMode (bool shouldUseEasyMode);
+
+        /** Chop Lab helpers (Serato-style cue-point chops). */
+        static int getChopSourceZoneIndex (StudioMainComponent& owner);
+        static bool loadChopSourceFromProject (StudioMainComponent& owner,
+                                               juce::AudioBuffer<float>& bufferOut,
+                                               double& sampleRateOut,
+                                               SampleZoneDef& zoneOut);
+        static bool commitCuePointChop (StudioMainComponent& owner,
+                                      const std::vector<int>& boundaries,
+                                      double bpm,
+                                      bool keyLock);
 
         // ListBoxModel
         int getNumRows() override;
@@ -56,6 +73,7 @@ namespace patchcraft
     private:
         StudioMainComponent& owner;
         int selectedZone = -1;
+        bool libraryDrawerOpen = false;
 
         // Main toolbar
         juce::TextButton editModeBtn{ "Edit" };
@@ -287,7 +305,6 @@ namespace patchcraft
         void paintEditPanel (juce::Graphics& g, juce::Rectangle<int> bounds);
         void paintEditCard (juce::Graphics& g, juce::Rectangle<int> bounds, const juce::String& title);
         void paintEasyGuide (juce::Graphics& g, juce::Rectangle<int> bounds);
-        void setEasyMode (bool shouldUseEasyMode);
         void updateModeVisibility();
         void timerCallback() override;
         juce::String buildEasySummary();
@@ -385,8 +402,11 @@ namespace patchcraft
         void selectZoneForMidi (int note, int velocity);
         void setMidiZoneSelectEnabled (bool enabled);
         void applyImportDefaultVelocity (bool allZones);
+        void bindAuditionRouting();
+        void liveValueChanged (const juce::String& parameterId, float newValue) override;
 
         std::unique_ptr<SampleSynthEngine> auditionEngine;
+        DspRoutingEngine auditionRouter;
         juce::SpinLock auditionLock;
         double auditionSampleRate = 44100.0;
         int auditionBlockSize = 512;

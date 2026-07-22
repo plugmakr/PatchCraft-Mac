@@ -1,9 +1,13 @@
 #pragma once
 
+#include <functional>
+
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include "PatchCraftProject.h"
+#include "ProductRecipes.h"
+#include "SoundStack.h"
 #include "AssetManager.h"
 #include "AiAssistService.h"
 #include "StudioAudioService.h"
@@ -22,6 +26,9 @@ namespace patchcraft
     class InspectorPanel;
     class PresetsComponent;
     class ScriptEditorComponent;
+    class TutorialModeOverlay;
+    class PackRuntimeHost;
+    class CustomerPreviewOverlay;
 
     /**
         Top-level Studio layout: top toolbar + left sidebar + canvas + inspector
@@ -39,6 +46,7 @@ namespace patchcraft
 
         void paint (juce::Graphics&) override;
         void resized() override;
+        bool keyPressed (const juce::KeyPress&) override;
         void mouseDown (const juce::MouseEvent&) override;
         void mouseDrag (const juce::MouseEvent&) override;
         void mouseUp (const juce::MouseEvent&) override;
@@ -49,33 +57,46 @@ namespace patchcraft
 
         // ---- Project / pack actions ----------------------------------------
         void newProject();
+        void createProductProject (ProductKind kind);
+        void createProductFromTemplate (const juce::String& templateId);
+        void showMultiLayerSetupWizard();
+        void syncExportPreview();
         void openProject();
         void loadFactoryDemo (const juce::File& demoPackFolder);
         void loadArpStepSequencerTemplate();
+        void newSampleChopperProject();
         void saveProject();
         void saveProjectAs();
         void saveCurrentDspPatch();
         void saveCurrentDspPatchAs();
         void saveCurrentSectionPreset();
         void sendToExpansionPack();
-        void importSamples();
+        void importSamples (std::function<void (bool imported)> onComplete = {});
         void importSampleFiles (const juce::Array<juce::File>& files,
                                 bool switchToMapper = true,
                                 bool spanMappedRoots = true,
                                 juce::String sampleMappingMode = {},
                                 int targetNote = -1,
                                 int targetPadIndex = -1);
+        void openSoundMapperForChopZone (int zoneIndex);
         bool assignMidiFilesToSampleMap (const juce::Array<juce::File>& files,
                                          juce::String& report,
                                          int targetNote = -1,
                                          int targetPadIndex = -1);
         void toggleSampleLibraryDrawerForSamples();
         void showSampleLibraryDrawer (bool shouldShow);
+        void layoutSampleLibraryInEditor (juce::Rectangle<int> areaInEditor);
         void importBackground();
         void generateAiBackground();
         void generateAiImageAsset();
         void aiAssist();
         void togglePreview();
+        void toggleCustomerPreview();
+        bool isCustomerPreviewActive() const noexcept { return customerPreviewActive; }
+        void setGraphAudioListen (bool active);
+        bool isGraphAudioListen() const noexcept { return graphAudioListen; }
+        PackRuntimeHost* getPackRuntime() noexcept { return packRuntime.get(); }
+        void attachPackRuntimePreview (juce::Component* parent, juce::Rectangle<int> area);
         void exportPack();
         void exportVstPlugin();
         void publishToPluginClub();
@@ -83,6 +104,9 @@ namespace patchcraft
         // the MIDI builder so the user can edit it - hooked up from the
         // canvas right-click menu.
         void addArpBlock();
+        void addMotionBlock (SoundStack::MotionKind kind);
+        bool isAdvancedGraphMode() const;
+        void setAdvancedGraphMode (bool enabled);
         void restoreAllPresets();
         void setDefaultPreset();
 
@@ -120,6 +144,10 @@ namespace patchcraft
         void setSelectedLabelVisibility (bool visible, const juce::String& defaultPosition = "bottom");
         void detachLabelsFromSelectedControls();
         void createPscriptHandlerForSelectedControl();
+        bool attachPscriptFileAt (const juce::File& file, juce::Point<int> canvasLocalPos);
+        bool attachPscriptFileToElement (const juce::String& elementId, const juce::File& file);
+        void attachPscriptFileToSelectedControl();
+        void detachPscriptFromSelectedControl();
         void copySelectedDesignStyle();
         void pasteDesignStyle();
         void applyDesignStylePreset (const juce::String& presetId);
@@ -127,6 +155,9 @@ namespace patchcraft
         void addMixerChannelToCanvas();
         void addDrumMachineControlsToCanvas();
         void addModuleToCanvas (const juce::String& moduleType);
+        void addModuleToCanvasAt (const juce::String& moduleType, juce::Point<int> canvasPosition);
+        void addElementToCanvasAt (ElementType type, juce::Point<int> canvasPosition, juce::String parameterId = {});
+        void enterDawPreviewMode();
         void toggleCanvasGrid();
         void toggleCanvasRulers();
         void setCanvasZoom (float zoomFactor);
@@ -168,11 +199,21 @@ namespace patchcraft
         bool getStudioTutorialsEnabled() const;
         void setStudioTutorialsEnabled (bool enabled);
         void toggleHelpTooltips();
+        bool getTutorialModeEnabled() const;
+        void setTutorialModeEnabled (bool enabled);
         bool captureTutorialScreenshots (const juce::File& outputFolder, juce::String& error);
+        void focusPscriptPanel();
+        void closePscriptPanel();
+        bool isScriptEditorActive() const noexcept { return showScriptEditorInsteadOfElements; }
+        InspectorPanel* getInspectorPanel() noexcept { return inspectorPanel.get(); }
+        ScriptEditorComponent* getScriptEditor() noexcept { return scriptEditor.get(); }
 
         // Section tab routing - canvas toolbar + bottom panel both consult this.
         void setBottomTab (BottomPanel::Page);
         BottomPanel::Page getBottomTab() const              { return bottomTab; }
+        BottomPanel* getBottomPanel() noexcept                { return bottomPanel.get(); }
+        bool isAdvancedBuildUnlocked() const noexcept       { return advancedBuildUnlocked; }
+        void setAdvancedBuildUnlocked (bool enabled);
 
         // Re-fan out a 'project changed' notification to all panels.
         void refreshAllPanels();
@@ -188,7 +229,9 @@ namespace patchcraft
         void liveValueChanged (const juce::String&, float) override;
         void publishToPluginClubWithArtifactChoice (int artifactChoice);
         void refreshTooltipWindowState();
-        void focusPscriptPanel();
+        void exitCustomerPreviewIfActive();
+        void rehomePackRuntimeToStudio();
+        void refreshPreviewUiState();
 
         double lastLiveValueUiRepaintMs = 0.0;
 
@@ -211,6 +254,13 @@ namespace patchcraft
         std::unique_ptr<juce::Viewport>  inspectorViewport;
         std::unique_ptr<PresetsComponent> presetsPanel;
         std::unique_ptr<BottomPanel>     bottomPanel;
+        std::unique_ptr<PackRuntimeHost> packRuntime;
+        std::unique_ptr<CustomerPreviewOverlay> customerPreviewOverlay;
+        std::unique_ptr<TutorialModeOverlay> tutorialOverlay;
+        bool customerPreviewActive = false;
+        bool graphAudioListen = false;
+        bool advancedGraphModeExplicit = false;
+        bool advancedBuildUnlocked = false;
 
         // Floating panel windows for the docking system.
         struct FloatingEntry
@@ -230,7 +280,7 @@ namespace patchcraft
         // Right-panel tab indices: 0=Inspector, 1=Presets.
         int  rightTabIndex = 0;
 
-        BottomPanel::Page bottomTab { BottomPanel::Page::Dashboard };
+        BottomPanel::Page bottomTab { BottomPanel::Page::Design };
 
         // Settings window (audio/MIDI device picker).
         class SettingsWindowHolder;

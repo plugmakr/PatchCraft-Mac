@@ -402,6 +402,7 @@ namespace patchcraft
 
     void InstrumentPreviewComponent::liveValueChanged (const juce::String& id, float v)
     {
+        project.syncDspGraphFromLiveValues();
         const juce::SpinLock::ScopedLockType lk (engineLock);
         routingEngine.setParameterValue (id, v);
         routingEngine.setFxBlockParameterValue (id, v);

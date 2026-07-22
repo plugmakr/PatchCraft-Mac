@@ -37,15 +37,17 @@ namespace patchcraft
         styleLabel (sourceLabel, "DRIVER", 11.0f, true, PatchCraftLookAndFeel::textDim());
         styleLabel (actionLabel, "MOTION", 11.0f, true, PatchCraftLookAndFeel::textDim());
         styleLabel (previewLabel, "PREVIEW", 11.0f, true, PatchCraftLookAndFeel::textDim());
+        styleLabel (demoLabel, "ANIMATION DEMOS", 11.0f, true, PatchCraftLookAndFeel::textDim());
 
         for (auto* label : { &title, &subtitle, &nonProHeader, &nonProBody, &proHeader, &proBody,
                               &workflowHeader, &workflowBody, &stepsHeader, &stepsBody, &proofHeader, &proofBody,
-                              &bindHeader, &bindBody, &targetLabel, &sourceLabel, &actionLabel, &previewLabel })
+                              &bindHeader, &bindBody, &targetLabel, &sourceLabel, &actionLabel, &previewLabel,
+                              &demoLabel })
             addAndMakeVisible (*label);
 
         for (auto* button : { &addVisualKitButton, &addReactiveButton, &addSpriteButton, &addFxButton,
-                              &addBoundVisualButton, &previewMotionButton, &addAiPromptButton, &generateAiAssetButton,
-                              &openDesignButton, &openBrandButton })
+                              &addBoundVisualButton, &previewMotionButton, &addDemoButton, &addAiPromptButton,
+                              &generateAiAssetButton, &openDesignButton, &openBrandButton })
         {
             styleButton (*button, button == &addVisualKitButton || button == &addBoundVisualButton || button == &generateAiAssetButton);
             addAndMakeVisible (*button);
@@ -76,6 +78,15 @@ namespace patchcraft
         actionBox.setSelectedId (1, juce::dontSendNotification);
         actionBox.onChange = [this] { repaint(); };
         addAndMakeVisible (actionBox);
+        demoBox.addItem ("Level -> Spectrum Bars", 1);
+        demoBox.addItem ("Bass -> Pulse Glow", 2);
+        demoBox.addItem ("BPM -> Orbit", 3);
+        demoBox.addItem ("MIDI -> Particle Burst", 4);
+        demoBox.addItem ("Parameter -> Sweep", 5);
+        demoBox.addItem ("Transient -> Shake", 6);
+        demoBox.setSelectedId (1, juce::dontSendNotification);
+        demoBox.onChange = [this] { applyAnimationDemo (demoBox.getSelectedId()); };
+        addAndMakeVisible (demoBox);
         addAndMakeVisible (targetBox);
         refreshParameterChoices();
 
@@ -89,6 +100,11 @@ namespace patchcraft
         addSpriteButton.onClick = [this] { addCanvasElement ((int) ElementType::SpriteAnimator); };
         addFxButton.onClick = [this] { addCanvasElement ((int) ElementType::VisualFxLayer); };
         addBoundVisualButton.onClick = [this] { addBoundVisualToCanvas(); };
+        addDemoButton.onClick = [this]
+        {
+            applyAnimationDemo (demoBox.getSelectedId());
+            addBoundVisualToCanvas();
+        };
         previewMotionButton.onClick = [this]
         {
             previewActive = ! previewActive;
@@ -100,6 +116,7 @@ namespace patchcraft
         generateAiAssetButton.onClick = [this] { owner.generateAiImageAsset(); };
         openDesignButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Design); };
         openBrandButton.onClick = [this] { owner.setBottomTab (BottomPanel::Page::Branding); };
+        applyAnimationDemo (1);
     }
 
     void AnimationLabPage::styleLabel (juce::Label& label, const juce::String& text, float size, bool bold, juce::Colour colour)
@@ -122,6 +139,61 @@ namespace patchcraft
     {
         owner.setBottomTab (BottomPanel::Page::Design);
         owner.addElementToCanvas ((ElementType) elementTypeIndex);
+    }
+
+    void AnimationLabPage::applyAnimationDemo (int demoId)
+    {
+        switch (demoId)
+        {
+            case 1:
+                sourceBox.setSelectedId (1, juce::dontSendNotification);
+                actionBox.setSelectedId (1, juce::dontSendNotification);
+                break;
+            case 2:
+                sourceBox.setSelectedId (2, juce::dontSendNotification);
+                actionBox.setSelectedId (3, juce::dontSendNotification);
+                break;
+            case 3:
+                sourceBox.setSelectedId (7, juce::dontSendNotification);
+                actionBox.setSelectedId (4, juce::dontSendNotification);
+                break;
+            case 4:
+                sourceBox.setSelectedId (8, juce::dontSendNotification);
+                actionBox.setSelectedId (6, juce::dontSendNotification);
+                break;
+            case 5:
+                sourceBox.setSelectedId (9, juce::dontSendNotification);
+                actionBox.setSelectedId (5, juce::dontSendNotification);
+                if (targetBox.getSelectedId() == 0 && targetBox.getNumItems() > 0)
+                {
+                    for (int i = 0; i < targetBox.getNumItems(); ++i)
+                    {
+                        const auto itemId = targetBox.getItemId (i);
+                        if (itemId > 0)
+                        {
+                            targetBox.setSelectedId (itemId, juce::dontSendNotification);
+                            break;
+                        }
+                    }
+                }
+                break;
+            case 6:
+                sourceBox.setSelectedId (5, juce::dontSendNotification);
+                actionBox.setSelectedId (9, juce::dontSendNotification);
+                break;
+            default:
+                sourceBox.setSelectedId (1, juce::dontSendNotification);
+                actionBox.setSelectedId (1, juce::dontSendNotification);
+                break;
+        }
+
+        if (! previewActive)
+        {
+            previewActive = true;
+            previewMotionButton.setButtonText ("Stop Preview");
+            startTimerHz (30);
+        }
+        repaint();
     }
 
     void AnimationLabPage::refreshParameterChoices()
@@ -180,6 +252,9 @@ namespace patchcraft
         if (action.equalsIgnoreCase ("Orbit"))           return "orbit";
         if (action.equalsIgnoreCase ("Sweep"))           return "sweep";
         if (action.equalsIgnoreCase ("Particle Burst"))  return "particles";
+        if (action.equalsIgnoreCase ("Sprite Frame"))    return "sprite";
+        if (action.equalsIgnoreCase ("Scale"))           return "scale";
+        if (action.equalsIgnoreCase ("Shake"))           return "shake";
         return "glow";
     }
 
@@ -360,6 +435,47 @@ namespace patchcraft
             }
             return;
         }
+        if (fx == "scale")
+        {
+            const float pulse = 0.78f + level * 0.34f;
+            auto box = area.withSizeKeepingCentre (area.getWidth() * 0.42f * pulse,
+                                                   area.getHeight() * 0.48f * pulse);
+            g.setColour (accent.withAlpha (0.22f));
+            g.fillRoundedRectangle (box.expanded (18.0f * level), 16.0f);
+            g.setColour (accent.withAlpha (0.92f));
+            g.drawRoundedRectangle (box, 12.0f, 2.4f);
+            g.drawLine (box.getX(), box.getCentreY(), box.getRight(), box.getCentreY(), 1.2f);
+            g.drawLine (box.getCentreX(), box.getY(), box.getCentreX(), box.getBottom(), 1.2f);
+            return;
+        }
+        if (fx == "shake")
+        {
+            const float dx = std::sin (seconds * 12.0f) * 8.0f * level;
+            const float dy = std::cos (seconds * 9.0f) * 4.0f * level;
+            auto box = area.withSizeKeepingCentre (area.getWidth() * 0.48f, area.getHeight() * 0.42f).translated (dx, dy);
+            g.setColour (accent.withAlpha (0.18f));
+            g.fillRoundedRectangle (box.expanded (8.0f), 14.0f);
+            g.setColour (accent.withAlpha (0.95f));
+            g.drawRoundedRectangle (box, 10.0f, 2.0f);
+            for (int i = 0; i < 5; ++i)
+            {
+                const float x = box.getX() + 10.0f + (float) i * box.getWidth() / 5.0f;
+                g.drawLine (x, box.getY() - 8.0f, x + dx * 0.7f, box.getY() - 18.0f, 1.0f);
+            }
+            return;
+        }
+        if (fx == "sprite")
+        {
+            const int frame = juce::jlimit (0, 5, (int) std::floor (t * 6.0f));
+            auto strip = area.withSizeKeepingCentre (area.getWidth() * 0.75f, area.getHeight() * 0.28f);
+            for (int i = 0; i < 6; ++i)
+            {
+                auto cell = strip.removeFromLeft (strip.getWidth() / (float) (6 - i)).reduced (3.0f);
+                g.setColour (i == frame ? accent.withAlpha (0.9f) : PatchCraftLookAndFeel::borderSoft());
+                g.fillRoundedRectangle (cell, 5.0f);
+            }
+            return;
+        }
         // glow
         for (int ring = 4; ring >= 0; --ring)
         {
@@ -425,6 +541,11 @@ namespace patchcraft
         previewLabel.setBounds (right.removeFromTop (20));
         previewMotionButton.setBounds (right.removeFromTop (34));
         right.removeFromTop (178);
+        demoLabel.setBounds (right.removeFromTop (20));
+        demoBox.setBounds (right.removeFromTop (30));
+        right.removeFromTop (6);
+        addDemoButton.setBounds (right.removeFromTop (34));
+        right.removeFromTop (10);
         addAiPromptButton.setBounds (right.removeFromTop (34));
         right.removeFromTop (8);
         generateAiAssetButton.setBounds (right.removeFromTop (34));

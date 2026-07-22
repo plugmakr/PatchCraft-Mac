@@ -11,7 +11,20 @@ namespace patchcraft
     class PlayerLookAndFeel : public PatchCraftLookAndFeel
     {
     public:
-        PlayerLookAndFeel() = default;
+        PlayerLookAndFeel();
+
+        void drawRotarySlider (juce::Graphics&, int x, int y, int w, int h,
+                               float sliderPos, float startAngle, float endAngle,
+                               juce::Slider&) override;
+
+        void drawButtonBackground (juce::Graphics&, juce::Button&,
+                                   const juce::Colour& backgroundColour,
+                                   bool shouldDrawButtonAsHighlighted,
+                                   bool shouldDrawButtonAsDown) override;
+
+        void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
+                           int buttonX, int buttonY, int buttonW, int buttonH,
+                           juce::ComboBox&) override;
     };
 
 } // namespace patchcraft

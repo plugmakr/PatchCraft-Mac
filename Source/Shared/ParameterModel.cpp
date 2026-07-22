@@ -1,5 +1,7 @@
 #include "ParameterModel.h"
+#include "LayoutBindingHelper.h"
 #include "HarmonyEngine.h"
+#include "SampleSliceUtils.h"
 
 #include <array>
 #include <cmath>
@@ -185,7 +187,7 @@ namespace patchcraft
                     velocitySensitivity.enableHint = "Shapes how hard you must play for full volume. 0.5 is linear; lower evens out dynamics, higher exaggerates them.";
                     add (velocitySensitivity);
 
-                    for (int pad = 1; pad <= 16; ++pad)
+                    for (int pad = 1; pad <= kMaxChopPads; ++pad)
                     {
                         const auto padText = juce::String (pad);
                         auto padLevel = makeDef ("pad" + padText + "Volume", "Pad " + padText + " Level",
@@ -774,8 +776,9 @@ namespace patchcraft
 
         for (const auto& element : layout)
         {
-            require (element.id, element.parameterId, "Layout element is assigned to a missing parameter.");
-            if (element.parameterId.isNotEmpty())
+            if (layoutElementRequiresParameter (element.type))
+                require (element.id, element.parameterId, "Layout element is assigned to a missing parameter.");
+            if (element.parameterId.isNotEmpty() && layoutElementRequiresParameter (element.type))
             {
                 if (const auto* def = find (element.parameterId))
                 {

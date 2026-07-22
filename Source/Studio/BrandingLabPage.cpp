@@ -1,9 +1,7 @@
 #include "BrandingLabPage.h"
+#include "PackRuntimeHost.h"
 #include "StudioMainComponent.h"
 #include "PatchCraftLookAndFeel.h"
-#include "TestPage.h"
-#include "StudioInstrumentRenderer.h"
-#include "LibraryScanner.h"
 
 #include <functional>
 #include <utility>
@@ -17,20 +15,7 @@ namespace patchcraft
             return "#" + juce::String::toHexString ((int) c.getARGB()).paddedLeft ('0', 8).toUpperCase();
         }
 
-        static void stylePlayerToolbarButton (juce::TextButton& button)
-        {
-            button.getProperties().set ("toolbarIcon", true);
-            button.getProperties().set ("fontSize", 10.5);
-            button.getProperties().set ("bold", true);
-            button.getProperties().set ("corner", 5.0);
-            button.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff171b21));
-            button.setColour (juce::TextButton::buttonOnColourId, PatchCraftLookAndFeel::accent());
-            button.setColour (juce::TextButton::textColourOffId, PatchCraftLookAndFeel::text());
-            button.setColour (juce::TextButton::textColourOnId, juce::Colours::black);
-        }
-
-        static constexpr int kPreviewPlayerHeaderHeight = 108;
-        static constexpr int kPreviewPlayerTitleHeight = 66;
+        static constexpr int kPlayerTitleBarHeight = 108;
 
         static const juce::StringArray& titleBarThemeIds()
         {
@@ -82,19 +67,64 @@ namespace patchcraft
             return index >= 0 && index < values.size() ? values[index] : values[0];
         }
 
-        static juce::Rectangle<int> fitCanvasIntoBounds (CanvasSize canvasSize,
-                                                         juce::Rectangle<int> bounds)
+        static void applyTitleBarThemeRecipe (Manifest& m, const juce::String& themeId)
         {
-            if (canvasSize.width <= 0) canvasSize.width = 1280;
-            if (canvasSize.height <= 0) canvasSize.height = 800;
-            if (bounds.isEmpty())
-                return bounds;
+            auto setCommon = [&] (juce::Colour bg, juce::Colour panel, juce::Colour accent,
+                                  juce::Colour text, juce::Colour dim, juce::Colour border,
+                                  juce::String placement, juce::String buttonStyle, juce::String font)
+            {
+                m.playerBackgroundColour = bg;
+                m.playerPanelColour = panel;
+                m.playerAccentColour = accent;
+                m.playerTextColour = text;
+                m.playerTextDimColour = dim;
+                m.playerBorderColour = border;
+                m.playerTitleTextPlacement = std::move (placement);
+                m.playerTitleButtonStyle = std::move (buttonStyle);
+                m.playerTitleFontFamily = std::move (font);
+                m.playerShowTopBar = true;
+            };
 
-            const float scale = juce::jmin ((float) bounds.getWidth() / (float) canvasSize.width,
-                                            (float) bounds.getHeight() / (float) canvasSize.height);
-            const int width = juce::jmax (1, juce::roundToInt ((float) canvasSize.width * scale));
-            const int height = juce::jmax (1, juce::roundToInt ((float) canvasSize.height * scale));
-            return bounds.withSizeKeepingCentre (width, height);
+            if (themeId == "aurora")
+                setCommon (juce::Colour (0xff050913), juce::Colour (0xdd111827), juce::Colour (0xff34f5e5), juce::Colour (0xffeefcff), juce::Colour (0xff89a8b6), juce::Colour (0xff245064), "left", "pill", "Segoe UI");
+            else if (themeId == "banner")
+                setCommon (juce::Colour (0xff08090d), juce::Colour (0xee10151e), juce::Colour (0xffffb02e), juce::Colour (0xfffff5df), juce::Colour (0xffaa9c84), juce::Colour (0xff6a4b19), "left", "filled", "Georgia");
+            else if (themeId == "minimal")
+                setCommon (juce::Colour (0xff070809), juce::Colour (0x0015171b), juce::Colour (0xffffffff), juce::Colour (0xfff5f5f5), juce::Colour (0xff8b9098), juce::Colour (0x55485058), "left", "minimal", "Default");
+            else if (themeId == "compact-daw")
+                setCommon (juce::Colour (0xff080a0e), juce::Colour (0xff161a20), juce::Colour (0xff72a7ff), juce::Colour (0xfff0f4ff), juce::Colour (0xff929cac), juce::Colour (0xff303946), "left", "square", "Segoe UI");
+            else if (themeId == "split-brand")
+                setCommon (juce::Colour (0xff0b0806), juce::Colour (0xff18110b), juce::Colour (0xffff7a2a), juce::Colour (0xffffefe2), juce::Colour (0xffb99076), juce::Colour (0xff5d321b), "left", "filled", "Verdana");
+            else if (themeId == "neon-strip")
+                setCommon (juce::Colour (0xff04070a), juce::Colour (0xee071018), juce::Colour (0xff18f6ff), juce::Colour (0xfff2feff), juce::Colour (0xff7ec7d0), juce::Colour (0xff1e6c78), "center", "outlined", "Consolas");
+            else if (themeId == "glass")
+                setCommon (juce::Colour (0xff080b12), juce::Colour (0x99182330), juce::Colour (0xff8f6cff), juce::Colour (0xfff7f3ff), juce::Colour (0xffaaa2c4), juce::Colour (0x99a8c7ff), "center", "pill", "Segoe UI");
+            else if (themeId == "dark-utility")
+                setCommon (juce::Colour (0xff050607), juce::Colour (0xff111318), juce::Colour (0xfff5a623), juce::Colour (0xffe8edf5), juce::Colour (0xff8d96a3), juce::Colour (0xff2f3540), "left", "outlined", "Default");
+            else if (themeId == "artist-card")
+                setCommon (juce::Colour (0xff090807), juce::Colour (0xff1a1410), juce::Colour (0xffffcf73), juce::Colour (0xfffff2d5), juce::Colour (0xffc0a47d), juce::Colour (0xff75532b), "left", "pill", "Georgia");
+            else if (themeId == "logo-rail")
+                setCommon (juce::Colour (0xff07090f), juce::Colour (0xff10151d), juce::Colour (0xff5cf0c8), juce::Colour (0xffecfffa), juce::Colour (0xff87aaa2), juce::Colour (0xff1f5f55), "left", "square", "Verdana");
+            else if (themeId == "clean-pro")
+                setCommon (juce::Colour (0xff0b0d10), juce::Colour (0xff171b22), juce::Colour (0xffd8e4ff), juce::Colour (0xfff3f6fb), juce::Colour (0xff9aa4b4), juce::Colour (0xff3a4351), "left", "minimal", "Segoe UI");
+            else if (themeId == "wide-banner")
+                setCommon (juce::Colour (0xff07070a), juce::Colour (0xff0f1420), juce::Colour (0xffb86cff), juce::Colour (0xfff6efff), juce::Colour (0xffaf9ac8), juce::Colour (0xff50336f), "center", "filled", "Georgia");
+            else if (themeId == "bottom-tools")
+                setCommon (juce::Colour (0xff06090c), juce::Colour (0xff111820), juce::Colour (0xff00d2ff), juce::Colour (0xffe9fbff), juce::Colour (0xff87a7b0), juce::Colour (0xff264b57), "left", "outlined", "Consolas");
+            else if (themeId == "no-chrome")
+            {
+                m.playerShowTopBar = false;
+                m.playerTitleButtonStyle = "minimal";
+                m.playerTitleTextPlacement = "hidden";
+            }
+            else if (themeId == "custom")
+            {
+                m.playerShowTopBar = true;
+                if (m.playerTitleButtonStyle.isEmpty()) m.playerTitleButtonStyle = "outlined";
+                if (m.playerTitleTextPlacement.isEmpty()) m.playerTitleTextPlacement = "left";
+            }
+            else
+                setCommon (juce::Colour (0xff0b0d10), juce::Colour (0xff15171b), juce::Colour (0xfff5a623), juce::Colour (0xffe6e6e6), juce::Colour (0xff8b9098), juce::Colour (0xff2a2a2a), "left", "outlined", "Default");
         }
 
         static bool isRuntimeAudioFile (const juce::File& file)
@@ -156,7 +186,7 @@ namespace patchcraft
         header.setFont (juce::Font (16.0f, juce::Font::bold));
         addAndMakeVisible (header);
 
-        subtitle.setText ("Brand and test the actual Player experience. Use PLAY/STOP, the keyboard, pads, tab pages, drum-grid banks, and canvas controls here before exporting.",
+        subtitle.setText ("Brand identity on the left, live Player on the right — logo, colors, title bar, and your layout exactly as buyers will see it. Use top-bar Preview for full-screen play mode.",
                           juce::dontSendNotification);
         subtitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
         subtitle.setFont (juce::Font (11.5f));
@@ -187,6 +217,19 @@ namespace patchcraft
             w.editor->setTextToShowWhenEmpty (w.placeholder, PatchCraftLookAndFeel::textDim().withAlpha (0.65f));
             w.editor->onTextChange = [this] { if (! syncingFromManifest) writeToManifest(); };
             addAndMakeVisible (*w.editor);
+        }
+
+        for (int i = 0; i < 8; ++i)
+        {
+            macroNameLabels[i].setText ("Macro " + juce::String (i + 1), juce::dontSendNotification);
+            macroNameLabels[i].setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+            macroNameLabels[i].setFont (juce::Font (11.5f, juce::Font::bold));
+            addAndMakeVisible (macroNameLabels[i]);
+
+            macroNameEdits[i].setMultiLine (false);
+            macroNameEdits[i].setTextToShowWhenEmpty ("e.g. TONE", PatchCraftLookAndFeel::textDim().withAlpha (0.65f));
+            macroNameEdits[i].onTextChange = [this] { if (! syncingFromManifest) writeToManifest(); };
+            addAndMakeVisible (macroNameEdits[i]);
         }
 
         titleBarThemeLabel.setText ("Title Theme", juce::dontSendNotification);
@@ -221,6 +264,14 @@ namespace patchcraft
             box->onChange = [this] { if (! syncingFromManifest) writeToManifest(); };
             addAndMakeVisible (*box);
         }
+        titleBarThemeBox.onChange = [this]
+        {
+            if (! syncingFromManifest)
+            {
+                forceApplyTitleTheme = true;
+                writeToManifest();
+            }
+        };
 
         const EditorWiring clientEditors[] = {
             { &clientNameLabel,   "Client / Artist", &clientNameEdit,   "e.g. DJ Name, producer brand, label" },
@@ -340,6 +391,8 @@ namespace patchcraft
             m.playerTextDimColour    = juce::Colour (0xff8b9098);
             m.playerBorderColour     = juce::Colour (0xff2a2a2a);
             owner.getProject().notifyChanged();
+            if (auto* runtime = owner.getPackRuntime())
+                runtime->requestReloadImmediate();
             refresh();
         };
         addAndMakeVisible (resetColoursBtn);
@@ -382,8 +435,15 @@ namespace patchcraft
 
         for (auto* toggle : { &showPackMenuToggle, &allowPackLoadingToggle, &showLibraryToggle,
                               &allowMidiLearnToggle, &showAboutToggle, &showGuidanceToggle,
-                              &showPatchCraftBrandingToggle, &licenseRequiredToggle, &bindMachineToggle,
-                              &includeVst3Toggle, &includeStandaloneToggle, &requireLicenseFirstRunToggle })
+                              &showTopBarToggle, &showLeftSidebarToggle, &showFooterToggle,
+                              &showRightPanelToggle, &showKeyboardToggle,
+                              &topBrowseToggle, &topSaveToggle, &topSettingsToggle,
+                              &topCategoryToggle, &topFavoriteToggle, &topPresetNavToggle,
+                              &topMasterToggle, &topMeterToggle,
+                              &licenseRequiredToggle, &bindMachineToggle,
+                              &includeVst3Toggle, &includeStandaloneToggle, &requireLicenseFirstRunToggle,
+                              &rightPanelShowMacrosToggle, &rightPanelShowEffectsToggle,
+                              &rightPanelShowSendsToggle, &rightPanelShowUtilityToggle })
         {
             toggle->setColour (juce::ToggleButton::textColourId, PatchCraftLookAndFeel::text());
             toggle->onClick = [this] { if (! syncingFromManifest) writeToManifest(); };
@@ -416,7 +476,7 @@ namespace patchcraft
             addAndMakeVisible (*editor);
         }
         productIdEdit.setTextToShowWhenEmpty ("customer-product-id", PatchCraftLookAndFeel::textDim().withAlpha (0.65f));
-        licenseUrlEdit.setTextToShowWhenEmpty ("https://plugin.club/functions/deviceAuth", PatchCraftLookAndFeel::textDim().withAlpha (0.65f));
+        licenseUrlEdit.setTextToShowWhenEmpty ("https://plugin.club/functions/v1/activateLicense", PatchCraftLookAndFeel::textDim().withAlpha (0.65f));
 
         for (auto* slider : { &trialDaysSlider, &offlineGraceSlider })
         {
@@ -441,6 +501,23 @@ namespace patchcraft
             m.playerShowAbout = true;
             m.playerShowParameterGuidance = true;
             m.playerShowPatchCraftBranding = false;
+            m.playerShowTopBar = true;
+            m.playerShowLeftSidebar = false;
+            m.playerShowFooter = true;
+            m.playerShowRightPanel = true;
+            m.playerShowKeyboard = true;
+            m.playerTopShowBrowse = false;
+            m.playerTopShowSave = true;
+            m.playerTopShowSettings = true;
+            m.playerTopShowCategory = false;
+            m.playerTopShowFavorite = true;
+            m.playerTopShowPresetNav = true;
+            m.playerTopShowMasterVolume = true;
+            m.playerTopShowOutputMeter = true;
+            m.rightPanelShowMacros = true;
+            m.rightPanelShowEffects = true;
+            m.rightPanelShowSends = true;
+            m.rightPanelShowUtility = true;
             m.licenseRequired = true;
             m.whiteLabelIncludeVst3 = true;
             m.whiteLabelIncludeStandalone = true;
@@ -470,6 +547,8 @@ namespace patchcraft
             if (m.licenseProductId.isEmpty())
                 m.licenseProductId = m.instrumentName.toLowerCase().replaceCharacters (" \\/:*?\"<>|", "__________");
             owner.getProject().notifyChanged();
+            if (auto* runtime = owner.getPackRuntime())
+                runtime->requestReloadImmediate();
             refresh();
         };
         addAndMakeVisible (applyWhiteLabelPresetBtn);
@@ -508,7 +587,11 @@ namespace patchcraft
                  static_cast<juce::Component*> (&showPackMenuToggle), static_cast<juce::Component*> (&allowPackLoadingToggle),
                  static_cast<juce::Component*> (&showLibraryToggle), static_cast<juce::Component*> (&allowMidiLearnToggle),
                  static_cast<juce::Component*> (&showAboutToggle), static_cast<juce::Component*> (&showGuidanceToggle),
-                 static_cast<juce::Component*> (&showPatchCraftBrandingToggle),
+                 static_cast<juce::Component*> (&showTopBarToggle), static_cast<juce::Component*> (&showLeftSidebarToggle),
+                 static_cast<juce::Component*> (&showFooterToggle),
+                 static_cast<juce::Component*> (&topBrowseToggle), static_cast<juce::Component*> (&topSaveToggle),
+                 static_cast<juce::Component*> (&topSettingsToggle), static_cast<juce::Component*> (&topCategoryToggle),
+                 static_cast<juce::Component*> (&topFavoriteToggle), static_cast<juce::Component*> (&topPresetNavToggle),
                  static_cast<juce::Component*> (&clientSectionBtn), static_cast<juce::Component*> (&clientSectionLabel),
                  static_cast<juce::Component*> (&clientNameLabel), static_cast<juce::Component*> (&clientNameEdit),
                  static_cast<juce::Component*> (&supportEmailLabel), static_cast<juce::Component*> (&supportEmailEdit),
@@ -536,112 +619,19 @@ namespace patchcraft
                  static_cast<juce::Component*> (&applyWhiteLabelPresetBtn) })
             formContent.addAndMakeVisible (*component);
 
-        // Live instrument inside a Player-shaped frame.
-        testPage = std::make_unique<TestPage> (owner);
-        testPage->setBrandLabPreviewMode (true);
-        addAndMakeVisible (*testPage);
-
+        // Shared pack runtime preview (owned by StudioMainComponent).
         runtimeDropStatusLabel.setVisible (false);
         runtimeDropStatusLabel.setJustificationType (juce::Justification::centredLeft);
         runtimeDropStatusLabel.setFont (juce::FontOptions (12.0f).withStyle ("bold"));
         runtimeDropStatusLabel.setColour (juce::Label::textColourId, juce::Colours::white);
         runtimeDropStatusLabel.setColour (juce::Label::backgroundColourId, juce::Colour (0xdd11161e));
-        addAndMakeVisible (runtimeDropStatusLabel);
+        addChildComponent (runtimeDropStatusLabel);
 
-        // Consumer-facing buttons only — matches the real Player chrome.
-        // Dev-only buttons (File, View, Tools, Rack, Control, MIDI Clip) removed.
-        for (auto* button : { &playerLibraryBtn, &playerSoundBtn,
-                               &playerPlayBtn, &playerStopBtn,
-                               &playerPrevPresetBtn, &playerPresetBtn, &playerNextPresetBtn })
-        {
-            stylePlayerToolbarButton (*button);
-            addAndMakeVisible (*button);
-        }
-
-        playerLibraryBtn.setButtonText ("LIB");
-        playerSoundBtn.setButtonText ("SND");
-        playerPlayBtn.setButtonText (">");
-        playerStopBtn.setButtonText ("\u25a0");
-        playerPrevPresetBtn.setButtonText ("<");
-        playerNextPresetBtn.setButtonText (">");
-        playerPresetBtn.getProperties().set ("fontSize", 12.0);
-
-        playerLibraryBtn.setTooltip ("Preview the Player library entry point and pack browser state.");
-        playerLibraryBtn.onClick = [this] { showPlayerLibraryPanel(); };
-        playerSoundBtn.setTooltip ("Open live sound controls for exposed synth, sample, FX, pad, and macro parameters.");
-        playerSoundBtn.onClick = [this] { showPlayerSoundPanel(); };
-
-        playerPlayBtn.setTooltip ("Start the Brand Lab runtime transport. Drum grids, MIDI clips, synced FX, and playheads run here.");
-        playerPlayBtn.onClick = [this]
-        {
-            if (testPage != nullptr)
-                testPage->startPreviewPlayback();
-            repaint();
-        };
-        playerStopBtn.setTooltip ("Stop Brand Lab runtime transport and release all active notes.");
-        playerStopBtn.onClick = [this]
-        {
-            if (testPage != nullptr)
-                testPage->stopPreviewPlayback();
-            repaint();
-        };
-        playerBpmLabel.setText ("BPM", juce::dontSendNotification);
-        playerBpmLabel.setFont (juce::Font (9.5f, juce::Font::bold));
-        playerBpmLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
-        playerBpmLabel.setJustificationType (juce::Justification::centredRight);
-        addAndMakeVisible (playerBpmLabel);
-        playerBpmSlider.setRange (40.0, 220.0, 1.0);
-        playerBpmSlider.setValue (owner.getProject().getLiveValues().getValue ("projectBpm", 120.0f),
-                                  juce::dontSendNotification);
-        playerBpmSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-        playerBpmSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 38, 18);
-        playerBpmSlider.setTooltip ("Global Brand Lab tempo. This drives Studio preview, MIDI/drum playback, BPM-synced FX, and exported standalone fallback BPM.");
-        playerBpmSlider.onValueChange = [this]
-        {
-            owner.getProject().getLiveValues().setValue ("projectBpm", (float) playerBpmSlider.getValue());
-        };
-        addAndMakeVisible (playerBpmSlider);
-        playerPrevPresetBtn.setTooltip ("Preview previous preset button placement.");
-        playerNextPresetBtn.setTooltip ("Preview next preset button placement.");
-        playerPresetBtn.setTooltip ("Current patch/preset selector preview.");
-        playerPrevPresetBtn.onClick = [this]
-        {
-            auto& presets = owner.getProject().getPresets();
-            if (presets.empty())
-                return;
-            int current = 0;
-            const auto name = owner.getProject().getManifest().defaultPreset;
-            for (int i = 0; i < (int) presets.size(); ++i)
-                if (presets[(size_t) i].name == name || presets[(size_t) i].isDefault)
-                    current = i;
-            current = (current + (int) presets.size() - 1) % (int) presets.size();
-            owner.getProject().applyPreset (presets[(size_t) current]);
-            refresh();
-        };
-        playerNextPresetBtn.onClick = [this]
-        {
-            auto& presets = owner.getProject().getPresets();
-            if (presets.empty())
-                return;
-            int current = 0;
-            const auto name = owner.getProject().getManifest().defaultPreset;
-            for (int i = 0; i < (int) presets.size(); ++i)
-                if (presets[(size_t) i].name == name || presets[(size_t) i].isDefault)
-                    current = i;
-            current = (current + 1) % (int) presets.size();
-            owner.getProject().applyPreset (presets[(size_t) current]);
-            refresh();
-        };
-        playerPresetBtn.onClick = [this]
-        {
-            showPlayerPresetMenu();
-        };
-
-        showFormToggle.setToggleState (true, juce::dontSendNotification);
-        showFormToggle.setTooltip ("Toggle the branding form column. Hide it to preview the player at full width.");
+        showFormToggle.setToggleState (false, juce::dontSendNotification);
+        showFormToggle.setTooltip ("Show the branding form column (logo, colors, title bar). Off = full-width live Player.");
         showFormToggle.onClick = [this]
         {
-            formViewport.setVisible (showFormToggle.getToggleState());
+            dawPreviewLayout = ! showFormToggle.getToggleState();
             resized();
             repaint();
         };
@@ -649,13 +639,59 @@ namespace patchcraft
 
         startTimerHz (4);
         refresh();
+        if (auto* runtime = owner.getPackRuntime())
+            runtime->requestReload();
     }
 
-    BrandingLabPage::~BrandingLabPage() = default;
+    BrandingLabPage::~BrandingLabPage()
+    {
+        deactivateTest();
+    }
 
-    void BrandingLabPage::activateTest()    { if (testPage) testPage->activate(); }
-    void BrandingLabPage::deactivateTest()  { if (testPage) testPage->deactivate(); }
-    bool BrandingLabPage::isTestActive() const { return testPage && testPage->isAudioRunning(); }
+    void BrandingLabPage::activateTest()
+    {
+        if (auto* runtime = owner.getPackRuntime())
+        {
+            juce::Component::SafePointer<PackRuntimeHost> safeRuntime (runtime);
+            juce::MessageManager::callAsync ([safeRuntime]
+            {
+                if (safeRuntime != nullptr)
+                    safeRuntime->activate();
+            });
+        }
+    }
+
+    void BrandingLabPage::deactivateTest()
+    {
+        if (auto* runtime = owner.getPackRuntime())
+            runtime->deactivate();
+    }
+
+    bool BrandingLabPage::isTestActive() const
+    {
+        return owner.getPackRuntime() != nullptr && owner.getPackRuntime()->isAudioRunning();
+    }
+
+    void BrandingLabPage::setDawPreviewLayout (bool dawPreview)
+    {
+        dawPreviewLayout = dawPreview;
+        showFormToggle.setToggleState (! dawPreview, juce::dontSendNotification);
+        resized();
+        if (auto* runtime = owner.getPackRuntime())
+        {
+            runtime->requestReload();
+            if (dawPreview)
+            {
+                juce::Component::SafePointer<PackRuntimeHost> safeRuntime (runtime);
+                juce::MessageManager::callAsync ([safeRuntime]
+                {
+                    if (safeRuntime != nullptr)
+                        safeRuntime->activate();
+                });
+            }
+        }
+        repaint();
+    }
 
     void BrandingLabPage::timerCallback()
     {
@@ -687,6 +723,8 @@ namespace patchcraft
                 pendingProjectNotify = false;
                 ticksSinceLastEdit = 0;
                 owner.getProject().notifyChanged();
+                if (auto* runtime = owner.getPackRuntime())
+                    runtime->requestReload();
             }
         }
 
@@ -696,15 +734,19 @@ namespace patchcraft
             if (runtimeDropStatusTicks == 0)
                 runtimeDropStatusLabel.setVisible (false);
         }
-
-        playerPlayBtn.setButtonText (testPage != nullptr && testPage->isTransportPlaying() ? "ON" : ">");
-        repaint();
     }
 
     void BrandingLabPage::refresh()
     {
         readFromManifest();
-        repaint();
+        ensurePreviewAttached();
+    }
+
+    void BrandingLabPage::ensurePreviewAttached()
+    {
+        if (! isVisible() || getWidth() <= 0 || getHeight() <= 0)
+            return;
+        resized();
     }
 
     bool BrandingLabPage::isInterestedInDragSource (const SourceDetails& details)
@@ -751,68 +793,49 @@ namespace patchcraft
         if (audioFiles.isEmpty() && midiFiles.isEmpty())
             return;
 
-        StudioInstrumentRenderer::RuntimeDropTarget target;
-        if (testPage != nullptr && testPage->getBounds().contains (localPosition))
-        {
-            if (auto* renderer = testPage->getInstrumentRenderer())
-            {
-                const auto testPoint = localPosition - testPage->getPosition();
-                const auto rendererPoint = testPoint - renderer->getPosition();
-                if (renderer->getLocalBounds().contains (rendererPoint))
-                    target = renderer->runtimeDropTargetAt (rendererPoint);
-            }
-        }
+        if (audioFiles.isEmpty() && midiFiles.isEmpty())
+            return;
 
         if (! audioFiles.isEmpty())
         {
-            if (testPage != nullptr && ! testPage->isAudioRunning())
-                testPage->activate();
+            if (auto* runtime = owner.getPackRuntime(); runtime != nullptr && ! runtime->isAudioRunning())
+                runtime->activate();
 
-            owner.importSampleFiles (audioFiles, false, false,
-                                     target.mappingMode, target.note, target.padIndex);
+            owner.importSampleFiles (audioFiles, false, false, "keyboard", 60, -1);
         }
 
         juce::String report;
         bool ok = true;
         if (! audioFiles.isEmpty())
         {
-            const bool padLibraryDrop = target.mappingMode.equalsIgnoreCase ("pads")
-                                     && ! target.targeted;
             report = "Imported " + juce::String (audioFiles.size()) + " sample"
-                   + (audioFiles.size() == 1 ? "" : "s")
-                   + (target.targeted && target.note >= 0
-                        ? " to " + juce::MidiMessage::getMidiNoteName (target.note, true, true, 4)
-                        : padLibraryDrop
-                            ? " to runtime pads"
-                        : " to the active sample map")
-                   + ".";
+                   + (audioFiles.size() == 1 ? "" : "s") + " to the active sample map.";
         }
 
         if (! midiFiles.isEmpty())
         {
-            const bool shouldAssignToSampleZone = target.targeted
-                || owner.getProject().getSampleMap().getZones().size() == 1;
+            const bool shouldAssignToSampleZone = owner.getProject().getSampleMap().getZones().size() == 1;
 
             if (shouldAssignToSampleZone)
             {
                 juce::String midiReport;
-                ok = owner.assignMidiFilesToSampleMap (midiFiles, midiReport, target.note, target.padIndex);
+                ok = owner.assignMidiFilesToSampleMap (midiFiles, midiReport, -1, -1);
                 if (report.isNotEmpty())
                     report += " ";
                 report += midiReport;
             }
 
-            if (testPage != nullptr)
+            if (auto* runtime = owner.getPackRuntime())
             {
-                if (! testPage->isAudioRunning())
-                    testPage->activate();
+                if (! runtime->isAudioRunning())
+                    runtime->activate();
+
+                juce::StringArray paths;
+                for (const auto& file : midiFiles)
+                    paths.add (file.getFullPathName());
 
                 juce::String clipReport;
-                const int clipTargetNote = target.targeted ? target.note : -1;
-                const bool clipLoaded = testPage->loadMidiClipFile (midiFiles.getReference (0),
-                                                                     clipTargetNote,
-                                                                     clipReport,
-                                                                     true);
+                const bool clipLoaded = runtime->importUserContent (paths, clipReport);
                 if (report.isNotEmpty())
                     report += " ";
                 report += clipReport;
@@ -844,19 +867,24 @@ namespace patchcraft
         if (paths.isEmpty() && file != juce::File())
             paths.add (file.getFullPathName());
 
-        if (playerHeaderArea.contains (details.localPosition)
-            || category.startsWithIgnoreCase ("branding"))
+        if (previewArea.contains (details.localPosition)
+            && details.localPosition.y < previewArea.getY() + kPlayerTitleBarHeight)
         {
+            const bool logoDrop = details.localPosition.x < previewArea.getX() + 84;
             auto brandingCategory = category;
-            if (playerHeaderArea.contains (details.localPosition))
-            {
-                const bool logoDrop = details.localPosition.x < playerHeaderArea.getX() + 84;
-                if (logoDrop && ! category.containsIgnoreCase ("title") && ! category.containsIgnoreCase ("banner"))
-                    brandingCategory = "branding-logos";
-                else
-                    brandingCategory = "branding-titlebars";
-            }
+            if (logoDrop && ! category.containsIgnoreCase ("title") && ! category.containsIgnoreCase ("banner"))
+                brandingCategory = "branding-logos";
+            else
+                brandingCategory = "branding-titlebars";
+
             owner.applyBrandingAsset (brandingCategory, file);
+            refresh();
+            return;
+        }
+
+        if (category.startsWithIgnoreCase ("branding"))
+        {
+            owner.applyBrandingAsset (category, file);
             refresh();
             return;
         }
@@ -875,14 +903,6 @@ namespace patchcraft
     void BrandingLabPage::readFromManifest()
     {
         const auto& m = owner.getProject().getManifest();
-        const auto presetName = m.defaultPreset.isNotEmpty()
-            ? m.defaultPreset
-            : (owner.getProject().getPresets().empty()
-                ? juce::String ("Current Patch")
-                : owner.getProject().getPresets().front().name);
-        playerPresetBtn.setButtonText (presetName);
-        playerBpmSlider.setValue (owner.getProject().getLiveValues().getValue ("projectBpm", 120.0f),
-                                  juce::dontSendNotification);
         syncingFromManifest = true;
         displayNameEdit.setText (m.playerDisplayName, juce::dontSendNotification);
         taglineEdit.setText (m.playerTagline, juce::dontSendNotification);
@@ -924,7 +944,33 @@ namespace patchcraft
         allowMidiLearnToggle.setToggleState (m.playerAllowMidiLearn, juce::dontSendNotification);
         showAboutToggle.setToggleState (m.playerShowAbout, juce::dontSendNotification);
         showGuidanceToggle.setToggleState (m.playerShowParameterGuidance, juce::dontSendNotification);
-        showPatchCraftBrandingToggle.setToggleState (m.playerShowPatchCraftBranding, juce::dontSendNotification);
+        showPatchCraftBrandingToggle.setToggleState (false, juce::dontSendNotification);
+        showTopBarToggle.setToggleState (m.playerShowTopBar, juce::dontSendNotification);
+        showLeftSidebarToggle.setToggleState (m.playerShowLeftSidebar, juce::dontSendNotification);
+        showFooterToggle.setToggleState (m.playerShowFooter, juce::dontSendNotification);
+        showRightPanelToggle.setToggleState (m.playerShowRightPanel, juce::dontSendNotification);
+        showKeyboardToggle.setToggleState (m.playerShowKeyboard, juce::dontSendNotification);
+        topBrowseToggle.setToggleState (m.playerTopShowBrowse, juce::dontSendNotification);
+        topSaveToggle.setToggleState (m.playerTopShowSave, juce::dontSendNotification);
+        topSettingsToggle.setToggleState (m.playerTopShowSettings, juce::dontSendNotification);
+        topCategoryToggle.setToggleState (m.playerTopShowCategory, juce::dontSendNotification);
+        topFavoriteToggle.setToggleState (m.playerTopShowFavorite, juce::dontSendNotification);
+        topPresetNavToggle.setToggleState (m.playerTopShowPresetNav, juce::dontSendNotification);
+        topMasterToggle.setToggleState (m.playerTopShowMasterVolume, juce::dontSendNotification);
+        topMeterToggle.setToggleState (m.playerTopShowOutputMeter, juce::dontSendNotification);
+        rightPanelShowMacrosToggle.setToggleState (m.rightPanelShowMacros, juce::dontSendNotification);
+        rightPanelShowEffectsToggle.setToggleState (m.rightPanelShowEffects, juce::dontSendNotification);
+        rightPanelShowSendsToggle.setToggleState (m.rightPanelShowSends, juce::dontSendNotification);
+        rightPanelShowUtilityToggle.setToggleState (m.rightPanelShowUtility, juce::dontSendNotification);
+
+        for (int i = 0; i < 8; ++i)
+        {
+            if (i < m.rightPanelMacroNames.size())
+                macroNameEdits[i].setText (m.rightPanelMacroNames[i], juce::dontSendNotification);
+            else
+                macroNameEdits[i].setText ({}, juce::dontSendNotification);
+        }
+
         licenseRequiredToggle.setToggleState (m.licenseRequired, juce::dontSendNotification);
         bindMachineToggle.setToggleState (m.licenseBindToMachine, juce::dontSendNotification);
         productIdEdit.setText (m.licenseProductId, juce::dontSendNotification);
@@ -937,6 +983,11 @@ namespace patchcraft
     void BrandingLabPage::writeToManifest()
     {
         auto& m = owner.getProject().getManifest();
+        const auto previousTitleTheme = m.playerTitleBarTheme;
+        const auto selectedTitleTheme = valueForComboId (titleBarThemeIds(), titleBarThemeBox.getSelectedId());
+        const bool titleThemeChanged = forceApplyTitleTheme || selectedTitleTheme != previousTitleTheme;
+        forceApplyTitleTheme = false;
+
         m.playerDisplayName = displayNameEdit.getText().trim();
         m.playerTagline     = taglineEdit.getText().trim();
         m.creator           = creatorEdit.getText().trim();
@@ -944,7 +995,7 @@ namespace patchcraft
         m.version           = versionEdit.getText().trim();
         m.playerLogoImage   = logoPathEdit.getText().trim();
         m.playerTitleBannerImage = titleBannerImageEdit.getText().trim();
-        m.playerTitleBarTheme = valueForComboId (titleBarThemeIds(), titleBarThemeBox.getSelectedId());
+        m.playerTitleBarTheme = selectedTitleTheme;
         m.playerTitleTextPlacement = valueForComboId (titleTextPlacementIds(), titleTextPlacementBox.getSelectedId());
         m.playerTitleButtonStyle = valueForComboId (titleButtonStyleIds(), titleButtonStyleBox.getSelectedId());
         m.playerTitleFontFamily = valueForComboId (titleFontIds(), titleFontBox.getSelectedId());
@@ -975,14 +1026,51 @@ namespace patchcraft
         m.playerAllowMidiLearn = allowMidiLearnToggle.getToggleState();
         m.playerShowAbout = showAboutToggle.getToggleState();
         m.playerShowParameterGuidance = showGuidanceToggle.getToggleState();
-        m.playerShowPatchCraftBranding = showPatchCraftBrandingToggle.getToggleState();
+        m.playerShowPatchCraftBranding = false;
+        m.playerShowTopBar = showTopBarToggle.getToggleState()
+                           && ! m.playerTitleBarTheme.equalsIgnoreCase ("no-chrome");
+        m.playerShowLeftSidebar = showLeftSidebarToggle.getToggleState();
+        m.playerShowFooter = showFooterToggle.getToggleState();
+        m.playerShowRightPanel = showRightPanelToggle.getToggleState();
+        m.playerShowKeyboard = showKeyboardToggle.getToggleState();
+        m.playerTopShowBrowse = topBrowseToggle.getToggleState();
+        m.playerTopShowSave = topSaveToggle.getToggleState();
+        m.playerTopShowSettings = topSettingsToggle.getToggleState();
+        m.playerTopShowCategory = topCategoryToggle.getToggleState();
+        m.playerTopShowFavorite = topFavoriteToggle.getToggleState();
+        m.playerTopShowPresetNav = topPresetNavToggle.getToggleState();
+        m.playerTopShowMasterVolume = topMasterToggle.getToggleState();
+        m.playerTopShowOutputMeter = topMeterToggle.getToggleState();
+        m.rightPanelShowMacros = rightPanelShowMacrosToggle.getToggleState();
+        m.rightPanelShowEffects = rightPanelShowEffectsToggle.getToggleState();
+        m.rightPanelShowSends = rightPanelShowSendsToggle.getToggleState();
+        m.rightPanelShowUtility = rightPanelShowUtilityToggle.getToggleState();
+
+        m.rightPanelMacroNames.clear();
+        for (int i = 0; i < 8; ++i)
+            m.rightPanelMacroNames.add (macroNameEdits[i].getText().trim());
+
         m.licenseRequired = licenseRequiredToggle.getToggleState();
         m.licenseBindToMachine = bindMachineToggle.getToggleState();
         m.licenseProductId = productIdEdit.getText().trim();
         m.licenseServerUrl = licenseUrlEdit.getText().trim();
         m.trialDays = juce::roundToInt (trialDaysSlider.getValue());
         m.licenseOfflineGraceDays = juce::roundToInt (offlineGraceSlider.getValue());
+
+        if (titleThemeChanged)
+        {
+            applyTitleBarThemeRecipe (m, selectedTitleTheme);
+            syncingFromManifest = true;
+            titleTextPlacementBox.setSelectedId (comboIdForValue (titleTextPlacementIds(), m.playerTitleTextPlacement), juce::dontSendNotification);
+            titleButtonStyleBox.setSelectedId (comboIdForValue (titleButtonStyleIds(), m.playerTitleButtonStyle), juce::dontSendNotification);
+            titleFontBox.setSelectedId (comboIdForValue (titleFontIds(), m.playerTitleFontFamily), juce::dontSendNotification);
+            showTopBarToggle.setToggleState (m.playerShowTopBar, juce::dontSendNotification);
+            syncingFromManifest = false;
+        }
+
         owner.getProject().markDirty();
+        if (auto* runtime = owner.getPackRuntime())
+            runtime->requestReloadImmediate();
         scheduleProjectNotify();
         resized();
         repaint();
@@ -1060,706 +1148,6 @@ namespace patchcraft
             });
     }
 
-    void BrandingLabPage::showPlayerPreviewPanel (const juce::String& titleText, const juce::String& bodyText)
-    {
-        struct PanelPreview final : public juce::Component
-        {
-            PanelPreview (juce::String titleIn, juce::String bodyIn)
-                : title (std::move (titleIn)), body (std::move (bodyIn))
-            {
-                setSize (560, 260);
-            }
-
-            void paint (juce::Graphics& g) override
-            {
-                g.fillAll (PatchCraftLookAndFeel::bg());
-                auto r = getLocalBounds().reduced (18);
-                g.setColour (PatchCraftLookAndFeel::panel());
-                g.fillRoundedRectangle (r.toFloat(), 10.0f);
-                g.setColour (PatchCraftLookAndFeel::accent());
-                g.drawRoundedRectangle (r.toFloat().reduced (0.5f), 10.0f, 1.4f);
-
-                auto inner = r.reduced (18);
-                g.setColour (PatchCraftLookAndFeel::accent());
-                g.setFont (juce::Font (18.0f, juce::Font::bold));
-                g.drawText (title, inner.removeFromTop (30), juce::Justification::centredLeft, true);
-                inner.removeFromTop (8);
-                g.setColour (PatchCraftLookAndFeel::text());
-                g.setFont (juce::Font (13.0f));
-                g.drawFittedText (body, inner, juce::Justification::topLeft, 8);
-            }
-
-            juce::String title;
-            juce::String body;
-        };
-
-        auto* panel = new PanelPreview (titleText, bodyText);
-        juce::DialogWindow::LaunchOptions options;
-        options.dialogTitle = titleText;
-        options.dialogBackgroundColour = PatchCraftLookAndFeel::bg();
-        options.escapeKeyTriggersCloseButton = true;
-        options.useNativeTitleBar = true;
-        options.resizable = true;
-        options.componentToCentreAround = this;
-        options.content.setOwned (panel);
-        options.launchAsync();
-    }
-
-    void BrandingLabPage::showPlayerSoundPanel()
-    {
-        struct SoundPanel final : public juce::Component
-        {
-            explicit SoundPanel (StudioMainComponent& ownerToUse) : owner (ownerToUse)
-            {
-                title.setText ("Sound Control Center", juce::dontSendNotification);
-                title.setFont (juce::FontOptions (17.0f).withStyle ("bold"));
-                title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
-                addAndMakeVisible (title);
-
-                status.setText ("Live controls write directly to the same values used by Test, Brand Lab preview, and exported Player runtime.",
-                                juce::dontSendNotification);
-                status.setFont (juce::FontOptions (11.0f));
-                status.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
-                addAndMakeVisible (status);
-
-                int shown = 0;
-                for (const auto& def : owner.getProject().getParameters().getAll())
-                {
-                    if (! def.visible || shown >= 14)
-                        continue;
-
-                    auto* label = labels.add (new juce::Label());
-                    label->setText (def.name.isNotEmpty() ? def.name : def.id, juce::dontSendNotification);
-                    label->setColour (juce::Label::textColourId, PatchCraftLookAndFeel::text());
-                    label->setFont (juce::FontOptions (11.0f));
-                    addAndMakeVisible (*label);
-
-                    auto* slider = sliders.add (new juce::Slider());
-                    const double min = def.min == def.max ? 0.0 : def.min;
-                    const double max = def.min == def.max ? 1.0 : def.max;
-                    slider->setRange (min, max, def.step > 0.0f ? def.step : 0.0);
-                    slider->setValue (owner.getProject().getLiveValues().getValue (def.id, def.defaultValue),
-                                      juce::dontSendNotification);
-                    slider->setSliderStyle (juce::Slider::LinearHorizontal);
-                    slider->setTextBoxStyle (juce::Slider::TextBoxRight, false, 72, 18);
-                    slider->setTooltip (def.id);
-                    const auto parameterId = def.id;
-                    slider->onValueChange = [this, slider, parameterId]
-                    {
-                        owner.getProject().getLiveValues().setValue (parameterId, (float) slider->getValue());
-                        owner.getProject().notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
-                    };
-                    addAndMakeVisible (*slider);
-                    ++shown;
-                }
-
-                setSize (720, 520);
-            }
-
-            void paint (juce::Graphics& g) override
-            {
-                g.fillAll (PatchCraftLookAndFeel::bg());
-                auto r = getLocalBounds().reduced (14);
-                g.setColour (PatchCraftLookAndFeel::panel());
-                g.fillRoundedRectangle (r.toFloat(), 9.0f);
-                g.setColour (PatchCraftLookAndFeel::border());
-                g.drawRoundedRectangle (r.toFloat().reduced (0.5f), 9.0f, 1.0f);
-            }
-
-            void resized() override
-            {
-                auto r = getLocalBounds().reduced (26, 22);
-                title.setBounds (r.removeFromTop (24));
-                status.setBounds (r.removeFromTop (32));
-                r.removeFromTop (8);
-
-                for (int i = 0; i < sliders.size(); ++i)
-                {
-                    auto row = r.removeFromTop (28);
-                    labels[i]->setBounds (row.removeFromLeft (170));
-                    row.removeFromLeft (8);
-                    sliders[i]->setBounds (row);
-                    r.removeFromTop (5);
-                }
-            }
-
-            StudioMainComponent& owner;
-            juce::Label title;
-            juce::Label status;
-            juce::OwnedArray<juce::Label> labels;
-            juce::OwnedArray<juce::Slider> sliders;
-        };
-
-        juce::DialogWindow::LaunchOptions options;
-        options.dialogTitle = "Sound Control Center";
-        options.dialogBackgroundColour = PatchCraftLookAndFeel::bg();
-        options.escapeKeyTriggersCloseButton = true;
-        options.useNativeTitleBar = true;
-        options.resizable = true;
-        options.componentToCentreAround = this;
-        options.content.setOwned (new SoundPanel (owner));
-        options.launchAsync();
-    }
-
-    void BrandingLabPage::showPlayerLibraryPanel()
-    {
-        LibraryScanner scanner;
-
-        auto addPackRootsNear = [&scanner] (juce::File anchor)
-        {
-            if (anchor == juce::File())
-                return;
-
-            auto dir = anchor.isDirectory() ? anchor : anchor.getParentDirectory();
-            for (int depth = 0; depth < 8 && dir != juce::File(); ++depth)
-            {
-                const auto factoryDemos = dir.getChildFile ("FactoryDemos");
-                const auto library = dir.getChildFile ("Library");
-                const bool looksLikePatchCraftPayload = factoryDemos.isDirectory()
-                    || dir.getChildFile ("PlayerPlugins").isDirectory()
-                    || dir.getFileName().containsIgnoreCase ("PatchCraft");
-
-                // Never add a generic ancestor Library folder such as
-                // ~/Library. The preview only needs PatchCraft pack roots.
-                scanner.addSearchPath (dir.getChildFile ("FactoryDemos"));
-                scanner.addSearchPath (dir.getChildFile ("Examples").getChildFile ("FactoryDemos"));
-                if (looksLikePatchCraftPayload)
-                {
-                    scanner.addSearchPath (library);
-                    scanner.addSearchPath (library.getChildFile ("Instruments"));
-                    scanner.addSearchPath (library.getChildFile ("Templates"));
-                }
-
-                const auto parent = dir.getParentDirectory();
-                if (parent == dir)
-                    break;
-                dir = parent;
-            }
-        };
-
-        addPackRootsNear (owner.getProject().getProjectFolder());
-        addPackRootsNear (juce::File::getSpecialLocation (juce::File::currentApplicationFile));
-        addPackRootsNear (juce::File::getSpecialLocation (juce::File::currentExecutableFile));
-        addPackRootsNear (juce::File::getSpecialLocation (juce::File::invokedExecutableFile));
-        addPackRootsNear (juce::File::getCurrentWorkingDirectory());
-        scanner.scanLibrary();
-
-        struct LibraryPreview final : public juce::Component
-        {
-            explicit LibraryPreview (juce::Array<LibraryEntry> entriesIn)
-                : entries (std::move (entriesIn))
-            {
-                setSize (760, 440);
-            }
-
-            void paint (juce::Graphics& g) override
-            {
-                g.fillAll (juce::Colour (0xff090b10));
-
-                auto r = getLocalBounds().reduced (18);
-                g.setColour (PatchCraftLookAndFeel::panel());
-                g.fillRoundedRectangle (r.toFloat(), 10.0f);
-                g.setColour (PatchCraftLookAndFeel::accent());
-                g.drawRoundedRectangle (r.toFloat().reduced (0.5f), 10.0f, 1.4f);
-
-                auto header = r.reduced (18, 14).removeFromTop (40);
-                g.setColour (PatchCraftLookAndFeel::accent());
-                g.setFont (juce::FontOptions (18.0f).withStyle ("bold"));
-                g.drawText ("Player Library", header.removeFromLeft (180), juce::Justification::centredLeft, true);
-
-                g.setColour (PatchCraftLookAndFeel::textDim());
-                g.setFont (juce::FontOptions (12.0f));
-                g.drawText (juce::String (entries.size()) + " demo libraries available",
-                            header.removeFromLeft (210), juce::Justification::centredLeft, true);
-
-                auto search = header.removeFromRight (150).reduced (0, 7);
-                g.setColour (juce::Colour (0xff141922));
-                g.fillRoundedRectangle (search.toFloat(), 6.0f);
-                g.setColour (PatchCraftLookAndFeel::textDim().withAlpha (0.70f));
-                g.drawText ("Search libraries", search.reduced (10, 0), juce::Justification::centredLeft, true);
-
-                auto content = r.reduced (18).withTrimmedTop (56);
-                if (entries.isEmpty())
-                {
-                    g.setColour (PatchCraftLookAndFeel::textBright());
-                    g.setFont (juce::FontOptions (15.0f).withStyle ("bold"));
-                    g.drawText ("No demo libraries found", content.removeFromTop (28), juce::Justification::centred);
-                    g.setColour (PatchCraftLookAndFeel::textDim());
-                    g.setFont (juce::FontOptions (12.0f));
-                    g.drawFittedText ("FactoryDemos and Library folders will appear here with artwork, category, creator, and load actions.",
-                                      content.removeFromTop (50), juce::Justification::centred, 2);
-                    return;
-                }
-
-                const int gap = 12;
-                const int cardW = juce::jlimit (134, 170, (content.getWidth() - gap * 3) / 4);
-                const int cardH = 156;
-                const int cols = juce::jmax (1, juce::jmin (4, (content.getWidth() + gap) / (cardW + gap)));
-                const int rows = juce::jmax (1, (content.getHeight() + gap) / (cardH + gap));
-                const int maxCards = juce::jmin (entries.size(), cols * rows);
-
-                for (int i = 0; i < maxCards; ++i)
-                {
-                    const auto& entry = entries.getReference (i);
-                    const int col = i % cols;
-                    const int row = i / cols;
-                    auto card = juce::Rectangle<int> (content.getX() + col * (cardW + gap),
-                                                      content.getY() + row * (cardH + gap),
-                                                      cardW,
-                                                      cardH);
-                    drawCard (g, entry, card);
-                }
-
-                if (entries.size() > maxCards)
-                {
-                    g.setColour (PatchCraftLookAndFeel::textDim());
-                    g.setFont (juce::FontOptions (11.0f));
-                    g.drawText ("+" + juce::String (entries.size() - maxCards) + " more libraries available",
-                                r.reduced (18).removeFromBottom (18), juce::Justification::centredRight, true);
-                }
-            }
-
-            void mouseUp (const juce::MouseEvent& event) override
-            {
-                const int index = cardIndexAt (event.getPosition());
-                if (index >= 0 && index < entries.size() && onEntryClicked)
-                    onEntryClicked (entries.getReference (index).folder);
-            }
-
-            void mouseMove (const juce::MouseEvent& event) override
-            {
-                const bool overCard = cardIndexAt (event.getPosition()) >= 0;
-                setMouseCursor (overCard ? juce::MouseCursor::PointingHandCursor
-                                         : juce::MouseCursor::NormalCursor);
-            }
-
-            std::function<void(const juce::File&)> onEntryClicked;
-
-            static void drawCard (juce::Graphics& g, const LibraryEntry& entry, juce::Rectangle<int> card)
-            {
-                g.setColour (juce::Colour (0xff10141c));
-                g.fillRoundedRectangle (card.toFloat(), 8.0f);
-                g.setColour (PatchCraftLookAndFeel::borderSoft().withAlpha (0.88f));
-                g.drawRoundedRectangle (card.toFloat().reduced (0.5f), 8.0f, 1.0f);
-
-                auto inner = card.reduced (8);
-                auto art = inner.removeFromTop (72);
-                if (entry.thumbnailImage.isValid())
-                {
-                    juce::Graphics::ScopedSaveState state (g);
-                    juce::Path clip;
-                    clip.addRoundedRectangle (art.toFloat(), 6.0f);
-                    g.reduceClipRegion (clip);
-                    g.drawImage (entry.thumbnailImage, art.toFloat(), juce::RectanglePlacement::fillDestination);
-                    g.setColour (juce::Colour (0x77000000));
-                    g.fillRect (art);
-                }
-                else
-                {
-                    g.setColour (juce::Colour (0xff1e2530));
-                    g.fillRoundedRectangle (art.toFloat(), 6.0f);
-                }
-
-                inner.removeFromTop (7);
-                g.setColour (PatchCraftLookAndFeel::textBright());
-                g.setFont (juce::FontOptions (12.0f).withStyle ("bold"));
-                g.drawFittedText (entry.instrumentName, inner.removeFromTop (30),
-                                  juce::Justification::centredLeft, 2, 0.88f);
-
-                g.setColour (PatchCraftLookAndFeel::textDim());
-                g.setFont (juce::FontOptions (9.8f));
-                g.drawText ("by " + entry.creator, inner.removeFromTop (16), juce::Justification::centredLeft, true);
-
-                auto footer = card.reduced (8).removeFromBottom (22);
-                auto load = footer.removeFromRight (44);
-                g.setColour (PatchCraftLookAndFeel::accent());
-                g.fillRoundedRectangle (load.toFloat(), 5.0f);
-                g.setColour (juce::Colour (0xff07090c));
-                g.setFont (juce::FontOptions (9.5f).withStyle ("bold"));
-                g.drawText ("LOAD", load, juce::Justification::centred, true);
-
-                footer.removeFromRight (6);
-                auto chip = footer.withWidth (juce::jmin (footer.getWidth(), 76));
-                g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.18f));
-                g.fillRoundedRectangle (chip.toFloat(), 5.0f);
-                g.setColour (PatchCraftLookAndFeel::accent());
-                g.drawText (entry.category, chip, juce::Justification::centred, true);
-            }
-
-            int cardIndexAt (juce::Point<int> point) const
-            {
-                auto content = getLocalBounds().reduced (18).reduced (18).withTrimmedTop (56);
-                if (entries.isEmpty() || ! content.contains (point))
-                    return -1;
-
-                const int gap = 12;
-                const int cardW = juce::jlimit (134, 170, (content.getWidth() - gap * 3) / 4);
-                const int cardH = 156;
-                const int cols = juce::jmax (1, juce::jmin (4, (content.getWidth() + gap) / (cardW + gap)));
-                const int rows = juce::jmax (1, (content.getHeight() + gap) / (cardH + gap));
-                const int maxCards = juce::jmin (entries.size(), cols * rows);
-
-                for (int i = 0; i < maxCards; ++i)
-                {
-                    const int col = i % cols;
-                    const int row = i / cols;
-                    const auto card = juce::Rectangle<int> (content.getX() + col * (cardW + gap),
-                                                            content.getY() + row * (cardH + gap),
-                                                            cardW,
-                                                            cardH);
-                    if (card.contains (point))
-                        return i;
-                }
-                return -1;
-            }
-
-            juce::Array<LibraryEntry> entries;
-        };
-
-        auto* panel = new LibraryPreview (scanner.getEntries());
-        panel->onEntryClicked = [this, panel] (const juce::File& packFolder)
-        {
-            if (auto* dialog = panel->findParentComponentOfClass<juce::DialogWindow>())
-                dialog->exitModalState (0);
-            owner.loadFactoryDemo (packFolder);
-        };
-        juce::DialogWindow::LaunchOptions options;
-        options.dialogTitle = "Player Library";
-        options.dialogBackgroundColour = PatchCraftLookAndFeel::bg();
-        options.escapeKeyTriggersCloseButton = true;
-        options.useNativeTitleBar = true;
-        options.resizable = true;
-        options.componentToCentreAround = this;
-        options.content.setOwned (panel);
-        options.launchAsync();
-    }
-
-
-    void BrandingLabPage::showPlayerPresetMenu()
-    {
-        auto& presets = owner.getProject().getPresets();
-        if (presets.empty())
-        {
-            showPlayerPreviewPanel ("Preset Browser", "No presets have been saved for this instrument yet.");
-            return;
-        }
-
-        struct StudioPresetBrowser final : public juce::Component,
-                                           private juce::ListBoxModel
-        {
-            StudioPresetBrowser (std::vector<Preset>& presetsIn,
-                                 const juce::String& currentDefaultIn,
-                                 std::set<std::string>& favoritesIn,
-                                 bool auditionIn,
-                                 bool closeAfterLoadIn,
-                                 std::function<void (int)> applyIn,
-                                 std::function<void (bool, bool)> savePrefsIn)
-                : presets (presetsIn),
-                  currentDefault (currentDefaultIn),
-                  favorites (favoritesIn),
-                  applyPreset (std::move (applyIn)),
-                  savePrefs (std::move (savePrefsIn))
-            {
-                setSize (780, 540);
-
-                search.setTextToShowWhenEmpty ("Search presets", PatchCraftLookAndFeel::textDim());
-                search.onTextChange = [this] { rebuildRows(); };
-                addAndMakeVisible (search);
-
-                tagBox.addItem ("All Tags", 1);
-                tagBox.addItem ("Favorites", 2);
-                tagBox.onChange = [this] { rebuildRows(); };
-                addAndMakeVisible (tagBox);
-
-                auditionToggle.setButtonText ("Audition on select");
-                auditionToggle.setToggleState (auditionIn, juce::dontSendNotification);
-                addAndMakeVisible (auditionToggle);
-
-                closeAfterLoadToggle.setButtonText ("Close after load");
-                closeAfterLoadToggle.setToggleState (closeAfterLoadIn, juce::dontSendNotification);
-                addAndMakeVisible (closeAfterLoadToggle);
-
-                favButton.onClick = [this] { toggleFavorite(); };
-                addAndMakeVisible (favButton);
-
-                loadButton.getProperties().set ("accent", true);
-                loadButton.onClick = [this] { loadSelected (true); };
-                addAndMakeVisible (loadButton);
-
-                closeButton.onClick = [this]
-                {
-                    savePrefs (auditionToggle.getToggleState(), closeAfterLoadToggle.getToggleState());
-                    if (auto* window = findParentComponentOfClass<juce::DialogWindow>())
-                        window->exitModalState (0);
-                };
-                addAndMakeVisible (closeButton);
-
-                list.setModel (this);
-                list.setRowHeight (54);
-                list.setColour (juce::ListBox::backgroundColourId, juce::Colour (0x00000000));
-                addAndMakeVisible (list);
-
-                for (const auto& preset : presets)
-                {
-                    if (preset.theme.trim().isNotEmpty())
-                        allTags.addIfNotAlreadyThere (preset.theme.trim());
-                    for (const auto& tag : preset.tags)
-                        if (tag.trim().isNotEmpty())
-                            allTags.addIfNotAlreadyThere (tag.trim());
-                }
-                allTags.sort (true);
-                int id = 10;
-                for (const auto& tag : allTags)
-                    tagBox.addItem (tag, id++);
-
-                rebuildRows();
-                list.selectRow (0, juce::dontSendNotification);
-                updateDetails();
-            }
-
-            ~StudioPresetBrowser() override
-            {
-                savePrefs (auditionToggle.getToggleState(), closeAfterLoadToggle.getToggleState());
-            }
-
-            int getNumRows() override { return rows.size(); }
-
-            void paintListBoxItem (int row, juce::Graphics& g, int width, int height, bool selected) override
-            {
-                if (! juce::isPositiveAndBelow (row, rows.size()))
-                    return;
-
-                const int presetIndex = rows[row];
-                if (! juce::isPositiveAndBelow (presetIndex, (int) presets.size()))
-                    return;
-
-                const auto& preset = presets[(size_t) presetIndex];
-                const bool favorite = favorites.count (preset.name.toStdString()) != 0;
-                const bool current = preset.isDefault || preset.name == currentDefault;
-                auto r = juce::Rectangle<int> (0, 0, width, height).reduced (6, 4);
-
-                g.setColour (selected ? PatchCraftLookAndFeel::accent().withAlpha (0.22f)
-                                      : PatchCraftLookAndFeel::panel().withAlpha (0.82f));
-                g.fillRoundedRectangle (r.toFloat(), 8.0f);
-                g.setColour (current ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::borderSoft());
-                g.drawRoundedRectangle (r.toFloat().reduced (0.5f), 8.0f, current ? 1.6f : 1.0f);
-
-                auto text = r.reduced (12, 5);
-                g.setColour (favorite ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::textBright());
-                g.setFont (juce::FontOptions (13.0f).withStyle ("bold"));
-                g.drawText ((favorite ? "* " : "") + preset.name,
-                            text.removeFromTop (18),
-                            juce::Justification::centredLeft, true);
-
-                juce::String tagLine = preset.theme;
-                for (const auto& tag : preset.tags)
-                    if (tagLine.length() < 82 && ! tagLine.containsIgnoreCase (tag))
-                        tagLine << (tagLine.isNotEmpty() ? "  /  " : "") << tag;
-
-                g.setColour (PatchCraftLookAndFeel::textDim());
-                g.setFont (juce::FontOptions (10.5f));
-                g.drawText (tagLine, text, juce::Justification::centredLeft, true);
-            }
-
-            void selectedRowsChanged (int) override
-            {
-                updateDetails();
-                if (auditionToggle.getToggleState())
-                    loadSelected (false);
-            }
-
-            void listBoxItemDoubleClicked (int, const juce::MouseEvent&) override
-            {
-                loadSelected (true);
-            }
-
-            void paint (juce::Graphics& g) override
-            {
-                g.fillAll (PatchCraftLookAndFeel::bg());
-                auto area = getLocalBounds().reduced (18);
-
-                g.setColour (PatchCraftLookAndFeel::panel());
-                g.fillRoundedRectangle (area.toFloat(), 14.0f);
-                g.setColour (PatchCraftLookAndFeel::border());
-                g.drawRoundedRectangle (area.toFloat().reduced (0.5f), 14.0f, 1.2f);
-
-                auto body = area.reduced (18);
-                g.setColour (PatchCraftLookAndFeel::accent());
-                g.setFont (juce::FontOptions (20.0f).withStyle ("bold"));
-                g.drawText ("Preset Browser", body.removeFromTop (28), juce::Justification::centredLeft, true);
-
-                if (selectedDescription.isNotEmpty())
-                {
-                    auto detail = getLocalBounds().reduced (36).removeFromBottom (88);
-                    detail.removeFromRight (196);
-                    g.setColour (PatchCraftLookAndFeel::panel().darker (0.35f).withAlpha (0.92f));
-                    g.fillRoundedRectangle (detail.toFloat(), 10.0f);
-                    g.setColour (PatchCraftLookAndFeel::text());
-                    g.setFont (juce::FontOptions (12.0f));
-                    g.drawFittedText (selectedDescription, detail.reduced (12, 8), juce::Justification::topLeft, 3);
-                }
-            }
-
-            void resized() override
-            {
-                auto area = getLocalBounds().reduced (36);
-                area.removeFromTop (38);
-
-                auto filters = area.removeFromTop (32);
-                search.setBounds (filters.removeFromLeft (270));
-                filters.removeFromLeft (10);
-                tagBox.setBounds (filters.removeFromLeft (180));
-                filters.removeFromLeft (14);
-                auditionToggle.setBounds (filters.removeFromLeft (150));
-                closeAfterLoadToggle.setBounds (filters.removeFromLeft (138));
-
-                area.removeFromTop (12);
-                auto bottom = area.removeFromBottom (94);
-                auto buttons = bottom.removeFromRight (184);
-                favButton.setBounds (buttons.removeFromTop (28));
-                buttons.removeFromTop (8);
-                loadButton.setBounds (buttons.removeFromTop (28));
-                buttons.removeFromTop (8);
-                closeButton.setBounds (buttons.removeFromTop (28));
-                list.setBounds (area);
-            }
-
-            void rebuildRows()
-            {
-                rows.clear();
-                const auto query = search.getText().trim().toLowerCase();
-                const bool favoritesOnly = tagBox.getSelectedId() == 2;
-                const juce::String tagFilter = tagBox.getSelectedId() >= 10 ? tagBox.getText().trim() : juce::String();
-
-                for (int i = 0; i < (int) presets.size(); ++i)
-                {
-                    const auto& preset = presets[(size_t) i];
-                    const bool favorite = favorites.count (preset.name.toStdString()) != 0;
-                    if (favoritesOnly && ! favorite)
-                        continue;
-
-                    if (tagFilter.isNotEmpty())
-                    {
-                        bool hasTag = preset.theme.equalsIgnoreCase (tagFilter);
-                        for (const auto& tag : preset.tags)
-                            hasTag = hasTag || tag.equalsIgnoreCase (tagFilter);
-                        if (! hasTag)
-                            continue;
-                    }
-
-                    if (query.isNotEmpty())
-                    {
-                        const auto haystack = (preset.name + " " + preset.description + " " + preset.theme + " " + preset.tags.joinIntoString (" ")).toLowerCase();
-                        if (! haystack.contains (query))
-                            continue;
-                    }
-
-                    rows.add (i);
-                }
-
-                list.updateContent();
-                if (! rows.isEmpty() && list.getSelectedRow() < 0)
-                    list.selectRow (0, juce::dontSendNotification);
-                repaint();
-            }
-
-            void updateDetails()
-            {
-                selectedDescription.clear();
-                const int row = list.getSelectedRow();
-                if (juce::isPositiveAndBelow (row, rows.size()))
-                {
-                    const int presetIndex = rows[row];
-                    if (juce::isPositiveAndBelow (presetIndex, (int) presets.size()))
-                    {
-                        const auto& preset = presets[(size_t) presetIndex];
-                        selectedDescription = preset.description;
-                        favButton.setButtonText (favorites.count (preset.name.toStdString()) != 0 ? "Unfavorite" : "Favorite");
-                    }
-                }
-                repaint();
-            }
-
-            void toggleFavorite()
-            {
-                const int row = list.getSelectedRow();
-                if (! juce::isPositiveAndBelow (row, rows.size()))
-                    return;
-                const int presetIndex = rows[row];
-                if (! juce::isPositiveAndBelow (presetIndex, (int) presets.size()))
-                    return;
-
-                const auto key = presets[(size_t) presetIndex].name.toStdString();
-                if (favorites.count (key) != 0)
-                    favorites.erase (key);
-                else
-                    favorites.insert (key);
-                updateDetails();
-                list.repaint();
-            }
-
-            void loadSelected (bool explicitLoad)
-            {
-                const int row = list.getSelectedRow();
-                if (! juce::isPositiveAndBelow (row, rows.size()))
-                    return;
-
-                applyPreset (rows[row]);
-                if ((explicitLoad || closeAfterLoadToggle.getToggleState()) && closeAfterLoadToggle.getToggleState())
-                    if (auto* window = findParentComponentOfClass<juce::DialogWindow>())
-                        window->exitModalState (1);
-            }
-
-            std::vector<Preset>& presets;
-            juce::String currentDefault;
-            std::set<std::string>& favorites;
-            std::function<void (int)> applyPreset;
-            std::function<void (bool, bool)> savePrefs;
-            juce::TextEditor search;
-            juce::ComboBox tagBox;
-            juce::ToggleButton auditionToggle;
-            juce::ToggleButton closeAfterLoadToggle;
-            juce::TextButton favButton { "Favorite" };
-            juce::TextButton loadButton { "Load" };
-            juce::TextButton closeButton { "Close" };
-            juce::ListBox list { "BrandLabPresetList", this };
-            juce::Array<int> rows;
-            juce::StringArray allTags;
-            juce::String selectedDescription;
-        };
-
-        auto applyPreset = [this] (int index)
-        {
-            auto& currentPresets = owner.getProject().getPresets();
-            if (! juce::isPositiveAndBelow (index, (int) currentPresets.size()))
-                return;
-
-            owner.getProject().applyPreset (currentPresets[(size_t) index]);
-            refresh();
-        };
-
-        auto savePrefs = [this] (bool audition, bool closeAfterLoad)
-        {
-            presetAuditionOnSelect = audition;
-            presetCloseAfterLoad = closeAfterLoad;
-        };
-
-        juce::DialogWindow::LaunchOptions options;
-        options.dialogTitle = "Preset Browser";
-        options.dialogBackgroundColour = PatchCraftLookAndFeel::bg();
-        options.escapeKeyTriggersCloseButton = true;
-        options.useNativeTitleBar = true;
-        options.resizable = true;
-        options.componentToCentreAround = this;
-        options.content.setOwned (new StudioPresetBrowser (presets,
-                                                           owner.getProject().getManifest().defaultPreset,
-                                                           favoritePresetNames,
-                                                           presetAuditionOnSelect,
-                                                           presetCloseAfterLoad,
-                                                           applyPreset,
-                                                           savePrefs));
-        options.launchAsync();
-    }
 
     void BrandingLabPage::resized()
     {
@@ -1773,9 +1161,8 @@ namespace patchcraft
         subtitle.setBounds (r.removeFromTop (38));
         r.removeFromTop (8);
 
-        // Two-column layout: form on left (collapsible), Player-style frame
-        // around the live test page on the right.
-        const bool showForm = showFormToggle.getToggleState();
+        // Two-column layout: form on left (collapsible), embedded Player on the right.
+        const bool showForm = showFormToggle.getToggleState() && ! dawPreviewLayout;
         const int formW = showForm ? juce::jmin (420, r.getWidth() * 4 / 10) : 0;
         auto formBounds = r.removeFromLeft (formW);
         if (showForm) r.removeFromLeft (16);
@@ -1787,62 +1174,10 @@ namespace patchcraft
             formContent.setSize (formBounds.getWidth() - 14, juce::jmax (formContent.getHeight(), formBounds.getHeight()));
         }
 
-        // Reserve the exact DAW-facing Player toolbar strip. The embedded
-        // TestPage below runs in Brand Lab preview mode so the body stays full
-        // sized and the keyboard spans the whole bottom edge.
-        const int headerH = kPreviewPlayerHeaderHeight;
-        auto headerStrip = previewArea.removeFromTop (headerH);
-
-        const auto fittedInstrument = fitCanvasIntoBounds (owner.getProject().getCanvasSize(), previewArea);
-        playerHeaderArea = fittedInstrument.isEmpty()
-            ? headerStrip
-            : juce::Rectangle<int> (fittedInstrument.getX(), headerStrip.getY(),
-                                    fittedInstrument.getWidth(), headerStrip.getHeight());
-
-        auto toolbar = playerHeaderArea.withTop (playerHeaderArea.getY() + kPreviewPlayerTitleHeight)
-                                      .reduced (10, 5);
-
-        // Left side: Library button only (mirrors real Player)
-        auto left = toolbar.removeFromLeft (juce::jmin (100, toolbar.getWidth() / 4));
-        playerLibraryBtn.setBounds (left.removeFromLeft (72).reduced (2));
-
-        // Right side: Sound button only (mirrors real Player)
-        auto right = toolbar.removeFromRight (juce::jmin (100, toolbar.getWidth() / 4));
-        playerSoundBtn.setBounds (right.removeFromRight (72).reduced (2));
-
-        auto middle = toolbar;
-        const int transportW = juce::jmin (82, juce::jmax (0, middle.getWidth() / 4));
-        auto transport = middle.removeFromLeft (transportW);
-        playerPlayBtn.setBounds (transport.removeFromLeft (44).reduced (2));
-        playerStopBtn.setBounds (transport.reduced (2));
-
-        auto bpm = middle.removeFromLeft (juce::jmin (104, juce::jmax (0, middle.getWidth() / 4)));
-        playerBpmLabel.setBounds (bpm.removeFromLeft (28).reduced (0, 2));
-        playerBpmSlider.setBounds (bpm.reduced (2));
-
-        const int navW = juce::jlimit (150, 248, middle.getWidth());
-        auto nav = middle.withSizeKeepingCentre (navW, 30);
-        playerPrevPresetBtn.setBounds (nav.removeFromLeft (34).reduced (2));
-        playerNextPresetBtn.setBounds (nav.removeFromRight (34).reduced (2));
-        playerPresetBtn.setBounds (nav.reduced (2));
-
-        const auto& manifest = owner.getProject().getManifest();
-        const auto buttonStyle = manifest.playerTitleButtonStyle.isNotEmpty() ? manifest.playerTitleButtonStyle : juce::String ("outlined");
-        for (auto* button : { &playerLibraryBtn, &playerSoundBtn,
-                              &playerPlayBtn, &playerStopBtn, &playerPrevPresetBtn, &playerPresetBtn, &playerNextPresetBtn })
-        {
-            button->getProperties().set ("corner", buttonStyle == "square" ? 2.0 : (buttonStyle == "pill" ? 12.0 : 5.0));
-            button->setColour (juce::TextButton::buttonColourId,
-                               buttonStyle == "minimal" ? juce::Colours::transparentBlack
-                               : buttonStyle == "filled" ? manifest.playerAccentColour.withAlpha (0.28f)
-                                                          : manifest.playerPanelColour.brighter (0.04f));
-            button->setColour (juce::TextButton::textColourOffId, manifest.playerTextColour);
-        }
-
-        // The TestPage fills what's left so the user can play their instrument.
-        if (testPage) testPage->setBounds (previewArea);
+        owner.attachPackRuntimePreview (this, previewArea);
         runtimeDropStatusLabel.setBounds (previewArea.reduced (18).removeFromTop (30));
-        runtimeDropStatusLabel.toFront (false);
+        if (runtimeDropStatusLabel.isVisible())
+            runtimeDropStatusLabel.toFront (false);
 
         if (! showForm) return;
 
@@ -2002,7 +1337,14 @@ namespace patchcraft
         showMany (runtimeSectionOpen, { &showPackMenuToggle, &allowPackLoadingToggle,
                                         &showLibraryToggle, &allowMidiLearnToggle,
                                         &showAboutToggle, &showGuidanceToggle,
-                                        &showPatchCraftBrandingToggle });
+                                        &showTopBarToggle, &showLeftSidebarToggle, &showFooterToggle,
+                                        &showRightPanelToggle, &showKeyboardToggle,
+                                        &topBrowseToggle, &topSaveToggle, &topSettingsToggle,
+                                        &topCategoryToggle, &topFavoriteToggle, &topPresetNavToggle,
+                                        &topMasterToggle, &topMeterToggle,
+                                        &rightPanelShowMacrosToggle, &rightPanelShowEffectsToggle,
+                                        &rightPanelShowSendsToggle, &rightPanelShowUtilityToggle });
+        showMany (false, { &showPatchCraftBrandingToggle });
         auto togglePair = [&form] (juce::ToggleButton& a, juce::ToggleButton& b)
         {
             auto toggleRow = form.removeFromTop (26);
@@ -2012,13 +1354,52 @@ namespace patchcraft
         };
         if (runtimeSectionOpen)
         {
+            togglePair (showTopBarToggle, showLeftSidebarToggle);
+            togglePair (showRightPanelToggle, showKeyboardToggle);
+            togglePair (showFooterToggle, showLibraryToggle);
             togglePair (showPackMenuToggle, allowPackLoadingToggle);
-            togglePair (showLibraryToggle, allowMidiLearnToggle);
-            togglePair (showAboutToggle, showGuidanceToggle);
-            auto creditRow = form.removeFromTop (26);
-            showPatchCraftBrandingToggle.setBounds (creditRow);
+            togglePair (allowMidiLearnToggle, showAboutToggle);
+            auto guidanceRow = form.removeFromTop (26);
+            showGuidanceToggle.setBounds (guidanceRow);
             form.removeFromTop (4);
+            form.removeFromTop (6);
+            togglePair (topBrowseToggle, topSaveToggle);
+            togglePair (topSettingsToggle, topCategoryToggle);
+            togglePair (topFavoriteToggle, topPresetNavToggle);
+            togglePair (topMasterToggle, topMeterToggle);
+            form.removeFromTop (6);
+            togglePair (rightPanelShowMacrosToggle, rightPanelShowEffectsToggle);
+            togglePair (rightPanelShowSendsToggle, rightPanelShowUtilityToggle);
             form.removeFromTop (8);
+
+            if (rightPanelShowMacrosToggle.getToggleState())
+            {
+                auto pairRowHalf = [] (juce::Rectangle<int> r, juce::Label& lbl, juce::Component& edit)
+                {
+                    lbl.setBounds (r.removeFromLeft (56));
+                    edit.setBounds (r);
+                };
+
+                for (int i = 0; i < 4; ++i)
+                {
+                    auto macroRow = form.removeFromTop (26);
+                    auto leftArea = macroRow.removeFromLeft (macroRow.getWidth() / 2 - 4);
+                    macroRow.removeFromLeft (8);
+                    auto rightArea = macroRow;
+                    
+                    pairRowHalf (leftArea, macroNameLabels[i * 2], macroNameEdits[i * 2]);
+                    pairRowHalf (rightArea, macroNameLabels[i * 2 + 1], macroNameEdits[i * 2 + 1]);
+                    form.removeFromTop (4);
+                }
+                form.removeFromTop (4);
+            }
+        }
+
+        const bool showMacros = runtimeSectionOpen && rightPanelShowMacrosToggle.getToggleState();
+        for (int i = 0; i < 8; ++i)
+        {
+            macroNameLabels[i].setVisible (showMacros);
+            macroNameEdits[i].setVisible (showMacros);
         }
 
         sectionHeader (clientSectionBtn, clientSectionOpen);
@@ -2114,195 +1495,5 @@ namespace patchcraft
             s.btn->setColour (juce::TextButton::textColourOffId,
                               s.c.getPerceivedBrightness() > 0.5f ? juce::Colours::black : juce::Colours::white);
         }
-
-        // Live Player chrome around the embedded TestPage (the actual
-        // playable instrument). The header strip carries the branded
-        // logo + display name + tagline; the colour stripes mirror the
-        // accent / background palette so the developer sees their skin.
-        if (! playerHeaderArea.isEmpty())
-            paintPlayerPreview (g, playerHeaderArea);
-    }
-
-    void BrandingLabPage::paintPlayerPreview (juce::Graphics& g, juce::Rectangle<int> r)
-    {
-        const auto& m = owner.getProject().getManifest();
-        const auto theme = m.playerTitleBarTheme.isNotEmpty() ? m.playerTitleBarTheme : juce::String ("classic");
-        const auto textPlacement = m.playerTitleTextPlacement.isNotEmpty() ? m.playerTitleTextPlacement : juce::String ("left");
-        const bool useTitleBanner = theme == "banner"
-                                 || theme == "custom"
-                                 || theme == "wide-banner"
-                                 || theme == "artist-card";
-        const auto presetName = m.defaultPreset.isNotEmpty()
-            ? m.defaultPreset
-            : (owner.getProject().getPresets().empty()
-                ? juce::String ("Current Patch")
-                : owner.getProject().getPresets().front().name);
-        playerPresetBtn.setButtonText (presetName);
-
-        // Branded Player header strip — what the end user sees in their DAW
-        // above the instrument layout. The TestPage rendered below is the
-        // actual playable instrument; this strip is the chrome around it.
-        const auto connectorStrip = r.withTop (r.getBottom() - 8);
-        auto titleArea = r.withBottom (r.getY() + juce::jmin (kPreviewPlayerTitleHeight, r.getHeight()));
-        auto toolbarArea = r.withTop (titleArea.getBottom());
-        g.setColour (m.playerBackgroundColour);
-        g.fillRoundedRectangle (r.toFloat(), 8.0f);
-        g.fillRect (connectorStrip);
-        if (useTitleBanner
-            && m.playerTitleBannerImage.isNotEmpty())
-        {
-            const auto bannerFile = juce::File::isAbsolutePath (m.playerTitleBannerImage)
-                ? juce::File (m.playerTitleBannerImage)
-                : owner.getProject().getProjectFolder().getChildFile (m.playerTitleBannerImage);
-            if (auto banner = juce::ImageFileFormat::loadFrom (bannerFile); banner.isValid())
-            {
-                juce::Graphics::ScopedSaveState clipState (g);
-                juce::Path clip;
-                clip.addRoundedRectangle (titleArea.toFloat(), 8.0f);
-                g.reduceClipRegion (clip);
-                g.drawImage (banner, titleArea.toFloat(), juce::RectanglePlacement::fillDestination);
-                g.setColour (m.playerBackgroundColour.withAlpha (0.52f));
-                g.fillRoundedRectangle (titleArea.toFloat(), 8.0f);
-            }
-        }
-        else if (theme == "dark-utility")
-        {
-            g.setColour (m.playerPanelColour.darker (0.42f));
-            g.fillRoundedRectangle (titleArea.toFloat(), 8.0f);
-        }
-        else if (theme == "aurora")
-        {
-            juce::ColourGradient aurora (m.playerAccentColour.withAlpha (0.34f),
-                                         (float) titleArea.getX(), (float) titleArea.getY(),
-                                         m.playerBackgroundColour,
-                                         (float) titleArea.getRight(), (float) titleArea.getBottom(),
-                                         false);
-            g.setGradientFill (aurora);
-            g.fillRoundedRectangle (titleArea.toFloat(), 8.0f);
-        }
-        else if (theme == "clean-pro")
-        {
-            g.setColour (m.playerPanelColour.brighter (0.14f));
-            g.fillRoundedRectangle (titleArea.toFloat(), 8.0f);
-        }
-        else if (theme == "minimal" || theme == "no-chrome")
-        {
-            g.setColour (m.playerBackgroundColour);
-            g.fillRoundedRectangle (titleArea.toFloat(), 8.0f);
-        }
-        g.setColour (m.playerPanelColour.withAlpha (0.92f));
-        g.fillRect (toolbarArea);
-        g.setColour (m.playerBorderColour);
-        g.drawRoundedRectangle (r.toFloat().reduced (0.5f), 8.0f, 1.2f);
-        g.setColour (m.playerBorderColour.withAlpha (0.88f));
-        g.fillRect (toolbarArea.withHeight (1));
-        g.drawLine ((float) r.getX(), (float) r.getBottom() - 0.5f,
-                    (float) r.getRight(), (float) r.getBottom() - 0.5f, 1.2f);
-        g.setColour (m.playerAccentColour.withAlpha (theme == "minimal" ? 0.34f : 0.72f));
-        if (theme == "split-brand")
-            g.fillRoundedRectangle (r.withWidth (5).toFloat(), 2.0f);
-        else if (theme == "compact-daw")
-            g.fillRect (toolbarArea.withHeight (2));
-        else
-            g.fillRoundedRectangle (r.withHeight (3).toFloat(), 2.0f);
-
-        auto titleRow = titleArea.reduced (12, 7).removeFromTop (30);
-        auto toolRow = toolbarArea.reduced (12, 5);
-
-        if (theme != "minimal" && theme != "no-chrome")
-        {
-            const float toolAlpha = theme == "glass" ? 0.46f
-                                : theme == "dark-utility" || theme == "compact-daw" ? 0.96f
-                                : 0.70f;
-            g.setColour (m.playerPanelColour.withAlpha (toolAlpha));
-            g.fillRoundedRectangle (toolRow.toFloat(), theme == "compact-daw" ? 2.0f : 5.0f);
-            g.setColour (m.playerBorderColour.withAlpha (0.72f));
-            g.drawRoundedRectangle (toolRow.toFloat().reduced (0.5f),
-                                    theme == "compact-daw" ? 2.0f : 5.0f,
-                                    1.0f);
-        }
-
-        // Logo plate on the left.
-        const auto logoBox = titleRow.removeFromLeft (30);
-        titleRow.removeFromLeft (10);
-        const auto logoFile = juce::File::isAbsolutePath (m.playerLogoImage)
-            ? juce::File (m.playerLogoImage)
-            : owner.getProject().getProjectFolder().getChildFile (m.playerLogoImage);
-        juce::Image logo;
-        if (m.playerLogoImage.isNotEmpty() && logoFile.existsAsFile())
-            logo = juce::ImageFileFormat::loadFrom (logoFile);
-        if (logo.isValid())
-        {
-            g.drawImage (logo, logoBox.toFloat(),
-                         juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize);
-        }
-        else
-        {
-            g.setColour (m.playerAccentColour.withAlpha (0.20f));
-            g.fillRoundedRectangle (logoBox.toFloat(), 4.0f);
-            g.setColour (m.playerAccentColour);
-            g.setFont (juce::Font ((float) logoBox.getHeight() * 0.55f, juce::Font::bold));
-            const auto initial = m.playerDisplayName.isNotEmpty()
-                ? m.playerDisplayName.substring (0, 1)
-                : (m.instrumentName.isNotEmpty() ? m.instrumentName.substring (0, 1) : juce::String ("P"));
-            g.drawText (initial.toUpperCase(), logoBox, juce::Justification::centred);
-        }
-
-        // Title + tagline stacked vertically.
-        const auto title = m.playerDisplayName.isNotEmpty() ? m.playerDisplayName : m.instrumentName;
-        if (textPlacement != "hidden")
-        {
-            auto titleFont = juce::Font (15.0f, juce::Font::bold);
-            auto subtitleFont = juce::Font (10.0f);
-            if (m.playerTitleFontFamily.isNotEmpty() && m.playerTitleFontFamily != "Default")
-            {
-                titleFont.setTypefaceName (m.playerTitleFontFamily);
-                subtitleFont.setTypefaceName (m.playerTitleFontFamily);
-            }
-            auto titleColumn = titleRow;
-            auto justification = juce::Justification::centredLeft;
-            if (textPlacement == "center")
-            {
-                titleColumn = juce::Rectangle<int> (r.getCentreX() - 220, titleRow.getY(), 440, titleRow.getHeight());
-                justification = juce::Justification::centred;
-            }
-            else if (textPlacement == "right")
-            {
-                titleColumn = juce::Rectangle<int> (r.getRight() - 450, titleRow.getY(), 260, titleRow.getHeight());
-                justification = juce::Justification::centredRight;
-            }
-            else
-            {
-                titleColumn = titleRow.removeFromLeft (juce::jmin (420, titleRow.getWidth() / 2));
-            }
-
-            auto titleArea = titleColumn.removeFromTop (18);
-            g.setColour (m.playerTextColour);
-            g.setFont (titleFont);
-            g.drawText (title, titleArea, justification);
-
-            if (m.playerTagline.isNotEmpty())
-            {
-                g.setColour (m.playerTextDimColour);
-                g.setFont (subtitleFont);
-                g.drawText (m.playerTagline, titleColumn, justification);
-            }
-        }
-
-        // Right-side DAW/runtime meta.
-        auto rightBlock = juce::Rectangle<int> (r.getRight() - 190, r.getY() + 8, 170, 30);
-        g.setColour (m.playerTextDimColour);
-        g.setFont (juce::Font (10.0f));
-        const auto creator = m.creator.isNotEmpty() ? m.creator : juce::String ("PatchCraft");
-        g.drawText (creator + (m.version.isNotEmpty() ? "  v" + m.version : juce::String()),
-                    rightBlock.removeFromTop (18), juce::Justification::centredRight);
-        g.drawText (m.playerClientName.isNotEmpty()
-                        ? "For " + m.playerClientName
-                        : (isTestActive() ? "Audio active" : "DAW preview"),
-                    rightBlock, juce::Justification::centredRight);
-
-        // The exported Player top bar owns all branding text. Drawing an
-        // additional "Powered by" line here collided with the right-side
-        // toolbar buttons at smaller widths.
     }
 }

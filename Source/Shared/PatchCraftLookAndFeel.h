@@ -115,6 +115,18 @@ namespace patchcraft
         juce::Font getAlertWindowTitleFont() override;
         juce::Font getAlertWindowMessageFont() override;
         juce::Font getAlertWindowFont() override;
+
+        void drawMenuBarBackground (juce::Graphics& g, int width, int height,
+                                    bool isMouseOverBar,
+                                    juce::MenuBarComponent& menuBar) override;
+
+        void drawMenuBarItem (juce::Graphics& g, int width, int height,
+                              int itemIndex,
+                              const juce::String& itemText,
+                              bool isMouseOverItem,
+                              bool isMenuOpen,
+                              bool isMouseOverBar,
+                              juce::MenuBarComponent& menuBar) override;
     };
 
 } // namespace patchcraft

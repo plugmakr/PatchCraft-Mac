@@ -119,7 +119,10 @@ namespace patchcraft
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankStepChordSizes {};
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankStepTies {};
             std::array<float, kMaxPhraseBanks * kMaxSteps> bankAutoFxSends {};
+            std::array<float, kMaxPhraseBanks * kMaxSteps> bankAutoFilters {};
+            std::array<float, kMaxPhraseBanks * kMaxSteps> bankAutoPans {};
             std::array<float, kMaxPhraseBanks> bankAutoFxTargets {};
+            std::array<float, kMaxPhraseBanks> bankLaneTargets {}; // 0=notes, 1=filter, 2=pan, 3=fx, 4=slice
             int drumTracks = 8;
             int drumSteps = 16;
             int drumPattern = 0;

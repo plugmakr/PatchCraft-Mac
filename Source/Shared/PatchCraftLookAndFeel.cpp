@@ -634,8 +634,8 @@ namespace patchcraft
 
     int PatchCraftLookAndFeel::getTabButtonBestWidth (juce::TabBarButton& tab, int)
     {
-        return juce::Font (12.5f, juce::Font::bold)
-                   .getStringWidth (tab.getButtonText().toUpperCase()) + 28;
+        return juce::GlyphArrangement::getStringWidthInt (juce::Font (12.5f, juce::Font::bold),
+                                                          tab.getButtonText().toUpperCase()) + 28;
     }
 
     // -------------------------------------------------------------------------
@@ -773,6 +773,32 @@ namespace patchcraft
     juce::Font PatchCraftLookAndFeel::getAlertWindowFont()
     {
         return juce::Font (13.0f);
+    }
+
+    void PatchCraftLookAndFeel::drawMenuBarBackground (juce::Graphics& g, int /*width*/, int /*height*/,
+                                                       bool /*isMouseOverBar*/,
+                                                       juce::MenuBarComponent& /*menuBar*/)
+    {
+        g.fillAll (juce::Colour (0xff11161d));
+    }
+
+    void PatchCraftLookAndFeel::drawMenuBarItem (juce::Graphics& g, int width, int height,
+                                                 int /*itemIndex*/,
+                                                 const juce::String& itemText,
+                                                 bool isMouseOverItem,
+                                                 bool isMenuOpen,
+                                                 bool /*isMouseOverBar*/,
+                                                 juce::MenuBarComponent& /*menuBar*/)
+    {
+        if (isMouseOverItem || isMenuOpen)
+        {
+            g.setColour (accent().withAlpha (0.15f));
+            g.fillRect (0, 0, width, height);
+        }
+
+        g.setColour (isMouseOverItem || isMenuOpen ? juce::Colours::white : textDim());
+        g.setFont (juce::Font (13.0f, juce::Font::bold));
+        g.drawText (itemText, 0, 0, width, height, juce::Justification::centred);
     }
 
 } // namespace patchcraft

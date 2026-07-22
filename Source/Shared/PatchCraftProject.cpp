@@ -1,7 +1,10 @@
 #include "PatchCraftProject.h"
+
+#include <memory>
 #include "InstrumentTemplates.h"
 #include "PatchCraftPackReader.h"
 #include "ArpStepSequencerTemplate.h"
+#include "PScriptShare.h"
 
 #include <algorithm>
 
@@ -218,10 +221,35 @@ namespace patchcraft
         }
     }
 
+    struct PatchCraftProject::LiveValueGraphSync final : LiveValueStore::Listener
+    {
+        explicit LiveValueGraphSync (PatchCraftProject& targetProject) : project (targetProject) {}
+
+        void liveValueChanged (const juce::String&, float) override
+        {
+            project.syncDspGraphFromLiveValues();
+        }
+
+        PatchCraftProject& project;
+    };
+
     PatchCraftProject::PatchCraftProject()
     {
         scriptEngine.bindStore (&liveValues);
+        liveValueGraphSync = std::make_unique<LiveValueGraphSync> (*this);
+        liveValues.addListener (liveValueGraphSync.get());
         resetToDefaultInstrument();
+    }
+
+    void PatchCraftProject::syncDspGraphFromLiveValues()
+    {
+        syncPlaybackGraphFromLiveValues (dspGraph, parameters, liveValues);
+    }
+
+    PatchCraftProject::~PatchCraftProject()
+    {
+        if (liveValueGraphSync != nullptr)
+            liveValues.removeListener (liveValueGraphSync.get());
     }
 
     void PatchCraftProject::resetToDefaultInstrument()
@@ -231,6 +259,7 @@ namespace patchcraft
         auto pack = buildDemoPack ("synth");
 
         manifest = pack.manifest;
+        manifest.quickBuildMode = true;
         manifest.description = "A demo cinematic pad for PatchCraft.";
         canvasSize  = pack.canvasSize;
         parameters  = pack.parameters;
@@ -901,6 +930,144 @@ namespace patchcraft
         return projectFolder.getChildFile ("assets/knobs");
     }
 
+    juce::File PatchCraftProject::getScriptsFolder() const
+    {
+        return projectFolder.getChildFile ("scripts");
+    }
+
+    juce::String PatchCraftProject::setPscriptSource (const juce::String& src)
+    {
+        pscriptSource = src;
+        markDirty();
+        return recompileMergedScript();
+    }
+
+    juce::String PatchCraftProject::getMergedPscriptSource() const
+    {
+        juce::StringArray sections;
+        if (pscriptSource.trim().isNotEmpty())
+            sections.add (pscriptSource.trim());
+
+        if (projectFolder.isDirectory())
+        {
+            for (const auto& element : layout.getAll())
+            {
+                if (element.pscriptFile.isEmpty())
+                    continue;
+
+                const auto scriptFile = projectFolder.getChildFile (element.pscriptFile);
+                if (! scriptFile.existsAsFile())
+                    continue;
+
+                const auto bound = PScriptShare::bindToKnobParameter (scriptFile.loadFileAsString(),
+                                                                      element.parameterId,
+                                                                      element.label);
+                sections.add (bound);
+            }
+        }
+
+        return PScriptShare::mergeSources (sections);
+    }
+
+    juce::String PatchCraftProject::recompileMergedScript()
+    {
+        return scriptEngine.compile (getMergedPscriptSource());
+    }
+
+    bool PatchCraftProject::attachPscriptFileToElement (const juce::String& elementId,
+                                                        const juce::File& sourceFile,
+                                                        juce::String& error)
+    {
+        if (! PScriptShare::isPscriptFile (sourceFile))
+        {
+            error = "Not a pScript file: " + sourceFile.getFileName();
+            return false;
+        }
+
+        auto* element = layout.find (elementId);
+        if (element == nullptr)
+        {
+            error = "Layout element not found.";
+            return false;
+        }
+
+        if (element->parameterId.isEmpty())
+        {
+            error = "Assign this control to a parameter before attaching pScript.";
+            return false;
+        }
+
+        if (projectFolder.getFullPathName().isEmpty())
+        {
+            error = "Save the project first so pScript files can be stored.";
+            return false;
+        }
+
+        if (! getScriptsFolder().createDirectory())
+        {
+            error = "Could not create scripts folder.";
+            return false;
+        }
+
+        auto safeName = sourceFile.getFileNameWithoutExtension().trim();
+        if (safeName.isEmpty())
+            safeName = elementId;
+        safeName = safeName.replaceCharacters (" /\\:*?\"<>|", "---------");
+
+        auto relativePath = juce::String ("scripts/") + safeName + ".pscript";
+        auto destination = projectFolder.getChildFile (relativePath);
+        for (int suffix = 2; destination.existsAsFile(); ++suffix)
+        {
+            relativePath = "scripts/" + safeName + "-" + juce::String (suffix) + ".pscript";
+            destination = projectFolder.getChildFile (relativePath);
+        }
+
+        const auto bound = PScriptShare::bindToKnobParameter (sourceFile.loadFileAsString(),
+                                                              element->parameterId,
+                                                              element->label);
+        if (! destination.replaceWithText (bound))
+        {
+            error = "Could not write " + destination.getFullPathName();
+            return false;
+        }
+
+        element->pscriptFile = relativePath;
+        recompileMergedScript();
+        markDirty();
+        notifyChanged (ChangeScope::structural);
+        return true;
+    }
+
+    bool PatchCraftProject::detachPscriptFromElement (const juce::String& elementId,
+                                                      juce::String& error)
+    {
+        auto* element = layout.find (elementId);
+        if (element == nullptr)
+        {
+            error = "Layout element not found.";
+            return false;
+        }
+
+        if (element->pscriptFile.isEmpty())
+        {
+            error = "This control has no attached pScript file.";
+            return false;
+        }
+
+        if (projectFolder.isDirectory())
+        {
+            const auto scriptFile = projectFolder.getChildFile (element->pscriptFile);
+            if (scriptFile.existsAsFile())
+                scriptFile.deleteFile();
+        }
+
+        element->pscriptFile.clear();
+        recompileMergedScript();
+        markDirty();
+        notifyChanged (ChangeScope::structural);
+        return true;
+    }
+
     void PatchCraftProject::notifyChanged (ChangeScope scope)
     {
         ensurePerformanceParameters (parameters, liveValues);
@@ -920,6 +1087,7 @@ namespace patchcraft
         getAssetsFolder().createDirectory();
         getSamplesFolder().createDirectory();
         getKnobAssetsFolder().createDirectory();
+        getScriptsFolder().createDirectory();
         folder.getChildFile ("assets/sliders").createDirectory();
         folder.getChildFile ("assets/meters").createDirectory();
         folder.getChildFile ("assets/images").createDirectory();
@@ -1261,15 +1429,11 @@ namespace patchcraft
 
         auto scriptFile = folder.getChildFile ("pscript.txt");
         if (scriptFile.existsAsFile())
-        {
             pscriptSource = scriptFile.loadFileAsString();
-            scriptEngine.compile (pscriptSource);
-        }
         else
-        {
             pscriptSource = "";
-            scriptEngine.compile ("");
-        }
+
+        recompileMergedScript();
         markClean();
         return true;
     }

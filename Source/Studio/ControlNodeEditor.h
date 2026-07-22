@@ -41,6 +41,9 @@ namespace patchcraft
         juce::Label targetSummary;
         juce::TextButton tidyButton { "Tidy" };
         juce::TextButton fitButton { "Fit" };
+        juce::TextButton listenButton { "Listen" };
+        juce::TextButton advancedButton { "Advanced" };
+        juce::TextButton addMotionButton { "+ Motion" };
         juce::TextEditor searchField;
         juce::ComboBox graphTemplateBox;
         juce::Label validationBadge;

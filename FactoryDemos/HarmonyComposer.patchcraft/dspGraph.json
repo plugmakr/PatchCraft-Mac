@@ -1,137 +1,117 @@
 {
-  "userConfigured": true,
   "blocks": [
     {
-      "id": "dsp_synth_source",
+      "id": "source",
       "section": "source",
-      "type": "oscStack",
-      "name": "DSP Synth Source",
+      "type": "oscillator",
+      "name": "Harmony Composer Source",
       "enabled": true,
-      "targetId": "oscBlend",
-      "metadata": {
-        "family": "synth",
-        "role": "source",
-        "ioMode": "stereo"
-      },
+      "targetId": "volume",
       "values": {
-        "oscType": 1,
-        "osc2Type": 0,
+        "oscType": 0.0,
+        "osc2Type": 1.0,
         "oscBlend": 0.1,
-        "subBlend": 0.06,
+        "subBlend": 0.08,
         "noiseBlend": 0.0,
-        "detune": 4.0
+        "sampleStart": 0.0,
+        "sampleLength": 1.0
       }
     },
     {
-      "id": "dsp_tone_shape",
+      "id": "shape",
       "section": "shape",
-      "type": "filterEnvelope",
-      "name": "Tone and Envelope",
+      "type": "filter",
+      "name": "Tone Shape",
       "enabled": true,
       "targetId": "filterCutoff",
-      "metadata": {
-        "family": "studio",
-        "role": "tone",
-        "ioMode": "stereo"
-      },
       "values": {
-        "filterCutoff": 6400,
-        "filterResonance": 0.18,
-        "attack": 0.004,
-        "decay": 0.28,
-        "sustain": 0.38,
-        "release": 0.42
+        "filterCutoff": 4200.0,
+        "filterResonance": 0.16,
+        "attack": 0.012,
+        "decay": 0.4,
+        "sustain": 0.55,
+        "release": 0.5
       }
     },
     {
-      "id": "harmony_composer",
-      "section": "mod",
-      "type": "harmonyComposer",
-      "name": "Harmony Composer",
-      "enabled": true,
-      "targetId": "composerRoot",
-      "metadata": {
-        "family": "midi",
-        "role": "harmonyComposer",
-        "ioMode": "event"
-      },
-      "values": {
-        "composerRoot": 0,
-        "composerScale": 5,
-        "composerChordCount": 4,
-        "composerRate": 1.0,
-        "composerGate": 0.78,
-        "composerVelocity": 0.72,
-        "composerVoices": 4,
-        "composerOctave": 4,
-        "composerSpread": 0.48,
-        "composerOutputChannel": 1,
-        "composerMidiThru": 1,
-        "composerDegree1": 0,
-        "composerInversion1": -1,
-        "composerChord1On": 1,
-        "composerDegree2": 4,
-        "composerInversion2": -1,
-        "composerChord2On": 1,
-        "composerDegree3": 1,
-        "composerInversion3": -1,
-        "composerChord3On": 1,
-        "composerDegree4": 3,
-        "composerInversion4": -1,
-        "composerChord4On": 1,
-        "composerDegree5": 0,
-        "composerInversion5": -1,
-        "composerChord5On": 0,
-        "composerDegree6": 0,
-        "composerInversion6": -1,
-        "composerChord6On": 0,
-        "composerDegree7": 0,
-        "composerInversion7": -1,
-        "composerChord7On": 0,
-        "composerDegree8": 0,
-        "composerInversion8": -1,
-        "composerChord8On": 0
-      }
-    },
-    {
-      "id": "dsp_space",
+      "id": "fx",
       "section": "fx",
       "type": "fxChain",
-      "name": "Delay and Reverb",
+      "name": "Factory FX",
       "enabled": true,
       "targetId": "delayMix",
-      "metadata": {
-        "family": "creative",
-        "role": "space",
-        "ioMode": "stereo"
-      },
       "values": {
+        "drive": 0.0,
+        "mix": 1.0,
         "delayTime": 0.375,
         "delayFeedback": 0.24,
-        "delayMix": 0.16,
-        "reverbMix": 0.24
+        "delayMix": 0.18,
+        "reverbMix": 0.34,
+        "tapeMix": 0.0,
+        "chorusMix": 0.0,
+        "multiTapMix": 0.0
       }
     },
     {
-      "id": "dsp_output",
+      "id": "main_output",
       "section": "out",
       "type": "limiter",
-      "name": "Safe Output",
+      "name": "Main Output",
       "enabled": true,
-      "targetId": "outputGainDb",
-      "metadata": {
-        "family": "studio",
-        "role": "dynamics",
-        "ioMode": "stereo"
-      },
+      "targetId": "volume",
       "values": {
-        "volume": 0.6,
-        "pan": 0.0,
-        "outputGainDb": -5.0,
         "outputLimiter": 1.0,
-        "outputCeilingDb": -1.0
+        "outputCeilingDb": -1.0,
+        "outputGainDb": -3.0
+      }
+    },
+    {
+      "id": "piano_roll",
+      "section": "modulation",
+      "type": "pianoRoll",
+      "name": "Piano Roll Clip",
+      "enabled": true,
+      "targetId": "filterCutoff",
+      "values": {
+        "prSteps": 16.0,
+        "prStepsPerBeat": 4.0,
+        "prLowNote": 48.0,
+        "prRows": 27.0,
+        "prRate": 1.0,
+        "prGate": 0.92,
+        "prVelocity": 1.0,
+        "prSync": 1.0,
+        "prLoop": 1.0
+      },
+      "metadata": {
+        "notes": "0,4,60,0.78;0,4,64,0.78;0,4,67,0.78;0,4,71,0.86;4,4,57,0.78;4,4,60,0.78;4,4,64,0.78;4,4,67,0.86;8,4,53,0.78;8,4,57,0.78;8,4,60,0.78;8,4,64,0.86;12,4,55,0.78;12,4,59,0.78;12,4,62,0.78;12,4,65,0.86"
       }
     }
   ],
-  "modulation": []
+  "edges": [
+    {
+      "id": "source_to_shape",
+      "sourceNodeId": "source",
+      "targetNodeId": "shape",
+      "signalType": "audio",
+      "enabled": true
+    },
+    {
+      "id": "shape_to_fx",
+      "sourceNodeId": "shape",
+      "targetNodeId": "fx",
+      "signalType": "audio",
+      "enabled": true
+    },
+    {
+      "id": "fx_to_main_output",
+      "sourceNodeId": "fx",
+      "targetNodeId": "main_output",
+      "signalType": "audio",
+      "enabled": true
+    }
+  ],
+  "macros": [],
+  "modulation": [],
+  "automation": []
 }

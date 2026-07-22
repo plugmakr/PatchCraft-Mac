@@ -63,6 +63,7 @@ namespace patchcraft
         juce::TextButton createFromPromptButton { "Create Plugin" };
         juce::TextButton blankProjectButton { "Blank Canvas" };
         juce::TextButton synthStarterButton { "Synth" };
+        juce::TextButton hybridStarterButton { "Hybrid" };
         juce::TextButton sampleStarterButton { "Sampler" };
         juce::TextButton drumStarterButton { "Drums" };
         juce::TextButton fxStarterButton { "FX" };
@@ -74,11 +75,11 @@ namespace patchcraft
         std::vector<std::unique_ptr<DemoTile>> demoTiles;
 
         enum class ContentTab { Overview, Create, Demos, Doctor };
-        ContentTab activeTab = ContentTab::Overview;
+        ContentTab activeTab = ContentTab::Doctor;
         juce::TextButton tabOverview { "Overview" };
         juce::TextButton tabCreate { "Create" };
         juce::TextButton tabDemos { "Demos" };
-        juce::TextButton tabDoctor { "Launch Doctor" };
+        juce::TextButton tabDoctor { "Ship Doctor" };
         juce::Label doctorTitle;
         juce::Label doctorBody;
 

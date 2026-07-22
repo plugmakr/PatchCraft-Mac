@@ -767,61 +767,136 @@ namespace patchcraft
         return juce::String (names[keyPitchClass]) + (keyIsMinor ? " min" : " maj");
     }
 
+    namespace
+    {
+        static double foldBpmIntoRange (double bpm, double searchMinBpm, double searchMaxBpm)
+        {
+            if (bpm <= 0.0)
+                return 0.0;
+
+            double folded = bpm;
+            while (folded < searchMinBpm - 1.0e-6)
+                folded *= 2.0;
+            while (folded > searchMaxBpm + 1.0e-6)
+                folded *= 0.5;
+
+            return (folded >= searchMinBpm - 1.0 && folded <= searchMaxBpm + 1.0) ? folded : 0.0;
+        }
+
+        static double scoreBeatGridAlignment (const std::vector<int>& onsetSamples,
+                                              int regionStart,
+                                              double sampleRate,
+                                              double bpm)
+        {
+            if (bpm <= 0.0 || onsetSamples.empty() || sampleRate <= 0.0)
+                return 0.0;
+
+            const double samplesPerBeat = sampleRate * 60.0 / bpm;
+            if (samplesPerBeat < 1.0)
+                return 0.0;
+
+            double score = 0.0;
+            for (int onset : onsetSamples)
+            {
+                const double phase = std::fmod ((double) (onset - regionStart), samplesPerBeat);
+                const double dist = juce::jmin (phase, samplesPerBeat - phase);
+                const double tolerance = samplesPerBeat * 0.075;
+                if (dist <= tolerance)
+                    score += 1.0 - (dist / tolerance);
+            }
+
+            return score / (double) onsetSamples.size();
+        }
+
+        static void voteBpmCandidate (std::map<int, double>& votes, double bpm, double weight,
+                                      double searchMinBpm, double searchMaxBpm)
+        {
+            const double folded = foldBpmIntoRange (bpm, searchMinBpm, searchMaxBpm);
+            if (folded <= 0.0)
+                return;
+
+            const int key = juce::roundToInt (folded);
+            votes[key] += weight;
+        }
+    }
+
     double SampleMap::detectTempoBpm (const juce::AudioBuffer<float>& buffer, double sampleRate,
                                       double searchMinBpm, double searchMaxBpm)
     {
         if (sampleRate <= 0.0 || buffer.getNumSamples() <= 0)
             return 0.0;
 
-        const auto mono = extractMono (buffer, 0, buffer.getNumSamples());
+        const int regionStart = 0;
+        const int regionEnd = buffer.getNumSamples();
+        const auto mono = extractMono (buffer, regionStart, regionEnd);
         constexpr int hop   = 512;
         constexpr int frame = 1024;
         auto env = onsetEnvelope (mono, hop, frame);
         if (env.size() < 16)
             return 0.0;
 
-        // Remove DC / mean so autocorrelation reflects periodicity, not energy.
         const double mean = std::accumulate (env.begin(), env.end(), 0.0) / (double) env.size();
         for (auto& e : env)
             e = (float) ((double) e - mean);
 
-        const double envRate = sampleRate / (double) hop; // envelope frames per second
+        const double envRate = sampleRate / (double) hop;
         const int minLag = juce::jmax (1, (int) std::floor (envRate * 60.0 / searchMaxBpm));
         const int maxLag = juce::jmin ((int) env.size() - 1, (int) std::ceil (envRate * 60.0 / searchMinBpm));
         if (maxLag <= minLag)
             return 0.0;
 
-        double bestScore = 0.0;
-        int    bestLag   = 0;
+        std::map<int, double> bpmVotes;
         for (int lag = minLag; lag <= maxLag; ++lag)
         {
             double corr = 0.0;
             const int count = (int) env.size() - lag;
             for (int i = 0; i < count; ++i)
                 corr += (double) env[(size_t) i] * (double) env[(size_t) (i + lag)];
-
-            // Normalise by overlap so longer lags are not penalised.
             corr /= (double) count;
-            if (corr > bestScore)
+
+            if (corr <= 0.0)
+                continue;
+
+            const double bpm = envRate * 60.0 / (double) lag;
+            voteBpmCandidate (bpmVotes, bpm, corr, searchMinBpm, searchMaxBpm);
+            voteBpmCandidate (bpmVotes, bpm * 2.0, corr * 0.65, searchMinBpm, searchMaxBpm);
+            voteBpmCandidate (bpmVotes, bpm * 0.5, corr * 0.65, searchMinBpm, searchMaxBpm);
+        }
+
+        const auto onsets = detectOnsets (buffer, sampleRate, regionStart, regionEnd, 256);
+        for (size_t i = 0; i + 1 < onsets.size(); ++i)
+        {
+            for (size_t j = i + 1; j < juce::jmin (onsets.size(), i + 8); ++j)
             {
-                bestScore = corr;
-                bestLag   = lag;
+                const double ioiSec = (double) (onsets[j] - onsets[i]) / sampleRate;
+                if (ioiSec < 0.12 || ioiSec > 2.5)
+                    continue;
+
+                const double bpm = 60.0 / ioiSec;
+                const double weight = 1.0 / (double) (j - i);
+                voteBpmCandidate (bpmVotes, bpm, weight, searchMinBpm, searchMaxBpm);
+                voteBpmCandidate (bpmVotes, bpm * 2.0, weight * 0.55, searchMinBpm, searchMaxBpm);
+                voteBpmCandidate (bpmVotes, bpm * 0.5, weight * 0.55, searchMinBpm, searchMaxBpm);
             }
         }
 
-        if (bestLag <= 0 || bestScore <= 0.0)
+        if (bpmVotes.empty())
             return 0.0;
 
-        double bpm = envRate * 60.0 / (double) bestLag;
-        // Fold tempo octaves into the requested window.
-        while (bpm < searchMinBpm - 1.0e-6)
-            bpm *= 2.0;
-        while (bpm > searchMaxBpm + 1.0e-6)
-            bpm *= 0.5;
+        double bestScore = 0.0;
+        int bestBpm = 0;
+        for (const auto& entry : bpmVotes)
+        {
+            const double gridScore = scoreBeatGridAlignment (onsets, regionStart, sampleRate, (double) entry.first);
+            const double combined = entry.second * (1.0 + gridScore * 2.5);
+            if (combined > bestScore)
+            {
+                bestScore = combined;
+                bestBpm = entry.first;
+            }
+        }
 
-        return (bpm >= searchMinBpm - 1.0 && bpm <= searchMaxBpm + 1.0)
-                   ? std::round (bpm * 100.0) / 100.0
-                   : 0.0;
+        return bestBpm > 0 ? std::round ((double) bestBpm * 100.0) / 100.0 : 0.0;
     }
 
     int SampleMap::detectMusicalKey (const juce::AudioBuffer<float>& buffer, double sampleRate,
@@ -840,6 +915,12 @@ namespace patchcraft
         if ((int) mono.size() < fftSize)
             return -1;
 
+        // Focus on the middle of the clip and ignore low-energy frames (silence / noise).
+        const int analyseStart = (int) mono.size() / 5;
+        const int analyseEnd   = (int) mono.size() - analyseStart;
+        if (analyseEnd - analyseStart < fftSize)
+            return -1;
+
         juce::dsp::FFT fft (fftOrder);
         std::vector<float> window ((size_t) fftSize);
         juce::dsp::WindowingFunction<float>::fillWindowingTables (window.data(), (size_t) fftSize,
@@ -849,8 +930,15 @@ namespace patchcraft
         std::vector<float> fftBuffer ((size_t) (fftSize * 2), 0.0f);
         const int hop = fftSize / 2;
 
-        for (int pos = 0; pos + fftSize <= (int) mono.size(); pos += hop)
+        for (int pos = analyseStart; pos + fftSize <= analyseEnd; pos += hop)
         {
+            double frameEnergy = 0.0;
+            for (int i = 0; i < fftSize; ++i)
+                frameEnergy += (double) mono[(size_t) (pos + i)] * (double) mono[(size_t) (pos + i)];
+            frameEnergy = std::sqrt (frameEnergy / (double) fftSize);
+            if (frameEnergy < 1.0e-4)
+                continue;
+
             std::fill (fftBuffer.begin(), fftBuffer.end(), 0.0f);
             for (int i = 0; i < fftSize; ++i)
                 fftBuffer[(size_t) i] = mono[(size_t) (pos + i)] * window[(size_t) i];
@@ -860,12 +948,23 @@ namespace patchcraft
             for (int k = 1; k < fftSize / 2; ++k)
             {
                 const double freq = (double) k * sampleRate / (double) fftSize;
-                if (freq < 55.0 || freq > 5000.0)
+                if (freq < 65.0 || freq > 4000.0)
                     continue;
-                const double pitch = 69.0 + 12.0 * std::log2 (freq / 440.0);
-                const int pc = ((int) std::lround (pitch) % 12 + 12) % 12;
+
                 const double mag = (double) fftBuffer[(size_t) k];
-                chroma[(size_t) pc] += mag * mag; // power weighting
+                if (mag <= 1.0e-8)
+                    continue;
+
+                const double weight = mag * mag * frameEnergy;
+                for (int h = 1; h <= 4; ++h)
+                {
+                    const double harmonicFreq = freq * (double) h;
+                    if (harmonicFreq > 5000.0)
+                        break;
+                    const double pitch = 69.0 + 12.0 * std::log2 (harmonicFreq / 440.0);
+                    const int pc = ((int) std::lround (pitch) % 12 + 12) % 12;
+                    chroma[(size_t) pc] += weight / (double) h;
+                }
             }
         }
 
@@ -922,6 +1021,32 @@ namespace patchcraft
         return bestKey;
     }
 
+    SampleMap::ClipAnalysis SampleMap::analyseClipBuffer (const juce::AudioBuffer<float>& buffer,
+                                                          double sampleRate,
+                                                          int startSample,
+                                                          int endSample)
+    {
+        ClipAnalysis result;
+        if (sampleRate <= 0.0 || buffer.getNumSamples() <= 0)
+            return result;
+
+        const int total = buffer.getNumSamples();
+        startSample = juce::jlimit (0, total, startSample);
+        endSample = endSample < 0 ? total : juce::jlimit (startSample, total, endSample);
+        if (endSample <= startSample)
+            return result;
+
+        juce::AudioBuffer<float> region;
+        const int channels = juce::jmax (1, buffer.getNumChannels());
+        region.setSize (channels, endSample - startSample, false, false, true);
+        for (int ch = 0; ch < channels; ++ch)
+            region.copyFrom (ch, 0, buffer, ch, startSample, endSample - startSample);
+
+        result.bpm = detectTempoBpm (region, sampleRate, 55.0, 200.0);
+        result.keyPitchClass = detectMusicalKey (region, sampleRate, result.keyIsMinor, &result.confidence);
+        return result;
+    }
+
     SampleMap::ClipAnalysis SampleMap::analyseClipFile (const juce::File& file)
     {
         ClipAnalysis result;
@@ -934,9 +1059,8 @@ namespace patchcraft
         if (reader == nullptr || reader->lengthInSamples <= 0 || reader->sampleRate <= 0.0)
             return result;
 
-        // Cap analysis length (~30 s) to keep it fast on long clips.
         const int channels = juce::jlimit (1, 2, (int) reader->numChannels);
-        const juce::int64 maxSamples = (juce::int64) (reader->sampleRate * 30.0);
+        const juce::int64 maxSamples = (juce::int64) (reader->sampleRate * 45.0);
         const int toRead = (int) juce::jmin (maxSamples, reader->lengthInSamples);
         if (toRead <= 0)
             return result;
@@ -945,9 +1069,7 @@ namespace patchcraft
         if (! reader->read (&buffer, 0, toRead, 0, true, true))
             return result;
 
-        result.bpm = detectTempoBpm (buffer, reader->sampleRate);
-        result.keyPitchClass = detectMusicalKey (buffer, reader->sampleRate, result.keyIsMinor, &result.confidence);
-        return result;
+        return analyseClipBuffer (buffer, reader->sampleRate, 0, toRead);
     }
 
     std::vector<int> SampleMap::detectOnsets (const juce::AudioBuffer<float>& buffer, double sampleRate,

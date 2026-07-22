@@ -377,11 +377,35 @@ namespace patchcraft
             for (auto& fx : dspRack.getAudioChain())
                 if (fx->getType() == "delay") fx->setParameter ("mix", v);
         }
+        else if (id == "delayEnabled")
+        {
+            atomics.delayEnabled = v;
+            for (auto& fx : dspRack.getAudioChain())
+                if (fx->getType() == "delay") fx->setEnabled (v >= 0.5f);
+        }
+        else if (id == "delayType")
+        {
+            atomics.delayType = v;
+            for (auto& fx : dspRack.getAudioChain())
+                if (fx->getType() == "delay") fx->setParameter ("type", v);
+        }
         else if (id == "reverbMix")
         {
             atomics.reverbMix = v;
             for (auto& fx : dspRack.getAudioChain())
                 if (fx->getType() == "reverb") fx->setParameter ("mix", v);
+        }
+        else if (id == "reverbEnabled")
+        {
+            atomics.reverbEnabled = v;
+            for (auto& fx : dspRack.getAudioChain())
+                if (fx->getType() == "reverb") fx->setEnabled (v >= 0.5f);
+        }
+        else if (id == "reverbType")
+        {
+            atomics.reverbType = v;
+            for (auto& fx : dspRack.getAudioChain())
+                if (fx->getType() == "reverb") fx->setParameter ("type", v);
         }
         else if (id == "volume")          atomics.volume         = v;
         else if (id == "expression")      atomics.expression     = v;

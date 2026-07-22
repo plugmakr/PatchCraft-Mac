@@ -11,10 +11,56 @@
 
 #include <cmath>
 #include <algorithm>
+#include <array>
+#include <map>
 #include <vector>
 
 namespace patchcraft
 {
+    static const SampleZoneDef* sampleZoneForPad (const PatchCraftPack* pack, int padIndex)
+    {
+        if (pack == nullptr || padIndex < 0 || padIndex >= 16)
+            return nullptr;
+
+        const auto& zones = pack->sampleMap.getZones();
+        for (const auto& zone : zones)
+            if (zone.padIndex == padIndex)
+                return &zone;
+
+        std::array<bool, 16> occupied {};
+        std::map<int, int> padByRoot;
+        for (const auto& zone : zones)
+        {
+            if (zone.padIndex < 0 || zone.padIndex >= (int) occupied.size())
+                continue;
+            occupied[(size_t) zone.padIndex] = true;
+            padByRoot.emplace (zone.rootNote, zone.padIndex);
+        }
+
+        int nextPad = 0;
+        for (const auto& zone : zones)
+        {
+            if (zone.padIndex >= 0)
+                continue;
+            if (const auto found = padByRoot.find (zone.rootNote); found != padByRoot.end())
+            {
+                if (found->second == padIndex)
+                    return &zone;
+                continue;
+            }
+            while (nextPad < (int) occupied.size() && occupied[(size_t) nextPad])
+                ++nextPad;
+            if (nextPad >= (int) occupied.size())
+                break;
+            occupied[(size_t) nextPad] = true;
+            padByRoot[zone.rootNote] = nextPad;
+            if (nextPad == padIndex)
+                return &zone;
+            ++nextPad;
+        }
+        return nullptr;
+    }
+
     static juce::String steppedParameterChoiceLabel (const ParameterDef& def, float value)
     {
         const int index = juce::jlimit (0, 127, juce::roundToInt (value));
@@ -439,7 +485,7 @@ namespace patchcraft
         if (! isInterestedInFileDrag (files))
             return;
         fileDragActive = true;
-        updateFileDragHighlight ({ x, y });
+        updateFileDragHighlight ({ x, y }, files);
     }
 
     void PlayerGuiRenderer::fileDragMove (const juce::StringArray& files, int x, int y)
@@ -450,7 +496,7 @@ namespace patchcraft
                 return;
             fileDragActive = true;
         }
-        updateFileDragHighlight ({ x, y });
+        updateFileDragHighlight ({ x, y }, files);
     }
 
     void PlayerGuiRenderer::fileDragExit (const juce::StringArray&)
@@ -463,10 +509,19 @@ namespace patchcraft
         repaint();
     }
 
-    void PlayerGuiRenderer::updateFileDragHighlight (juce::Point<int> pos)
+    void PlayerGuiRenderer::updateFileDragHighlight (juce::Point<int> pos,
+                                                     const juce::StringArray& files)
     {
         juce::Rectangle<int> newBounds;
         juce::String newLabel;
+        bool hasMidi = false;
+        bool hasAudio = false;
+        for (const auto& path : collectRuntimeImportFilesForPlayerCanvas (files))
+        {
+            const auto ext = juce::File (path).getFileExtension().toLowerCase();
+            hasMidi = hasMidi || ext == ".mid" || ext == ".midi";
+            hasAudio = hasAudio || (ext != ".mid" && ext != ".midi");
+        }
         const auto m = metrics();
         for (auto it = elementsCopy.rbegin(); it != elementsCopy.rend(); ++it)
         {
@@ -481,7 +536,9 @@ namespace patchcraft
             if (element.type == ElementType::SampleDropZone)
             {
                 newBounds = bounds;
-                newLabel = "Drop to play across the keyboard";
+                newLabel = hasMidi && ! hasAudio
+                    ? "Drop MIDI to replace the active musical pattern"
+                    : "Drop sample to pitch and play across the keyboard";
             }
             else if (element.type == ElementType::RuntimeSampleLibrary)
             {
@@ -500,6 +557,16 @@ namespace patchcraft
                     newBounds = bounds;
                     newLabel = "Drop to assign pad";
                 }
+            }
+            else if (hasMidi && element.type == ElementType::PianoRoll)
+            {
+                newBounds = bounds;
+                newLabel = "Drop MIDI to replace this editable piano roll";
+            }
+            else if (hasMidi && element.type == ElementType::ArpLane)
+            {
+                newBounds = bounds;
+                newLabel = "Drop MIDI to import this sequencer pattern";
             }
 
             if (! newBounds.isEmpty())
@@ -759,25 +826,28 @@ namespace patchcraft
 
     int PlayerGuiRenderer::parameterIndexForId (const juce::String& parameterId) const
     {
-        return proc.getHostParameterSlotIndex (parameterId);
+        return proc.getHostParameterSlotIndex (parameterId == "pitchBend" ? juce::String ("pitchWheel") : parameterId);
     }
 
     const ParameterDef* PlayerGuiRenderer::parameterForId (const juce::String& parameterId) const
     {
         const auto* pack = proc.getPack();
-        if (pack == nullptr || parameterId.isEmpty())
+        const auto effectiveParameterId = parameterId == "pitchBend"
+            ? juce::String ("pitchWheel")
+            : parameterId;
+        if (pack == nullptr || effectiveParameterId.isEmpty())
             return nullptr;
 
         for (const auto& def : pack->parameters.getAll())
-            if (def.id == parameterId)
+            if (def.id == effectiveParameterId)
                 return &def;
 
         ParameterDef registryDef;
         const auto engine = pack->manifest.engine.isNotEmpty() ? pack->manifest.engine : juce::String ("synth");
-        if (ParameterModel::getRegistryDefinition (parameterId, engine, registryDef))
+        if (ParameterModel::getRegistryDefinition (effectiveParameterId, engine, registryDef))
         {
-            registryParameterCache[parameterId] = registryDef;
-            return &registryParameterCache[parameterId];
+            registryParameterCache[effectiveParameterId] = registryDef;
+            return &registryParameterCache[effectiveParameterId];
         }
 
         return nullptr;
@@ -832,14 +902,17 @@ namespace patchcraft
 
     float PlayerGuiRenderer::parameterValueForElement (const LayoutElement& element, float fallback) const
     {
-        const int index = parameterIndexForId (element.parameterId);
-        const auto* def = parameterForId (element.parameterId);
+        const auto effectiveParameterId = element.parameterId == "pitchBend"
+            ? juce::String ("pitchWheel")
+            : element.parameterId;
+        const int index = parameterIndexForId (effectiveParameterId);
+        const auto* def = parameterForId (effectiveParameterId);
         if (index >= 0 && index < kPatchCraftHostParameterSlots && def != nullptr)
         {
             if (auto* value = proc.getApvts().getRawParameterValue (slotId (index)))
                 return juce::jmap (juce::jlimit (0.0f, 1.0f, value->load()), 0.0f, 1.0f, def->min, def->max);
         }
-        return def != nullptr ? proc.getPackParameterValue (element.parameterId) : fallback;
+        return def != nullptr ? proc.getPackParameterValue (effectiveParameterId) : fallback;
     }
 
     juce::String PlayerGuiRenderer::formattedParameterValue (const LayoutElement& element) const
@@ -973,10 +1046,20 @@ namespace patchcraft
         juce::String text = e.label;
         if (const auto* m = manifest())
         {
-            if (e.id == "title" && m->playerDisplayName.isNotEmpty())
+            const auto id = e.id.toLowerCase();
+            const bool titleLike = id == "title" || id == "instrument_title" || id == "instrument_name"
+                                || id == "player_title" || id.contains ("title") || id.contains ("product_name");
+            const bool taglineLike = id == "tagline" || id == "subtitle" || id == "sub_title"
+                                  || id == "player_tagline" || id.contains ("tagline") || id.contains ("subtitle");
+            const bool creatorLike = id == "creator" || id == "artist" || id == "brand_name"
+                                  || id.contains ("creator") || id.contains ("artist") || id.contains ("brand");
+
+            if (titleLike && m->playerDisplayName.isNotEmpty())
                 text = m->playerDisplayName;
-            else if (e.id == "tagline" && m->playerTagline.isNotEmpty())
+            else if (taglineLike && m->playerTagline.isNotEmpty())
                 text = m->playerTagline;
+            else if (creatorLike && m->creator.isNotEmpty())
+                text = m->creator;
         }
 
         if (text.isEmpty())
@@ -1052,7 +1135,12 @@ namespace patchcraft
     {
         if (e.labelPosition != "hidden"
             && (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::MacroControl || e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel))
-            r.removeFromBottom (juce::jmax (20, r.getHeight() / 4));
+        {
+            const int labelHeight = (e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel)
+                ? juce::jmax (28, r.getHeight() / 3)
+                : juce::jmax (20, r.getHeight() / 4);
+            r.removeFromBottom (labelHeight);
+        }
         return r.reduced (2);
     }
 
@@ -1249,8 +1337,9 @@ namespace patchcraft
 
     void PlayerGuiRenderer::rebuild()
     {
-        controls.clear();
+        // Attachments hold raw pointers into controls; destroy them first.
         attachments.clear();
+        controls.clear();
         elementsCopy.clear();
         registryParameterCache.clear();
 
@@ -1341,20 +1430,31 @@ namespace patchcraft
                 slider->setAlpha (0.01f);
 
                 slider->addMouseListener (this, false);
-                auto it = paramIndex.find (e.parameterId);
-                const auto* parameter = [&]() -> const ParameterDef*
-                {
-                    for (const auto& def : pack->parameters.getAll())
-                        if (def.id == e.parameterId)
-                            return &def;
-                    return nullptr;
-                }();
+                const auto runtimeParameterId = e.parameterId == "pitchBend"
+                    ? juce::String ("pitchWheel")
+                    : e.parameterId;
+                auto it = paramIndex.find (runtimeParameterId);
+                const auto* parameter = parameterForId (runtimeParameterId);
                 slider->setTooltip (playerControlGuidance (pack->manifest, e, parameter));
                 if (parameter != nullptr)
                     slider->setDoubleClickReturnValue (true, parameter->defaultValue);
                 const bool visualOnlyControl = e.parameterId.isEmpty()
                     && (e.type == ElementType::Knob || e.type == ElementType::Slider || e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel);
-                if (it != paramIndex.end() && it->second < kPatchCraftHostParameterSlots)
+                const bool performanceWheel = e.type == ElementType::PitchWheel || e.type == ElementType::ModWheel;
+                if (performanceWheel && parameter != nullptr)
+                {
+                    const double interval = parameter->step > 0.0f ? (double) parameter->step : 0.0;
+                    auto* sliderPtr = slider.get();
+                    sliderPtr->setRange ((double) parameter->min, (double) parameter->max, interval);
+                    sliderPtr->setValue ((double) proc.getPackParameterValue (runtimeParameterId),
+                                         juce::dontSendNotification);
+                    sliderPtr->onValueChange = [this, sliderPtr, runtimeParameterId]
+                    {
+                        proc.setPackParameterFromUi (runtimeParameterId, (float) sliderPtr->getValue());
+                        repaint();
+                    };
+                }
+                else if (it != paramIndex.end() && it->second < kPatchCraftHostParameterSlots)
                 {
                     auto* att = new juce::AudioProcessorValueTreeState::SliderAttachment (
                         proc.getApvts(), slotId (it->second), *slider);
@@ -1365,9 +1465,9 @@ namespace patchcraft
                     const double interval = parameter->step > 0.0f ? (double) parameter->step : 0.0;
                     auto* sliderPtr = slider.get();
                     sliderPtr->setRange ((double) parameter->min, (double) parameter->max, interval);
-                    sliderPtr->setValue ((double) proc.getPackParameterValue (e.parameterId),
+                    sliderPtr->setValue ((double) proc.getPackParameterValue (runtimeParameterId),
                                          juce::dontSendNotification);
-                    sliderPtr->onValueChange = [this, sliderPtr, parameterId = e.parameterId]
+                    sliderPtr->onValueChange = [this, sliderPtr, parameterId = runtimeParameterId]
                     {
                         proc.setPackParameterFromUi (parameterId, (float) sliderPtr->getValue());
                         repaint();
@@ -1736,6 +1836,112 @@ namespace patchcraft
                 g.fillEllipse (x - 4.0f, y - 4.0f, 8.0f, 8.0f);
             }
         }
+    }
+
+    void PlayerGuiRenderer::drawAdsrCurve (juce::Graphics& g, juce::Rectangle<int> r,
+                                           const LayoutElement& element) const
+    {
+        const auto bg = element.backgroundColour.isTransparent() ? playerPanel().withAlpha (0.78f) : element.backgroundColour;
+        const auto border = element.borderColour.isTransparent() ? playerBorder() : element.borderColour;
+        const auto accent = element.accentColour.isTransparent() ? playerAccent() : element.accentColour;
+        g.setColour (bg);
+        g.fillRoundedRectangle (r.toFloat(), juce::jmax (6.0f, element.cornerRadius));
+        g.setColour (border);
+        g.drawRoundedRectangle (r.toFloat().reduced (0.5f), juce::jmax (6.0f, element.cornerRadius), 1.0f);
+
+        auto area = r.reduced (10, 8);
+        auto header = area.removeFromTop (20);
+        g.setColour (accent);
+        g.setFont (juce::FontOptions (11.0f).withStyle ("bold"));
+        g.drawText (element.label.isNotEmpty() ? element.label.toUpperCase() : "ENVELOPE",
+                    header.removeFromLeft (130), juce::Justification::centredLeft, true);
+        g.setColour (playerTextDim());
+        g.setFont (juce::FontOptions (9.0f));
+        g.drawText ("amp adsr", header, juce::Justification::centredRight, true);
+
+        auto graphArea = area.reduced (2, 4);
+        g.setColour (playerBg().withAlpha (0.55f));
+        g.fillRoundedRectangle (graphArea.toFloat(), 5.0f);
+
+        // draw light grid lines
+        g.setColour (border.withAlpha (0.15f));
+        for (int i = 1; i < 4; ++i)
+        {
+            const int x = graphArea.getX() + (graphArea.getWidth() * i) / 4;
+            const int y = graphArea.getY() + (graphArea.getHeight() * i) / 4;
+            g.drawVerticalLine (x, (float) graphArea.getY(), (float) graphArea.getBottom());
+            g.drawHorizontalLine (y, (float) graphArea.getX(), (float) graphArea.getRight());
+        }
+
+        juce::String prefix = "";
+        if (element.parameterId.isNotEmpty() && element.parameterId.containsIgnoreCase ("attack"))
+            prefix = element.parameterId.upToFirstOccurrenceOf ("attack", false, false);
+        else if (element.parameterId.isNotEmpty() && element.parameterId.containsIgnoreCase ("adsr"))
+            prefix = element.parameterId.upToFirstOccurrenceOf ("adsr", false, false);
+
+        const auto getVal = [&] (const juce::String& baseName, float fallback) -> float
+        {
+            const auto fullId = prefix + baseName;
+            const auto* def = parameterForId (fullId);
+            if (def != nullptr)
+            {
+                LayoutElement e;
+                e.parameterId = fullId;
+                return parameterValueForElement (e, def->defaultValue);
+            }
+            
+            const auto* fallbackDef = parameterForId (baseName);
+            if (fallbackDef != nullptr)
+            {
+                LayoutElement e;
+                e.parameterId = baseName;
+                return parameterValueForElement (e, fallbackDef->defaultValue);
+            }
+            
+            return fallback;
+        };
+
+        const float a = juce::jlimit (0.0f, 1.0f, getVal ("attack", 0.1f) / 4.0f);
+        const float d = juce::jlimit (0.0f, 1.0f, getVal ("decay", 0.2f) / 4.0f);
+        const float s = juce::jlimit (0.0f, 1.0f, getVal ("sustain", 0.8f));
+        const float r_val = juce::jlimit (0.0f, 1.0f, getVal ("release", 0.4f) / 4.0f);
+
+        const float totalW = (float) graphArea.getWidth();
+        const float startX = (float) graphArea.getX();
+        const float startY = (float) graphArea.getBottom() - 4.0f;
+        const float topY = (float) graphArea.getY() + 4.0f;
+        const float height = startY - topY;
+
+        const float attW = 4.0f + a * (totalW * 0.22f);
+        const float decW = 4.0f + d * (totalW * 0.22f);
+        const float susW = totalW * 0.25f;
+        const float relW = 4.0f + r_val * (totalW * 0.22f);
+        const float susY = startY - s * height;
+
+        juce::Path p;
+        p.startNewSubPath (startX, startY);
+        p.lineTo (startX + attW, topY);
+        p.lineTo (startX + attW + decW, susY);
+        p.lineTo (startX + attW + decW + susW, susY);
+        p.lineTo (startX + attW + decW + susW + relW, startY);
+
+        juce::Path fillPath = p;
+        fillPath.lineTo (startX + attW + decW + susW + relW, startY);
+        fillPath.lineTo (startX, startY);
+        fillPath.closeSubPath();
+
+        juce::ColourGradient grad (accent.withAlpha (0.24f), startX, topY,
+                                   accent.withAlpha (0.01f), startX, startY, false);
+        g.setGradientFill (grad);
+        g.fillPath (fillPath);
+
+        g.setColour (accent.withAlpha (0.92f));
+        g.strokePath (p, juce::PathStrokeType (2.2f, juce::PathStrokeType::mitered, juce::PathStrokeType::rounded));
+
+        g.setColour (accent);
+        g.fillEllipse (startX + attW - 3.0f, topY - 3.0f, 6.0f, 6.0f);
+        g.fillEllipse (startX + attW + decW - 3.0f, susY - 3.0f, 6.0f, 6.0f);
+        g.fillEllipse (startX + attW + decW + susW - 3.0f, susY - 3.0f, 6.0f, 6.0f);
     }
 
     void PlayerGuiRenderer::drawSpectrumAnalyzer (juce::Graphics& g, juce::Rectangle<int> r,
@@ -2174,14 +2380,15 @@ namespace patchcraft
     void PlayerGuiRenderer::drawPadGrid (juce::Graphics& g, juce::Rectangle<int> r,
                                           const LayoutElement& e) const
     {
+        const auto* pack = proc.getPack();
         const int rows = e.type == ElementType::DrumPad ? 1 : juce::jlimit (1, 8, e.padRows);
         const int cols = e.type == ElementType::DrumPad ? 1 : juce::jlimit (1, 8, e.padCols);
-        const int gap  = e.type == ElementType::DrumPad ? 0 : 4;
+        const int gap  = e.type == ElementType::DrumPad ? 0 : kPadGridCellGapPx;
         const auto inner = e.type == ElementType::PadGrid ? r.reduced (4) : r;
         if (inner.isEmpty()) return;
 
-        const float padW = (float) (inner.getWidth()  - gap * (cols - 1)) / (float) cols;
-        const float padH = (float) (inner.getHeight() - gap * (rows - 1)) / (float) rows;
+        const bool squarePads = e.type == ElementType::PadGrid;
+        const auto metrics = computePadGridMetrics (inner.toFloat(), rows, cols, gap, squarePads);
         const auto bg = e.backgroundColour.isTransparent() ? playerPanel().darker (0.08f) : e.backgroundColour;
         const auto borderC = e.borderColour.isTransparent() ? playerBorder() : e.borderColour;
         const auto accent = e.accentColour.isTransparent() ? playerAccent() : e.accentColour;
@@ -2190,11 +2397,13 @@ namespace patchcraft
         {
             for (int col = 0; col < cols; ++col)
             {
-                juce::Rectangle<float> pad ((float) inner.getX() + col * (padW + gap),
-                                            (float) inner.getY() + row * (padH + gap),
-                                            padW, padH);
+                juce::Rectangle<float> pad = padCellRect (metrics, row, col, gap, squarePads,
+                                                          (float) inner.getX(), (float) inner.getY());
                 const int padIdx = row * cols + col;
-                const int note = juce::jlimit (0, 127, e.padBaseNote + padIdx);
+                const auto* zone = sampleZoneForPad (pack, padIdx);
+                const int note = zone != nullptr
+                    ? juce::jlimit (0, 127, zone->rootNote)
+                    : juce::jlimit (0, 127, e.padBaseNote + padIdx);
                 const float triggerLevel = juce::jlimit (0.0f, 1.0f, proc.getNoteHighlightLevel (note));
                 const bool active = (note == activePadNote) || triggerLevel > 0.02f;
                 const float activeAlpha = juce::jlimit (0.40f, 0.92f, 0.48f + triggerLevel * 0.44f);
@@ -2205,15 +2414,23 @@ namespace patchcraft
                 g.drawRoundedRectangle (pad.reduced (0.5f), juce::jmax (3.0f, e.cornerRadius * 0.6f), active ? 1.8f : 1.0f);
 
                 g.setColour (active ? juce::Colour (0xff0a0c10) : playerText().withAlpha (0.85f));
-                g.setFont (juce::FontOptions (juce::jmin (12.0f, padH * 0.28f)).withStyle ("bold"));
-                const juce::String label = e.type == ElementType::DrumPad && e.label.isNotEmpty()
-                    ? e.label : juce::String (padIdx + 1);
-                g.drawText (label, pad.reduced (4.0f).removeFromTop (padH * 0.55f).toNearestInt(),
+                g.setFont (juce::FontOptions (juce::jmin (12.0f, pad.getHeight() * 0.28f)).withStyle ("bold"));
+                const juce::String sampleLabel = zone != nullptr
+                    ? (zone->padLabel.isNotEmpty()
+                        ? zone->padLabel
+                        : juce::File (zone->samplePath).getFileNameWithoutExtension())
+                    : juce::String();
+                const juce::String label = sampleLabel.isNotEmpty()
+                    ? sampleLabel
+                    : (e.type == ElementType::DrumPad && e.label.isNotEmpty()
+                        ? e.label
+                        : juce::String (padIdx + 1));
+                g.drawText (label, pad.reduced (4.0f).removeFromTop (pad.getHeight() * 0.55f).toNearestInt(),
                             juce::Justification::centred);
                 g.setColour (active ? juce::Colour (0xaa0a0c10) : playerTextDim());
-                g.setFont (juce::FontOptions (juce::jmin (10.0f, padH * 0.22f)));
+                g.setFont (juce::FontOptions (juce::jmin (10.0f, pad.getHeight() * 0.22f)));
                 g.drawText (juce::MidiMessage::getMidiNoteName (note, true, true, 4),
-                            pad.reduced (4.0f).removeFromBottom (padH * 0.35f).toNearestInt(),
+                            pad.reduced (4.0f).removeFromBottom (pad.getHeight() * 0.35f).toNearestInt(),
                             juce::Justification::centred);
             }
         }
@@ -2863,8 +3080,8 @@ namespace patchcraft
                     geo.header.withTrimmedRight (160), juce::Justification::centredLeft, true);
         g.setColour (playerTextDim());
         g.setFont (juce::FontOptions (9.0f));
-        g.drawText (juce::String (notes.size()) + (notes.size() == 1 ? " note  -  click to add, click a note to remove"
-                                                                     : " notes  -  click to add, drag to lengthen"),
+        g.drawText (juce::String (notes.size()) + (notes.size() == 1 ? " note  -  click notes to remove, drag to resize"
+                                                                     : " notes  -  click add/remove, drag notes to resize"),
                     geo.header.withTrimmedRight (62), juce::Justification::centredRight, true);
 
         // Play button.
@@ -3006,9 +3223,13 @@ namespace patchcraft
 
             if (hitIndex >= 0)
             {
-                notes.erase (notes.begin() + hitIndex);
-                proc.setPianoRollNotesFromUi (PianoRollRuntime::encodeNotes (notes));
-                pianoRollDragActive = false;
+                pianoRollDragActive = true;
+                pianoRollDragMode = PianoRollDragMode::ResizeNote;
+                pianoRollDragElementId = e.id;
+                pianoRollDragPitch = notes[(size_t) hitIndex].pitch;
+                pianoRollDragStartStep = notes[(size_t) hitIndex].startStep;
+                pianoRollDragPendingDelete = true;
+                pianoRollDragDidEdit = false;
                 return true;
             }
 
@@ -3021,9 +3242,12 @@ namespace patchcraft
             proc.setPianoRollNotesFromUi (PianoRollRuntime::encodeNotes (notes));
 
             pianoRollDragActive = true;
+            pianoRollDragMode = PianoRollDragMode::NewNote;
             pianoRollDragElementId = e.id;
             pianoRollDragPitch = pitch;
             pianoRollDragStartStep = step;
+            pianoRollDragPendingDelete = false;
+            pianoRollDragDidEdit = true;
 
             proc.handleNoteOn (pitch, note.velocity);
             juce::Timer::callAfterDelay (110,
@@ -3054,6 +3278,8 @@ namespace patchcraft
                 {
                     n.lengthSteps = newLength;
                     changed = true;
+                    pianoRollDragDidEdit = true;
+                    pianoRollDragPendingDelete = false;
                 }
                 break;
             }
@@ -3065,10 +3291,28 @@ namespace patchcraft
 
     void PlayerGuiRenderer::cancelPianoRollDrag()
     {
+        if (pianoRollDragActive && pianoRollDragMode == PianoRollDragMode::ResizeNote
+            && pianoRollDragPendingDelete && ! pianoRollDragDidEdit)
+        {
+            auto notes = PianoRollRuntime::decodeNotes (proc.getPianoRollNotesEncoded());
+            for (auto it = notes.begin(); it != notes.end(); ++it)
+            {
+                if (it->pitch == pianoRollDragPitch && it->startStep == pianoRollDragStartStep)
+                {
+                    notes.erase (it);
+                    proc.setPianoRollNotesFromUi (PianoRollRuntime::encodeNotes (notes));
+                    break;
+                }
+            }
+        }
+
         pianoRollDragActive = false;
+        pianoRollDragMode = PianoRollDragMode::None;
         pianoRollDragElementId.clear();
         pianoRollDragPitch = -1;
         pianoRollDragStartStep = -1;
+        pianoRollDragPendingDelete = false;
+        pianoRollDragDidEdit = false;
     }
 
     bool PlayerGuiRenderer::handlePianoRollGesture (const juce::MouseEvent& event, bool drag)
@@ -3111,7 +3355,7 @@ namespace patchcraft
             title.setColour (juce::Label::textColourId, owner.playerText());
             addAndMakeVisible (title);
 
-            subtitle.setText ("Click to add notes, click a note to remove, drag to lengthen. "
+            subtitle.setText ("Click empty cells to add notes. Click notes to remove them, or drag existing notes shorter/longer. "
                               "Playback keeps running while this window is open.",
                               juce::dontSendNotification);
             subtitle.setFont (juce::FontOptions (11.0f));
@@ -3687,20 +3931,38 @@ namespace patchcraft
 
     int PlayerGuiRenderer::padNoteAt (const LayoutElement& e,
                                       juce::Rectangle<int> r,
-                                      juce::Point<int> pos) const
+                                      juce::Point<int> pos,
+                                      int* padIndexOut) const
     {
         const int rows = e.type == ElementType::DrumPad ? 1 : juce::jlimit (1, 8, e.padRows);
         const int cols = e.type == ElementType::DrumPad ? 1 : juce::jlimit (1, 8, e.padCols);
-        const int gap  = e.type == ElementType::DrumPad ? 0 : 4;
+        const int gap  = e.type == ElementType::DrumPad ? 0 : kPadGridCellGapPx;
         const auto inner = e.type == ElementType::PadGrid ? r.reduced (4) : r;
         if (inner.isEmpty() || ! inner.contains (pos)) return -1;
 
-        const float padW = (float) (inner.getWidth()  - gap * (cols - 1)) / (float) cols;
-        const float padH = (float) (inner.getHeight() - gap * (rows - 1)) / (float) rows;
-        if (padW <= 0.0f || padH <= 0.0f) return -1;
-        const int col = juce::jlimit (0, cols - 1, (int) ((pos.x - inner.getX()) / (padW + gap)));
-        const int row = juce::jlimit (0, rows - 1, (int) ((pos.y - inner.getY()) / (padH + gap)));
-        return juce::jlimit (0, 127, e.padBaseNote + row * cols + col);
+        const bool squarePads = e.type == ElementType::PadGrid;
+        const auto metrics = computePadGridMetrics (inner.toFloat(), rows, cols, gap, squarePads);
+        if (metrics.padW <= 0.0f || metrics.padH <= 0.0f) return -1;
+
+        for (int row = 0; row < rows; ++row)
+        {
+            for (int col = 0; col < cols; ++col)
+            {
+                const auto pad = padCellRect (metrics, row, col, gap, squarePads,
+                                              (float) inner.getX(), (float) inner.getY());
+                if (pad.contains (pos.toFloat()))
+                {
+                    const int padIndex = row * cols + col;
+                    if (padIndexOut != nullptr)
+                        *padIndexOut = padIndex;
+                    if (const auto* zone = sampleZoneForPad (proc.getPack(), padIndex))
+                        return juce::jlimit (0, 127, zone->rootNote);
+                    return juce::jlimit (0, 127, e.padBaseNote + padIndex);
+                }
+            }
+        }
+
+        return -1;
     }
 
     PlayerGuiRenderer::RuntimeDropTarget PlayerGuiRenderer::runtimeDropTargetAt (juce::Point<int> pos) const
@@ -3738,9 +4000,10 @@ namespace patchcraft
 
             if (element.type == ElementType::DrumPad || element.type == ElementType::PadGrid)
             {
-                const int note = padNoteAt (element, bounds, pos);
+                int padIndex = -1;
+                const int note = padNoteAt (element, bounds, pos, &padIndex);
                 if (note >= 0)
-                    return { "pads", note, juce::jmax (0, note - element.padBaseNote), true };
+                    return { "pads", note, juce::jmax (0, padIndex), true };
             }
         }
 
@@ -4356,27 +4619,38 @@ namespace patchcraft
                 return true;
             }
 
+            if (! drag)
+            {
+                const int footerTab = ArpLaneUi::hitTestOrbitFooterTab (layout, pos);
+                if (footerTab >= 0)
+                {
+                    if (proc.setMidiPlaygroundActiveBankFromUi (footerTab))
+                        repaint (r);
+                    return true;
+                }
+            }
+
             int lane = -1;
             int step = -1;
             if (drag && arpLaneDragActive && lastArpLane >= 0 && lastArpStep >= 0)
             {
                 lane = lastArpLane;
                 step = lastArpStep;
-                const float velocity = ArpLaneUi::velocityFromVerticalDrag (layout.content, pos.y);
+                const float velocity = layout.orbitMultiRing
+                    ? ArpLaneUi::velocityFromOrbitRadius ((pos.toFloat() - layout.centre).getDistanceFromOrigin(),
+                                                         layout.ringSize, lane)
+                    : ArpLaneUi::velocityFromVerticalDrag (layout.content, pos.y);
                 proc.setArpLaneStepFromUi (lane, step, velocity, true);
                 repaint (r);
                 return true;
             }
 
             if (! ArpLaneUi::hitTestStep (layout, e, pos, lane, step))
-            {
-                if (! drag && proc.setMidiPlaygroundActiveBankFromUi (e.arpLaneIndex))
-                    repaint (r);
                 return true;
-            }
 
             if (! drag)
             {
+                proc.setMidiPlaygroundActiveBankFromUi (lane);
                 const bool wasActive = ArpLaneUi::storedStepActive (block, lane, step, false);
                 const float velocity = ArpLaneUi::storedStepVelocity (block, lane, step);
                 proc.setArpLaneStepFromUi (lane, step, velocity, ! wasActive);
@@ -4902,8 +5176,10 @@ namespace patchcraft
                         // same layout works for both the bare PatchCraft
                         // Player and a white-label developer build.
                         juce::String assetPath = e.asset;
-                        if (e.id == "logo" && manifest() != nullptr
-                            && manifest()->playerLogoImage.isNotEmpty())
+                        const auto imageId = e.id.toLowerCase();
+                        const bool logoLike = imageId == "logo" || imageId == "brand_logo"
+                                           || imageId == "player_logo" || imageId.contains ("logo");
+                        if (logoLike && manifest() != nullptr && manifest()->playerLogoImage.isNotEmpty())
                             assetPath = manifest()->playerLogoImage;
 
                         if (assetPath.isNotEmpty())
@@ -4962,6 +5238,7 @@ namespace patchcraft
 
                 case ElementType::Meter:    drawMeter (g, r, e); break;
                 case ElementType::EqCurve:  drawEqCurve (g, r, e); break;
+                case ElementType::AdsrCurve: drawAdsrCurve (g, r, e); break;
                 case ElementType::SpectrumAnalyzer: drawSpectrumAnalyzer (g, r, e); break;
                 case ElementType::ReactiveImage:
                 {

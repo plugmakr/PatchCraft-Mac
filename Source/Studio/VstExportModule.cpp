@@ -325,6 +325,26 @@ namespace patchcraft
                                  "\"" + key + "\": " + quotedJsonString (newValue));
         }
 
+        void replaceEveryModuleInfoStringProperty (juce::String& text,
+                                                   const juce::String& key,
+                                                   const juce::String& newValue)
+        {
+            juce::StringArray lines;
+            lines.addLines (text);
+            const auto prefix = "\"" + key + "\":";
+            for (auto& line : lines)
+            {
+                const auto trimmed = line.trimStart();
+                if (! trimmed.startsWith (prefix))
+                    continue;
+
+                const auto indentation = line.substring (0, line.length() - trimmed.length());
+                const bool hasComma = trimmed.trimEnd().endsWithChar (',');
+                line = indentation + prefix + " " + quotedJsonString (newValue) + (hasComma ? "," : "");
+            }
+            text = lines.joinIntoString ("\n") + "\n";
+        }
+
         bool rewriteModuleInfoMetadata (const juce::File& moduleInfo,
                                         const juce::String& oldPluginName,
                                         const juce::String& pluginName,
@@ -341,7 +361,7 @@ namespace patchcraft
             auto text = moduleInfo.loadFileAsString();
             replaceModuleInfoStringProperty (text, "Name", oldPluginName, pluginName);
             replaceModuleInfoStringProperty (text, "Vendor", "PatchCraft", manufacturerName);
-            replaceModuleInfoStringProperty (text, "Version", "0.1.0", version);
+            replaceEveryModuleInfoStringProperty (text, "Version", version);
 
             if (! moduleInfo.replaceWithText (text))
             {
@@ -732,8 +752,8 @@ namespace patchcraft
     bool VstExportModule::isVstExpansionInstalled()
     {
         return appInstalledTemplateExists (templateForEngine ("synth"))
-            && appInstalledTemplateExists (templateForEngine ("fx"))
-            && appInstalledTemplateExists (composerTemplate());
+            || appInstalledTemplateExists (templateForEngine ("fx"))
+            || appInstalledTemplateExists (composerTemplate());
     }
 
     juce::String VstExportModule::vstExpansionInstallMessage()

@@ -8,6 +8,7 @@
 #include "PScriptEngine.h"
 
 #include <juce_data_structures/juce_data_structures.h>
+#include <memory>
 
 namespace patchcraft
 {
@@ -29,6 +30,8 @@ namespace patchcraft
         };
 
         PatchCraftProject();
+
+        ~PatchCraftProject();
 
         // ---- Project I/O ------------------------------------------------------
         bool save (const juce::File& projectFolder, juce::String& error);
@@ -70,6 +73,8 @@ namespace patchcraft
 
         // Initialise live values from parameter defaults.
         void resetLiveValuesToDefaults();
+        /** Mirror live knob values into Sound Stack block snapshots. */
+        void syncDspGraphFromLiveValues();
         InstrumentPatch captureCurrentPatch (const juce::String& name) const;
         bool applyPatch (const InstrumentPatch& patch);
         bool applyPreset (const Preset& preset);
@@ -109,13 +114,23 @@ namespace patchcraft
         juce::File getAssetsFolder() const;
         juce::File getSamplesFolder() const;
         juce::File getKnobAssetsFolder() const;
+        juce::File getScriptsFolder() const;
 
         // Background image (relative path inside the project assets folder).
         juce::String backgroundImageRelative;
 
         // pScript integration
         juce::String getPscriptSource() const                    { return pscriptSource; }
-        void         setPscriptSource (const juce::String& src) { pscriptSource = src; scriptEngine.compile (src); markDirty(); }
+        /** Updates the main script editor source and recompiles the merged runtime script. */
+        juce::String setPscriptSource (const juce::String& src);
+        /** Global script plus any per-control scripts bound on the layout. */
+        juce::String getMergedPscriptSource() const;
+        juce::String recompileMergedScript();
+        bool         attachPscriptFileToElement (const juce::String& elementId,
+                                                 const juce::File& sourceFile,
+                                                 juce::String& error);
+        bool         detachPscriptFromElement (const juce::String& elementId,
+                                               juce::String& error);
         PScriptEngine& getScriptEngine()                         { return scriptEngine; }
         const PScriptEngine& getScriptEngine() const             { return scriptEngine; }
 
@@ -146,6 +161,8 @@ namespace patchcraft
         std::vector<MidiMapping> midiMappings;
         DspGraph        dspGraph;
         LiveValueStore  liveValues;
+        struct LiveValueGraphSync;
+        std::unique_ptr<LiveValueGraphSync> liveValueGraphSync;
         juce::UndoManager undoManager;
         juce::String pscriptSource;
         PScriptEngine scriptEngine;

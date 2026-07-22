@@ -8,8 +8,9 @@ AudiLock will become the licensing and entitlement source of truth for PatchCraf
 
 For the launch build, PatchCraft uses Plugin.club directly:
 
-- Seller publish: `https://plugin.club/functions/sellerImport`
-- Runtime/device activation: `https://plugin.club/functions/deviceAuth`
+- Seller publish: `https://plugin.club/functions/v1/sellerImport`
+- Runtime license activation: `https://plugin.club/functions/v1/activateLicense` (plus `validateLicense`)
+- Studio seller login: `deviceAuthStart` / `deviceAuthPoll` / `deviceAuthLogout`
 
 ## Contract To Preserve
 
@@ -38,7 +39,7 @@ Keeping this shape stable lets Studio switch from Plugin.club to AudiLock by cha
 
 Before replacing Plugin.club licensing, AudiLock needs:
 
-- A device activation endpoint compatible with the current `deviceAuth` request shape.
+- A device activation flow compatible with Plugin.club `deviceAuthStart` / `deviceAuthPoll` / `deviceAuthLogout`.
 - A seller/product API that can map Plugin.club product IDs to AudiLock product IDs or use the same ID.
 - Public key or key-id metadata for Player-side verification.
 - Trial, offline grace, activation limit, revoke, reset, and machine-binding support.

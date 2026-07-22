@@ -1,6 +1,18 @@
 # PatchCraft Ship-Ready Handoff
 
-Date: 2026-05-21
+Date: 2026-07-16
+
+## July 16 Local Release Verification
+
+- Product/build version is now `1.0.0` for Studio, Player, Player FX, and generated Windows installers.
+- `PatchCraftReleaseChecklist` now executes both smoke suites instead of only compiling their binaries.
+- Audio/runtime smoke suite passes, including synth/sample/FX rendering, MIDI/ARP/drum runtimes, physical MIDI crash reproductions, multi-instrument routing, save/restore, factory demos, and protected-pack export scaffolding.
+- VST export smoke suite passes for instrument, FX, and Composer products, including unique class IDs, embedded packs, sanitized graphs, re-export, white-label metadata, and arbitrary exported version stamping.
+- Player licensing now performs live HTTP activation, parses Plugin.club/AudiLock-style entitlement responses, caches machine-bound activation state, rejects tampered caches, displays the real license state, and reports missing configuration clearly.
+- Unlicensed Player instruments produce no protected audio; unlicensed Player FX leaves incoming host audio dry instead of muting the DAW channel.
+- Studio preview intentionally bypasses enforcement so developers can author and test protected products before buyer activation.
+- Base RC bundle and the separate VST Expansion package both pass payload validation. The base RC is rejected if paid `PluginTemplate/` files leak into it.
+- Both unsigned Windows installers compile successfully with Inno Setup 6.
 
 ## Release Candidate
 
@@ -9,6 +21,8 @@ Date: 2026-05-21
 - Player VST3 runtime: `build-codex/dist/PatchCraftStudio-RC/PlayerPlugins/PatchCraft Player.vst3`
 - Player FX VST3 runtime: `build-codex/dist/PatchCraftStudio-RC/PlayerPlugins/PatchCraft Player FX.vst3`
 - Paid VST Expansion package: `build-codex/dist/PatchCraftVstExpansion`
+- Studio installer: `build-codex/dist/PatchCraftStudio-RC/installer/Output/PatchCraftStudio-Setup.exe`
+- VST Expansion installer: `build-codex/dist/PatchCraftVstExpansion/installer/Output/PatchCraftVstExpansion-Setup.exe`
 - DAW QA checklist: `docs/DAW_QA_CHECKLIST.md`
 - Factory demos: `build-codex/dist/PatchCraftStudio-RC/FactoryDemos`
 - Creator libraries: `build-codex/dist/PatchCraftStudio-RC/Library`
@@ -21,11 +35,25 @@ Run from the repository root:
 ```powershell
 cmake -S . -B build-codex -DPATCHCRAFT_ENABLE_AI_STUDIO=OFF
 cmake --build build-codex --target PatchCraftReleaseChecklist --config Release --parallel 6
-build-codex\bin\Release\PatchCraftAudioSmokeTests.exe
-build-codex\bin\Release\PatchCraftVstExportSmokeTest.exe
 cmake --build build-codex --target PatchCraftRcBundle --config Release --parallel 6
 cmake --build build-codex --target PatchCraftVstExpansionPackage --config Release --parallel 6
+& 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' 'build-codex\dist\PatchCraftStudio-RC\installer\PatchCraftStudio-Windows.iss'
+& 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' 'build-codex\dist\PatchCraftVstExpansion\installer\PatchCraftVstExpansion-Windows.iss'
 ```
+
+`PatchCraftReleaseChecklist` runs the audio suite from the Studio release directory so `FactoryDemos` are resolved correctly, then runs the VST export suite.
+
+## Locally Closed Gates
+
+- Preset loading overlay and atomic preset application path.
+- Mixer/routing engine behavior covered by multi-instrument and FX runtime smoke tests.
+- Snapshot/favorite state is serialized into Player host state and restored with the session.
+- Sound DNA reads the loaded pack's active graph, mappings, samples, and live parameter values.
+- Protected-pack configuration, activation response handling, cached entitlement state, and graceful failure behavior.
+- Repeatable RC payload generation and validation.
+- Separate VST Expansion payload generation and validation.
+
+The remaining release decision depends on the manual DAW, hardware, live Plugin.club, signing, and clean-machine checks below. Local success is not a substitute for those external proofs.
 
 ## Current Ship Scope
 
@@ -50,7 +78,7 @@ These cannot be fully proven by headless smoke tests:
 - Export at least one sample instrument, one synth instrument, one drum machine, one FX plugin, and one multi-instrument pack.
 - Load PatchCraft Player and Player FX in FL Studio and verify labels, tab switching, MIDI Learn, drum grid cells, pad playback, preset loading overlay, mixer faders, mute/solo, and LED meter response.
 - Install the separate VST Expansion package, then export/load one standalone branded VST3 product in FL Studio.
-- Publish a Plugin.club draft using `https://plugin.club/functions/sellerImport`, license through `https://plugin.club/functions/deviceAuth`, and verify the returned draft/edit URL.
+- Publish a Plugin.club draft using `https://plugin.club/functions/v1/sellerImport`, license through `https://plugin.club/functions/v1/activateLicense`, and verify the returned draft/edit URL.
 - Confirm the final base installer preserves `FactoryDemos`, `Library`, and `PlayerPlugins` beside the Studio executable.
 - Confirm the paid VST Expansion installer adds `PluginTemplate` beside the Studio executable without changing the base install.
 - Confirm Launch Bundle includes `seller-launch-playbook.md`, `buyer-quick-start.md`, and `marketplace-asset-checklist.md`.

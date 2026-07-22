@@ -100,6 +100,104 @@ namespace patchcraft
         slider.setTextValueSuffix (suffix);
     }
 
+    juce::StringArray SliderBuilderComponent::galleryPresetNames()
+    {
+        return {
+            "Slim Studio Fader",
+            "Wide Macro Slider",
+            "LED Step Rail",
+            "Dark Mixer Throw",
+            "Glass Horizontal",
+            "Tape Speed Control",
+            "Master Bus Trim",
+            "Neon Send Strip",
+            "Minimal Utility",
+            "Chunky Sampler Level"
+        };
+    }
+
+    void SliderBuilderComponent::applyGalleryPreset (int index)
+    {
+        importedThumb = importedTrack = importedStrip = {};
+        importedSource = {};
+
+        auto setColours = [this] (juce::uint32 track, juce::uint32 fill, juce::uint32 thumb)
+        {
+            trackColour = juce::Colour (track);
+            fillColour = juce::Colour (fill);
+            thumbColour = juce::Colour (thumb);
+            trackColourBtn.setColour (juce::TextButton::buttonColourId, trackColour);
+            fillColourBtn.setColour (juce::TextButton::buttonColourId, fillColour);
+            thumbColourBtn.setColour (juce::TextButton::buttonColourId, thumbColour);
+        };
+
+        auto setValues = [this] (int orientation, int cap, int fillMode, double width, double height,
+                                 double track, double thumb, double value, bool scale,
+                                 bool bipolar, bool label)
+        {
+            orientationBox.setSelectedId (orientation, juce::dontSendNotification);
+            capBox.setSelectedId (cap, juce::dontSendNotification);
+            fillModeBox.setSelectedId (fillMode, juce::dontSendNotification);
+            widthSlider.setValue (width, juce::dontSendNotification);
+            heightSlider.setValue (height, juce::dontSendNotification);
+            trackSlider.setValue (track, juce::dontSendNotification);
+            thumbSlider.setValue (thumb, juce::dontSendNotification);
+            valueSlider.setValue (value, juce::dontSendNotification);
+            framesSlider.setValue (64, juce::dontSendNotification);
+            scaleToggle.setToggleState (scale, juce::dontSendNotification);
+            bipolarToggle.setToggleState (bipolar, juce::dontSendNotification);
+            labelToggle.setToggleState (label, juce::dontSendNotification);
+        };
+
+        switch (juce::jlimit (0, 9, index))
+        {
+            case 0:
+                setValues (1, 1, 1, 38, 270, 10, 24, 0.68, true, false, false);
+                setColours (0xff20242a, 0xfff1b34b, 0xffe7edf2);
+                break;
+            case 1:
+                setValues (2, 1, 1, 34, 330, 12, 30, 0.54, false, false, true);
+                setColours (0xff151b22, 0xff48c7e8, 0xfff4f8fb);
+                break;
+            case 2:
+                setValues (1, 2, 3, 44, 250, 16, 18, 0.77, true, false, false);
+                setColours (0xff101316, 0xff8cff67, 0xffe8ffe1);
+                break;
+            case 3:
+                setValues (1, 3, 1, 54, 300, 18, 32, 0.61, false, false, false);
+                setColours (0xff0d1014, 0xffff6b4a, 0xffd7dde4);
+                break;
+            case 4:
+                setValues (2, 1, 1, 42, 300, 11, 26, 0.42, true, false, false);
+                setColours (0xff0b1721, 0xff6de5ff, 0xffc7f5ff);
+                break;
+            case 5:
+                setValues (2, 2, 2, 32, 280, 8, 22, 0.36, true, true, true);
+                setColours (0xff2b2117, 0xffe0a45a, 0xffffd49b);
+                break;
+            case 6:
+                setValues (1, 2, 2, 30, 220, 7, 20, 0.50, false, true, false);
+                setColours (0xff24282d, 0xffb9c1ca, 0xfff5f7f9);
+                break;
+            case 7:
+                setValues (1, 1, 1, 40, 280, 9, 26, 0.72, false, false, false);
+                setColours (0xff10151d, 0xfff4408a, 0xffffb7d3);
+                break;
+            case 8:
+                setValues (2, 2, 1, 24, 240, 6, 18, 0.33, false, false, false);
+                setColours (0xffd9dee2, 0xff242a30, 0xff171b20);
+                break;
+            case 9:
+                setValues (1, 1, 1, 64, 210, 18, 42, 0.84, false, false, true);
+                setColours (0xff17181c, 0xffffcc4f, 0xffefeff2);
+                break;
+            default:
+                break;
+        }
+
+        repaint();
+    }
+
     void SliderBuilderComponent::paint (juce::Graphics& g)
     {
         g.fillAll (PatchCraftLookAndFeel::panel());

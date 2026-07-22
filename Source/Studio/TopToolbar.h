@@ -23,7 +23,7 @@ namespace patchcraft
         void resized() override;
 
         void setProjectName (juce::String name, bool dirty);
-        void setPreviewActive (bool active);
+        void setPreviewActive (bool active, const juce::String& idleLabel = "Preview");
 
     private:
         StudioMainComponent& owner;

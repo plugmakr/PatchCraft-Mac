@@ -57,6 +57,7 @@ namespace patchcraft
                            float velocity, float gate, float probability, int divisions)> onSetDrumPatternCell;
         std::function<bool(int lane, int step, float velocity, bool active)> onSetArpLaneStep;
         std::function<bool(int lane, int steps)> onSetArpLaneSteps;
+        std::function<bool(int bank)> onSetMidiPlaygroundActiveBank;
         std::function<bool(int laneIndex, int step, float value, bool active, const juce::String& laneType)> onSetSeqLaneStep;
         std::function<void(const juce::String&)> onRuntimeStatus;
         std::function<juce::String()> onGetPianoRollNotes;

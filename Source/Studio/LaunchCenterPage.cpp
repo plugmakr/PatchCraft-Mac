@@ -3,6 +3,7 @@
 #include "BottomPanel.h"
 #include "PatchCraftLookAndFeel.h"
 #include "StudioMainComponent.h"
+#include "ProductRecipes.h"
 
 #include "AiAssistService.h"
 #include "LicenseValidator.h"
@@ -151,7 +152,7 @@ namespace patchcraft
             {
                 case LaunchCenterPage::Severity::Pass:    return "PASS";
                 case LaunchCenterPage::Severity::Warning: return "WARN";
-                case LaunchCenterPage::Severity::Error:   return "FIX";
+                case LaunchCenterPage::Severity::Error:   return "ERROR";
                 case LaunchCenterPage::Severity::Info:    return "INFO";
             }
             return "INFO";
@@ -167,6 +168,92 @@ namespace patchcraft
                 case LaunchCenterPage::Severity::Info:    return juce::Colour (0xff58b7ff);
             }
             return PatchCraftLookAndFeel::textDim();
+        }
+
+        static juce::String remediationForCheck (const juce::String& title,
+                                                  const juce::String& detail)
+        {
+            juce::String steps;
+            if (title.containsIgnoreCase ("sample"))
+            {
+                steps = "1. Open Samples and choose Easy for a guided map or Advanced for zone editing.\n"
+                        "2. Import WAV, AIFF, or FLAC files. Use Build Keyboard Map for pitched samples or Build Drum Kit for one-shots.\n"
+                        "3. In Advanced, use Find Missing and repair every red path. Select All before Auto Trim or batch edits.\n"
+                        "4. Press Play Mapper or Test Instrument and verify the on-screen keyboard or pads produce sound.\n"
+                        "5. Return to Ship and run Launch Doctor again.";
+            }
+            else if (title.containsIgnoreCase ("DSP graph"))
+            {
+                steps = "1. Open DSP and select the section named by the error.\n"
+                        "2. Remove broken edges or blocks whose source/target no longer exists.\n"
+                        "3. Ensure at least one enabled Source reaches an enabled Output through any desired Filter, Amp, Mod, and FX blocks.\n"
+                        "4. Hold a note in Preview while changing the selected block to confirm it changes the sound.\n"
+                        "5. Save the patch, return to Ship, and run Launch Doctor again.";
+            }
+            else if (title.containsIgnoreCase ("binding") || title.containsIgnoreCase ("control"))
+            {
+                steps = "1. Open Design and select the unbound control.\n"
+                        "2. In Inspector > DSP Assignment, choose a parameter supported by the current engine.\n"
+                        "3. Remove controls that are decorative or convert them to labels/images so buyers do not expect interaction.\n"
+                        "4. Open Brand or Test and verify every control changes the runtime sound.\n"
+                        "5. Return to Ship and run Launch Doctor again.";
+            }
+            else if (title.containsIgnoreCase ("preset"))
+            {
+                steps = "1. Build and audition the complete sound state in DSP, Samples, and MIDI.\n"
+                        "2. Save it as a full Patch-backed preset, not only a section preset.\n"
+                        "3. Name the preset and mark one reliable preset as Default.\n"
+                        "4. Reload it in Brand/Test and confirm sound, mappings, controls, and MIDI all restore.\n"
+                        "5. Return to Ship and run Launch Doctor again.";
+            }
+            else if (title.containsIgnoreCase ("artwork") || title.containsIgnoreCase ("metadata")
+                     || title.containsIgnoreCase ("white-label") || title.containsIgnoreCase ("wow"))
+            {
+                steps = "1. Open Brand and complete Identity, artwork, title bar, colors, and customer-facing copy.\n"
+                        "2. Use local artwork files that will be packaged with the instrument.\n"
+                        "3. Verify the full Player preview at the final export size, including every tab and control.\n"
+                        "4. Save the project, return to Ship, and run Launch Doctor again.";
+            }
+            else if (title.containsIgnoreCase ("licens"))
+            {
+                steps = "1. Open Settings > Licensing + Commerce.\n"
+                        "2. Enter the product ID used by Plugin.club and the licensing URL ending in /functions/v1/activateLicense.\n"
+                        "3. Add the public verification key if the selected license mode requires signed offline data.\n"
+                        "4. Test activation, offline behavior, and an invalid license in the exported Player.\n"
+                        "5. Return to Ship and run Launch Doctor again.";
+            }
+            else if (title.containsIgnoreCase ("Plugin.club"))
+            {
+                steps = "1. Open Settings > Publishing.\n"
+                        "2. Set the seller endpoint to https://plugin.club/functions/v1/sellerImport.\n"
+                        "3. Sign in to Plugin.club (Device Auth) or paste a Bearer token override, then save Settings.\n"
+                        "4. Publish a private draft and confirm Studio receives a draft ID and edit URL.\n"
+                        "5. Return to Ship and run Launch Doctor again.";
+            }
+            else if (title.containsIgnoreCase ("CircleSEQ") || title.containsIgnoreCase ("performance engine"))
+            {
+                steps = "1. Open Perform and add or enable the MIDI Playground/CircleSEQ engine.\n"
+                        "2. Connect each lane to Notes, Drums, Samples, or FX and assign its target sound.\n"
+                        "3. Add buyer-facing Play, Stop, BPM, and lane controls to Design.\n"
+                        "4. Verify playback and host sync in Brand/Test.\n"
+                        "5. Return to Ship and run Launch Doctor again.";
+            }
+            else if (title.containsIgnoreCase ("distribution") || title.containsIgnoreCase ("bundle"))
+            {
+                steps = "1. Build the Release configuration and the PatchCraftRcBundle target.\n"
+                        "2. Confirm Studio, Player, Player FX, factory content, licenses, and installer resources exist in the bundle.\n"
+                        "3. Run the release checklist and install on a clean test machine or Windows user profile.\n"
+                        "4. Return to Ship and run Launch Doctor again.";
+            }
+            else
+            {
+                steps = "1. Read the issue detail below and open the suggested tool.\n"
+                        "2. Correct the missing or invalid value at its source rather than hiding the warning.\n"
+                        "3. Test the exact behavior in Brand/Test or the exported Player.\n"
+                        "4. Return to Ship and run Launch Doctor again.";
+            }
+
+            return steps + "\n\nDetected issue:\n" + detail;
         }
 
         static juce::File resolveAssetPath (const PatchCraftProject& project, juce::String path)
@@ -409,6 +496,31 @@ namespace patchcraft
                     item.action();
             };
             addAndMakeVisible (actionButton);
+
+            guideButton.setButtonText ("How to Fix");
+            guideButton.getProperties().set ("smallButton", true);
+            guideButton.getProperties().set ("fontSize", 11.0);
+            guideButton.setVisible (item.severity == Severity::Warning || item.severity == Severity::Error);
+            guideButton.onClick = [titleText = item.title,
+                                   detailText = item.detail,
+                                   action = item.action,
+                                   actionText = item.actionLabel]
+            {
+                auto options = juce::MessageBoxOptions()
+                    .withIconType (juce::MessageBoxIconType::NoIcon)
+                    .withTitle ("Repair Guide: " + titleText)
+                    .withMessage (remediationForCheck (titleText, detailText));
+                if (action)
+                    options = options.withButton (actionText.isNotEmpty() ? actionText : juce::String ("Open Tool"));
+                options = options.withButton ("Close");
+                juce::AlertWindow::showAsync (options,
+                    [action] (int result)
+                    {
+                        if (result == 1 && action)
+                            action();
+                    });
+            };
+            addAndMakeVisible (guideButton);
         }
 
         void paint (juce::Graphics& g) override
@@ -436,9 +548,16 @@ namespace patchcraft
             status.setBounds (area.removeFromLeft (54));
             area.removeFromLeft (10);
 
-            auto right = area.removeFromRight (item.actionLabel.isNotEmpty() ? 136 : 0);
+            const bool hasGuide = item.severity == Severity::Warning || item.severity == Severity::Error;
+            const int buttonCount = (item.actionLabel.isNotEmpty() ? 1 : 0) + (hasGuide ? 1 : 0);
+            auto right = area.removeFromRight (buttonCount > 0 ? buttonCount * 112 : 0);
             if (! right.isEmpty())
-                actionButton.setBounds (right.removeFromTop (34).reduced (4, 0));
+            {
+                if (hasGuide)
+                    guideButton.setBounds (right.removeFromLeft (112).removeFromTop (34).reduced (4, 0));
+                if (item.actionLabel.isNotEmpty())
+                    actionButton.setBounds (right.removeFromLeft (112).removeFromTop (34).reduced (4, 0));
+            }
 
             title.setBounds (area.removeFromTop (24));
             detail.setBounds (area);
@@ -450,6 +569,7 @@ namespace patchcraft
         juce::Label title;
         juce::Label detail;
         juce::TextButton actionButton;
+        juce::TextButton guideButton;
     };
 
     class LaunchCenterPage::DemoTile final : public juce::Component
@@ -625,12 +745,12 @@ namespace patchcraft
         demoBody.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
         addAndMakeVisible (demoBody);
 
-        doctorTitle.setText ("Launch Doctor", juce::dontSendNotification);
+        doctorTitle.setText ("Ship Doctor", juce::dontSendNotification);
         doctorTitle.setFont (juce::Font (16.0f, juce::Font::bold));
         doctorTitle.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textBright());
         addAndMakeVisible (doctorTitle);
 
-        doctorBody.setText ("Run checks before you ship. Fix blockers first, then review warnings.",
+        doctorBody.setText ("Fix blockers before export. Missing samples, artwork, bindings, and presets show as FIX rows below.",
                             juce::dontSendNotification);
         doctorBody.setFont (juce::Font (12.0f));
         doctorBody.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
@@ -660,6 +780,7 @@ namespace patchcraft
         styleActionButton (createFromPromptButton, true);
         styleActionButton (blankProjectButton, false);
         styleActionButton (synthStarterButton, false);
+        styleActionButton (hybridStarterButton, false);
         styleActionButton (sampleStarterButton, false);
         styleActionButton (drumStarterButton, false);
         styleActionButton (fxStarterButton, false);
@@ -674,31 +795,30 @@ namespace patchcraft
         {
             owner.setBottomTab (BottomPanel::Page::Branding);
             if (! owner.isPreviewActive())
-                owner.togglePreview();
+                owner.toggleCustomerPreview();
         };
         exportPackButton.onClick = [this] { owner.exportPack(); };
         exportVstButton.onClick = [this] { owner.exportVstPlugin(); };
         publishButton.onClick = [this] { owner.publishToPluginClub(); };
         createFromPromptButton.onClick = [this] { createSimplePluginFromPrompt(); };
-        blankProjectButton.onClick = [this]
-        {
-            owner.newProject();
-            owner.setBottomTab (BottomPanel::Page::Design);
-            refresh();
-        };
-        synthStarterButton.onClick = [this] { createSimplePluginFromPrompt ("synth"); };
-        sampleStarterButton.onClick = [this] { createSimplePluginFromPrompt ("sample"); };
-        drumStarterButton.onClick = [this] { createSimplePluginFromPrompt ("drum"); };
-        fxStarterButton.onClick = [this] { createSimplePluginFromPrompt ("fx"); };
+        blankProjectButton.onClick = [this] { owner.newProject(); };
+        synthStarterButton.onClick = [this] { owner.createProductProject (ProductKind::SynthInstrument); refresh(); };
+        hybridStarterButton.onClick = [this] { owner.createProductProject (ProductKind::HybridInstrument); refresh(); };
+        sampleStarterButton.onClick = [this] { owner.createProductProject (ProductKind::SampleInstrument); refresh(); };
+        drumStarterButton.onClick = [this] { owner.createProductProject (ProductKind::DrumMachine); refresh(); };
+        fxStarterButton.onClick = [this] { owner.createProductProject (ProductKind::FXPlugin); refresh(); };
 
         outputFolderButton.setTooltip ("Choose where Launch bundles and Product Page exports are written.");
         bundleButton.setTooltip ("Create the complete launch folder: pack payload, installer files, sales copy, QA docs, and Plugin.club metadata.");
         customerWizardButton.setTooltip ("Open the white-label customer package wizard for installer, license, first-run, support, and DAW QA handoff.");
         productPageButton.setTooltip ("Open the sales page builder: offer copy, price, CTA, checkout link, demos, HTML export, and Plugin.club metadata.");
 
+        publishButton.setVisible (false);
+        publishButton.setEnabled (false);
+
         for (auto* button : { &refreshButton, &outputFolderButton, &bundleButton, &customerWizardButton, &productPageButton, &testButton,
-                              &exportPackButton, &exportVstButton, &publishButton, &createFromPromptButton, &blankProjectButton,
-                              &synthStarterButton, &sampleStarterButton, &drumStarterButton, &fxStarterButton })
+                              &exportPackButton, &exportVstButton, &createFromPromptButton, &blankProjectButton,
+                              &synthStarterButton, &hybridStarterButton, &sampleStarterButton, &drumStarterButton, &fxStarterButton })
             addAndMakeVisible (*button);
 
         demoViewport.setViewedComponent (&demoContent, false);
@@ -714,7 +834,7 @@ namespace patchcraft
         rebuildDemoTiles();
         refresh();
         updateOutputFolderLabel();
-        setActiveTab (ContentTab::Overview);
+        setActiveTab (ContentTab::Doctor);
     }
 
     void LaunchCenterPage::setActiveTab (ContentTab tab)
@@ -750,15 +870,15 @@ namespace patchcraft
         const bool demos = activeTab == ContentTab::Demos;
         const bool doctor = activeTab == ContentTab::Doctor;
 
-        statusBadge.setVisible (overview);
-        summaryLabel.setVisible (overview);
-        exportShipLabel.setVisible (overview);
-        exportToolsLabel.setVisible (overview);
-        outputFolderLabel.setVisible (overview || create);
+        statusBadge.setVisible (overview || doctor);
+        summaryLabel.setVisible (overview || doctor);
+        exportShipLabel.setVisible (overview || doctor);
+        exportToolsLabel.setVisible (overview || doctor);
+        outputFolderLabel.setVisible (overview || create || doctor);
 
         for (auto* button : { &exportPackButton, &exportVstButton, &publishButton, &bundleButton,
                               &refreshButton, &outputFolderButton, &testButton, &customerWizardButton, &productPageButton })
-            button->setVisible (overview);
+            button->setVisible (overview || doctor);
 
         creatorTitle.setVisible (create);
         creatorBody.setVisible (create);
@@ -767,8 +887,9 @@ namespace patchcraft
         createFromPromptButton.setVisible (create);
         blankProjectButton.setVisible (create);
         synthStarterButton.setVisible (create);
+        hybridStarterButton.setVisible (false);
         sampleStarterButton.setVisible (create);
-        drumStarterButton.setVisible (create);
+        drumStarterButton.setVisible (false);
         fxStarterButton.setVisible (create);
 
         demoTitle.setVisible (demos);
@@ -1029,7 +1150,7 @@ namespace patchcraft
     std::vector<LaunchCenterPage::CheckItem> LaunchCenterPage::buildChecks()
     {
         std::vector<CheckItem> checks;
-        const auto& project = owner.getProject();
+        auto& project = owner.getProject();
         const auto& manifest = project.getManifest();
         const auto engine = project.getEngineType();
 
@@ -1042,6 +1163,16 @@ namespace patchcraft
             checks.push_back ({ severity, std::move (titleText), std::move (detailText),
                                 std::move (actionLabel), std::move (action) });
         };
+
+        add (Severity::Info,
+             "Player preview contract",
+             "Sound/Chop local audition is for editing. Brand, Test, and export use the PackRuntime host — verify there before shipping.",
+             "Test Player",
+             [this]
+             {
+                 owner.syncExportPreview();
+                 owner.setBottomTab (BottomPanel::Page::Branding);
+             });
 
         const bool nameIsDefault = manifest.instrumentName.trim().isEmpty()
             || manifest.instrumentName.equalsIgnoreCase ("Untitled Instrument");
@@ -1067,7 +1198,10 @@ namespace patchcraft
                  manifest.instrumentName + " by " + manifest.creator + " has launch-ready name, creator, category, version, and description.");
         }
 
-        const bool sampleBased = engine.equalsIgnoreCase ("sample") || engine.equalsIgnoreCase ("drum") || isDrumProject (project);
+        const bool sampleBased = engine.equalsIgnoreCase ("sample") || engine.equalsIgnoreCase ("drum")
+            || (isDrumProject (project)
+                && ! engine.equalsIgnoreCase ("synth")
+                && ! engine.equalsIgnoreCase ("fx"));
         if (sampleBased)
         {
             const auto health = SampleMap::evaluateHealth (project.getSampleMap(), project.getProjectFolder(), engine);
@@ -1082,10 +1216,10 @@ namespace patchcraft
             else if (health.totalZones == 0)
             {
                 add (Severity::Error,
-                     "No playable sample zones",
+                     "Missing samples",
                      "Sample and drum instruments need mapped zones/pads before they can be sold or exported.",
                      "Import Samples",
-                     [this] { owner.setBottomTab (BottomPanel::Page::Samples); });
+                     [this] { owner.setBottomTab (BottomPanel::Page::Build); });
             }
             else
             {
@@ -1101,6 +1235,9 @@ namespace patchcraft
                      health.issues.isEmpty() ? std::function<void()>() : [this] { owner.setBottomTab (BottomPanel::Page::Samples); });
             }
         }
+
+        if (project.getDspGraph().ensureAuthoredOutput())
+            project.notifyChanged (PatchCraftProject::ChangeScope::dspRealtime);
 
         const int sourceBlocks = countBlocksInSection (project, "source");
         const int filterBlocks = countBlocksInSection (project, "filter");
@@ -1190,8 +1327,9 @@ namespace patchcraft
         }
         else if (unboundControls > 0)
         {
-            add (Severity::Warning,
-                 "Some controls are not connected",
+            const bool quickBuild = manifest.quickBuildMode;
+            add (quickBuild ? Severity::Error : Severity::Warning,
+                 quickBuild ? "Missing control bindings" : "Some controls are not connected",
                  juce::String (boundControls) + " controls are bound, "
                     + juce::String (unboundControls) + " runtime controls are unbound. Unbound controls confuse customers.",
                  "Assign Controls",
@@ -1368,12 +1506,12 @@ namespace patchcraft
         if (project.getPatches().empty() || project.getPresets().empty())
         {
             add (Severity::Error,
-                 "No sellable playable presets yet",
+                 "Missing presets",
                  "A shipped product needs at least one full Patch-backed preset. Current counts: "
                     + plural ((int) project.getPatches().size(), "patch", "patches") + ", "
                     + plural ((int) project.getPresets().size(), "preset", "presets") + ".",
-                 "Save Default",
-                 [this] { owner.setDefaultPreset(); refresh(); });
+                 "Build",
+                 [this] { owner.setBottomTab (BottomPanel::Page::Build); });
         }
         else if (! hasDefaultPreset)
         {
@@ -1395,8 +1533,8 @@ namespace patchcraft
         if (manifest.backgroundImage.trim().isEmpty() && manifest.libraryThumbnail.trim().isEmpty()
             && manifest.playerLogoImage.trim().isEmpty() && manifest.playerTitleBannerImage.trim().isEmpty())
         {
-            add (Severity::Warning,
-                 "Branding artwork is missing",
+            add (manifest.quickBuildMode ? Severity::Error : Severity::Warning,
+                 "Missing artwork",
                  "Add background artwork, thumbnail art, and optional logo so the product page and Player feel premium.",
                  "Brand Lab",
                  [this] { owner.setBottomTab (BottomPanel::Page::Branding); });
@@ -1407,7 +1545,7 @@ namespace patchcraft
               || (manifest.playerTitleBannerImage.isNotEmpty() && ! assetExists (project, manifest.playerTitleBannerImage)))
         {
             add (Severity::Error,
-                 "Branding references missing files",
+                 "Missing artwork files",
                  "One or more artwork paths are set but the file cannot be found. Export will either fail or generate fallback artwork.",
                  "Fix Artwork",
                  [this] { owner.setBottomTab (BottomPanel::Page::Branding); });
@@ -1496,29 +1634,33 @@ namespace patchcraft
         }
 
         const auto cloud = AiAssistService::loadCloudIntegrationConfig();
-        if (cloud.pluginClubEndpoint.trim().isEmpty() || cloud.pluginClubApiKey.trim().isEmpty())
+        const auto publishOptions = PluginClubPublisher::optionsFromCloudConfig (cloud);
+        if (publishOptions.endpoint.isEmpty() || publishOptions.apiKey.isEmpty())
         {
             add (Severity::Warning,
                  "Plugin.club direct publish is not fully configured",
-                 "Add the seller endpoint and seller API key in Settings to publish draft packs directly from Studio.",
+                 "Add the seller endpoint and seller API key in Settings (or set PLUGINCLUB_API_KEY) to publish draft packs directly from Studio.",
                  "Settings",
                  [this] { owner.openSettings(); });
         }
-        else if (PluginClubPublisher::normaliseSellerImportEndpoint (cloud.pluginClubEndpoint).isEmpty())
+        else if (PluginClubPublisher::normaliseSellerImportEndpoint (cloud.pluginClubEndpoint.trim().isNotEmpty()
+                                                                        ? cloud.pluginClubEndpoint
+                                                                        : publishOptions.endpoint).isEmpty())
         {
             add (Severity::Error,
                  "Plugin.club endpoint is invalid",
-                 "Use https://plugin.club/functions or https://plugin.club/functions/sellerImport in Settings.",
+                 "Use https://plugin.club/functions/v1 or https://plugin.club/functions/v1/sellerImport in Settings.",
                  "Settings",
                  [this] { owner.openSettings(); });
         }
-        else if (PluginClubPublisher::normaliseSellerImportEndpoint (cloud.pluginClubEndpoint)
-                    != cloud.pluginClubEndpoint.trim().trimCharactersAtEnd ("/"))
+        else if (cloud.pluginClubEndpoint.trim().isNotEmpty()
+                 && PluginClubPublisher::normaliseSellerImportEndpoint (cloud.pluginClubEndpoint)
+                        != cloud.pluginClubEndpoint.trim().trimCharactersAtEnd ("/"))
         {
             add (Severity::Warning,
                  "Plugin.club endpoint will be normalized",
                  "Studio will publish to " + PluginClubPublisher::normaliseSellerImportEndpoint (cloud.pluginClubEndpoint)
-                    + ". Update Settings to include /functions/sellerImport and avoid Base44 405 errors.",
+                    + ". Update Settings to include /functions/v1/sellerImport and avoid Base44 405 errors.",
                  "Settings",
                  [this] { owner.openSettings(); });
         }
@@ -2012,7 +2154,7 @@ namespace patchcraft
         lines.add ("- Load PatchCraft Player and Player FX in FL Studio.");
         lines.add ("- If VST Expansion is installed, export standalone VST3 and rescan it in FL Studio.");
         lines.add ("- Confirm hardware MIDI, mod wheel, expression, sustain, tabs, labels, pads/drum grids, presets, and volume.");
-        lines.add ("- Publish a Plugin.club draft through `https://plugin.club/functions/sellerImport`.");
+        lines.add ("- Publish a Plugin.club draft through `https://plugin.club/functions/v1/sellerImport`.");
         return lines.joinIntoString ("\n");
     }
 
@@ -2136,8 +2278,8 @@ namespace patchcraft
         lines.add ("- Sales headline: " + salesHeadline (manifest));
         lines.add ("- Price: " + priceText (manifest));
         lines.add ("- Checkout URL: " + (manifest.salesCheckoutUrl.isNotEmpty() ? manifest.salesCheckoutUrl : "TODO"));
-        lines.add ("- Plugin.club endpoint: `https://plugin.club/functions/sellerImport`");
-        lines.add ("- Launch licensing endpoint: `https://plugin.club/functions/deviceAuth` until AudiLock becomes the source of truth.");
+        lines.add ("- Plugin.club endpoint: `https://plugin.club/functions/v1/sellerImport`");
+        lines.add ("- Launch licensing endpoint: `https://plugin.club/functions/v1/activateLicense` (Player key activation). Studio seller login uses deviceAuthStart/Poll/Logout.");
         lines.add ("- Generated files: `sales-page.md`, `sales-page.html`, `pluginclub-metadata-preview.json`, and `release-manifest.json`.");
         lines.add ("");
         lines.add ("## Current Blocking Items");
@@ -2684,7 +2826,7 @@ namespace patchcraft
         obj->setProperty ("launch_warnings", warningCount);
         obj->setProperty ("factory_demo_count", countRuntimeFactoryDemos());
         obj->setProperty ("runtime_folder", appDir.getFullPathName());
-        obj->setProperty ("pluginclub_endpoint", "https://plugin.club/functions/sellerImport");
+        obj->setProperty ("pluginclub_endpoint", "https://plugin.club/functions/v1/sellerImport");
         obj->setProperty ("installer_id", whiteLabelInstallerId (manifest));
         obj->setProperty ("installer_manifest", "installer/white-label-product.json");
         obj->setProperty ("artifact_manifest", "artifact-manifest.json");
@@ -3579,9 +3721,9 @@ namespace patchcraft
 
             content.removeFromTop (12);
             auto quick = content.removeFromTop (36);
-            for (auto* button : { &synthStarterButton, &sampleStarterButton, &drumStarterButton, &fxStarterButton })
+            for (auto* button : { &synthStarterButton, &sampleStarterButton, &fxStarterButton })
             {
-                button->setBounds (quick.removeFromLeft (juce::jmax (96, quick.getWidth() / 4 - 8)));
+                button->setBounds (quick.removeFromLeft (juce::jmax (88, quick.getWidth() / 3 - 8)));
                 quick.removeFromLeft (8);
             }
 
@@ -3607,9 +3749,35 @@ namespace patchcraft
         }
         else
         {
-            doctorTitle.setBounds (content.removeFromTop (24));
-            doctorBody.setBounds (content.removeFromTop (34));
+            auto summaryCard = content.removeFromTop (juce::jmax (96, content.getHeight() / 4)).reduced (2);
+            statusBadge.setBounds (summaryCard.removeFromTop (28).reduced (2));
+            summaryCard.removeFromTop (4);
+            summaryLabel.setBounds (summaryCard);
+
+            content.removeFromTop (10);
+            auto shipRow = content.removeFromTop (36);
+            const int shipGap = 8;
+            const int shipW = juce::jmax (120, (shipRow.getWidth() - shipGap * 3) / 4);
+            for (auto* button : { &exportPackButton, &exportVstButton, &publishButton, &bundleButton })
+            {
+                button->setBounds (shipRow.removeFromLeft (shipW).reduced (1));
+                shipRow.removeFromLeft (shipGap);
+            }
+
             content.removeFromTop (8);
+            auto toolsRow = content.removeFromTop (34);
+            const int toolGap = 8;
+            const int toolW = juce::jmax (108, (toolsRow.getWidth() - toolGap * 4) / 5);
+            for (auto* button : { &refreshButton, &outputFolderButton, &testButton, &customerWizardButton, &productPageButton })
+            {
+                button->setBounds (toolsRow.removeFromLeft (toolW).reduced (1));
+                toolsRow.removeFromLeft (toolGap);
+            }
+
+            content.removeFromTop (10);
+            doctorTitle.setBounds (content.removeFromTop (22));
+            doctorBody.setBounds (content.removeFromTop (30));
+            content.removeFromTop (6);
             checksViewport.setBounds (content);
 
             const int width = juce::jmax (360, checksViewport.getWidth() - checksViewport.getScrollBarThickness() - 6);

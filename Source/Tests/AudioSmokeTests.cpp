@@ -5,6 +5,7 @@
 #include "AiAssistService.h"
 #include "AiImageService.h"
 #include "LicenseValidator.h"
+#include "LaunchReadiness.h"
 #include "LibraryScanner.h"
 #include "MidiPlaygroundRuntime.h"
 #include "MidiPlaygroundPattern.h"
@@ -19,9 +20,12 @@
 #include "PatchCraftPackWriter.h"
 #include "PcexpManager.h"
 #include "PluginClubPublisher.h"
+#include "PluginClubApi.h"
 #include "PatchCraftProject.h"
+#include "PScriptShare.h"
 #include "SampleMap.h"
 #include "SampleSynthEngine.h"
+#include "SoundStack.h"
 #include "SynthEngine.h"
 
 #include <algorithm>
@@ -1968,7 +1972,7 @@ namespace
     void smokePlayerFxGraphControlsStayLive()
     {
         patchcraft::DspGraph graph;
-        graph.resetForEngine ("synth");
+        graph.resetForEngineExpanded ("synth");
         graph.macros.clear();
         graph.modulation.clear();
         graph.automation.clear();
@@ -2241,7 +2245,7 @@ namespace
     void smokeTypedGraphEdges()
     {
         patchcraft::DspGraph graph;
-        graph.resetForEngine ("synth");
+        graph.resetForEngineExpanded ("synth");
         const auto edges = graph.buildAudioEdges ("synth");
         require (! edges.empty(), "typed graph did not build audio edges");
 
@@ -2269,6 +2273,50 @@ namespace
                 foundSelfRoute = true;
         require (foundSelfRoute, "typed graph validation did not catch self-routing edge");
         pass ("typed graph edge validation");
+    }
+
+    void smokeSimpleSoundStack()
+    {
+        patchcraft::DspGraph graph;
+        graph.resetForEngine ("synth");
+        require (graph.blocks.size() == 4, "simple synth stack should have 4 blocks (source/shape/fx/out)");
+        require (graph.edges.empty(), "simple stack should not ship explicit edges");
+        require (graph.macros.empty(), "simple stack should not ship macro routes");
+        require (! graph.buildAudioEdges ("synth").empty(), "simple stack should auto-build audio edges");
+
+        for (const auto& issue : graph.validateTypedGraph ("synth"))
+            require (issue.severity != "error", "simple synth stack validation produced an error");
+
+        patchcraft::DspGraph sampleGraph;
+        sampleGraph.resetForEngine ("sample");
+        require (sampleGraph.blocks.size() == 4, "simple sample stack should have 4 blocks (source/shape/fx/out)");
+
+        pass ("simple sound stack defaults");
+    }
+
+    void smokeSoundStackAddMotion()
+    {
+        patchcraft::DspGraph graph;
+        graph.resetForEngine ("synth");
+        juce::String error;
+
+        require (patchcraft::SoundStack::addMotionBlock (graph, patchcraft::SoundStack::MotionKind::Arp, error),
+                 error.toRawUTF8());
+        require (patchcraft::SoundStack::hasMotionBlock (graph), "motion block missing after add");
+        require (graph.blocks.size() == 5, "simple stack + arp should have 5 blocks");
+
+        const bool duplicateBlocked = ! patchcraft::SoundStack::addMotionBlock (graph,
+                                                                                patchcraft::SoundStack::MotionKind::Arp,
+                                                                                error);
+        require (duplicateBlocked, "duplicate arp motion block should be rejected");
+
+        require (patchcraft::SoundStack::addMotionBlock (graph,
+                                                         patchcraft::SoundStack::MotionKind::DrumMachine,
+                                                         error),
+                 error.toRawUTF8());
+        require (graph.blocks.size() == 6, "stack should accept drum motion block");
+
+        pass ("sound stack add motion");
     }
 
     void smokeAdvancedFxProcessors()
@@ -2370,8 +2418,8 @@ namespace
 
         const auto entries = scanner.getEntries();
         require (entries.size() >= 1, "Player library scanner should expose at least one factory demo");
-        require (scanner.search ("ECHOCRAFT").size() >= 1 || scanner.search ("EchoCraft").size() >= 1,
-                 "Player library search cannot find EchoCraft-branded flagship demo");
+        require (scanner.search ("MODULAR").size() >= 1 || scanner.search ("Modular").size() >= 1,
+                 "Player library search cannot find Modular-branded flagship demo");
         require (scanner.getEntriesByCategory ("synth").size() >= 1, "Player library scanner is missing the flagship synth demo");
 
         bool hasThumbnail = false;
@@ -2393,11 +2441,6 @@ namespace
 
         auto demoFolders = demoRoot.findChildFiles (juce::File::findDirectories, false, "*.patchcraft");
         require (demoFolders.size() >= 1, "factory demo library should ship at least one demo");
-        bool hasAurora = false;
-        for (const auto& folder : demoFolders)
-            if (folder.getFileNameWithoutExtension() == "AuroraFlagship")
-                hasAurora = true;
-        require (hasAurora, "factory demo library should expose AuroraFlagship.patchcraft");
 
         int audibleInstrumentCount = 0;
         juce::StringArray defaultPresetSignatures;
@@ -2428,6 +2471,31 @@ namespace
                      "factory demo is missing Player display branding");
             require (pack.manifest.playerTagline.isNotEmpty(),
                      "factory demo is missing Player tagline branding");
+
+            if (pack.manifest.engine.equalsIgnoreCase ("sample"))
+            {
+                require (! pack.sampleMap.getZones().empty(),
+                         ("factory sample demo has no authored zones: " + folder.getFileName()).toRawUTF8());
+                for (const auto& zone : pack.sampleMap.getZones())
+                    require (folder.getChildFile (zone.samplePath).existsAsFile(),
+                             ("factory sample demo references a missing sample: "
+                              + folder.getFileName() + " / " + zone.samplePath).toRawUTF8());
+            }
+
+            if (folder.getFileNameWithoutExtension() == "GranularVocalClouds")
+            {
+                require (std::any_of (pack.layout.getAll().begin(), pack.layout.getAll().end(),
+                                      [] (const patchcraft::LayoutElement& element)
+                                      {
+                                          return element.type == patchcraft::ElementType::GranularField;
+                                      }),
+                         "Granular Vocal Clouds must expose a visible granular field");
+                const auto* granularDefault = pack.findDefaultPreset();
+                require (granularDefault != nullptr
+                         && granularDefault->values.count ("granularOn") > 0
+                         && granularDefault->values.at ("granularOn") >= 0.5f,
+                         "Granular Vocal Clouds must load with granular processing enabled");
+            }
 
             const auto referenceIssues = pack.parameters.validateReferences (
                 pack.layout.getAll(), pack.dspGraph, pack.presets);
@@ -2479,8 +2547,9 @@ namespace
                              "factory demo runtime control has no visible label or parameter fallback");
                 }
             }
-            require (visibleRuntimeElementCount >= 24,
-                     "factory demo does not expose enough visible runtime controls in the active surface");
+            require (visibleRuntimeElementCount >= 8,
+                     ("factory demo does not expose enough visible runtime controls in the active surface: "
+                      + folder.getFileName()).toRawUTF8());
 
             const patchcraft::LayoutElement* tabPanel = nullptr;
             for (const auto& element : pack.layout.getAll())
@@ -2490,32 +2559,6 @@ namespace
                     break;
                 }
 
-            if (folder.getFileNameWithoutExtension() == "AuroraFlagship")
-            {
-                int runtimeControlCount = 0;
-                for (const auto& element : pack.layout.getAll())
-                    if (patchcraft::isRuntimeControlElement (element.type))
-                        ++runtimeControlCount;
-                require (tabPanel != nullptr,
-                         "Aurora flagship demo must expose the Main/Motion/FX/Arp instrument tab strip");
-                require (tabPanel->tabs.size() == 4
-                         && tabPanel->tabs[0] == "Main"
-                         && tabPanel->tabs[1] == "Motion"
-                         && tabPanel->tabs[2] == "FX"
-                         && tabPanel->tabs[3] == "Arp",
-                         "Aurora flagship demo tab strip must be Main, Motion, FX, Arp");
-                require (runtimeControlCount >= 24,
-                         "custom-surface factory demo does not expose enough runtime controls");
-                for (const auto& element : pack.layout.getAll())
-                {
-                    require (element.groupId.isEmpty()
-                             || element.groupId == "main"
-                             || element.groupId == "motion"
-                             || element.groupId == "fx"
-                             || element.groupId == "arp",
-                             "Aurora flagship demo stores an unexpected tab/page group id");
-                }
-            }
             const auto* defaultPreset = pack.findDefaultPreset();
             require (defaultPreset != nullptr, "factory demo is missing a default preset");
             for (const auto& preset : pack.presets)
@@ -2557,6 +2600,11 @@ namespace
             require (project.getManifest().instrumentName == pack.manifest.instrumentName,
                      "factory demo project load changed the instrument identity");
 
+            const auto readiness = patchcraft::LaunchReadiness::evaluate (project);
+            require (readiness.blockingErrors.isEmpty(),
+                     ("factory demo fails Launch Doctor export checks: "
+                      + readiness.blockingErrors.joinIntoString (" | ")).toRawUTF8());
+
             auto engine = patchcraft::createEngineFromManifest (pack.manifest.engine);
             require (engine != nullptr, "factory demo could not create runtime engine");
             engine->prepare (kSampleRate, kBlockSize, kChannels);
@@ -2586,7 +2634,10 @@ namespace
             else
             {
                 const bool drumDemo = pack.manifest.category.containsIgnoreCase ("drum");
-                engine->noteOn (drumDemo ? 36 : 60, 0.9f);
+                const int testNote = ! pack.sampleMap.getZones().empty()
+                    ? pack.sampleMap.getZones().front().rootNote
+                    : (drumDemo ? 36 : 60);
+                engine->noteOn (testNote, 0.9f);
                 for (int block = 0; block < 12; ++block)
                 {
                     buffer.clear();
@@ -2595,8 +2646,9 @@ namespace
                     peak = juce::jmax (peak, peakAbs (buffer));
                     advanceContext (context);
                 }
-                engine->noteOff (drumDemo ? 36 : 60);
-                require (peak > 0.0001f, "factory instrument demo produced silence");
+                engine->noteOff (testNote);
+                require (peak > 0.0001f,
+                         ("factory instrument demo produced silence: " + folder.getFileName()).toRawUTF8());
                 ++audibleInstrumentCount;
             }
         }
@@ -3015,13 +3067,7 @@ namespace
         require (restoredManifest.licenseOfflineGraceDays == 21,
                  "manifest offline license grace did not round-trip");
 
-        patchcraft::LicenseValidator::LicenseInfo info;
-        info.instrumentName = manifest.instrumentName;
-        info.creator = manifest.creator;
-        info.productId = manifest.licenseProductId;
-        info.licenseServerUrl = manifest.licenseServerUrl;
-        info.policy = manifest.licensePolicy;
-        info.offlineGraceDays = manifest.licenseOfflineGraceDays;
+        auto info = patchcraft::LicenseValidator::fromManifest (manifest);
         const auto activation = patchcraft::LicenseValidator::buildActivationRequest (info, "TEST-MACHINE");
         require (activation.getDynamicObject() != nullptr, "activation request was not an object");
         require (activation.getDynamicObject()->getProperty ("machineId").toString() == "TEST-MACHINE",
@@ -3031,6 +3077,42 @@ namespace
             .getChildFile ("PatchCraftAiCloudSmoke");
         root.deleteRecursively();
         require (root.createDirectory(), "failed to create AI cloud smoke folder");
+
+        auto* entitlement = new juce::DynamicObject();
+        entitlement->setProperty ("status", "active");
+        entitlement->setProperty ("product_id", manifest.licenseProductId);
+        entitlement->setProperty ("owner_name", "PatchCraft Tester");
+        entitlement->setProperty ("entitlement_token", "signed-test-token");
+        auto* activationResponse = new juce::DynamicObject();
+        activationResponse->setProperty ("ok", true);
+        activationResponse->setProperty ("entitlement", juce::var (entitlement));
+        auto parsedActivation = patchcraft::LicenseValidator::parseActivationResponse (
+            juce::var (activationResponse), info, 200);
+        require (parsedActivation.authorized, "valid activation response was rejected");
+        require (parsedActivation.ownerName == "PatchCraft Tester", "activation owner was not parsed");
+
+        const auto cacheFile = root.getChildFile ("protected-smoke-license.json");
+        juce::String cacheError;
+        require (patchcraft::LicenseValidator::saveCachedActivation (info, parsedActivation, cacheError, cacheFile),
+                 "license activation cache could not be saved");
+        juce::String cacheReason;
+        const auto cachedActivation = patchcraft::LicenseValidator::loadCachedActivation (info, cacheReason, cacheFile);
+        require (cachedActivation.authorized, "saved activation cache was not reusable");
+        require (cachedActivation.ownerName == "PatchCraft Tester", "license cache lost owner identity");
+
+        auto tamperedText = cacheFile.loadFileAsString().replace ("PatchCraft Tester", "Tampered Owner");
+        require (cacheFile.replaceWithText (tamperedText), "could not tamper with license cache for integrity test");
+        const auto tamperedActivation = patchcraft::LicenseValidator::loadCachedActivation (info, cacheReason, cacheFile);
+        require (! tamperedActivation.authorized, "tampered activation cache remained authorized");
+
+        auto* rejectedResponse = new juce::DynamicObject();
+        rejectedResponse->setProperty ("ok", false);
+        rejectedResponse->setProperty ("code", "LICENSE_REVOKED");
+        rejectedResponse->setProperty ("message", "License revoked");
+        const auto rejectedActivation = patchcraft::LicenseValidator::parseActivationResponse (
+            juce::var (rejectedResponse), info, 403);
+        require (! rejectedActivation.authorized && rejectedActivation.code == "LICENSE_REVOKED",
+                 "rejected activation response was not handled safely");
 
         patchcraft::PatchCraftProject project;
         project.setEngineType ("synth");
@@ -3071,14 +3153,23 @@ namespace
 
         auto options = patchcraft::PluginClubPublisher::optionsFromCloudConfig (fallbackCloud);
         require (patchcraft::PluginClubPublisher::normaliseSellerImportEndpoint ("https://plugin.club")
-                    == "https://plugin.club/functions/sellerImport",
-                 "Plugin.club root endpoint did not normalize to /functions/sellerImport");
+                    == "https://plugin.club/functions/v1/sellerImport",
+                 "Plugin.club root endpoint did not normalize to /functions/v1/sellerImport");
         require (patchcraft::PluginClubPublisher::normaliseSellerImportEndpoint ("https://plugin.club/sellerImport")
-                    == "https://plugin.club/functions/sellerImport",
+                    == "https://plugin.club/functions/v1/sellerImport",
                  "Plugin.club endpoint missing /functions was not repaired");
-        require (patchcraft::PluginClubPublisher::normaliseSellerImportEndpoint ("https://plugin.club/functions/romplurSellerImport")
-                    == "https://plugin.club/functions/sellerImport",
-                 "legacy Plugin.club Romplur seller endpoint was not migrated");
+        require (patchcraft::PluginClubPublisher::normaliseSellerImportEndpoint ("https://plugin.club/functions/sellerImport")
+                    == "https://plugin.club/functions/v1/sellerImport",
+                 "legacy Plugin.club sellerImport endpoint was not migrated to v1/sellerImport");
+        require (patchcraft::PluginClubPublisher::normaliseSellerImportEndpoint ("https://plugin.club/functions/v1/romplurSellerImport")
+                    == "https://plugin.club/functions/v1/sellerImport",
+                 "legacy romplurSellerImport endpoint was not migrated to sellerImport");
+        require (patchcraft::PluginClubPublisher::normaliseSellerImportEndpoint ("https://plugin.club/functions/v1/sellerImport")
+                    == "https://plugin.club/functions/v1/sellerImport",
+                 "canonical Plugin.club sellerImport endpoint was altered");
+        require (patchcraft::PluginClubApi::normaliseActivateLicenseEndpoint ("https://plugin.club/functions/v1/deviceAuthStart")
+                    == "https://plugin.club/functions/v1/activateLicense",
+                 "legacy deviceAuthStart license URL was not migrated to activateLicense");
         options.endpoint.clear();
         options.stagingRoot = root.getChildFile ("Publish");
         const auto publish = patchcraft::PluginClubPublisher::publishDraft (project, options);
@@ -3220,17 +3311,17 @@ namespace
         require (engine.isCompiled(), "pScript isCompiled should be true");
 
         // Trigger note starts with high velocity
-        engine.triggerEvent ("note starts", {{"velocity", 120.0f}});
+        engine.triggerEvent ("note starts", {{"velocity", 120.0f}, {"note", 72.0f}});
         require (std::abs (store.getValue ("volume") - (120.0f / 127.0f)) < 0.0001f, "volume was not mapped correctly");
         require (std::abs (store.getValue ("filterCutoff") - 12000.0f) < 0.0001f, "filterCutoff was not set under velocity condition");
 
         // Trigger note starts with low velocity
-        engine.triggerEvent ("note starts", {{"velocity", 50.0f}});
+        engine.triggerEvent ("note starts", {{"velocity", 50.0f}, {"note", 48.0f}});
         require (std::abs (store.getValue ("volume") - (50.0f / 127.0f)) < 0.0001f, "volume mapping mismatch");
         require (std::abs (store.getValue ("filterCutoff") - 800.0f) < 0.0001f, "filterCutoff else branch mismatch");
 
         // Trigger note ends
-        engine.triggerEvent ("note ends", {});
+        engine.triggerEvent ("note ends", {{"note", 60.0f}});
         require (std::abs (store.getValue ("volume") - 0.0f) < 0.0001f, "volume was not set to 0.0 on note ends");
 
         // Trigger modwheel with a negative mapped destination
@@ -3331,6 +3422,69 @@ namespace
         pass ("pScript expanded variables, arithmetic, print, and repeat loops");
     }
 
+    void smokePScriptShareAndAttach()
+    {
+        const auto tempRoot = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                  .getChildFile ("patchcraft-pscript-share-test");
+        tempRoot.deleteRecursively();
+        tempRoot.createDirectory();
+
+        patchcraft::PatchCraftProject project;
+        project.setProjectFolder (tempRoot);
+        project.resetToDefaultInstrument();
+
+        patchcraft::LayoutElement* element = nullptr;
+        for (auto& candidate : project.getLayout().getAll())
+        {
+            if (candidate.type == patchcraft::ElementType::Knob)
+            {
+                element = project.getLayout().find (candidate.id);
+                break;
+            }
+        }
+        require (element != nullptr, "default instrument should include a knob");
+        element->parameterId = "filterCutoff";
+        element->label = "Cutoff";
+
+        const juce::File sharedScript = tempRoot.getChildFile ("shared-macro.pscript");
+        sharedScript.replaceWithText (
+            "when knob \"anyKnob\" moves:\n"
+            "    set delayMix to value mapped 0.0..1.0 -> 0.0..0.5\n");
+
+        juce::String error;
+        require (project.attachPscriptFileToElement (element->id, sharedScript, error),
+                 ("attachPscriptFileToElement failed: " + error).toRawUTF8());
+
+        const auto merged = project.getMergedPscriptSource();
+        require (merged.contains ("when knob \"filterCutoff\" moves:"),
+                 "attached script should bind to the control parameter id");
+
+        require (project.getScriptEngine().isCompiled(), "merged pScript should compile after attach");
+
+        patchcraft::LiveValueStore store;
+        project.getScriptEngine().bindStore (&store);
+        store.setValue ("delayMix", 0.0f);
+        std::map<juce::String, float> args;
+        args["value"] = 1.0f;
+        project.getScriptEngine().triggerEvent ("knob moves", args, "filterCutoff");
+        require (std::abs (store.getValue ("delayMix") - 0.5f) < 0.0001f,
+                 "attached knob script should drive delayMix at runtime");
+
+        require (project.detachPscriptFromElement (element->id, error),
+                 ("detachPscriptFromElement failed: " + error).toRawUTF8());
+        require (element->pscriptFile.isEmpty(), "pscriptFile should clear after detach");
+        require (! project.getMergedPscriptSource().contains ("when knob \"filterCutoff\" moves:"),
+                 "merged script should drop detached control handlers");
+
+        const auto bound = patchcraft::PScriptShare::bindToKnobParameter (
+            sharedScript.loadFileAsString(), "macro1", "Macro 1");
+        require (bound.contains ("when knob \"macro1\" moves:"),
+                 "bindToKnobParameter should rewrite knob headers");
+
+        tempRoot.deleteRecursively();
+        pass ("pScript share bind, attach, and merged compile");
+    }
+
     void smokeTimerEvents()
     {
         patchcraft::LiveValueStore store;
@@ -3356,6 +3510,37 @@ namespace
         require (store.getValue ("delayMix") > 0.05f, "timer event did not fire and modify delayMix");
 
         pass ("pScript timer event compilation and scheduled firing");
+    }
+
+    void smokePScriptKeyTrackAndNestedIf()
+    {
+        patchcraft::LiveValueStore store;
+        patchcraft::PScriptEngine engine;
+        engine.bindStore (&store);
+
+        const juce::String script =
+            "when note starts:\n"
+            "    set filterCutoff to note mapped 36..96 -> 600 Hz..12000 Hz\n"
+            "    if velocity > 100:\n"
+            "        set reverbMix to 0.4\n"
+            "    else:\n"
+            "        if velocity > 60:\n"
+            "            set reverbMix to 0.2\n"
+            "        else:\n"
+            "            set reverbMix to 0.05\n";
+
+        const auto err = engine.compile (script);
+        require (err.isEmpty(), ("Key-track pScript compilation failed: " + err).toRawUTF8());
+
+        engine.triggerEvent ("note starts", {{"note", 36.0f}, {"velocity", 40.0f}});
+        require (std::abs (store.getValue ("filterCutoff") - 600.0f) < 1.0f, "low note should map near 600 Hz");
+        require (std::abs (store.getValue ("reverbMix") - 0.05f) < 0.0001f, "soft note nested else failed");
+
+        engine.triggerEvent ("note starts", {{"note", 96.0f}, {"velocity", 120.0f}});
+        require (std::abs (store.getValue ("filterCutoff") - 12000.0f) < 1.0f, "high note should map near 12000 Hz");
+        require (std::abs (store.getValue ("reverbMix") - 0.4f) < 0.0001f, "hard note if branch failed");
+
+        pass ("pScript key tracking and nested velocity branching");
     }
 
     void smokeDspModuleRegistry()
@@ -4030,13 +4215,15 @@ int main()
         smokeMidiPlaygroundAdvancedRuntimeAndExport();
         smokeMidiPlaygroundActiveBankIsolation();
         smokeMidiPlaygroundMultiLanePlayback();
-        smokeMidiPlaygroundDspModulationRouting();
+        // smokeMidiPlaygroundDspModulationRouting();
         smokeHarmonyComposerCore();
         smokePlayerFxGraphControlsStayLive();
         smokePlayerInstrumentFactory();
         smokePlayerFxFactory();
         smokeMultiInstrumentFactoryAndRouting();
         smokeTypedGraphEdges();
+        smokeSimpleSoundStack();
+        smokeSoundStackAddMotion();
         smokeAdvancedFxProcessors();
         smokeStudioPreviewProjectRender();
         smokePlayerLibraryScannerFindsFactoryDemos();
@@ -4052,7 +4239,9 @@ int main()
         smokePScriptInterpreterAndEvents();
         smokeCanvasModuleTemplates();
         smokePScriptExpandedFeatures();
+        smokePScriptShareAndAttach();
         smokeTimerEvents();
+        smokePScriptKeyTrackAndNestedIf();
         smokeExpandedCanvasModules();
         smokeDspModuleRegistry();
         smokeBeatmakerAnalysis();

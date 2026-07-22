@@ -1,4 +1,5 @@
 #include "SampleSynthEngine.h"
+#include "SampleSliceUtils.h"
 #include "PatchCraftPackFormat.h"
 #include "SampleMap.h"
 #include "DebugLog.h"
@@ -47,7 +48,7 @@ namespace patchcraft
             const auto numberText = id.substring (3, id.length() - suffix.length());
             const int oneBasedIndex = numberText.getIntValue();
             const int zeroBasedIndex = oneBasedIndex - 1;
-            return zeroBasedIndex >= 0 && zeroBasedIndex < 16 ? zeroBasedIndex : -1;
+            return zeroBasedIndex >= 0 && zeroBasedIndex < kMaxChopPads ? zeroBasedIndex : -1;
         }
 
         static float clampSampleValue (double value)
@@ -313,6 +314,9 @@ namespace patchcraft
         delayL.reset();
         delayR.reset();
         reverb.reset();
+        tapeLfoPhase = 0.0;
+        lastFbL = 0.0f;
+        lastFbR = 0.0f;
     }
 
     SampleSynthEngine::SineVoice* SampleSynthEngine::findFreeSineVoice()
@@ -494,6 +498,44 @@ namespace patchcraft
     void SampleSynthEngine::loadFromMap (const juce::File& projectFolder, const SampleMap& map)
     {
         loadFromPack (projectFolder, map);
+    }
+
+    void SampleSynthEngine::loadSingleZoneFromBuffer (const SampleZoneDef& zone,
+                                                      const juce::AudioBuffer<float>& buffer,
+                                                      double sourceSampleRate)
+    {
+        auto ls = std::make_shared<LoadedSample>();
+        ls->zone = zone;
+        ls->path = zone.samplePath;
+        ls->sourceSampleRate = sourceSampleRate > 0.0 ? sourceSampleRate : 44100.0;
+        ls->buffer.makeCopyOf (buffer);
+
+        auto next = std::make_shared<SampleList>();
+        next->push_back (std::move (ls));
+
+        std::atomic_store_explicit (&currentSamples, std::shared_ptr<const SampleList> (next),
+                                    std::memory_order_release);
+        requestedZoneCount.store (1, std::memory_order_release);
+        loadedSampleCount.store (1, std::memory_order_release);
+        missingSampleCount.store (0, std::memory_order_release);
+        failedSampleCount.store (0, std::memory_order_release);
+        lastMissedNote.store (-1, std::memory_order_release);
+    }
+
+    double SampleSynthEngine::getActivePlayheadSample (int midiNote) const noexcept
+    {
+        double bestPosition = -1.0;
+        for (const auto& voice : voices)
+        {
+            if (! voice.isActive() || voice.getNote() != midiNote)
+                continue;
+
+            const double position = voice.getPlayPosition();
+            if (position > bestPosition)
+                bestPosition = position;
+        }
+
+        return bestPosition;
     }
 
     SampleVoice* SampleSynthEngine::findFreeVoice()
@@ -776,19 +818,28 @@ namespace patchcraft
                 float length01 = juce::jlimit (0.01f, 1.0f, atomics.sampleLength.load());
                 int slice = juce::roundToInt (atomics.sampleSlice.load());
                 int sliceCount = juce::roundToInt (atomics.sampleSliceCount.load());
+
+                if (s->zone.cuePoints.size() >= 2)
+                {
+                    sliceCount = effectiveSliceCount (s->zone, sliceCount);
+                    if (note >= s->zone.lowNote && note <= s->zone.highNote)
+                        slice = note - s->zone.lowNote;
+                    slice = juce::jlimit (0, juce::jmax (0, sliceCount - 1), slice);
+                }
+
                 float pitchOffset = juce::jlimit (-48.0f, 48.0f, atomics.samplePitch.load());
                 bool reverse = atomics.sampleReverse.load() >= 0.5f;
                 int padIndex = s->zone.padIndex;
-                if (padIndex < 0 || padIndex >= 16)
+                if (padIndex < 0 || padIndex >= kMaxChopPads)
                 {
                     const int notePadIndex = note - 36;
-                    if (notePadIndex >= 0 && notePadIndex < 16)
+                    if (notePadIndex >= 0 && notePadIndex < kMaxChopPads)
                         padIndex = notePadIndex;
                 }
 
                 float padGain = 1.0f;
                 float padPanOffset = 0.0f;
-                if (padIndex >= 0 && padIndex < 16)
+                if (padIndex >= 0 && padIndex < kMaxChopPads)
                 {
                     padGain = juce::jlimit (0.0f, 2.0f, atomics.padVolume[(size_t) padIndex].load());
                     pitchOffset += juce::jlimit (-24.0f, 24.0f, atomics.padPitch[(size_t) padIndex].load());
@@ -970,9 +1021,13 @@ namespace patchcraft
         else if (id == "filterCutoff")  atomics.cutoff       = value;
         else if (id == "filterResonance") atomics.resonance  = value;
         else if (id == "reverbMix")     atomics.reverbMix    = value;
+        else if (id == "reverbEnabled") atomics.reverbEnabled = value;
+        else if (id == "reverbType")    atomics.reverbType   = value;
         else if (id == "delayTime")     atomics.delayTime    = value;
         else if (id == "delayFeedback") atomics.delayFb      = value;
         else if (id == "delayMix")      atomics.delayMix     = value;
+        else if (id == "delayEnabled")  atomics.delayEnabled = value;
+        else if (id == "delayType")     atomics.delayType    = value;
         else if (id == "volume")        atomics.volume       = value;
         else if (id == "expression")    atomics.expression   = value;
         else if (id == "pan")           atomics.pan          = value;
@@ -1219,33 +1274,86 @@ namespace patchcraft
         advancedFx.process (tempBuffer, 0, numSamples);
 
         // Delay (mono-ish ping-pong)
+        const bool dEnabled = atomics.delayEnabled.load() >= 0.5f;
         const float dTime = juce::jlimit (0.0f, 2.0f, atomics.delayTime.load());
         const float dFb   = juce::jlimit (0.0f, 0.95f, atomics.delayFb.load());
-        const float dMix  = juce::jlimit (0.0f, 1.0f, atomics.delayMix.load());
+        const float dMix  = dEnabled ? juce::jlimit (0.0f, 1.0f, atomics.delayMix.load()) : 0.0f;
         const int   dSamples = juce::jmax (1, (int) (dTime * sampleRate));
         delayL.setDelay ((float) dSamples);
         delayR.setDelay ((float) dSamples);
 
         auto* L = tempBuffer.getWritePointer (0);
         auto* R = numChans > 1 ? tempBuffer.getWritePointer (1) : L;
+
+        const int dType = juce::roundToInt (atomics.delayType.load());
+
         for (int i = 0; i < numSamples; ++i)
         {
+            if (dType == 1) // Tape
+            {
+                tapeLfoPhase += 2.5 / sampleRate;
+                if (tapeLfoPhase > juce::MathConstants<double>::twoPi)
+                    tapeLfoPhase -= juce::MathConstants<double>::twoPi;
+                float wobble = 0.004f * std::sin (tapeLfoPhase);
+                float wSamps = dSamples * (1.0f + wobble);
+                delayL.setDelay (juce::jlimit (1.0f, 95000.0f, wSamps));
+                delayR.setDelay (juce::jlimit (1.0f, 95000.0f, wSamps));
+            }
+
             const float dl = delayL.popSample (0);
             const float dr = delayR.popSample (0);
-            delayL.pushSample (0, L[i] + dr * dFb);
-            delayR.pushSample (0, R[i] + dl * dFb);
+
+            float feedbackL = dr * dFb;
+            float feedbackR = dl * dFb;
+
+            if (dType == 1) // Tape: Saturation
+            {
+                feedbackL = std::tanh (feedbackL * 1.2f) * 0.9f;
+                feedbackR = std::tanh (feedbackR * 1.2f) * 0.9f;
+            }
+            else if (dType == 2) // Analog: Low-pass filter + soft clip
+            {
+                lastFbL = lastFbL * 0.65f + feedbackL * 0.35f;
+                lastFbR = lastFbR * 0.65f + feedbackR * 0.35f;
+
+                feedbackL = std::max (-0.95f, std::min (0.95f, lastFbL));
+                feedbackR = std::max (-0.95f, std::min (0.95f, lastFbR));
+            }
+
+            delayL.pushSample (0, L[i] + feedbackL);
+            delayR.pushSample (0, R[i] + feedbackR);
+
             L[i] = L[i] * (1.0f - dMix * 0.5f) + dl * dMix;
             R[i] = R[i] * (1.0f - dMix * 0.5f) + dr * dMix;
         }
 
         // Reverb
-        const float rvMix = juce::jlimit (0.0f, 1.0f, atomics.reverbMix.load());
+        const bool rvEnabled = atomics.reverbEnabled.load() >= 0.5f;
+        const float rvMix = rvEnabled ? juce::jlimit (0.0f, 1.0f, atomics.reverbMix.load()) : 0.0f;
         juce::Reverb::Parameters rp;
-        rp.roomSize = 0.6f;
-        rp.damping  = 0.4f;
+
+        const int rvType = juce::roundToInt (atomics.reverbType.load());
+        if (rvType == 1) // Shimmer
+        {
+            rp.roomSize = 0.92f;
+            rp.damping  = 0.15f;
+            rp.width    = 1.0f;
+        }
+        else if (rvType == 3) // Spring
+        {
+            rp.roomSize = 0.35f;
+            rp.damping  = 0.75f;
+            rp.width    = 0.5f;
+        }
+        else // Large Room (default)
+        {
+            rp.roomSize = 0.65f;
+            rp.damping  = 0.45f;
+            rp.width    = 0.85f;
+        }
+
         rp.wetLevel = rvMix * 0.6f;
         rp.dryLevel = 1.0f - rvMix * 0.5f;
-        rp.width    = 1.0f;
         reverb.setParameters (rp);
         reverb.process (ctx);
         utility.processOutput (tempBuffer, 0, numSamples);

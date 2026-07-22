@@ -53,6 +53,7 @@ namespace patchcraft
             juce::String sampleSummary;
             juce::String contentSummary;
             juce::String validationSummary;
+            juce::String userRequest;
 
             juce::String toSummaryText() const;
         };
@@ -108,9 +109,10 @@ namespace patchcraft
             juce::String imageApiKey;
             juce::String murekaEndpoint { "https://api.mureka.ai" };
             juce::String murekaApiKey;
-            juce::String pluginClubEndpoint { "https://plugin.club/functions" };
-            juce::String pluginClubApiKey;
-            juce::String licenseEndpoint;
+            juce::String pluginClubEndpoint { "https://plugin.club/functions/v1" };
+            juce::String pluginClubApiKey;          // optional static/env key
+            juce::String pluginClubAccessToken;     // device-auth Bearer token (preferred for publish)
+            juce::String licenseEndpoint { "https://plugin.club/functions/v1/activateLicense" };
             juce::String licensePublicKey;
             
             TextProviderMode textProvider = TextProviderMode::CloudOpenAICompatible;

@@ -29,5 +29,22 @@
   "playerTitleTextPlacement": "center",
   "playerTitleButtonStyle": "pill",
   "playerTitleFontFamily": "Segoe UI",
-  "playerShowPatchCraftBranding": false
+  "playerShowPatchCraftBranding": false,
+  "playerShowTopBar": true,
+  "playerShowLeftSidebar": true,
+  "playerShowRightPanel": true,
+  "playerShowKeyboard": true,
+  "playerShowFooter": true,
+  "playerTopShowBrowse": true,
+  "playerTopShowSave": true,
+  "playerTopShowSettings": true,
+  "playerTopShowCategory": true,
+  "playerTopShowFavorite": true,
+  "playerTopShowPresetNav": true,
+  "playerTopShowMasterVolume": true,
+  "playerTopShowOutputMeter": true,
+  "rightPanelShowMacros": true,
+  "rightPanelShowEffects": true,
+  "rightPanelShowSends": true,
+  "rightPanelShowUtility": true
 }

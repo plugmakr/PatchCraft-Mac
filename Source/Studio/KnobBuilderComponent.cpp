@@ -380,6 +380,95 @@ namespace patchcraft
         repaint();
     }
 
+    juce::StringArray KnobBuilderComponent::galleryPresetNames()
+    {
+        return {
+            "Black Console Encoder",
+            "Amber Analog Cap",
+            "Blue Glass Macro",
+            "Minimal White Pointer",
+            "Deep Bezel Drive",
+            "Neon Arc Cutoff",
+            "Vintage Bakelite",
+            "Silver Studio Gain",
+            "Red Performance Macro",
+            "Soft Rubber EQ"
+        };
+    }
+
+    void KnobBuilderComponent::applyGalleryPreset (int index)
+    {
+        style = Style();
+        importedStrip = {};
+        importedSourceFile = {};
+        importedFrameCount = 0;
+        importedFrameSize = 0;
+        selectedBuildLayer = 1;
+
+        auto setCommon = [this] (juce::String name, juce::uint32 face, juce::uint32 ring,
+                                 juce::uint32 indicator, juce::uint32 border, juce::uint32 ticks,
+                                 int styleId, int indicatorId)
+        {
+            style.name = std::move (name);
+            style.backgroundColour = juce::Colour (face);
+            style.ringColour = juce::Colour (ring);
+            style.indicator = juce::Colour (indicator);
+            style.borderColour = juce::Colour (border);
+            style.tickColour = juce::Colour (ticks);
+            styleBox.setSelectedId (styleId, juce::dontSendNotification);
+            indicatorBox.setSelectedId (indicatorId, juce::dontSendNotification);
+        };
+
+        switch (juce::jlimit (0, 9, index))
+        {
+            case 0:
+                setCommon ("Black Console Encoder", 0xff111418, 0xff39d1c9, 0xfff7f2dc, 0xff050607, 0xff39d1c9, 5, 3);
+                style.ringThickness = 7.0f; style.pointerWidth = 3.0f; style.bevel = 0.62f; style.glow = 0.18f; style.surfaceTexture = 0.10f;
+                break;
+            case 1:
+                setCommon ("Amber Analog Cap", 0xff2b2118, 0xffffa633, 0xffffe0a8, 0xff0b0806, 0xffffa633, 2, 1);
+                style.ringThickness = 10.0f; style.pointerWidth = 5.0f; style.bevel = 0.78f; style.glow = 0.26f; style.pointerLength = 0.74f;
+                break;
+            case 2:
+                setCommon ("Blue Glass Macro", 0xff112331, 0xff4fc3ff, 0xffb9ecff, 0xff061019, 0xff8ce8ff, 4, 2);
+                style.ringThickness = 11.0f; style.pointerWidth = 4.0f; style.bevel = 0.44f; style.glow = 0.72f; style.surfaceTexture = 0.04f;
+                break;
+            case 3:
+                setCommon ("Minimal White Pointer", 0xffe8edf1, 0xff22282f, 0xff11151b, 0xffb9c0c7, 0xff6c757f, 3, 1);
+                style.ringThickness = 5.0f; style.pointerWidth = 3.0f; style.bevel = 0.18f; style.glow = 0.02f; style.ticks = false; style.shadow = false;
+                break;
+            case 4:
+                setCommon ("Deep Bezel Drive", 0xff1d1715, 0xffff5c35, 0xffffd1c2, 0xff050302, 0xffff7558, 2, 3);
+                style.ringThickness = 12.0f; style.pointerWidth = 6.0f; style.bevel = 0.90f; style.glow = 0.36f; style.ringInset = 0.22f;
+                break;
+            case 5:
+                setCommon ("Neon Arc Cutoff", 0xff080f18, 0xff73ff7e, 0xffb9ffbf, 0xff020507, 0xff73ff7e, 4, 4);
+                style.ringThickness = 13.0f; style.pointerWidth = 2.0f; style.bevel = 0.32f; style.glow = 0.86f; style.animationDepth = 0.72f;
+                break;
+            case 6:
+                setCommon ("Vintage Bakelite", 0xff3a2418, 0xffd6a061, 0xffffe3c2, 0xff140b07, 0xff9e7650, 2, 1);
+                style.ring = false; style.ticks = true; style.ringThickness = 6.0f; style.pointerWidth = 5.0f; style.bevel = 0.83f; style.surfaceTexture = 0.34f;
+                break;
+            case 7:
+                setCommon ("Silver Studio Gain", 0xffcfd5d9, 0xff2f3338, 0xff111419, 0xff747b82, 0xff58616b, 1, 3);
+                style.ringThickness = 8.0f; style.pointerWidth = 4.0f; style.bevel = 0.70f; style.glow = 0.05f; style.lightAngle = -25.0f;
+                break;
+            case 8:
+                setCommon ("Red Performance Macro", 0xff241316, 0xffff3157, 0xffffb6c4, 0xff080304, 0xffff6681, 4, 2);
+                style.size = 150; style.ringThickness = 14.0f; style.pointerWidth = 5.0f; style.bevel = 0.50f; style.glow = 0.78f; style.animationDepth = 0.64f;
+                break;
+            case 9:
+                setCommon ("Soft Rubber EQ", 0xff202528, 0xffa4c2a6, 0xffeff8ee, 0xff090b0c, 0xff617068, 1, 1);
+                style.ringThickness = 6.0f; style.pointerWidth = 4.0f; style.bevel = 0.55f; style.glow = 0.12f; style.surfaceTexture = 0.28f;
+                break;
+            default:
+                break;
+        }
+
+        style.frames = 96;
+        syncControlsFromStyle();
+    }
+
     void KnobBuilderComponent::paint (juce::Graphics& g)
     {
         g.fillAll (PatchCraftLookAndFeel::panel());

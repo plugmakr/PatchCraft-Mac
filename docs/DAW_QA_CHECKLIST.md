@@ -78,8 +78,8 @@ Use this checklist after building `PatchCraftStudio-Setup.exe` and, when needed,
 
 ## Plugin.club Proof
 
-- Configure `https://plugin.club/functions/sellerImport` and seller API key in Settings.
-- Configure `https://plugin.club/functions/deviceAuth` as the launch License URL. AudiLock should later replace this backend without changing product IDs or pack metadata shape.
+- Configure `https://plugin.club/functions/v1/sellerImport` and seller API key in Settings.
+- Configure `https://plugin.club/functions/v1/activateLicense` as the launch License URL. AudiLock should later replace this backend without changing product IDs or pack metadata shape.
 - Publish a PatchCraft instrument pack draft.
 - Publish a one-shot/sample pack draft.
 - If VST Expansion is installed, publish a standalone VST3 draft.

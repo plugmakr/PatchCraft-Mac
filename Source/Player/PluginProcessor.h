@@ -11,6 +11,7 @@
 #include "PianoRollRuntime.h"
 #include "SampleSynthEngine.h"
 #include "PScriptEngine.h"
+#include "LicenseValidator.h"
 
 #include <array>
 #include <map>
@@ -27,7 +28,9 @@ namespace patchcraft
     class PlayerProcessor : public juce::AudioProcessor
     {
     public:
-        PlayerProcessor();
+        /** @param skipEmbeddedPackAutoload When true, do not auto-load an embedded
+            VST-bundled pack (used by Studio Brand Lab so the project layout wins). */
+        explicit PlayerProcessor (bool skipEmbeddedPackAutoload = false);
         ~PlayerProcessor() override;
 
         // AudioProcessor
@@ -255,6 +258,13 @@ namespace patchcraft
         juce::File getUserContentRoot() const;
         double getHostBpm() const;
 
+        LicenseValidator::LicenseInfo getLicenseInfo() const;
+        LicenseValidator::ActivationStatus getLicenseActivationStatus() const;
+        void applyLicenseActivationStatus (const LicenseValidator::ActivationStatus& status);
+        void refreshLicenseStatusFromCache();
+        bool isLicenseAuthorized() const noexcept { return licenseAuthorized.load(); }
+        juce::String getLicenseStatusText() const;
+
     private:
         juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
         void rebuildApvtsFromPack();
@@ -369,6 +379,10 @@ namespace patchcraft
         bool userSampleOverlayEnabled = false;
         std::vector<float> userWaveformPeaks;
         void computeUserWaveformPeaks (const juce::File& file, int numBuckets = 256);
+        mutable juce::CriticalSection licenseLock;
+        LicenseValidator::ActivationStatus licenseStatus;
+        std::atomic<bool> licenseAuthorized { true };
+        bool bypassLicenseEnforcement = false;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PlayerProcessor)
     };

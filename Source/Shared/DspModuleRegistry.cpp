@@ -222,9 +222,10 @@ namespace patchcraft
                 return DspNodeKind::analysis;
             if (section == "source")
                 return DspNodeKind::source;
-            if (section == "filter" || section == "amp" || section == "fx")
+            if (section == "filter" || section == "amp" || section == "fx" || section == "shape")
                 return DspNodeKind::processor;
-            if (section == "mod")
+            if (section == "mod" || section == "modulation" || section == "motion" || section == "perform"
+                || section == "circle" || section == "midi")
                 return DspNodeKind::modulation;
             if (type.contains ("utility") || type.contains ("router") || type.contains ("mixer"))
                 return DspNodeKind::utility;

@@ -747,7 +747,7 @@ namespace patchcraft
         arpStudioMode = true;
         setArpStudioHardwarePreviewActive (isShowing());
         title.setText ("PERFORM", juce::dontSendNotification);
-        subtitle.setText ("Circles view — orbit lanes and ring editor for the same pattern slots as Steps.",
+        subtitle.setText ("Circles — author pattern data here, then push it to Layout via Update Player Controls.",
                           juce::dontSendNotification);
         performanceViewButton.setToggleState (false, juce::dontSendNotification);
         arpLaneViewButton.setToggleState (true, juce::dontSendNotification);
@@ -761,7 +761,8 @@ namespace patchcraft
         applyGuiTemplateButton.setButtonText ("Update Player Controls");
         applyMidiTemplateButton.setTooltip ("Writes circle pattern data into the dspGraph block — not the Player layout.");
         applyGuiTemplateButton.setTooltip ("Generates or replaces generated Player layout controls — does not change pattern data.");
-        activeSummary.setText ("Circle workflow: Build Sound in DSP, pick a Slot, edit the ring/steps, assign the lane target, then update the Player controls.",
+        activeSummary.setText ("Developer tool: pattern slots you design here can be wired into Layout (Arp/Circle controls) "
+                               "and ship in the exported plugin. Buyers interact with your UI controls — not this editor.",
                                juce::dontSendNotification);
         repaint();
     }
@@ -776,14 +777,11 @@ namespace patchcraft
     {
         if (arpStudioMode)
         {
-            auto content = getLocalBounds().reduced (12, 10);
-            content.removeFromTop (104);
-
             int hitLane = -1;
             int hitStep = -1;
             int hitBand = -1;
             float hitValue = 0.0f;
-            if (arpStudioStepHitTest (content, e.getPosition(), hitLane, hitStep, hitBand, hitValue))
+            if (arpStudioStepHitTest (e.getPosition(), hitLane, hitStep, hitBand, hitValue))
             {
                 arpStudioMidiDragArmed = false;
                 arpStudioDragLane = -1;
@@ -795,6 +793,9 @@ namespace patchcraft
                 editArpStudioStepFromMouse (e, toggleStep);
                 return;
             }
+
+            auto content = getLocalBounds().reduced (12, 10);
+            content.removeFromTop (120);
 
             for (int lane = 0; lane < MidiPlaygroundPattern::kPhraseBankCount; ++lane)
             {
@@ -4562,7 +4563,27 @@ namespace patchcraft
         return arpStudioLaneBounds (area, lane).reduced (10, 8).removeFromRight (76).withTrimmedBottom (18);
     }
 
-    bool MidiPlaygroundPage::arpStudioStepHitTest (juce::Rectangle<int> area, juce::Point<int> pos,
+    juce::Rectangle<int> MidiPlaygroundPage::arpStudioStepGridArea (juce::Rectangle<int> localBounds) const
+    {
+        auto full = localBounds.reduced (12, 10);
+        full.removeFromTop (108);
+        full.removeFromTop (12);
+        auto body = full;
+        body.removeFromLeft (252);
+        body.removeFromLeft (12);
+        body.removeFromRight (318);
+        body.removeFromRight (12);
+        auto main = body;
+        main.removeFromTop (78);
+        main.removeFromTop (8);
+        auto stepPanel = main.removeFromTop (282);
+        auto stepArea = stepPanel.reduced (12, 10);
+        stepArea.removeFromTop (30);
+        stepArea.removeFromLeft (78);
+        return stepArea;
+    }
+
+    bool MidiPlaygroundPage::arpStudioStepHitTest (juce::Point<int> pos,
                                                    int& lane, int& step, int& band, float& value) const
     {
         lane = -1;
@@ -4577,13 +4598,7 @@ namespace patchcraft
             ? juce::jlimit (0, MidiPlaygroundPattern::kPhraseBankCount - 1, juce::roundToInt (valueFor (*block, "mpActiveBank", 0.0f)))
             : juce::jlimit (0, MidiPlaygroundPattern::kPhraseBankCount - 1, phraseBankBox.getSelectedId() - 1);
 
-        auto editor = area;
-        editor.removeFromLeft (264);
-        editor.removeFromRight (330);
-        editor.removeFromTop (54);
-        editor = editor.removeFromTop (282).reduced (12, 10);
-        editor.removeFromTop (38);
-        editor.removeFromLeft (78);
+        const auto editor = arpStudioStepGridArea (getLocalBounds());
         if (! editor.contains (pos))
             return false;
 
@@ -4619,14 +4634,11 @@ namespace patchcraft
 
     void MidiPlaygroundPage::editArpStudioStepFromMouse (const juce::MouseEvent& e, bool toggleStep)
     {
-        auto content = getLocalBounds().reduced (12, 10);
-        content.removeFromTop (104);
-
         int lane = -1;
         int step = -1;
         int band = -1;
         float value = 0.0f;
-        if (! arpStudioStepHitTest (content, e.getPosition(), lane, step, band, value))
+        if (! arpStudioStepHitTest (e.getPosition(), lane, step, band, value))
             return;
 
         auto* block = ensureMidiBlock();

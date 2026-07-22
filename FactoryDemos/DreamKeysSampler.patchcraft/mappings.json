@@ -1,3 +1,9 @@
 {
-  "zones": []
+  "zones": [
+    { "sample": "samples/LoFiKeysTape_36.wav", "rootNote": 36, "lowNote": 0, "highNote": 41, "lowVelocity": 1, "highVelocity": 127, "gainDb": 0.0, "pan": 0.0, "loopEnabled": true, "loopStart": 1024, "loopEnd": 97020, "group": "Tape Keys" },
+    { "sample": "samples/LoFiKeysTape_48.wav", "rootNote": 48, "lowNote": 42, "highNote": 53, "lowVelocity": 1, "highVelocity": 127, "gainDb": 0.0, "pan": 0.0, "loopEnabled": true, "loopStart": 1024, "loopEnd": 97020, "group": "Tape Keys" },
+    { "sample": "samples/LoFiKeysTape_60.wav", "rootNote": 60, "lowNote": 54, "highNote": 65, "lowVelocity": 1, "highVelocity": 127, "gainDb": 0.0, "pan": 0.0, "loopEnabled": true, "loopStart": 1024, "loopEnd": 97020, "group": "Tape Keys" },
+    { "sample": "samples/LoFiKeysTape_72.wav", "rootNote": 72, "lowNote": 66, "highNote": 77, "lowVelocity": 1, "highVelocity": 127, "gainDb": 0.0, "pan": 0.0, "loopEnabled": true, "loopStart": 1024, "loopEnd": 97020, "group": "Tape Keys" },
+    { "sample": "samples/LoFiKeysTape_84.wav", "rootNote": 84, "lowNote": 78, "highNote": 127, "lowVelocity": 1, "highVelocity": 127, "gainDb": 0.0, "pan": 0.0, "loopEnabled": true, "loopStart": 1024, "loopEnd": 97020, "group": "Tape Keys" }
+  ]
 }

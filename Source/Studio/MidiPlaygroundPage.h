@@ -266,8 +266,8 @@ namespace patchcraft
                                    const juce::String& mode, juce::Colour accent) const;
         juce::Rectangle<int> arpStudioLaneBounds (juce::Rectangle<int> area, int lane) const;
         juce::Rectangle<int> arpStudioMidiDragBounds (juce::Rectangle<int> area, int lane) const;
-        bool arpStudioStepHitTest (juce::Rectangle<int> area, juce::Point<int> pos,
-                                   int& lane, int& step, int& band, float& value) const;
+        juce::Rectangle<int> arpStudioStepGridArea (juce::Rectangle<int> localBounds) const;
+        bool arpStudioStepHitTest (juce::Point<int> pos, int& lane, int& step, int& band, float& value) const;
         void editArpStudioStepFromMouse (const juce::MouseEvent&, bool toggleStep);
         bool startArpStudioMidiDrag (int lane);
         juce::Rectangle<int> sectionCardBounds (juce::Rectangle<int> area, int index) const;

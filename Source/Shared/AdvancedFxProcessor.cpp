@@ -105,6 +105,8 @@ namespace patchcraft
         else if (id == "chorusDepth")    atomics.chorusDepth         = value;
         else if (id == "chorusFeedback") atomics.chorusFeedback      = value;
         else if (id == "chorusMix")      atomics.chorusMix           = value;
+        else if (id == "chorusEnabled")  atomics.chorusEnabled       = value;
+        else if (id == "chorusType")     atomics.chorusType          = value;
         else if (id == "phaserRate")     atomics.phaserRate          = value;
         else if (id == "phaserDepth")    atomics.phaserDepth         = value;
         else if (id == "phaserFeedback") atomics.phaserFeedback      = value;
@@ -296,12 +298,38 @@ namespace patchcraft
             }
         }
 
-        const float chorusMix = juce::jlimit (0.0f, 1.0f, atomics.chorusMix.load());
+        const bool chorusEnabled = atomics.chorusEnabled.load() >= 0.5f;
+        const float chorusMix = chorusEnabled ? juce::jlimit (0.0f, 1.0f, atomics.chorusMix.load()) : 0.0f;
         if (chorusMix > 0.0001f)
         {
-            chorus.setRate (juce::jlimit (0.01f, 20.0f, atomics.chorusRate.load()));
-            chorus.setDepth (juce::jlimit (0.0f, 1.0f, atomics.chorusDepth.load()));
-            chorus.setFeedback (juce::jlimit (-0.95f, 0.95f, atomics.chorusFeedback.load()));
+            float r = juce::jlimit (0.01f, 20.0f, atomics.chorusRate.load());
+            float d = juce::jlimit (0.0f, 1.0f, atomics.chorusDepth.load());
+            float fb = juce::jlimit (-0.95f, 0.95f, atomics.chorusFeedback.load());
+            float delayMs = 7.0f;
+
+            const int cType = juce::roundToInt (atomics.chorusType.load());
+            if (cType == 1) // Vintage
+            {
+                r *= 0.8f;
+                d *= 1.2f;
+                delayMs = 9.0f;
+            }
+            else if (cType == 3) // Dimensional
+            {
+                r *= 1.5f;
+                d *= 0.7f;
+                fb = -0.2f;
+                delayMs = 15.0f;
+            }
+            else // Modern
+            {
+                delayMs = 5.0f;
+            }
+
+            chorus.setRate (r);
+            chorus.setDepth (d);
+            chorus.setFeedback (fb);
+            chorus.setCentreDelay (delayMs);
             chorus.setMix (chorusMix);
             juce::dsp::AudioBlock<float> block (buffer.getArrayOfWritePointers(), (size_t) numChans,
                                                 (size_t) startSample, (size_t) numSamples);

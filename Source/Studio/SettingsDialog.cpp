@@ -3,6 +3,8 @@
 #include "AiAssistService.h"
 #include "AudiLockSecurity.h"
 #include "PatchCraftLookAndFeel.h"
+#include "PluginClubApi.h"
+#include "PluginClubPublisher.h"
 
 namespace patchcraft
 {
@@ -98,7 +100,7 @@ namespace patchcraft
         setupLabel (textApiKeyLabel, "Text Key");
         setupLabel (murekaApiKeyLabel, "Mureka Key");
         setupLabel (pluginEndpointLabel, "Plugin.club");
-        setupLabel (pluginApiKeyLabel, "Plugin Key");
+        setupLabel (pluginApiKeyLabel, "Token override");
         setupLabel (licenseEndpointLabel, "License URL");
         setupLabel (licensePublicKeyLabel, "Public Key");
         setupLabel (expansionsHeader, "PATCHCRAFT EXTENSIONS");
@@ -156,16 +158,17 @@ namespace patchcraft
         cloudGuideText.setColour (juce::TextEditor::focusedOutlineColourId, PatchCraftLookAndFeel::accent());
         cloudGuideText.setColour (juce::TextEditor::textColourId, PatchCraftLookAndFeel::text());
         cloudGuideText.setText (
-            "Licensing setup\n"
-            "1. Create the product in Plugin.club seller tools for launch. AudiLock will become the canonical licensing source of truth when it is ready.\n"
-            "2. Paste the activation / validation endpoint into License URL. Launch default: https://plugin.club/functions/deviceAuth. AudiLock should expose the same contract later.\n"
-            "3. Paste the public verification key, public key id, or JWKS key id into Public Key. Never paste a private signing key here.\n"
-            "4. In Brand Lab, enable Require License and confirm the Product ID. If Product ID is empty, PatchCraft derives one during export.\n"
-            "5. Export/publish. PatchCraft embeds license.json and sends license_config to Plugin.club metadata so the same data can map to AudiLock later.\n\n"
-            "Runtime contract\n"
-            "- The Player stores the License URL and Product ID in the pack metadata.\n"
-            "- The activation request includes productId, instrumentId, licenseKey, machineId, trial, grace days, and bind-to-machine.\n"
-            "- Public Key is for client-side verification metadata. The private key stays on Plugin.club/AudiLock backend infrastructure.",
+            "Plugin.club setup (https://plugin.club/api-docs)\n"
+            "1. Click Sign in to Plugin.club. Enter the shown code at the verification URL (Device Auth).\n"
+            "2. Publishing uses POST /functions/v1/sellerImport with Authorization: Bearer <access_token>.\n"
+            "3. License URL for protected packs should be https://plugin.club/functions/v1/activateLicense "
+            "(Player also understands validateLicense).\n"
+            "4. In Brand Lab, enable Require License and confirm the Product ID.\n"
+            "5. Export/publish. PatchCraft embeds license.json and sends license_config in publish metadata.\n\n"
+            "Notes\n"
+            "- Device Auth is for Studio seller login (publish + buyer library).\n"
+            "- activateLicense / validateLicense are for end-customer license keys (hardware-locked).\n"
+            "- Optional Token override / PLUGINCLUB_API_KEY can supply a Bearer token if Device Auth is unavailable.",
             false);
 
         imageProviderBox.addItem ("Built-in Placeholder Renderer", 1);
@@ -181,8 +184,8 @@ namespace patchcraft
         textApiKeyEditor.setPasswordCharacter (0x2022);
         murekaApiKeyEditor.setPasswordCharacter (0x2022);
         pluginApiKeyEditor.setPasswordCharacter (0x2022);
-        pluginEndpointEditor.setTextToShowWhenEmpty ("https://plugin.club/functions/sellerImport", PatchCraftLookAndFeel::textDim());
-        licenseEndpointEditor.setTextToShowWhenEmpty ("https://plugin.club/functions/deviceAuth", PatchCraftLookAndFeel::textDim());
+        pluginEndpointEditor.setTextToShowWhenEmpty ("https://plugin.club/functions/v1/sellerImport", PatchCraftLookAndFeel::textDim());
+        licenseEndpointEditor.setTextToShowWhenEmpty ("https://plugin.club/functions/v1/activateLicense", PatchCraftLookAndFeel::textDim());
         licensePublicKeyEditor.setTextToShowWhenEmpty ("Public verification key or key id only", PatchCraftLookAndFeel::textDim());
         imageApiKeyEditor.setTooltip ("OpenAI image API key. Stored locally in PatchCraft cloud-integrations.json.");
         imageModelEditor.setTooltip ("Default image model sent to the image endpoint.");
@@ -190,10 +193,14 @@ namespace patchcraft
         textEndpointEditor.setTooltip ("Default OpenAI-compatible text generation endpoint.");
         textModelEditor.setTooltip ("Model name for text generation (e.g. deepseek-coder).");
         murekaApiKeyEditor.setTooltip ("Reserved for Mureka audio/source/stem generation workflows.");
-        pluginEndpointEditor.setTooltip ("Plugin.club-compatible publish base URL. Use https://plugin.club/functions or the full https://plugin.club/functions/sellerImport endpoint.");
-        pluginApiKeyEditor.setTooltip ("Plugin.club publish API key.");
-        licenseEndpointEditor.setTooltip ("HTTPS activation/validation endpoint embedded into protected packs. Use Plugin.club deviceAuth for launch; point this to AudiLock once AudiLock owns licensing.");
+        pluginEndpointEditor.setTooltip ("Plugin.club publish URL. Default: https://plugin.club/functions/v1/sellerImport");
+        pluginApiKeyEditor.setTooltip ("Optional Bearer token override. Prefer Sign in (Device Auth). Falls back to PLUGINCLUB_API_KEY.");
+        licenseEndpointEditor.setTooltip ("Pack license activation URL. Default: https://plugin.club/functions/v1/activateLicense");
         licensePublicKeyEditor.setTooltip ("Public verification key or public key id embedded into protected pack metadata. Do not paste private signing keys.");
+        pluginSignInButton.setTooltip ("Start Plugin.club Device Auth (deviceAuthStart / deviceAuthPoll) and store the access token.");
+        pluginSignOutButton.setTooltip ("Revoke the stored Plugin.club access token via deviceAuthLogout.");
+        pluginSignInButton.onClick = [this] { signInToPluginClub(); };
+        pluginSignOutButton.onClick = [this] { signOutOfPluginClub(); };
         cloudSaveButton.onClick = [this] { saveCloudSettings(); };
 
         audiLockStatusLabel.setText ("AudiLock AI:", juce::dontSendNotification);
@@ -228,6 +235,9 @@ namespace patchcraft
                                  static_cast<juce::Component*> (&pluginEndpointEditor),
                                  static_cast<juce::Component*> (&pluginApiKeyLabel),
                                  static_cast<juce::Component*> (&pluginApiKeyEditor),
+                                 static_cast<juce::Component*> (&pluginAuthStatusLabel),
+                                 static_cast<juce::Component*> (&pluginSignInButton),
+                                 static_cast<juce::Component*> (&pluginSignOutButton),
                                  static_cast<juce::Component*> (&licenseEndpointLabel),
                                  static_cast<juce::Component*> (&licenseEndpointEditor),
                                  static_cast<juce::Component*> (&licensePublicKeyLabel),
@@ -390,6 +400,13 @@ namespace patchcraft
         pluginApiKeyEditor.setBounds (cloudRow);
 
         cloudRow = cloudBounds.removeFromTop (30);
+        pluginSignInButton.setBounds (cloudRow.removeFromLeft (170));
+        cloudRow.removeFromLeft (8);
+        pluginSignOutButton.setBounds (cloudRow.removeFromLeft (90));
+        cloudRow.removeFromLeft (12);
+        pluginAuthStatusLabel.setBounds (cloudRow);
+
+        cloudRow = cloudBounds.removeFromTop (30);
         licenseEndpointLabel.setBounds (cloudRow.removeFromLeft (92));
         licenseEndpointEditor.setBounds (cloudRow.removeFromLeft (360));
         licensePublicKeyLabel.setBounds (cloudRow.removeFromLeft (92));
@@ -482,6 +499,7 @@ namespace patchcraft
         licenseEndpointEditor.setText (config.licenseEndpoint, false);
         licensePublicKeyEditor.setText (config.licensePublicKey, false);
         refreshCloudEnabledState();
+        refreshPluginClubAuthStatus();
     }
 
     void SettingsDialogContent::saveCloudSettings()
@@ -503,12 +521,173 @@ namespace patchcraft
         
         config.murekaApiKey = murekaApiKeyEditor.getText().trim();
 #endif
-        config.pluginClubEndpoint = pluginEndpointEditor.getText().trim();
+        config.pluginClubEndpoint = PluginClubPublisher::normaliseSellerImportEndpoint (
+            pluginEndpointEditor.getText().trim().isNotEmpty()
+                ? pluginEndpointEditor.getText().trim()
+                : juce::String (PluginClubApi::kBaseUrl));
         config.pluginClubApiKey = pluginApiKeyEditor.getText().trim();
-        config.licenseEndpoint = licenseEndpointEditor.getText().trim();
+        config.licenseEndpoint = PluginClubApi::normaliseActivateLicenseEndpoint (
+            licenseEndpointEditor.getText().trim());
         config.licensePublicKey = licensePublicKeyEditor.getText().trim();
         AiAssistService::saveCloudIntegrationConfig (config);
+        pluginEndpointEditor.setText (config.pluginClubEndpoint, false);
+        licenseEndpointEditor.setText (config.licenseEndpoint, false);
         refreshCloudEnabledState();
+        refreshPluginClubAuthStatus();
+    }
+
+    void SettingsDialogContent::refreshPluginClubAuthStatus()
+    {
+        const auto config = AiAssistService::loadCloudIntegrationConfig();
+        const bool signedIn = config.pluginClubAccessToken.trim().isNotEmpty();
+        const bool hasOverride = config.pluginClubApiKey.trim().isNotEmpty();
+        if (signedIn)
+            pluginAuthStatusLabel.setText ("Signed in (Device Auth token saved)", juce::dontSendNotification);
+        else if (hasOverride)
+            pluginAuthStatusLabel.setText ("Using token override / not Device-Auth signed in", juce::dontSendNotification);
+        else
+            pluginAuthStatusLabel.setText ("Not signed in — publish will stage locally only", juce::dontSendNotification);
+        pluginAuthStatusLabel.setColour (juce::Label::textColourId,
+                                         signedIn ? juce::Colours::lightgreen : PatchCraftLookAndFeel::textDim());
+        pluginSignOutButton.setEnabled (signedIn && ! pluginClubAuthBusy.load());
+        pluginSignInButton.setEnabled (! pluginClubAuthBusy.load());
+    }
+
+    void SettingsDialogContent::signInToPluginClub()
+    {
+        if (pluginClubAuthBusy.exchange (true))
+            return;
+
+        refreshPluginClubAuthStatus();
+        juce::Component::SafePointer<SettingsDialogContent> safe (this);
+
+        juce::Thread::launch ([safe]()
+        {
+            const auto start = PluginClubApi::startDeviceAuth();
+            if (safe == nullptr)
+                return;
+
+            if (! start.success)
+            {
+                juce::MessageManager::callAsync ([safe, start]()
+                {
+                    if (safe == nullptr)
+                        return;
+                    safe->pluginClubAuthBusy = false;
+                    safe->refreshPluginClubAuthStatus();
+                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                                            "Plugin.club Sign In",
+                                                            start.message);
+                });
+                return;
+            }
+
+            juce::MessageManager::callAsync ([safe, start]()
+            {
+                if (safe == nullptr)
+                    return;
+
+                safe->pluginAuthStatusLabel.setText ("Authorize code " + start.userCode + " in your browser…",
+                                                     juce::dontSendNotification);
+                if (start.verificationUrlComplete.isNotEmpty())
+                    juce::URL (start.verificationUrlComplete).launchInDefaultBrowser();
+                else if (start.verificationUrl.isNotEmpty())
+                    juce::URL (start.verificationUrl).launchInDefaultBrowser();
+            });
+
+            const auto deadline = juce::Time::getMillisecondCounter()
+                                + (juce::uint32) juce::jlimit (30, 900, start.expiresInSeconds) * 1000;
+            const int intervalMs = juce::jlimit (2000, 30000, start.intervalSeconds * 1000);
+
+            while (juce::Time::getMillisecondCounter() < deadline)
+            {
+                juce::Thread::sleep (intervalMs);
+                if (safe == nullptr)
+                    return;
+
+                const auto poll = PluginClubApi::pollDeviceAuth (start.deviceCode);
+                if (poll.success && poll.accessToken.isNotEmpty())
+                {
+                    juce::MessageManager::callAsync ([safe, token = poll.accessToken]()
+                    {
+                        if (safe == nullptr)
+                            return;
+                        auto config = AiAssistService::loadCloudIntegrationConfig();
+                        config.pluginClubAccessToken = token;
+                        if (config.pluginClubEndpoint.trim().isEmpty())
+                            config.pluginClubEndpoint = PluginClubApi::sellerImportUrl();
+                        if (config.licenseEndpoint.trim().isEmpty())
+                            config.licenseEndpoint = PluginClubApi::activateLicenseUrl();
+                        AiAssistService::saveCloudIntegrationConfig (config);
+                        safe->pluginClubAuthBusy = false;
+                        safe->refreshPluginClubAuthStatus();
+                        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon,
+                                                                "Plugin.club Sign In",
+                                                                "Signed in. Studio can publish drafts with your seller account.");
+                    });
+                    return;
+                }
+
+                if (poll.denied || poll.expired)
+                {
+                    juce::MessageManager::callAsync ([safe, poll]()
+                    {
+                        if (safe == nullptr)
+                            return;
+                        safe->pluginClubAuthBusy = false;
+                        safe->refreshPluginClubAuthStatus();
+                        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                                                "Plugin.club Sign In",
+                                                                poll.message);
+                    });
+                    return;
+                }
+            }
+
+            juce::MessageManager::callAsync ([safe]()
+            {
+                if (safe == nullptr)
+                    return;
+                safe->pluginClubAuthBusy = false;
+                safe->refreshPluginClubAuthStatus();
+                juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                                        "Plugin.club Sign In",
+                                                        "Timed out waiting for authorization. Try Sign in again.");
+            });
+        });
+    }
+
+    void SettingsDialogContent::signOutOfPluginClub()
+    {
+        auto config = AiAssistService::loadCloudIntegrationConfig();
+        const auto token = config.pluginClubAccessToken.trim();
+        if (token.isEmpty())
+        {
+            refreshPluginClubAuthStatus();
+            return;
+        }
+
+        pluginClubAuthBusy = true;
+        refreshPluginClubAuthStatus();
+        juce::Component::SafePointer<SettingsDialogContent> safe (this);
+        juce::Thread::launch ([safe, token]()
+        {
+            const auto result = PluginClubApi::logout (token);
+            juce::MessageManager::callAsync ([safe, result]()
+            {
+                if (safe == nullptr)
+                    return;
+                auto config = AiAssistService::loadCloudIntegrationConfig();
+                config.pluginClubAccessToken.clear();
+                AiAssistService::saveCloudIntegrationConfig (config);
+                safe->pluginClubAuthBusy = false;
+                safe->refreshPluginClubAuthStatus();
+                if (! result.success)
+                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                                            "Plugin.club Sign Out",
+                                                            "Local token cleared. Server logout reported: " + result.message);
+            });
+        });
     }
 
     void SettingsDialogContent::refreshCloudEnabledState()

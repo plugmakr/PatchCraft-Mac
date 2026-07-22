@@ -2,15 +2,19 @@
 
 #include "LicenseValidator.h"
 #include "PatchCraftPackWriter.h"
+#include "PluginClubApi.h"
 
+#include <cstdlib>
 #include <initializer_list>
 
 namespace patchcraft
 {
     namespace
     {
-        static constexpr auto kPluginClubDefaultFunctionsEndpoint = "https://plugin.club/functions";
-        static constexpr auto kPluginClubSellerImportPath = "sellerImport";
+        // Canonical publish endpoint (live): POST https://plugin.club/functions/v1/sellerImport
+        // Auth: Bearer access_token from deviceAuthStart/Poll (docs). Optional PLUGINCLUB_API_KEY fallback.
+        static constexpr auto kPluginClubDefaultFunctionsEndpoint = PluginClubApi::kBaseUrl;
+        static constexpr auto kPluginClubSellerImportPath = PluginClubApi::kSellerImportPath;
         static constexpr auto kLegacyRomplurSellerImportPath = "romplurSellerImport";
 
         static juce::String safeSlug (juce::String text)
@@ -33,21 +37,52 @@ namespace patchcraft
                 || lower.startsWith ("https://www.plugin.club");
         }
 
+        static juce::String ensureHttpsScheme (juce::String value)
+        {
+            value = value.trim();
+            if (value.startsWithIgnoreCase ("http://"))
+                value = "https://" + value.substring (7);
+            else if (! value.startsWithIgnoreCase ("https://") && value.containsChar ('.'))
+                value = "https://" + value;
+            return value;
+        }
+
         static juce::String ensurePluginClubFunctionsPrefix (juce::String endpoint)
         {
-            endpoint = ensureTrailingSlashRemoved (endpoint);
-            if (! isPluginClubUrl (endpoint)
-                || endpoint.containsIgnoreCase ("/functions/")
-                || endpoint.endsWithIgnoreCase ("/functions"))
+            endpoint = ensureTrailingSlashRemoved (ensureHttpsScheme (endpoint));
+            if (! isPluginClubUrl (endpoint))
                 return endpoint;
 
+            if (endpoint.containsIgnoreCase ("/functions/v1/")
+                || endpoint.endsWithIgnoreCase ("/functions/v1"))
+                return endpoint;
+
+            if (endpoint.containsIgnoreCase ("/functions/") && ! endpoint.containsIgnoreCase ("/functions/v1/"))
+            {
+                return endpoint.replace ("https://www.plugin.club/functions/", "https://plugin.club/functions/v1/")
+                               .replace ("https://plugin.club/functions/", "https://plugin.club/functions/v1/");
+            }
+
+            if (endpoint.endsWithIgnoreCase ("/functions"))
+                return ensureTrailingSlashRemoved (endpoint) + "/v1";
+
             if (endpoint.startsWithIgnoreCase ("https://www.plugin.club/"))
-                return endpoint.replace ("https://www.plugin.club/", "https://plugin.club/functions/");
+                return endpoint.replace ("https://www.plugin.club/", "https://plugin.club/functions/v1/");
 
             if (endpoint.startsWithIgnoreCase ("https://plugin.club/"))
-                return endpoint.replace ("https://plugin.club/", "https://plugin.club/functions/");
+                return endpoint.replace ("https://plugin.club/", "https://plugin.club/functions/v1/");
 
             return endpoint;
+        }
+
+        static juce::String stripKnownSellerSuffix (juce::String value)
+        {
+            value = ensureTrailingSlashRemoved (value);
+            if (value.endsWithIgnoreCase ("/" + juce::String (kPluginClubSellerImportPath)))
+                return ensureTrailingSlashRemoved (value.dropLastCharacters ((int) std::strlen (kPluginClubSellerImportPath) + 1));
+            if (value.endsWithIgnoreCase ("/" + juce::String (kLegacyRomplurSellerImportPath)))
+                return ensureTrailingSlashRemoved (value.dropLastCharacters ((int) std::strlen (kLegacyRomplurSellerImportPath) + 1));
+            return value;
         }
 
         static bool looksLikeHtmlResponse (const juce::String& text)
@@ -69,35 +104,75 @@ namespace patchcraft
                     endpoints.add (endpoint);
             };
 
-            auto base = ensureTrailingSlashRemoved (configuredEndpoint);
+            auto base = ensureTrailingSlashRemoved (ensureHttpsScheme (configuredEndpoint));
             if (base.isEmpty())
                 return endpoints;
 
             if (base.containsIgnoreCase ("plugin.club/api"))
-                add (juce::String (kPluginClubDefaultFunctionsEndpoint) + "/" + kPluginClubSellerImportPath);
-
-            if (base.endsWithIgnoreCase ("/" + juce::String (kLegacyRomplurSellerImportPath)))
             {
-                const auto migrated = base.upToLastOccurrenceOf ("/", false, false)
-                                    + "/" + kPluginClubSellerImportPath;
-                add (ensurePluginClubFunctionsPrefix (migrated));
-
-                if (! isPluginClubUrl (base))
-                    add (base);
+                add (PluginClubApi::sellerImportUrl());
+                return endpoints;
             }
-            else if (base.endsWithIgnoreCase ("/" + juce::String (kPluginClubSellerImportPath)))
+
+            const auto functionsBase = [&base]() -> juce::String
             {
-                add (ensurePluginClubFunctionsPrefix (base));
+                const auto stripped = stripKnownSellerSuffix (base);
+                if (stripped.equalsIgnoreCase ("https://plugin.club")
+                    || stripped.equalsIgnoreCase ("https://www.plugin.club")
+                    || stripped.equalsIgnoreCase ("https://plugin.club/functions")
+                    || stripped.equalsIgnoreCase ("https://www.plugin.club/functions")
+                    || stripped.equalsIgnoreCase ("https://plugin.club/functions/v1")
+                    || stripped.equalsIgnoreCase ("https://www.plugin.club/functions/v1"))
+                    return kPluginClubDefaultFunctionsEndpoint;
+
+                if (stripped.endsWithIgnoreCase ("/functions"))
+                    return ensureTrailingSlashRemoved (stripped) + "/v1";
+
+                if (stripped.containsIgnoreCase ("/functions/v1"))
+                    return stripped;
+
+                if (stripped.containsIgnoreCase ("/functions"))
+                    return ensurePluginClubFunctionsPrefix (stripped);
+
+                return ensurePluginClubFunctionsPrefix (stripped + "/functions/v1");
+            }();
+
+            add (ensureTrailingSlashRemoved (functionsBase) + "/" + kPluginClubSellerImportPath);
+
+            if (base.containsIgnoreCase ("/functions/")
+                && (base.endsWithIgnoreCase ("/" + juce::String (kPluginClubSellerImportPath))
+                    || base.endsWithIgnoreCase ("/" + juce::String (kLegacyRomplurSellerImportPath))))
+            {
+                // Migrate romplurSellerImport (404 on live) to sellerImport.
+                add (ensurePluginClubFunctionsPrefix (
+                    stripKnownSellerSuffix (base) + "/" + kPluginClubSellerImportPath));
             }
-            else if (base.endsWithIgnoreCase ("/functions"))
-                add (base + "/" + kPluginClubSellerImportPath);
-            else
-                add (ensurePluginClubFunctionsPrefix (base + "/" + kPluginClubSellerImportPath));
 
-            if (base.equalsIgnoreCase ("https://plugin.club") || base.equalsIgnoreCase ("https://www.plugin.club"))
-                add (juce::String (kPluginClubDefaultFunctionsEndpoint) + "/" + kPluginClubSellerImportPath);
-
+            add (PluginClubApi::sellerImportUrl());
             return endpoints;
+        }
+
+        static juce::String resolvePluginClubBearerToken (const AiAssistService::CloudIntegrationConfig& config)
+        {
+            auto token = config.pluginClubAccessToken.trim();
+            if (token.isEmpty())
+                token = config.pluginClubApiKey.trim();
+            if (token.isNotEmpty())
+                return token;
+
+           #if JUCE_WINDOWS
+            char* envValue = nullptr;
+            size_t envLen = 0;
+            if (_dupenv_s (&envValue, &envLen, "PLUGINCLUB_API_KEY") == 0 && envValue != nullptr)
+            {
+                token = juce::String::fromUTF8 (envValue).trim();
+                std::free (envValue);
+            }
+           #else
+            if (const auto* envValue = std::getenv ("PLUGINCLUB_API_KEY"))
+                token = juce::String::fromUTF8 (envValue).trim();
+           #endif
+            return token;
         }
 
         static juce::String pluginTypeForEngine (juce::String engine)
@@ -362,7 +437,7 @@ namespace patchcraft
             object->setProperty ("license", juce::var (license));
             object->setProperty ("pluginClub", pluginClubMetadata);
             object->setProperty ("note",
-                                 "Plugin.club seller import payload. The upload request sends multipart/form-data with package=<zip> and metadata=<JSON> to /functions/sellerImport.");
+                                 "Plugin.club seller import payload. The upload request sends multipart/form-data with package=<zip> and metadata=<JSON> to /functions/v1/sellerImport.");
             return juce::var (object);
         }
 
@@ -380,7 +455,7 @@ namespace patchcraft
             object->setProperty ("archiveFile", archiveFile.getFullPathName());
             object->setProperty ("pluginClub", pluginClubMetadata);
             object->setProperty ("note",
-                                 "Plugin.club seller import payload. The upload request sends multipart/form-data with package=<zip> and metadata=<JSON> to /functions/sellerImport.");
+                                 "Plugin.club seller import payload. The upload request sends multipart/form-data with package=<zip> and metadata=<JSON> to /functions/v1/sellerImport.");
             return juce::var (object);
         }
 
@@ -524,15 +599,16 @@ namespace patchcraft
         static juce::String publishFailureHint (int statusCode, const juce::String& response)
         {
             if (statusCode == 405 || response.containsIgnoreCase ("method not allowed"))
-                return "\n\nPlugin.club backend functions must be called with the /functions prefix. "
-                       "Use https://plugin.club/functions/sellerImport in Settings.";
+                return "\n\nPlugin.club backend functions must use the /functions/v1 prefix. "
+                       "Use https://plugin.club/functions/v1/sellerImport in Settings.";
 
             if (statusCode >= 500 || response.containsIgnoreCase ("isolate_internal_failure"))
                 return "\n\nThis is a Plugin.club backend/server failure after PatchCraft prepared the package. "
                        "The local archive and payload were kept so the same draft can be retried without rebuilding.";
 
             if (statusCode == 401 || statusCode == 403)
-                return "\n\nCheck the Plugin.club seller API key in Settings.";
+                return "\n\nSign in to Plugin.club in Settings (Device Auth) so Studio can send "
+                       "Authorization: Bearer <access_token>. Seller profile required for publish.";
 
             return {};
         }
@@ -723,7 +799,7 @@ namespace patchcraft
             : juce::String (kPluginClubDefaultFunctionsEndpoint) + "/" + kPluginClubSellerImportPath;
         if (options.endpoint.isEmpty())
             options.endpoint = juce::String (kPluginClubDefaultFunctionsEndpoint) + "/" + kPluginClubSellerImportPath;
-        options.apiKey = config.pluginClubApiKey;
+        options.apiKey = resolvePluginClubBearerToken (config);
         options.timeoutMs = config.cloudTimeoutMs;
         options.stagingRoot = juce::File::getSpecialLocation (juce::File::tempDirectory)
             .getChildFile ("PatchCraft")

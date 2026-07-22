@@ -25,6 +25,8 @@ namespace patchcraft
         void mouseUp (const juce::MouseEvent&) override;
         void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
         void addKnobToLibrary();
+        static juce::StringArray galleryPresetNames();
+        void applyGalleryPreset (int index);
 
     private:
         StudioMainComponent& owner;

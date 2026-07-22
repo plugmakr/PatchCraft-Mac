@@ -8,7 +8,7 @@ namespace patchcraft
     class StudioMainComponent;
 
     /**
-        Left sidebar 'Elements' tab content. Lists Add Element + Components.
+        Left sidebar 'Elements' tab content. Drag rows onto the canvas to add.
     */
     class ElementPalette : public juce::Component
     {
@@ -25,20 +25,36 @@ namespace patchcraft
         juce::Viewport viewport;
         juce::Component scrollContent;
 
+        enum class PaletteTab
+        {
+            Controls,
+            Modules,
+            Starters
+        };
+
+        PaletteTab currentTab = PaletteTab::Controls;
+
+        juce::TextButton controlsTabBtn { "CONTROLS" };
+        juce::TextButton modulesTabBtn  { "MODULES" };
+        juce::TextButton startersTabBtn  { "STARTERS" };
+
         void applySearchFilter();
+        void setAllSectionsOpen (bool shouldOpen);
+        void toggleAllSections();
 
         struct Row : public juce::Component
         {
-            Row (juce::String text, juce::String iconKey,
-                 std::function<void()> onClick);
+            Row (juce::String text, juce::String iconKey, juce::var dragDescription, juce::String subtitle = {});
             void paint (juce::Graphics&) override;
             void mouseEnter (const juce::MouseEvent&) override   { hover = true;  repaint(); }
             void mouseExit  (const juce::MouseEvent&) override   { hover = false; repaint(); }
-            void mouseUp    (const juce::MouseEvent&) override;
+            void mouseDrag  (const juce::MouseEvent&) override;
+            int  getRowHeight() const { return subtitle.isNotEmpty() ? 38 : 28; }
 
             juce::String text;
             juce::String iconKey;
-            std::function<void()> onClick;
+            juce::var dragDescription;
+            juce::String subtitle;
             bool hover = false;
             bool matchesFilter = true;
         };
@@ -51,7 +67,6 @@ namespace patchcraft
             void mouseUp (const juce::MouseEvent&) override;
             void addRow (std::unique_ptr<Row>);
             int  getNeededHeight() const;
-            // Returns the number of rows that match the (case-insensitive) query.
             int  applyFilter (const juce::String& query);
 
             juce::String title;
@@ -65,7 +80,6 @@ namespace patchcraft
         Section analysisSection { "EQ + Analysis" };
         Section uiSection { "Visual UI Elements" };
         Section motionSection { "Reactive Animation" };
-        Section proVisualSection { "Pro / AI Visuals" };
         Section performanceSection { "MIDI + Performance" };
         Section containerSection { "Containers + Layout" };
         Section productStarterSection { "Plugin Starters" };
@@ -81,7 +95,10 @@ namespace patchcraft
         juce::TextButton copyBtn   { "Dup" };
         juce::TextButton folderBtn { "..." };
 
-        void addElementOfType (ElementType);
+        static juce::var makeElementDrag (ElementType type, const juce::String& label,
+                                          const juce::String& parameterId = {});
+        static juce::var makeModuleDrag (const juce::String& moduleType, const juce::String& label);
+        static juce::var makeActionDrag (const juce::String& action, const juce::String& label);
     };
 
 } // namespace patchcraft

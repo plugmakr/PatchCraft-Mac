@@ -3,7 +3,65 @@
 
 #ifdef _WIN32
 #include <windows.h>
-static LONG WINAPI pcCrashHandler(EXCEPTION_POINTERS* ep)
+#include <dbghelp.h>
+#include <psapi.h>
+#pragma comment(lib, "dbghelp.lib")
+#pragma comment(lib, "psapi.lib")
+
+static void pcWriteMiniDump (EXCEPTION_POINTERS* ep)
+{
+    char path[MAX_PATH] = {};
+    const char* tmp = std::getenv ("TEMP");
+    if (tmp == nullptr) tmp = ".";
+    SYSTEMTIME st {};
+    GetLocalTime (&st);
+    std::snprintf (path, sizeof (path),
+                   "%s\\PatchCraftStudio_%04d%02d%02d_%02d%02d%02d.dmp",
+                   tmp, (int) st.wYear, (int) st.wMonth, (int) st.wDay,
+                   (int) st.wHour, (int) st.wMinute, (int) st.wSecond);
+
+    HANDLE file = CreateFileA (path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                               FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
+    {
+        PC_DBG ("=== CRASH DUMP FAILED: could not create %s ===", path);
+        return;
+    }
+
+    MINIDUMP_EXCEPTION_INFORMATION info {};
+    info.ThreadId = GetCurrentThreadId();
+    info.ExceptionPointers = ep;
+    info.ClientPointers = FALSE;
+
+    const BOOL ok = MiniDumpWriteDump (GetCurrentProcess(), GetCurrentProcessId(), file,
+                                       MiniDumpWithIndirectlyReferencedMemory,
+                                       ep != nullptr ? &info : nullptr,
+                                       nullptr, nullptr);
+    CloseHandle (file);
+    PC_DBG ("=== CRASH DUMP %s: %s ===", ok ? "OK" : "FAILED", path);
+}
+
+static void pcLogLoadedModules()
+{
+    HMODULE modules[256] = {};
+    DWORD needed = 0;
+    if (! EnumProcessModules (GetCurrentProcess(), modules, sizeof (modules), &needed))
+        return;
+
+    const unsigned count = needed / sizeof (HMODULE);
+    for (unsigned i = 0; i < count && i < 64; ++i)
+    {
+        MODULEINFO mi {};
+        char name[MAX_PATH] = {};
+        if (! GetModuleInformation (GetCurrentProcess(), modules[i], &mi, sizeof (mi)))
+            continue;
+        GetModuleFileNameA (modules[i], name, MAX_PATH);
+        PC_DBG ("MODULE base=0x%p size=0x%X %s",
+                mi.lpBaseOfDll, (unsigned) mi.SizeOfImage, name);
+    }
+}
+
+static LONG WINAPI pcCrashHandler (EXCEPTION_POINTERS* ep)
 {
     const char* name = "Unknown";
     switch (ep->ExceptionRecord->ExceptionCode)
@@ -13,9 +71,27 @@ static LONG WINAPI pcCrashHandler(EXCEPTION_POINTERS* ep)
         case EXCEPTION_INT_DIVIDE_BY_ZERO:  name = "DIVIDE_BY_ZERO"; break;
         case EXCEPTION_PRIV_INSTRUCTION:    name = "PRIV_INSTRUCTION"; break;
     }
-    PC_DBG("=== CRASH: %s (code=0x%08X) at addr=0x%p ===",
-           name, (unsigned)ep->ExceptionRecord->ExceptionCode,
-           ep->ExceptionRecord->ExceptionAddress);
+
+    void* stack[64] = {};
+    const USHORT frames = CaptureStackBackTrace (0, 64, stack, nullptr);
+    PC_DBG ("=== CRASH: %s (code=0x%08X) at addr=0x%p tid=%u frames=%u ===",
+            name, (unsigned) ep->ExceptionRecord->ExceptionCode,
+            ep->ExceptionRecord->ExceptionAddress,
+            (unsigned) GetCurrentThreadId(), (unsigned) frames);
+    for (USHORT i = 0; i < frames; ++i)
+        PC_DBG ("  #%02u 0x%p", (unsigned) i, stack[i]);
+
+    if (ep->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION
+        && ep->ExceptionRecord->NumberParameters >= 2)
+    {
+        PC_DBG ("  AV op=%s target=0x%p",
+                ep->ExceptionRecord->ExceptionInformation[0] == 0 ? "read"
+                : ep->ExceptionRecord->ExceptionInformation[0] == 1 ? "write" : "exec",
+                (void*) ep->ExceptionRecord->ExceptionInformation[1]);
+    }
+
+    pcLogLoadedModules();
+    pcWriteMiniDump (ep);
     return EXCEPTION_EXECUTE_HANDLER;
 }
 #endif

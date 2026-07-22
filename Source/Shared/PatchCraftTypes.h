@@ -86,6 +86,33 @@ namespace patchcraft
         bool playerShowPatchCraftBranding = false;
         bool studioShowTutorials = true;
 
+        // Player chrome visibility. These are authored from Design/Brand Lab
+        // and exported with the pack so the DAW Player matches Studio preview.
+        bool playerShowTopBar = true;
+        bool playerShowLeftSidebar = true;
+        bool playerShowFooter = true;
+        bool playerShowRightPanel = true;
+        bool playerShowKeyboard = true;
+        bool playerTopShowBrowse = true;
+        bool playerTopShowSave = true;
+        bool playerTopShowSettings = true;
+        bool playerTopShowCategory = true;
+        bool playerTopShowFavorite = true;
+        bool playerTopShowPresetNav = true;
+        bool playerTopShowMasterVolume = true;
+        bool playerTopShowOutputMeter = true;
+
+        // Right panel section visibility settings
+        bool rightPanelShowMacros = true;
+        bool rightPanelShowEffects = true;
+        bool rightPanelShowSends = true;
+        bool rightPanelShowUtility = true;
+
+        // Quick Build workflow (author-facing product builder vs advanced editors).
+        bool quickBuildMode = true;
+        juce::String productRecipeId;
+        juce::String productKindLabel;
+
         // White-label packaging / installer metadata for client-ready Player products.
         juce::String whiteLabelPackageName;
         juce::String whiteLabelPublisher;
@@ -116,6 +143,15 @@ namespace patchcraft
         int  licenseOfflineGraceDays = 14;
         bool licenseBindToMachine = true;
         bool licenseAllowTrialConversion = true;
+
+        juce::StringArray rightPanelMacroNames;
+
+        Manifest()
+        {
+            const juce::String defaults[] = { "TONE", "WASH", "DRIVE", "WIDTH", "MOVEMENT", "PHASER", "DELAY", "REVERB" };
+            for (const auto& d : defaults)
+                rightPanelMacroNames.add (d);
+        }
 
         juce::var toVar() const;
         static Manifest fromVar (const juce::var&);
@@ -168,7 +204,8 @@ namespace patchcraft
         SampleDropZone,
         RuntimeSampleLibrary,
         PitchWheel,
-        ModWheel
+        ModWheel,
+        AdsrCurve
     };
 
     juce::String elementTypeToString (ElementType);
@@ -193,6 +230,9 @@ namespace patchcraft
         juce::String labelPosition { "bottom" };
         juce::String containerId;
         juce::String linkedCopyGroupId;
+
+        /** Optional portable script file relative to the project folder (e.g. scripts/cutoff-macro.pscript). */
+        juce::String pscriptFile;
 
         int x = 100, y = 100, width = 90, height = 90;
         bool visible = true;
@@ -600,6 +640,10 @@ namespace patchcraft
         bool userConfigured = false;
 
         void resetForEngine (const juce::String& engineId);
+        /** Multi-block graph with LFO, macros, edges, and automation lanes. */
+        void resetForEngineExpanded (const juce::String& engineId);
+        /** Ensure the graph has an authored OUT block (limiter/gain). Returns true if one was added. */
+        bool ensureAuthoredOutput();
         std::vector<TypedDspNode> buildTypedNodes (const juce::String& engineId = {}) const;
         std::vector<DspGraphEdge> buildAudioEdges (const juce::String& engineId = {}) const;
         std::vector<DspGraphValidationIssue> validateTypedGraph (const juce::String& engineId = {}) const;
@@ -685,5 +729,73 @@ namespace patchcraft
         juce::var toVar() const;
         static ExpansionMetadata fromVar (const juce::var&);
     };
+
+    /** Performance pad grids use square cells (~MPC size) centred in their bounds. */
+    constexpr int kPadPerformanceCellPx = 96;
+    constexpr int kPadGridCellGapPx     = 4;
+    constexpr int kPadGridChromeInsetPx = 8;
+
+    inline int standardPadGridExtent (int rows = 4, int cols = 4)
+    {
+        rows = juce::jmax (1, rows);
+        cols = juce::jmax (1, cols);
+        return cols * kPadPerformanceCellPx
+             + (cols - 1) * kPadGridCellGapPx
+             + kPadGridChromeInsetPx;
+    }
+
+    struct SquarePadGridMetrics
+    {
+        float cellSize = 0.0f;
+        float originX  = 0.0f;
+        float originY  = 0.0f;
+        float padW     = 0.0f;
+        float padH     = 0.0f;
+    };
+
+    inline SquarePadGridMetrics computePadGridMetrics (juce::Rectangle<float> inner,
+                                                       int rows,
+                                                       int cols,
+                                                       int gap,
+                                                       bool squareCells)
+    {
+        SquarePadGridMetrics metrics;
+        if (inner.isEmpty() || rows <= 0 || cols <= 0)
+            return metrics;
+
+        const float availW = (float) inner.getWidth() - (float) gap * (float) (cols - 1);
+        const float availH = (float) inner.getHeight() - (float) gap * (float) (rows - 1);
+        metrics.padW = availW / (float) cols;
+        metrics.padH = availH / (float) rows;
+
+        if (squareCells)
+        {
+            metrics.cellSize = juce::jmin (metrics.padW, metrics.padH);
+            const float gridW = metrics.cellSize * (float) cols + (float) gap * (float) (cols - 1);
+            const float gridH = metrics.cellSize * (float) rows + (float) gap * (float) (rows - 1);
+            metrics.originX = inner.getX() + ((float) inner.getWidth() - gridW) * 0.5f;
+            metrics.originY = inner.getY() + ((float) inner.getHeight() - gridH) * 0.5f;
+        }
+
+        return metrics;
+    }
+
+    inline juce::Rectangle<float> padCellRect (const SquarePadGridMetrics& metrics,
+                                                 int row,
+                                                 int col,
+                                                 int gap,
+                                                 bool squareCells,
+                                                 float innerX = 0.0f,
+                                                 float innerY = 0.0f)
+    {
+        if (squareCells && metrics.cellSize > 0.0f)
+            return { metrics.originX + (float) col * (metrics.cellSize + (float) gap),
+                     metrics.originY + (float) row * (metrics.cellSize + (float) gap),
+                     metrics.cellSize, metrics.cellSize };
+
+        return { innerX + (float) col * (metrics.padW + (float) gap),
+                 innerY + (float) row * (metrics.padH + (float) gap),
+                 metrics.padW, metrics.padH };
+    }
 
 } // namespace patchcraft

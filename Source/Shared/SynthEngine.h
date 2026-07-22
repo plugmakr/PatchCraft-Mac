@@ -126,7 +126,11 @@ namespace patchcraft
             std::atomic<float> delayTime      { 0.30f };
             std::atomic<float> delayFeedback  { 0.40f };
             std::atomic<float> delayMix       { 0.0f };
+            std::atomic<float> delayEnabled   { 1.0f };
+            std::atomic<float> delayType      { 3.0f };
             std::atomic<float> reverbMix      { 0.0f };
+            std::atomic<float> reverbEnabled  { 1.0f };
+            std::atomic<float> reverbType     { 2.0f };
             std::atomic<float> volume         { 0.8f };
             std::atomic<float> expression     { 1.0f };
             std::atomic<float> pan            { 0.0f };

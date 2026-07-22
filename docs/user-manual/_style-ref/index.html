@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>PatchCraft MasterClass - Complete Instrument Builder Training</title>
+    <meta name="description" content="The complete PatchCraft MasterClass: build synth, sample, drum, FX, MIDI, one-shot, branded Player, expansion, export and selling workflows."/>
+    <link rel="stylesheet" href="assets/css/main.css"/>
+    <link rel="icon" type="image/svg+xml" href="assets/img/logo.svg"/>
+</head>
+<body>
+<header class="topbar">
+    <div class="topbar-logo"><img src="assets/img/logo.svg" alt="" class="hex"/>PATCHCRAFT</div>
+    <span class="topbar-tagline">MasterClass</span>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-actions">
+        <a href="index.html">Tutorial Home</a>
+        <a href="#quick-start">Quick Start</a>
+        <a class="cta" href="#launch">Ship It</a>
+    </div>
+</header>
+
+<div class="shell masterclass-shell">
+    <nav class="sidebar">
+        <div class="sidebar-section">
+            <h5>MasterClass</h5>
+            <ul>
+                <li><a href="#overview">Overview</a></li>
+                <li><a href="#mental-model">Mental Model</a></li>
+                <li><a href="#app-map">App Map</a></li>
+                <li><a href="#quick-start">Quick Start</a></li>
+                <li><a href="#workflow">Workflow Page</a></li>
+                <li><a href="#design">Design Page</a></li>
+                <li><a href="#samples">Sample Mapper</a></li>
+                <li><a href="#one-shot">One Shot Maker</a></li>
+                <li><a href="#midi">MIDI Playground</a></li>
+                <li><a href="#dsp">DSP Builder</a></li>
+                <li><a href="#test-preview">Test / Preview</a></li>
+                <li><a href="#build">Build Page</a></li>
+                <li><a href="#brand">Brand Lab</a></li>
+                <li><a href="#launch">Launch Page</a></li>
+                <li><a href="#player">Player Runtime</a></li>
+                <li><a href="#recipes">Build Recipes</a></li>
+                <li><a href="#selling">Selling Strategy</a></li>
+                <li><a href="#troubleshooting">Troubleshooting</a></li>
+                <li><a href="#video-plan">Video Plan</a></li>
+            </ul>
+        </div>
+        <div class="sidebar-section">
+            <h5>Reference</h5>
+            <ul>
+                <li><a href="10-glossary.html">Glossary</a></li>
+                <li><a href="09-export-distribute.html">Export Tutorial</a></li>
+                <li><a href="07-brand-lab.html">Brand Lab Tutorial</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="content masterclass">
+        <section id="overview" class="hero masterclass-hero">
+            <div class="pill-row">
+                <span class="pill lead">Synth</span>
+                <span class="pill bass">Samples</span>
+                <span class="pill pad">MIDI</span>
+                <span class="pill arp">Player</span>
+                <span class="pill fx">Sell</span>
+            </div>
+            <h1>PatchCraft MasterClass</h1>
+            <p class="lede">This is the complete operating manual for PatchCraft Studio and the PatchCraft Player. It teaches the full path from a blank idea to a sellable, branded instrument: sound design, sample mapping, MIDI performance, DSP routing, GUI design, Player branding, preset packs, one-shot packs, exports, licensing, and customer-facing delivery.</p>
+            <div class="actions">
+                <a class="btn primary" href="#quick-start">Build the first instrument</a>
+                <a class="btn secondary" href="#recipes">Jump to recipes</a>
+            </div>
+        </section>
+
+        <figure class="figure-wide">
+            <img src="assets/img/masterclass/app-sections/studio-workflow.png" alt="PatchCraft Studio Workflow page"/>
+            <figcaption>PatchCraft Studio opens on the guided Workflow page. Treat this as the command center: build sound, design the Player UI, package presets, prove runtime behavior, then launch.</figcaption>
+        </figure>
+
+        <div class="callout important">
+            <strong>Core rule:</strong> PatchCraft is not only a GUI designer and it is not only a synth. A finished product is a playable patch plus a Player interface plus presets plus branding plus export metadata. If any part is missing, the buyer experience feels incomplete.
+        </div>
+
+        <section id="mental-model">
+            <h2>The PatchCraft Mental Model</h2>
+            <p>Most confusion disappears when the project model is clear. PatchCraft has a single source of truth for the sound, and the visible UI only controls that sound. Do not think of the Design page as the instrument itself. Think of it as the customer-facing control surface for the instrument.</p>
+
+            <div class="feature-grid compact">
+                <div class="feature">
+                    <h3>Project</h3>
+                    <p>The Studio file you are editing. It stores engine type, canvas size, layout, samples, DSP graph, presets, branding, licensing, exports, and library references.</p>
+                </div>
+                <div class="feature">
+                    <h3>Patch</h3>
+                    <p>A complete playable sound state: DSP graph, sample map, MIDI/performance pattern, parameter values, mappings, and metadata.</p>
+                </div>
+                <div class="feature">
+                    <h3>Preset</h3>
+                    <p>A named user-facing sound choice. In PatchCraft, a serious preset should point to a full Patch, not just a handful of knob values.</p>
+                </div>
+                <div class="feature">
+                    <h3>Expansion</h3>
+                    <p>A curated collection of presets, patches, samples, artwork, metadata, and categories that can be sold or installed as add-on content.</p>
+                </div>
+                <div class="feature">
+                    <h3>Player</h3>
+                    <p>The VST3/runtime your buyer opens in a DAW. It loads the exported pack, renders your designed UI, responds to MIDI, and exposes mapped controls.</p>
+                </div>
+                <div class="feature">
+                    <h3>One Shot Pack</h3>
+                    <p>A commercial sample pack created from rendered audio. It can stay as a pack or be sent into the Sample Mapper to become a playable instrument.</p>
+                </div>
+            </div>
+
+            <h3>The source-of-truth chain</h3>
+            <ol class="steps">
+                <li><h3>Sound source</h3><p>Synth oscillator, wavetable, sample zone, drum pad, live FX input, or imported one-shot output.</p></li>
+                <li><h3>DSP graph</h3><p>Source, Filter, Amp, Mod, FX, and Out blocks define how sound is produced, shaped, modulated, processed, and delivered.</p></li>
+                <li><h3>Parameters</h3><p>Every meaningful control needs a real parameter with range, unit, default value, smoothing, automation support, and MIDI-learn behavior.</p></li>
+                <li><h3>Layout controls</h3><p>Knobs, sliders, switches, meters, pads, dropdowns, tabs, containers, macros, matrices, and visual elements are bound to those parameters.</p></li>
+                <li><h3>Preset capture</h3><p>Save the full playable state as a patch/preset. If the preset does not change the sound, it is not ready to ship.</p></li>
+                <li><h3>Export proof</h3><p>Open the exported Player or VST3 in a DAW and confirm the exact customer-facing runtime matches Studio.</p></li>
+            </ol>
+        </section>
+
+        <section id="app-map">
+            <h2>PatchCraft App Map</h2>
+            <p>PatchCraft has a top toolbar, canvas controls, section tabs, side panels, and a bottom workspace. The same project can move between sound-building, UI design, sample work, MIDI performance, branding, and launch without changing applications.</p>
+
+            <div class="table-wrap">
+                <table class="reference-table">
+                    <thead><tr><th>Area</th><th>Purpose</th><th>When to use it</th></tr></thead>
+                    <tbody>
+                        <tr><td>File menu</td><td>Project-level commands.</td><td>New, open, save, window controls, help, tutorial access.</td></tr>
+                        <tr><td>Top toolbar</td><td>Fast project actions.</td><td>New, Open, Save, Import Samples, Import BG, AI Assist, Preview, Export Pack.</td></tr>
+                        <tr><td>Canvas controls</td><td>Project surface configuration.</td><td>Canvas size, engine type, snap, zoom, fit, canvas properties.</td></tr>
+                        <tr><td>Section tabs</td><td>Main workflow pages.</td><td>Workflow, Design, Samples, One Shot, MIDI, DSP, Build, Brand Lab, Launch.</td></tr>
+                        <tr><td>Left panel</td><td>Add and organize content.</td><td>Elements, Layers, Library, groups, assets, backgrounds, templates.</td></tr>
+                        <tr><td>Right panel</td><td>Edit selected objects.</td><td>Inspector, properties, DSP assignments, appearance, behavior, branding options.</td></tr>
+                        <tr><td>Bottom workspace</td><td>Page-specific editor.</td><td>The selected section tab decides what editor appears here.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3>Top toolbar button reference</h3>
+            <div class="table-wrap">
+                <table class="reference-table">
+                    <thead><tr><th>Button</th><th>What it does</th><th>Best practice</th></tr></thead>
+                    <tbody>
+                        <tr><td>New</td><td>Starts a fresh PatchCraft project.</td><td>Save the current project first. Choose the product path before designing heavily.</td></tr>
+                        <tr><td>Open</td><td>Loads an existing project or demo pack.</td><td>Use factory demos to study finished layouts and parameter mappings.</td></tr>
+                        <tr><td>Save</td><td>Saves the full project state.</td><td>Save after importing artwork, grouping layers, mapping samples, and capturing patches.</td></tr>
+                        <tr><td>Import Samples</td><td>Adds audio files into the project/sample workflow.</td><td>Name files clearly: instrument_note_velocity_rr.wav makes automap more reliable.</td></tr>
+                        <tr><td>Import BG</td><td>Adds a background image to the canvas.</td><td>Use clean artwork without baked-in knobs if you want controls to remain editable.</td></tr>
+                        <tr><td>AI Assist</td><td>Opens local/cloud assistant actions for layout, sound recipe, copy, checklist, and critique.</td><td>Use it for suggestions, not as a substitute for testing the exported Player.</td></tr>
+                        <tr><td>Preview</td><td>Starts/stops Studio preview audio.</td><td>Use Preview while mapping controls to confirm changes affect sound immediately.</td></tr>
+                        <tr><td>Export Pack</td><td>Exports a runtime pack or VST3 product.</td><td>Run Launch health checks first, then export and test in the actual DAW.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <figure class="figure-wide">
+                <img src="assets/img/masterclass/factory-demo-gallery.png" alt="PatchCraft factory demo gallery"/>
+                <figcaption>Factory demos are study material. Open them to learn how a finished synth, sampler, drum machine, FX instrument, granular instrument, and mixer-style Player are structured.</figcaption>
+            </figure>
+        </section>
+
+        <section id="quick-start">
+            <h2>Quick Start: Build One Complete Instrument</h2>
+            <p>This is the shortest reliable path to a product that makes sense. Use it before attempting advanced hybrid instruments.</p>
+
+            <ol class="steps">
+                <li><h3>Choose a product path</h3><p>Open <strong>Workflow</strong> and choose Synth Instrument, Sample Instrument, Drum Machine, or FX Plugin. This keeps engine, sample tools, DSP defaults, and export validation pointed at the right target.</p></li>
+                <li><h3>Build the sound first</h3><p>Go to <strong>DSP</strong> for synth/FX sound design, <strong>Samples</strong> for sample instruments and drums, or <strong>One Shot</strong> for rendered source material. Get an audible result before styling the UI.</p></li>
+                <li><h3>Create controls that matter</h3><p>Go to <strong>Design</strong>. Add knobs, sliders, switches, pads, dropdowns, meters, macro controls, and containers. Assign each control to a real parameter. If a control does not change sound or useful UI state, remove it or gray it out.</p></li>
+                <li><h3>Test while holding notes</h3><p>Use Preview/Test and a MIDI keyboard. Turn controls while audio is playing. A sellable instrument needs real-time response without obvious zipper noise, clipping, or silence.</p></li>
+                <li><h3>Capture a full patch</h3><p>Use Save Patch/Save Patch As from DSP/Design workflows. A patch should store DSP graph, sample zones, MIDI state, parameter values, and mappings.</p></li>
+                <li><h3>Create presets</h3><p>Make several named presets from complete patches. Use categories your buyers understand: Pads, Bass, Plucks, Motion, Drums, FX, Leads, Keys, Atmospheres.</p></li>
+                <li><h3>Brand the Player</h3><p>Open <strong>Brand Lab</strong>. Set product name, logo, tagline, colors, Player toolbar behavior, library visibility, import options, and customer-facing text.</p></li>
+                <li><h3>Run Launch health checks</h3><p>Open <strong>Launch</strong>. Fix missing mappings, missing assets, export-blocking DSP issues, license fields, Plugin.club configuration, and metadata gaps.</p></li>
+                <li><h3>Export and test in DAW</h3><p>Export, load in FL Studio or another target DAW, confirm MIDI input, tab switching, preset loading, labels, Player toolbar, mixer, sample drag/drop, and automation/MIDI Learn.</p></li>
+            </ol>
+        </section>
+
+        <section id="workflow">
+            <h2>Workflow Page: Command Center</h2>
+            <figure class="figure-wide">
+                <img src="assets/img/masterclass/app-sections/studio-workflow.png" alt="PatchCraft Workflow page screenshot"/>
+                <figcaption>The Workflow page is the high-level path from product type to launch. It keeps the project centered on one playable Patch instead of scattered edits.</figcaption>
+            </figure>
+            <p>The Workflow page exists to prevent random building. It answers: what product are you making, what stage are you in, and is the project healthy enough to export?</p>
+
+            <h3>Product Path</h3>
+            <p>The Product Path sets expectations for the engine and export. Choose carefully:</p>
+            <ul>
+                <li><strong>Synth Instrument:</strong> oscillator/wavetable-driven instrument with modulations, filters, amp, effects, performance controls, and presets.</li>
+                <li><strong>Sample Instrument:</strong> keymapped or pad-based sampler with sample zones, velocity layers, round robin, one-shots, loops, and sample editing.</li>
+                <li><strong>Drum Machine:</strong> pad grid, pattern grid, drum tracks, mixer lanes, pad highlights, MIDI/pad triggering, and pattern playback.</li>
+                <li><strong>FX Plugin:</strong> incoming DAW audio processed through designed effects, performance throws, EQ, modulation, delay, reverb, stutter, or utility processing.</li>
+            </ul>
+
+            <h3>Guided Launch Path</h3>
+            <p>The guided path gives you a sequence: Build Sound, Perform, Design Player, Package Presets, Prove Runtime, Launch. Each stage should produce a real artifact, not just a visual change.</p>
+
+            <div class="callout tip">
+                <strong>Rule:</strong> If you cannot play it, map it, save it, reload it, and export it, it is not finished.
+            </div>
+        </section>
+
+        <section id="design">
+            <h2>Design Page: Build the Customer-Facing Instrument</h2>
+            <figure class="figure-wide">
+                <img src="assets/img/masterclass/app-sections/studio-design.png" alt="PatchCraft Design page screenshot"/>
+                <figcaption>The Design page is where the Player UI is created: canvas, elements, layers, inspector, library assets, containers, tabs, and parameter assignments.</figcaption>
+            </figure>
+            <p>The Design page is where you build the interface your customer touches. It is Photoshop-like in spirit, but every serious element should connect to sound, performance, navigation, or product clarity.</p>
+
+            <h3>Canvas</h3>
+            <p>The canvas is the Player body. Canvas size defines the product dimensions. Changing canvas size affects how the Player layout fits, so choose a size early. Use grid, snap, zoom, and fit to work cleanly.</p>
+
+            <h3>Elements panel</h3>
+            <p>The Elements panel is divided by function:</p>
+            <ul>
+                <li><strong>Sound + Control Elements:</strong> knobs, sliders, switches, dropdowns, XY pads, macro controls, mod matrix, meters, waveform, granular field.</li>
+                <li><strong>Visual UI Elements:</strong> text, labels, shapes, panels, images, separators, decorative sections.</li>
+                <li><strong>MIDI + Performance:</strong> keyboard, drum pads, drum grid, performance strips, MIDI controls, transport/playback elements.</li>
+                <li><strong>Containers + Layout:</strong> panels, tabbed containers, grouped sections, layout helpers.</li>
+            </ul>
+
+            <h3>Layers panel</h3>
+            <p>Layers control order, groups, folders, visibility, selection, and organization. Use groups for sections such as Main, Filter, FX, Motion, Mixer, Performance, or Branding. Selected canvas objects should map to selected layers. Use layer search when the design becomes dense.</p>
+
+            <h3>Library panel</h3>
+            <p>The Library contains Backgrounds, Templates, and Assets. Assets should be draggable onto the canvas. Use it to reuse knobs, sliders, meters, panel treatments, templates, and finished UI chunks.</p>
+
+            <figure class="figure-wide">
+                <img src="assets/img/masterclass/asset-library-gallery.png" alt="PatchCraft built asset library"/>
+                <figcaption>The asset library gives developers reusable control styles. A professional product should use a small, consistent set of controls rather than random knobs from different visual languages.</figcaption>
+            </figure>
+
+            <h3>Inspector</h3>
+            <p>The Inspector edits the selected element. Its most important jobs are:</p>
+            <ul>
+                <li><strong>Identity:</strong> name, label, type, layer/group membership.</li>
+                <li><strong>Geometry:</strong> x/y position, width, height, rotation, alignment, ordering.</li>
+                <li><strong>Appearance:</strong> fill, border, opacity, image, filmstrip, colors, typography.</li>
+                <li><strong>Behavior:</strong> toggle mode, reset behavior, drag behavior, tab behavior, pad highlighting, interaction color.</li>
+                <li><strong>DSP Assignment:</strong> connect this UI element to a parameter, macro, modulation route, sample control, MIDI action, or Player action.</li>
+            </ul>
+
+            <h3>Connecting knobs to sound</h3>
+            <ol>
+                <li>Add or select a parameter in DSP Builder, Sample Mapper, or the parameter registry.</li>
+                <li>Add a knob/slider/switch/dropdown on the Design canvas.</li>
+                <li>Select the element and open the Inspector DSP Assignment area.</li>
+                <li>Choose the target parameter. Confirm the label and value display make sense.</li>
+                <li>Press Preview, hold a note, and move the control.</li>
+                <li>If nothing changes, check whether the parameter is enabled, mapped, grayed out, blocked by engine type, or not connected in the DSP graph.</li>
+            </ol>
+
+            <h3>Tabs and containers</h3>
+            <p>Tabbed containers let one Player screen show many pages: Main, Amp, Filter, Mod, FX, Space, Mixer, Perform, Import. Add controls inside the correct tab group. If controls appear on every tab, they are probably outside the tab container. If you want one control to appear on every tab, copy it to all tabs or use copy-as-reference when you want one edit to update every copy.</p>
+
+            <h3>Design best practices</h3>
+            <ul>
+                <li>Every section needs a title and a clear reason to exist.</li>
+                <li>Use switches for on/off states, not knobs.</li>
+                <li>Use labels that tell the buyer what the control does: Cutoff, Body, Drift, Space, Bite, Width.</li>
+                <li>Use meters and visual feedback where performance is happening.</li>
+                <li>Keep the most important performance controls large and close to the center.</li>
+                <li>Do not bury critical playback, preset, or import controls inside obscure tabs.</li>
+            </ul>
+        </section>
+
+        <section id="samples">
+            <h2>Sample Mapper: Build Playable Sample Instruments</h2>
+            <figure class="figure-wide">
+                <img src="assets/img/masterclass/app-sections/studio-samples.png" alt="PatchCraft Sample Mapper screenshot"/>
+                <figcaption>The Sample Mapper handles imported audio, easy keyboard maps, drum kits, glitch slicing, zone health, performance pads, and advanced zone editing.</figcaption>
+            </figure>
+            <p>The Sample Mapper turns audio files into playable zones, pads, one-shot kits, chopped performances, and sample-based instruments. It has Easy and Advanced workflows so beginners can map quickly and advanced developers can edit zones deeply.</p>
+
+            <figure class="figure-grid">
+                <img src="assets/img/masterclass/demo-sampler-organic.png" alt="Organic Tape Sampler demo"/>
+                <img src="assets/img/masterclass/demo-granular.png" alt="Granular Vocal Clouds demo"/>
+            </figure>
+
+            <h3>Easy Sample Builder</h3>
+            <ul>
+                <li><strong>Import Samples:</strong> bring in WAV, AIFF, FLAC, and supported audio files.</li>
+                <li><strong>Build Keyboard Map:</strong> map samples across keys using filename, metadata, pitch detection, and fallback rules.</li>
+                <li><strong>Build Drum Kit:</strong> assign one-shots to pads by filename and drum-role detection.</li>
+                <li><strong>Slice / Glitch Kit:</strong> slice a selected sample into pads for stutter, chop, and performance instruments.</li>
+                <li><strong>Auto Trim:</strong> remove silence from selected samples or all samples if nothing is selected.</li>
+                <li><strong>Select All:</strong> select every zone before batch editing, trimming, deleting, or applying defaults.</li>
+            </ul>
+
+            <h3>Advanced zone editing</h3>
+            <p>Advanced mode is where you edit the actual sample map. A zone normally has root key, low key, high key, low velocity, high velocity, round-robin group, choke group, start/end bounds, fades, gain, pan, loop state, one-shot state, reverse, and playback rules.</p>
+
+            <div class="table-wrap">
+                <table class="reference-table">
+                    <thead><tr><th>Control</th><th>Meaning</th><th>Use it for</th></tr></thead>
+                    <tbody>
+                        <tr><td>Root</td><td>The pitch the sample was recorded at.</td><td>Keeping mapped notes in tune.</td></tr>
+                        <tr><td>Low/High Key</td><td>The key range that triggers the zone.</td><td>Stretching one sample across keys or placing many samples chromatically.</td></tr>
+                        <tr><td>Velocity Low/High</td><td>The velocity range that triggers the zone.</td><td>Soft, medium, hard, and accent layers.</td></tr>
+                        <tr><td>Round Robin</td><td>Alternate samples for repeated notes.</td><td>More realistic drums, plucks, keys, and repeated hits.</td></tr>
+                        <tr><td>One Shot</td><td>Sample plays through without requiring note hold.</td><td>Drums, FX hits, braams, risers, impacts.</td></tr>
+                        <tr><td>Fade In/Out</td><td>Smooths start/end boundaries.</td><td>Removing clicks, harsh starts, and cutoffs.</td></tr>
+                        <tr><td>Loop</td><td>Repeats a region while note is held.</td><td>Sustains, pads, textures, granular beds.</td></tr>
+                        <tr><td>Choke Group</td><td>One sample stops another.</td><td>Closed/open hats, cymbal control, phrase cutoffs.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3>Best sample naming</h3>
+            <p>Good filenames make automap stronger. Use consistent naming:</p>
+            <pre><code>Instrument_Note_Velocity_RR.wav
+DustSnare_C1_vel1-60_RR1.wav
+DustSnare_C1_vel61-100_RR2.wav
+DustSnare_C1_vel101-127_RR3.wav
+WarmPad_C3_vel1-127_RR1.wav</code></pre>
+
+            <h3>How samples interact with MIDI and DSP</h3>
+            <p>Samples are triggered by MIDI notes or pads. MIDI Playground can generate the notes, patterns, probability, gates, slices, and sample-control movement. DSP Builder shapes the resulting audio with filters, amp, modulation, FX, and output processing. A sample instrument becomes powerful when the sample map, MIDI pattern, and DSP graph are designed together.</p>
+
+            <h3>Common sample workflows</h3>
+            <ul>
+                <li><strong>Keyboard instrument:</strong> import tuned notes, automap root keys, build velocity layers, add amp envelope, filter, tone controls, and presets.</li>
+                <li><strong>Drum kit:</strong> import one-shots, build drum pads, set one-shot mode, add choke groups, build pattern grid, add mixer lanes, export as drum machine.</li>
+                <li><strong>Glitch kit:</strong> import a loop or phrase, slice to pads, map MIDI patterns, add stutter, reverse, start/length controls, delay/reverb throws.</li>
+                <li><strong>Granular instrument:</strong> import long textures/vocals, create sample zones, add granular field, position, density, direction, spread, freeze, motion, and audio-reactive visuals.</li>
+            </ul>
+        </section>
+
+        <section id="one-shot">
+            <h2>One Shot Maker: Capture, Edit, Package</h2>
+            <figure class="figure-wide">
+                <img src="assets/img/masterclass/app-sections/studio-one-shot.png" alt="PatchCraft One Shot Maker screenshot"/>
+                <figcaption>The One Shot Maker is the capture and pack-building workflow: plugin/source capture, render templates, editing, metadata, artwork, packaging, and publishing.</figcaption>
+            </figure>
+            <p>The One Shot Maker is for creating commercial one-shot packs and sample sources from plugins or rendered sounds. It is inspired by tools like SampleRobot, but focused on creating sellable PatchCraft-ready packs.</p>
+
+            <h3>Core workflow</h3>
+            <ol>
+                <li>Import a plugin or source.</li>
+                <li>Open or float the plugin editor to choose sounds.</li>
+                <li>Enable live audition so MIDI hardware and the preview keyboard can trigger the plugin.</li>
+                <li>Choose a render template: root only, octave notes, C0-C6, drum pads, velocity layers, or round robin passes.</li>
+                <li>Set bar length, tail, fade in, fade out, sample rate, naming, artwork, metadata, and output folder.</li>
+                <li>Render the one-shot pack.</li>
+                <li>Review each file in the editor: trim, fade, normalize if needed, reject bad renders.</li>
+                <li>Send to Sample Mapper, create a Patch from the pack, export a commercial bundle, or publish a draft.</li>
+            </ol>
+
+            <h3>Round robin and velocity layers</h3>
+            <p>Use multiple passes when you want realistic performance. Velocity layers capture soft/medium/hard intensity. Round robin captures small variations for repeated notes. For drums, this is critical. For pads, it is usually less important.</p>
+
+            <h3>Artwork and packaging</h3>
+            <p>Commercial one-shot packs need clear artwork, pack name, creator name, category, tags, description, license terms, and file organization. Think like a seller: the buyer should understand what the pack is before opening a single file.</p>
+        </section>
+
+        <section id="midi">
+            <h2>MIDI Playground: Musical Control, Not Random Notes</h2>
+            <figure class="figure-wide">
+                <img src="assets/img/masterclass/app-sections/studio-midi.png" alt="PatchCraft MIDI Playground screenshot"/>
+                <figcaption>MIDI Playground is the performance and phrase system: chord logic, rhythm grids, drum patterns, piano roll editing, sample control, and exported MIDI.</figcaption>
+            </figure>
+            <p>MIDI Playground is the performance brain. It creates and edits musical data that can trigger synth voices, sample zones, drum pads, slices, and performance effects. Its value is not random generation; its value is musical constraint, transformation, and real integration with sound.</p>
+
+            <h3>Main sections</h3>
+            <ul>
+                <li><strong>Input:</strong> scale, root, source mode, hardware MIDI, imported MIDI, or generated phrase.</li>
+                <li><strong>Harmony:</strong> chord presets, progressions, chord size, spread, inversions, key/scale lock.</li>
+                <li><strong>Rhythm:</strong> step grid, probability, gate, swing, Euclidean pulses, ratchets, strum/flam, polymeter.</li>
+                <li><strong>Performance:</strong> latch, phrase banks, pattern switching, morphing, gestures, MIDI output behavior.</li>
+                <li><strong>Sample Control:</strong> sample start, slice, length, pitch, reverse, retrigger, chop behavior.</li>
+                <li><strong>Output:</strong> playable MIDI, exported MIDI clip, sample triggers, DSP modulation, Player runtime patterns.</li>
+            </ul>
+
+            <h3>Piano roll vs grid</h3>
+            <p>The piano roll is for traditional notes, chords, progressions, length, velocity, and editing. The grid is for drum machines, patterns, probability, trap divisions, and performance-style step editing. Use both when building modern instruments: piano roll for harmonic material, grid for rhythm and pattern behavior.</p>
+
+            <h3>How MIDI impacts sound</h3>
+            <p>MIDI can trigger notes, choose sample slices, change sample start, control velocity layers, switch patterns, drive DSP modulation, trigger arpeggiators, automate macros, and export clips. If the MIDI page feels disconnected, check whether the MIDI output is routed to the active sound source, sample map, drum pads, or DSP modulation target.</p>
+
+            <h3>Musical generation rules</h3>
+            <ul>
+                <li>Use scale and root as hard constraints.</li>
+                <li>Use curated chord progressions instead of fully random notes.</li>
+                <li>Limit mutation depth so generated results remain usable.</li>
+                <li>For drums, use genre templates as a base: four-on-the-floor, trap hats, halftime, breakbeat, cinematic pulses.</li>
+                <li>Use probability for variation, not chaos.</li>
+                <li>Always audition generated MIDI against the current sound source.</li>
+            </ul>
+        </section>
+
+        <section id="dsp">
+            <h2>DSP Builder: Craft the Actual Sound</h2>
+            <figure class="figure-wide">
+                <img src="assets/img/masterclass/app-sections/studio-dsp.png" alt="PatchCraft DSP Builder screenshot"/>
+                <figcaption>DSP Builder is the actual sound-crafting workspace: section tabs, block banks, mixer access, wavetable editor, patch save controls, graph inspector, macros, and modulation.</figcaption>
+            </figure>
+            <p>DSP Builder is where PatchCraft becomes a sound-design playground. It builds synths, sample processors, FX chains, modulation systems, macros, EQs, granular behavior, routing, and output logic.</p>
+
+            <figure class="figure-grid">
+                <img src="assets/img/masterclass/demo-synth-neon.png" alt="Neon Wavetable Motion demo"/>
+                <img src="assets/img/masterclass/demo-fx-braam.png" alt="Trailer Braam FX demo"/>
+            </figure>
+
+            <h3>Builder sections</h3>
+            <div class="table-wrap">
+                <table class="reference-table">
+                    <thead><tr><th>Section</th><th>Controls</th><th>Purpose</th></tr></thead>
+                    <tbody>
+                        <tr><td>Source</td><td>Oscillators, wavetables, sample layers, noise, granular, source mixer.</td><td>Creates or imports the raw sound.</td></tr>
+                        <tr><td>Filter</td><td>Low-pass, high-pass, band-pass, EQ bands, surgical EQ, keytracking.</td><td>Shapes frequency content.</td></tr>
+                        <tr><td>Amp</td><td>Envelope, velocity response, gain, transient, dynamics.</td><td>Controls loudness and articulation.</td></tr>
+                        <tr><td>Mod</td><td>LFOs, envelopes, sequencers, random, followers, macros, mod matrix.</td><td>Moves parameters over time or performance input.</td></tr>
+                        <tr><td>FX</td><td>Delay, reverb, chorus, phaser, distortion, comb, resonator, spectral tools.</td><td>Adds space, color, movement, destruction, or polish.</td></tr>
+                        <tr><td>Out</td><td>Output gain, limiter, pan, width, routing, meters.</td><td>Final gain staging and export-safe output.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3>Blocks, banks, and mixers</h3>
+            <p>Each module uses banks to keep complex patches organized. A bank can contain up to six blocks, which keeps the UI readable. Blocks define sound functions. The mixer blends block contributions. Do not add blocks just to fill space. Add blocks when they create audible value.</p>
+
+            <h3>Graph Inspector</h3>
+            <p>The Graph Inspector edits the selected block, macro, modulation, or route. If no item is selected, controls may be grayed out. A grayed-out control should explain why it cannot be used: missing target, disabled block, wrong engine, no selected graph item, or unsupported runtime route.</p>
+
+            <h3>Macros</h3>
+            <p>A macro is one visible performance control that moves multiple parameters. Example: a single <strong>Intensity</strong> macro can raise filter cutoff, increase drive, shorten decay, increase delay feedback, and brighten output. Macros are how you turn technical sound design into buyer-friendly controls.</p>
+
+            <h3>Mod matrix</h3>
+            <p>The mod matrix connects sources to targets. A source can be LFO, envelope, velocity, keytrack, random, MIDI CC, mod wheel, audio follower, macro, or sequencer. A target can be any supported parameter. Amount, polarity, smoothing, sync, and curve decide how strongly the source moves the target.</p>
+
+            <h3>Quick Edit</h3>
+            <p>DSP Quick Edit is for choosing which controls developers want available as fast-access parameters. Those controls can be mapped to the Design canvas or exposed in the Player. It should show useful controls, not every internal value.</p>
+
+            <h3>Save Patch vs section presets</h3>
+            <ul>
+                <li><strong>Save Patch:</strong> saves the complete playable instrument state.</li>
+                <li><strong>Save Patch As:</strong> saves a new full patch/preset variation.</li>
+                <li><strong>Section Preset:</strong> saves only one section, such as a filter chain, FX chain, wavetable source, or modulation setup.</li>
+                <li><strong>Expansion:</strong> groups finished patches into a sellable collection.</li>
+            </ul>
+        </section>
+
+        <section id="test-preview">
+            <h2>Test / Preview: Prove the Runtime Before Export</h2>
+            <figure class="figure-wide">
+                <img src="assets/img/masterclass/app-sections/studio-test.png" alt="PatchCraft Test and preview screenshot"/>
+                <figcaption>The Test/Preview view is where the Studio instrument should behave like the exported Player: playable keyboard, active UI, mapped controls, MIDI input, tabs, meters, patterns, and runtime response.</figcaption>
+            </figure>
+            <p>Testing is not optional. PatchCraft products must be proven while audio is running, because the buyer will judge the instrument by how quickly it responds in a DAW. Use Preview and Test to confirm the real runtime path before exporting.</p>
+            <h3>What to verify</h3>
+            <ul>
+                <li>Software keyboard produces sound.</li>
+                <li>Hardware MIDI keyboard produces sound, not only visual key highlights.</li>
+                <li>Mod wheel, expression, sustain, pitch wheel, and learned controls update the same runtime parameter model.</li>
+                <li>Tabs and containers switch visible controls correctly.</li>
+                <li>Knobs, switches, sliders, pads, drum grids, granular controls, meters, and macro controls affect the sound or runtime state they claim to control.</li>
+                <li>Preset switching displays a loading state and returns to a complete playable sound.</li>
+                <li>Sample/MIDI runtime import works if enabled for the Player.</li>
+            </ul>
+        </section>
+
+        <section id="build">
+            <h2>Build Page: Create Custom Controls</h2>
+            <figure class="figure-wide">
+                <img src="assets/img/masterclass/app-sections/studio-build.png" alt="PatchCraft Build page screenshot"/>
+                <figcaption>The Build page creates reusable knobs, sliders, meters, and custom assets that can be exported to the Library and reused on the Design canvas.</figcaption>
+            </figure>
+            <p>The Build page is PatchCraft's control factory. Use it to make knobs, sliders, meters, and other reusable interface assets. The goal is a professional library of controls that match the instrument brand.</p>
+
+            <h3>What to build</h3>
+            <ul>
+                <li><strong>Knobs:</strong> main synth controls, macros, tone controls, effects sends.</li>
+                <li><strong>Sliders/faders:</strong> mixer lanes, envelopes, macro strips, modulation depths.</li>
+                <li><strong>Meters:</strong> output, compression, pad activity, sample playback, performance feedback.</li>
+                <li><strong>Reusable styles:</strong> one visual system per product line.</li>
+            </ul>
+
+            <h3>Import existing controls</h3>
+            <p>Import a knob, slider, or filmstrip to edit it in PatchCraft. After editing, export it to the Library so the Design page can drag it onto the canvas. Test imported controls inside Build first, then verify they remain responsive after being used in the Player layout.</p>
+
+            <h3>Control design rules</h3>
+            <ul>
+                <li>Keep knob sizes consistent unless a control is intentionally primary.</li>
+                <li>Labels should be detachable and independently editable.</li>
+                <li>Use double-click reset for knobs and sliders.</li>
+                <li>Make value text readable at actual Player size, not just at zoomed Studio size.</li>
+                <li>Do not over-render controls with excessive highlights that clash with artwork.</li>
+            </ul>
+        </section>
+
+        <section id="brand">
+            <h2>Brand Lab: White-Label the Player</h2>
+            <figure class="figure-wide">
+                <img src="assets/img/masterclass/app-sections/studio-brand-lab.png" alt="PatchCraft Brand Lab screenshot"/>
+                <figcaption>Brand Lab previews the customer-facing Player: title, toolbar, preset area, instrument body, runtime controls, keyboard, and brand settings.</figcaption>
+            </figure>
+            <p>Brand Lab shows how the Player will look in the buyer's DAW. It should match the runtime Player as closely as possible: title bar, top toolbar, preset navigation, library, sound editor, rack, control panel, keyboard, and full instrument body.</p>
+
+            <figure class="figure-wide">
+                <img src="assets/img/masterclass/demo-mixer.png" alt="Obsidian Mixer Console demo"/>
+                <figcaption>Branding is product strategy. The buyer should feel like they opened a real instrument from your company, not a generic PatchCraft shell.</figcaption>
+            </figure>
+
+            <h3>Branding controls</h3>
+            <ul>
+                <li><strong>Product name:</strong> what the buyer sees in the Player and product pages.</li>
+                <li><strong>Creator/company:</strong> your brand identity.</li>
+                <li><strong>Logo:</strong> compact icon or mark for the Player header.</li>
+                <li><strong>Tagline:</strong> one sentence that explains the instrument.</li>
+                <li><strong>Colors:</strong> accent, border, panel, background, text, highlights.</li>
+                <li><strong>Player toolbar:</strong> File, Library, View, Tools, Sound, Rack, Control, MIDI/import controls.</li>
+                <li><strong>Library behavior:</strong> whether buyers can load packs, expansions, and imported content.</li>
+                <li><strong>Import behavior:</strong> whether end users can drag samples/MIDI into the Player.</li>
+                <li><strong>Licensing text:</strong> activation, offline grace, trial, and support messaging.</li>
+            </ul>
+
+            <h3>Customer-facing Player sections</h3>
+            <ul>
+                <li><strong>Sound Editor:</strong> exposed sound controls only. Do not show internal engineering controls that do not affect this instrument.</li>
+                <li><strong>Rack:</strong> multi-instrument/layer routing, layer volume, pan, mute, solo, MIDI channel, and output routing.</li>
+                <li><strong>Control Center:</strong> product info, license status, MIDI Learn, global settings, routing, import permissions, and support links.</li>
+                <li><strong>Keyboard:</strong> full-width performance area for playable instruments.</li>
+            </ul>
+
+            <h3>Branding checklist</h3>
+            <ul class="checklist">
+                <li>Product name fits without clipping.</li>
+                <li>Preset dropdown is readable and not too wide.</li>
+                <li>Toolbar icons have tooltips.</li>
+                <li>Instrument title does not sit under the menu bar.</li>
+                <li>All tabs switch in Brand Lab and exported Player.</li>
+                <li>No hidden random PatchCraft text appears over customer artwork.</li>
+                <li>Player looks professional at 100 percent zoom in a DAW.</li>
+            </ul>
+        </section>
+
+        <section id="launch">
+            <h2>Launch Page: Product Readiness</h2>
+            <figure class="figure-wide">
+                <img src="assets/img/masterclass/app-sections/studio-launch.png" alt="PatchCraft Launch page screenshot"/>
+                <figcaption>The Launch page is the release checklist: product readiness, export safety, Plugin.club publishing, licensing, installer notes, and DAW verification tasks.</figcaption>
+            </figure>
+            <p>Launch is the preflight system. It should tell you if the instrument is ready to sell, export, publish, and support.</p>
+
+            <h3>Launch checks</h3>
+            <ul>
+                <li>Missing samples, missing images, missing filmstrips, or invalid asset paths.</li>
+                <li>Controls mapped to missing or internal-only parameters.</li>
+                <li>DSP graph issues: missing source/target nodes, unsupported routes, no safe output, clipping risk.</li>
+                <li>Sample map health: zones, root keys, velocity coverage, missing files, key coverage.</li>
+                <li>Preset health: presets point to full patches and produce unique audible results.</li>
+                <li>Branding health: product name, artwork, logo, tagline, description, category.</li>
+                <li>License health: product ID, license URL, public key, policy, trial days, offline grace.</li>
+                <li>Plugin.club health: endpoint, API key, artifact type, metadata, artwork, archive.</li>
+            </ul>
+
+            <h3>Export types</h3>
+            <div class="table-wrap">
+                <table class="reference-table">
+                    <thead><tr><th>Export</th><th>What it creates</th><th>Use case</th></tr></thead>
+                    <tbody>
+                        <tr><td>PatchCraft Pack</td><td>A folder with manifest, layout, DSP, parameters, presets, samples, assets.</td><td>Player-loadable instrument/expansion.</td></tr>
+                        <tr><td>Standalone VST3</td><td>A VST3 bundle with embedded pack data.</td><td>Selling a self-contained plugin product.</td></tr>
+                        <tr><td>Player FX VST3</td><td>An FX plugin variant that processes incoming DAW audio.</td><td>FX processors, transitions, throws, EQ tools.</td></tr>
+                        <tr><td>One Shot Pack</td><td>Rendered WAV/metadata/artwork pack.</td><td>Selling sample packs or feeding Sample Mapper.</td></tr>
+                        <tr><td>Plugin.club Draft</td><td>Upload package and metadata to seller backend.</td><td>Direct publish workflow.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="player">
+            <h2>PatchCraft Player Runtime</h2>
+            <p>The Player is what the end buyer experiences. Everything in Studio must ultimately prove itself in the Player.</p>
+
+            <h3>Player top bar</h3>
+            <ul>
+                <li><strong>File:</strong> pack actions and runtime loading options.</li>
+                <li><strong>Library:</strong> browse installed packs, demos, expansions, and compatible instruments.</li>
+                <li><strong>View:</strong> view and display options.</li>
+                <li><strong>Tools:</strong> creative tools, routing, mixer, MIDI Learn, and preset actions.</li>
+                <li><strong>Preset navigation:</strong> previous, current preset, next, with clear loading display.</li>
+                <li><strong>Sound:</strong> open the exposed sound editor.</li>
+                <li><strong>Rack:</strong> open multi-instrument/layer management.</li>
+                <li><strong>Control:</strong> open product, routing, import, license, and MIDI control center.</li>
+                <li><strong>Import:</strong> allow end users to import samples or MIDI if the instrument supports runtime content.</li>
+                <li><strong>Play/Stop:</strong> audition internal MIDI/drum patterns when DAW transport is stopped.</li>
+            </ul>
+
+            <h3>MIDI Learn</h3>
+            <p>In the Player, users should be able to right-click a mapped control, choose Learn, move a hardware knob/fader/pad, and bind that control. Only expose learnable controls that make sense. Internal hidden controls should not confuse buyers.</p>
+
+            <h3>Runtime sample and MIDI import</h3>
+            <p>If enabled, the Player can accept user samples and MIDI. This unlocks customer creativity: they can load their own drums, loops, one-shots, MIDI phrases, and performance data. The design must make import obvious: visible import button, drag/drop messaging, loaded-content list, playable pads/keyboard, and clear/reset behavior.</p>
+
+            <h3>Multi-instrument Player</h3>
+            <p>When multiple instruments are loaded, the Player needs layer controls: layer name, active state, volume, pan, mute, solo, MIDI channel/range, output route, compact/expanded display, and global controls. This lets buyers stack a pad with a pluck, layer drums with FX, or combine multiple patches into one performance setup.</p>
+        </section>
+
+        <section id="recipes">
+            <h2>Complete Build Recipes</h2>
+
+            <article class="recipe">
+                <h3>Recipe 1: Pure Synth Instrument</h3>
+                <ol>
+                    <li>Workflow: choose Synth Instrument.</li>
+                    <li>DSP Source: add oscillator or wavetable blocks. Set wavetable family, position, unison, detune, spread, sub/noise if needed.</li>
+                    <li>Filter: add low-pass or surgical EQ bands. Map cutoff/resonance/keytrack.</li>
+                    <li>Amp: shape attack, decay, sustain, release, velocity response.</li>
+                    <li>Mod: add LFOs, envelopes, macro, mod wheel route, velocity route.</li>
+                    <li>FX: add chorus, delay, reverb, distortion, resonator, or width.</li>
+                    <li>Out: set safe gain, limiter, width, output meter.</li>
+                    <li>Design: add controls for oscillator, filter, envelope, motion, FX, and output.</li>
+                    <li>Save Patch As: create named presets such as Stadium Supersaw, Dark Pluck, Glass Pad.</li>
+                    <li>Brand and export. Test in DAW.</li>
+                </ol>
+            </article>
+
+            <article class="recipe">
+                <h3>Recipe 2: Sample-Based Instrument</h3>
+                <ol>
+                    <li>Workflow: choose Sample Instrument.</li>
+                    <li>Samples: import tuned samples with note names.</li>
+                    <li>Build Keyboard Map and verify root keys.</li>
+                    <li>Set velocity layers and round robin groups.</li>
+                    <li>Trim silence, set fades, loops, one-shot state where appropriate.</li>
+                    <li>DSP: add filter, amp envelope, tone, width, reverb/delay.</li>
+                    <li>MIDI: add chord/progression or sample-control behavior if useful.</li>
+                    <li>Design: create tabs for Main, Amp, Filter, FX, Perform.</li>
+                    <li>Save full patches/presets. Test hardware MIDI and exported Player.</li>
+                </ol>
+            </article>
+
+            <article class="recipe">
+                <h3>Recipe 3: Drum Machine Instrument</h3>
+                <ol>
+                    <li>Workflow: choose Drum Machine.</li>
+                    <li>Samples: import kick, snare, clap, hats, percussion, FX.</li>
+                    <li>Build Drum Kit and verify pad notes.</li>
+                    <li>Set one-shot mode, choke groups, pad names, pad highlight color.</li>
+                    <li>MIDI: create drum patterns with grid cells, velocity, probability, ratchets/divisions.</li>
+                    <li>Design: add Pad Grid, Drum Grid, mixer lanes, pattern controls, global FX.</li>
+                    <li>DSP: add per-kit tone, drive, compression, delay/reverb sends, output limiter.</li>
+                    <li>Brand: make it feel like a drum machine, not a generic sampler.</li>
+                    <li>Export and test pad triggering, grid playback, MIDI hardware pads, and DAW sync.</li>
+                </ol>
+            </article>
+
+            <article class="recipe">
+                <h3>Recipe 4: FX Plugin</h3>
+                <ol>
+                    <li>Workflow: choose FX Plugin.</li>
+                    <li>DSP FX: build chain from incoming audio to output.</li>
+                    <li>Add EQ, dynamics, delay, reverb, distortion, stutter, filter, width, motion.</li>
+                    <li>Import a sample into the FX preview track to test without a DAW.</li>
+                    <li>Design performance controls: bypass switches, throws, macro intensity, XY pad, meters.</li>
+                    <li>Brand for use on mixer inserts: clear input/output, wet/dry, gain staging.</li>
+                    <li>Export Player FX VST3 and test on an FL Studio mixer insert.</li>
+                </ol>
+            </article>
+
+            <article class="recipe">
+                <h3>Recipe 5: One Shot Pack Into Playable Instrument</h3>
+                <ol>
+                    <li>One Shot Maker: import plugin or source.</li>
+                    <li>Choose and audition source sound.</li>
+                    <li>Render chromatic, velocity, or drum-pad one-shot pack.</li>
+                    <li>Edit fades, trim silence, normalize only if needed.</li>
+                    <li>Send to Sample Mapper.</li>
+                    <li>Create Patch From One Shot Pack.</li>
+                    <li>Add DSP and Design controls.</li>
+                    <li>Package as instrument, expansion, or sample product.</li>
+                </ol>
+            </article>
+        </section>
+
+        <section id="selling">
+            <h2>Building Products People Want to Buy</h2>
+            <p>PatchCraft is a product builder. A good sound is not enough. Buyers pay for clarity, inspiration, workflow, trust, and polish.</p>
+
+            <h3>Position the product clearly</h3>
+            <ul>
+                <li><strong>Who is it for?</strong> Trap producers, cinematic composers, EDM sound designers, sample-pack makers, worship keys players, trailer editors, lo-fi producers.</li>
+                <li><strong>What does it do quickly?</strong> Braams, pads, drums, vocal chops, granular textures, surgical EQ, one-shot kits, motion plucks.</li>
+                <li><strong>Why is it better?</strong> Faster workflow, unique performance controls, strong branding, real presets, drag/drop import, MIDI manipulation, high-quality UI.</li>
+            </ul>
+
+            <h3>What buyers expect</h3>
+            <ul>
+                <li>A fast install.</li>
+                <li>A beautiful first screen.</li>
+                <li>Great default preset.</li>
+                <li>Clear categories and preset names.</li>
+                <li>Controls that immediately change the sound.</li>
+                <li>No missing samples, no silent notes, no broken tabs.</li>
+                <li>MIDI Learn and DAW automation where it matters.</li>
+                <li>A short walkthrough video and a written quick-start guide.</li>
+            </ul>
+
+            <h3>Expansion strategy</h3>
+            <p>Sell the main Player/instrument as the platform, then sell focused expansions. Example: Cinematic Braams Vol. 1, Neon Wavetable Bass, Lo-Fi Keys, Granular Vocals, Drum Machine Trap Kits, Ambient Motion Pads. Each expansion should have artwork, categories, tags, demo audio, and a clear promise.</p>
+
+            <h3>Customer acquisition ideas</h3>
+            <ul>
+                <li>Publish short videos showing one patch becoming a finished beat or cue.</li>
+                <li>Give away a small free demo instrument or free expansion.</li>
+                <li>Show before/after clips for FX products.</li>
+                <li>Show MIDI and sample import features because they create buyer imagination.</li>
+                <li>Create genre-specific landing pages instead of one generic product page.</li>
+                <li>Offer developer/white-label services for customers who want custom branded Players.</li>
+            </ul>
+        </section>
+
+        <section id="troubleshooting">
+            <h2>Troubleshooting</h2>
+
+            <div class="table-wrap">
+                <table class="reference-table">
+                    <thead><tr><th>Problem</th><th>Likely cause</th><th>Fix</th></tr></thead>
+                    <tbody>
+                        <tr><td>Knob moves but sound does not change.</td><td>Control is not mapped, target parameter is missing, or DSP route is disconnected.</td><td>Open Inspector DSP Assignment, confirm parameter exists, verify DSP graph route, test while holding a note.</td></tr>
+                        <tr><td>Control is grayed out.</td><td>Feature is unavailable for current engine, no selected block, or missing source/target.</td><td>Read the tooltip, select the correct block, enable the module, or switch engine path.</td></tr>
+                        <tr><td>Hardware MIDI lights keys but no sound.</td><td>MIDI input reaches UI but not audio engine, wrong channel/range, no active source, or preview inactive.</td><td>Select MIDI device, enable Preview/Test, check engine/source, verify sample zones or synth source exist.</td></tr>
+                        <tr><td>Samples import on wrong notes.</td><td>Filename parsing failed or no pitch metadata was found.</td><td>Use clear note names, run Auto Map, manually set root keys, verify C0/C3 naming convention.</td></tr>
+                        <tr><td>Drum pads work but drum grid does not.</td><td>Grid is not routed to pad notes or transport is stopped.</td><td>Check MIDI Playground drum routing, press Player Play or DAW Play, verify pad notes.</td></tr>
+                        <tr><td>Tabs work in Studio but not Player.</td><td>Elements are outside the tab group or export layout has unsupported group state.</td><td>Use Design tab containers correctly, test exported Player, run Launch validation.</td></tr>
+                        <tr><td>Export blocks with missing references.</td><td>DSP graph edge, sample, image, parameter, or runtime control cannot resolve.</td><td>Fix Launch health issues before exporting. Do not ignore missing target warnings.</td></tr>
+                        <tr><td>Plugin.club publish fails.</td><td>Endpoint, API key, backend, payload, or server issue.</td><td>Use https://plugin.club/functions/v1/romplurSellerImport, verify API key (Bearer pc_live_... / PLUGINCLUB_API_KEY), inspect local payload/archive from the error dialog.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="video-plan">
+            <h2>Suggested Video Course Structure</h2>
+            <p>This written MasterClass is intentionally structured so it can become videos. Recommended sequence:</p>
+            <ol class="steps">
+                <li><h3>PatchCraft in 10 minutes</h3><p>What the app is, what it exports, what the Player does.</p></li>
+                <li><h3>Build your first synth</h3><p>Source, filter, amp, FX, controls, preset, export.</p></li>
+                <li><h3>Build a sample instrument</h3><p>Import, automap, velocity, round robin, trim, fades, Player controls.</p></li>
+                <li><h3>Build a drum machine</h3><p>Pads, patterns, grid editing, mixer, MIDI pads, DAW sync.</p></li>
+                <li><h3>MIDI Playground deep dive</h3><p>Piano roll, chord presets, drum grid, sample control, MIDI export.</p></li>
+                <li><h3>DSP Builder deep dive</h3><p>Blocks, banks, mixer, graph inspector, macros, mod matrix, EQ, wavetable, granular, FX.</p></li>
+                <li><h3>Design professional UI</h3><p>Canvas, elements, layers, inspector, tabs, assets, library, alignment, visual polish.</p></li>
+                <li><h3>Brand and sell the Player</h3><p>Brand Lab, top menu, library, rack, control center, licensing, customer workflow.</p></li>
+                <li><h3>One Shot Maker and pack publishing</h3><p>Render plugin sounds, edit files, build packs, send to mapper, publish.</p></li>
+                <li><h3>Launch checklist</h3><p>Health checks, export, FL Studio test, Plugin.club draft, support docs.</p></li>
+            </ol>
+        </section>
+
+        <div class="section-nav">
+            <a class="prev" href="index.html"><strong>Back</strong><span>Tutorial home</span></a>
+            <a class="next" href="01-overview.html"><strong>Next</strong><span>Standard tutorial path</span></a>
+        </div>
+    </main>
+</div>
+
+<footer class="footer">
+    PatchCraft MasterClass - Complete written training for Studio, Player, exports, branding, and sellable products.
+</footer>
+
+<script src="assets/js/nav.js"></script>
+</body>
+</html>

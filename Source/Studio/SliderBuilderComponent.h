@@ -17,6 +17,8 @@ namespace patchcraft
         void paint (juce::Graphics&) override;
         void resized() override;
         void addSliderToLibrary();
+        static juce::StringArray galleryPresetNames();
+        void applyGalleryPreset (int index);
 
     private:
         StudioMainComponent& owner;

@@ -45,7 +45,7 @@ file(WRITE "${OUTPUT_DIR}/Extension/PatchCraftVstExpansion/manifest.json" "{
   \"kind\": \"exporter\",
   \"author\": \"PatchCraft\",
   \"description\": \"Enables standalone branded VST3 export from PatchCraft Studio projects.\",
-  \"minPatchCraftVersion\": \"0.1.0\",
+  \"minPatchCraftVersion\": \"1.0.0\",
   \"productId\": \"patchcraft-vst-expansion\",
   \"licenseMode\": \"external\",
   \"capabilities\": [
@@ -117,8 +117,8 @@ DefaultGroupName=PatchCraft
 OutputBaseFilename=PatchCraftVstExpansion-Setup
 Compression=lzma2
 SolidCompression=yes
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 
 [Files]
@@ -160,5 +160,10 @@ file(WRITE "${OUTPUT_DIR}/vst-expansion-manifest.json" "{
   ]
 }
 ")
+
+require_exists("${OUTPUT_DIR}/PluginTemplate/PatchCraft Player.vst3" "packaged Player export template")
+require_exists("${OUTPUT_DIR}/PluginTemplate/PatchCraft Player FX.vst3" "packaged Player FX export template")
+require_exists("${OUTPUT_DIR}/Extension/PatchCraftVstExpansion/manifest.json" "VST Expansion manifest")
+require_exists("${OUTPUT_DIR}/installer/PatchCraftVstExpansion-Windows.iss" "VST Expansion Windows installer script")
 
 message(STATUS "PatchCraft VST Expansion package created at ${OUTPUT_DIR}")

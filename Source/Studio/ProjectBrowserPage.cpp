@@ -3,6 +3,7 @@
 #include "PatchCraftLookAndFeel.h"
 
 #include <algorithm>
+#include <map>
 
 namespace patchcraft
 {
@@ -78,6 +79,39 @@ namespace patchcraft
         scanRoot (appDir.getChildFile ("FactoryDemos"), 1);
         scanRoot (appDir.getChildFile ("Library").getChildFile ("Templates"), 2);
         scanRoot (docs, 2);
+
+        const auto appFactoryRoot = normalisePath (appDir.getChildFile ("FactoryDemos"));
+        std::vector<Entry> uniqueEntries;
+        std::map<juce::String, size_t> runtimeDemoIndex;
+        auto demoPriority = [&appFactoryRoot] (const Entry& entry)
+        {
+            const auto path = normalisePath (entry.folder);
+            if (path == appFactoryRoot || path.startsWith (appFactoryRoot + "/"))
+                return 3;
+            return entry.recent ? 2 : 1;
+        };
+
+        for (auto& entry : entries)
+        {
+            if (entry.type != "Runtime Pack / Demo")
+            {
+                uniqueEntries.push_back (std::move (entry));
+                continue;
+            }
+
+            const auto identity = entry.title.trim().toLowerCase() + "|" + entry.engine.trim().toLowerCase();
+            const auto found = runtimeDemoIndex.find (identity);
+            if (found == runtimeDemoIndex.end())
+            {
+                runtimeDemoIndex[identity] = uniqueEntries.size();
+                uniqueEntries.push_back (std::move (entry));
+            }
+            else if (demoPriority (entry) > demoPriority (uniqueEntries[found->second]))
+            {
+                uniqueEntries[found->second] = std::move (entry);
+            }
+        }
+        entries = std::move (uniqueEntries);
 
         std::stable_sort (entries.begin(), entries.end(),
             [] (const Entry& a, const Entry& b)

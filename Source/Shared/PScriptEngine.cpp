@@ -413,7 +413,10 @@ namespace patchcraft
             return true;
         }
 
-        if (firstToken.equalsIgnoreCase ("velocity") || firstToken.equalsIgnoreCase ("modwheel"))
+        if (firstToken.equalsIgnoreCase ("velocity")
+            || firstToken.equalsIgnoreCase ("modwheel")
+            || firstToken.equalsIgnoreCase ("note")
+            || firstToken.equalsIgnoreCase ("value"))
         {
             index++;
             expr.type = Expression::Type::Identifier;

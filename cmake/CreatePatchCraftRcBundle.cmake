@@ -54,6 +54,15 @@ file(COPY "${STUDIO_PAYLOAD}" DESTINATION "${OUTPUT_DIR}")
 file(COPY "${STUDIO_DIR}/FactoryDemos" DESTINATION "${OUTPUT_DIR}")
 file(COPY "${STUDIO_DIR}/Library" DESTINATION "${OUTPUT_DIR}")
 file(COPY "${STUDIO_DIR}/PlayerPlugins" DESTINATION "${OUTPUT_DIR}")
+file(REMOVE_RECURSE "${OUTPUT_DIR}/PlayerPlugins/PatchCraft Composer.vst3")
+
+require_exists("${OUTPUT_DIR}/FactoryDemos" "staged FactoryDemos")
+require_exists("${OUTPUT_DIR}/Library" "staged creator Library")
+require_exists("${OUTPUT_DIR}/PlayerPlugins/PatchCraft Player.vst3" "staged Player VST3")
+require_exists("${OUTPUT_DIR}/PlayerPlugins/PatchCraft Player FX.vst3" "staged Player FX VST3")
+if(EXISTS "${OUTPUT_DIR}/PluginTemplate")
+    message(FATAL_ERROR "Base RC unexpectedly contains the paid VST Expansion PluginTemplate folder")
+endif()
 
 if(EXISTS "${SOURCE_DIR}/README.md")
     file(COPY "${SOURCE_DIR}/README.md" DESTINATION "${OUTPUT_DIR}/docs")
@@ -124,7 +133,7 @@ file(WRITE "${OUTPUT_DIR}/installer/PatchCraftStudio-Windows.iss" "; PatchCraft 
 
 #define ProductName \"PatchCraft Studio\"
 #define ProductPublisher \"PatchCraft\"
-#define ProductVersion \"0.1.0\"
+#define ProductVersion \"1.0.0\"
 #define SourceDir \"..\"
 
 [Setup]
@@ -137,8 +146,8 @@ DefaultGroupName=PatchCraft Studio
 OutputBaseFilename=PatchCraftStudio-Setup
 Compression=lzma2
 SolidCompression=yes
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 
 [Files]

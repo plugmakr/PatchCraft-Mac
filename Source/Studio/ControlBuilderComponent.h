@@ -15,7 +15,8 @@ namespace patchcraft
         dropdown that switches the editor between the three flavours, plus a
         live preview area. Replaces the previous three-tab layout.
     */
-    class ControlBuilderComponent : public juce::Component
+    class ControlBuilderComponent : public juce::Component,
+                                    private juce::ListBoxModel
     {
     public:
         explicit ControlBuilderComponent (StudioMainComponent& owner);
@@ -34,6 +35,9 @@ namespace patchcraft
         juce::TextButton newAssetButton { "New Asset" };
         juce::TextButton duplicateButton { "Duplicate" };
         juce::TextButton exportButton { "Export" };
+        juce::Label galleryTitle;
+        juce::Label galleryHint;
+        juce::ListBox galleryList { "WidgetGallery", this };
 
         std::unique_ptr<KnobBuilderComponent>   knobBuilder;
         std::unique_ptr<SliderBuilderComponent> sliderBuilder;
@@ -41,6 +45,15 @@ namespace patchcraft
         std::unique_ptr<AiImageBuilderComponent> aiImageBuilder;
 
         void rebuildVisibility();
+        juce::StringArray getCurrentGalleryNames() const;
+        void applyGalleryPreset (int row);
+
+        int getNumRows() override;
+        void paintListBoxItem (int rowNumber, juce::Graphics&, int width, int height, bool rowIsSelected) override;
+        void listBoxItemClicked (int row, const juce::MouseEvent&) override;
+        void listBoxItemDoubleClicked (int row, const juce::MouseEvent&) override;
+
+        int selectedGalleryRow = 0;
     };
 
 } // namespace patchcraft

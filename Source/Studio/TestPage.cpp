@@ -719,6 +719,10 @@ namespace patchcraft
         {
             return setArpLaneStepsFromUi (lane, steps);
         };
+        instrumentRenderer->onSetMidiPlaygroundActiveBank = [this] (int bank)
+        {
+            return setMidiPlaygroundActiveBankFromUi (bank);
+        };
         instrumentRenderer->onSetSeqLaneStep = [this] (int laneIndex, int step, float value, bool active, const juce::String& laneType)
         {
             return setSeqLaneStepFromUi (laneIndex, step, value, active, laneType);
@@ -1819,6 +1823,22 @@ namespace patchcraft
         return true;
     }
 
+    bool TestPage::setMidiPlaygroundActiveBankFromUi (int bank)
+    {
+        auto& graph = owner.getProject().getDspGraph();
+        auto& block = ensureArpBlock (graph);
+        block.values["mpActiveBank"] = (float) juce::jlimit (0, 4, bank);
+        block.values["mpMultiLane"] = 1.0f;
+        graph.userConfigured = true;
+        owner.getProject().markDirty();
+
+        {
+            const juce::SpinLock::ScopedLockType lock (engineLock);
+            syncRoutingFromProject();
+        }
+        return true;
+    }
+
     bool TestPage::setArpLaneStepFromUi (int lane, int step, float velocity, bool active)
     {
         lane = juce::jlimit (0, 15, lane);
@@ -1840,11 +1860,29 @@ namespace patchcraft
             block.values["mpBank" + juce::String (lane + 1) + "_" + key] = value;
         };
 
+        block.values["mpActiveBank"] = (float) juce::jlimit (0, 4, lane);
+        block.values["mpMultiLane"] = 1.0f;
+        setLaneValue ("mpLaneTarget", (float) juce::jlimit (0, 4, lane));
         setLaneValue ("mpStep" + keyStep + "On", active ? 1.0f : 0.0f);
         setLaneValue ("mpVelocity" + keyStep, velocity);
         setLaneValue ("mpGate" + keyStep, arpLaneValue (block, lane, "mpGate" + keyStep, 0.72f));
         setLaneValue ("mpStepProb" + keyStep, arpLaneValue (block, lane, "mpStepProb" + keyStep, 1.0f));
         setLaneValue ("mpStepDiv" + keyStep, arpLaneValue (block, lane, "mpStepDiv" + keyStep, 1.0f));
+        if (lane == 1)
+            setLaneValue ("mpAutoFilter" + keyStep, velocity);
+        else if (lane == 2)
+            setLaneValue ("mpAutoPan" + keyStep, velocity * 2.0f - 1.0f);
+        else if (lane == 3)
+        {
+            setLaneValue ("mpAutoFxSend" + keyStep, velocity);
+            setLaneValue ("mpLaneFxTarget", arpLaneValue (block, lane, "mpLaneFxTarget", 0.0f));
+        }
+        else if (lane == 4)
+        {
+            setLaneValue ("mpSampleControl", 1.0f);
+            setLaneValue ("mpSampleSliceCount", 16.0f);
+            setLaneValue ("mpSampleSlice" + keyStep, (float) juce::jlimit (0, 15, juce::roundToInt (velocity * 15.0f)));
+        }
         graph.userConfigured = true;
         owner.getProject().markDirty();
 

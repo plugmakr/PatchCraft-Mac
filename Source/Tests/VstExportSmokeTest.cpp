@@ -190,7 +190,7 @@ int main (int argc, char** argv)
     project.getManifest().whiteLabelProductCode = "QA-SMOKE-001";
     project.getManifest().licenseRequired = true;
     project.getManifest().licenseProductId = "qa-smoke-synth";
-    project.getManifest().licenseServerUrl = "https://plugin.club/functions/deviceAuth";
+    project.getManifest().licenseServerUrl = "https://plugin.club/functions/v1/activateLicense";
     project.getManifest().playerSupportUrl = "https://plugin.club/support";
 
     const auto tempRoot = juce::File::getSpecialLocation (juce::File::tempDirectory)

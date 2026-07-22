@@ -9,6 +9,7 @@
                  : type == ElementType::TabPanel ? 420
                  : type == ElementType::GranularField ? 440
                  : type == ElementType::EqCurve ? 460
+                 : type == ElementType::AdsrCurve ? 460
                  : type == ElementType::SpectrumAnalyzer ? 460
                  : type == ElementType::ReactiveImage ? 320
                  : type == ElementType::SpriteAnimator ? 260
@@ -23,7 +24,7 @@
                  : type == ElementType::Mixer ? 520
                  : type == ElementType::MacroControl ? 190
                  : type == ElementType::ModMatrix ? 420
-                 : type == ElementType::PadGrid ? 360
+                 : type == ElementType::PadGrid ? standardPadGridExtent (4, 4)
                  : type == ElementType::DrumPad ? 80
                  : type == ElementType::Toggle ? 128 : 96;
         el.height = (type == ElementType::Panel) ? 180
@@ -31,6 +32,7 @@
                   : type == ElementType::TabPanel ? 44
                   : type == ElementType::GranularField ? 220
                   : type == ElementType::EqCurve ? 180
+                  : type == ElementType::AdsrCurve ? 180
                   : type == ElementType::SpectrumAnalyzer ? 160
                   : type == ElementType::ReactiveImage ? 200
                   : type == ElementType::SpriteAnimator ? 180
@@ -45,10 +47,16 @@
                   : type == ElementType::Mixer ? 260
                   : type == ElementType::MacroControl ? 132
                   : type == ElementType::ModMatrix ? 220
-                  : type == ElementType::PadGrid ? 360
+                  : type == ElementType::PadGrid ? standardPadGridExtent (4, 4)
                   : type == ElementType::DrumPad ? 80
                   : type == ElementType::Toggle ? 54 : 96;
-        el.parameterId = std::move (parameterId);
+        el.parameterId = resolveControlParameter (type, parameterId, owner.getProject());
+        if (layoutElementRequiresParameter (type) && el.parameterId.isNotEmpty())
+        {
+            ensureSimpleStackForEngine (owner.getProject(), owner.getProject().getEngineType());
+            ensureProjectParameter (owner.getProject(), el.parameterId, {});
+            attachControlToExistingRouting (owner.getProject(), el.parameterId);
+        }
         if (auto* def = owner.getProject().getParameters().find (el.parameterId))
             el.label = def->name;
         else
@@ -419,6 +427,9 @@
             });
         if (addedId.isNotEmpty())
             owner.setSelectedElementId (addedId);
+
+        syncDspGraphValuesToLiveStore (owner.getProject());
+        owner.syncExportPreview();
     }
 
     void CanvasEditor::addMixerChannelAt (juce::Point<int> canvasPos)
@@ -596,8 +607,8 @@
                 pads.label = "Performance Pads";
                 pads.x = canvasPos.x + 20;
                 pads.y = canvasPos.y + 58;
-                pads.width = 300;
-                pads.height = 300;
+                pads.width = standardPadGridExtent (4, 4);
+                pads.height = standardPadGridExtent (4, 4);
                 pads.padRows = 4;
                 pads.padCols = 4;
                 pads.padBaseNote = 36;
@@ -1161,6 +1172,9 @@
                     for (const auto& value : defaults)
                         if (block.values.find (value.first) == block.values.end())
                             block.values[value.first] = value.second;
+                    for (const auto& value : defaults)
+                        if (pm.find (value.first) != nullptr)
+                            liveValues.setValue (value.first, block.values[value.first]);
                     graph.userConfigured = true;
                     return;
                 }
@@ -1178,6 +1192,9 @@
             block.metadata["ioMode"] = ioMode;
             for (const auto& value : defaults)
                 block.values[value.first] = value.second;
+            for (const auto& value : defaults)
+                if (pm.find (value.first) != nullptr)
+                    liveValues.setValue (value.first, value.second);
             graph.blocks.push_back (std::move (block));
             graph.userConfigured = true;
         };
@@ -1266,7 +1283,10 @@
             LayoutElement surface;
             surface.type = type;
             surface.label = label;
-            surface.parameterId = paramId;
+            if (layoutElementUsesSemanticParameterId (type))
+                surface.parameterId.clear();
+            else
+                surface.parameterId = paramId;
             surface.x = pos.x + xOffset;
             surface.y = pos.y + yOffset;
             surface.width = width;
@@ -1308,6 +1328,8 @@
 
         auto finishModernModule = [&]
         {
+            syncDspGraphValuesToLiveStore (owner.getProject());
+            owner.syncExportPreview();
             owner.getProject().notifyChanged();
             repaint();
         };
@@ -1469,36 +1491,119 @@
             ensureBlock ("starter_synth_output", "out", "limiter", "Starter Output", "outputCeilingDb", "starter", "output", "stereo",
                          { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "volume", 0.78f } });
 
-            addModulePanel ("Add Synth Plugin Starter", "Synth Plugin Starter", 780, 430,
+            addModulePanel ("Add Synth Plugin Starter", "Synth Plugin Starter", 920, 430,
                 [&] (LayoutModel& layout, const juce::String& panelId)
                 {
                     addChildSurface (layout, panelId, ElementType::Label, "SOURCE", juce::String(), 22, 28, 100, 24);
-                    addChildSurface (layout, panelId, ElementType::Waveform, "Wavetable", "wtPosition", 22, 58, 190, 82);
-                    addChildKnob (layout, panelId, "Wave", "oscType", 234, 58);
-                    addChildKnob (layout, panelId, "WT Pos", "wtPosition", 316, 58);
-                    addChildKnob (layout, panelId, "Blend", "oscBlend", 398, 58);
-                    addChildKnob (layout, panelId, "Sub", "subBlend", 480, 58);
-                    addChildValue (layout, panelId, "Noise Off", "noiseBlend", 566, 78, 78, 30);
+                    addChildSurface (layout, panelId, ElementType::Waveform, "Wavetable", "wtPosition", 22, 58, 230, 82);
+                    addChildKnob (layout, panelId, "WT Pos", "wtPosition", 268, 58);
+                    addChildKnob (layout, panelId, "WT Morph", "wtMorph", 344, 58);
+                    addChildKnob (layout, panelId, "Wave", "oscType", 420, 58);
+                    addChildKnob (layout, panelId, "Blend", "oscBlend", 496, 58);
+                    addChildKnob (layout, panelId, "Sub", "subBlend", 572, 58);
+                    addChildKnob (layout, panelId, "Noise", "noiseBlend", 648, 58);
+                    addChildSurface (layout, panelId, ElementType::SpectrumAnalyzer, "Spectrum", juce::String(), 736, 58, 160, 82);
 
-                    addChildSurface (layout, panelId, ElementType::Label, "SHAPE", juce::String(), 22, 158, 100, 24);
-                    addChildKnob (layout, panelId, "Cutoff", "filterCutoff", 22, 190);
-                    addChildKnob (layout, panelId, "Res", "filterResonance", 104, 190);
-                    addChildSlider (layout, panelId, "A", "attack", 206, 182);
-                    addChildSlider (layout, panelId, "D", "decay", 258, 182);
-                    addChildSlider (layout, panelId, "S", "sustain", 310, 182);
-                    addChildSlider (layout, panelId, "R", "release", 362, 182);
+                    addChildSurface (layout, panelId, ElementType::Label, "FILTER & ENVELOPE", juce::String(), 22, 158, 200, 24);
+                    addChildSurface (layout, panelId, ElementType::EqCurve, "Filter EQ", "filterCutoff", 22, 182, 170, 92);
+                    addChildKnob (layout, panelId, "Cutoff", "filterCutoff", 204, 182);
+                    addChildKnob (layout, panelId, "Res", "filterResonance", 280, 182);
+                    addChildSurface (layout, panelId, ElementType::AdsrCurve, "ADSR Env", "attack", 368, 182, 190, 92);
+                    addChildSlider (layout, panelId, "A", "attack", 578, 182);
+                    addChildSlider (layout, panelId, "D", "decay", 618, 182);
+                    addChildSlider (layout, panelId, "S", "sustain", 658, 182);
+                    addChildSlider (layout, panelId, "R", "release", 698, 182);
+                    addChildKnob (layout, panelId, "LFO Rate", "lfoRate", 750, 182);
+                    addChildKnob (layout, panelId, "LFO Amt", "lfoAmount", 826, 182);
 
-                    addChildSurface (layout, panelId, ElementType::Label, "MOTION + FX", juce::String(), 454, 158, 150, 24);
-                    addChildKnob (layout, panelId, "LFO Rate", "lfoRate", 454, 190);
-                    addChildKnob (layout, panelId, "LFO Amt", "lfoAmount", 536, 190);
-                    addChildKnob (layout, panelId, "Delay", "delayMix", 618, 190);
-                    addChildKnob (layout, panelId, "Reverb", "reverbMix", 700, 190);
+                    addChildSurface (layout, panelId, ElementType::Label, "MACROS & EFFECTS", juce::String(), 22, 292, 200, 24);
+                    addChildSurface (layout, panelId, ElementType::MacroControl, "Tone", "filterCutoff", 22, 316, 110, 74);
+                    addChildSurface (layout, panelId, ElementType::MacroControl, "Motion", "lfoAmount", 144, 316, 110, 74);
+                    addChildSurface (layout, panelId, ElementType::MacroControl, "Space", "delayMix", 266, 316, 110, 74);
+                    addChildKnob (layout, panelId, "Delay", "delayMix", 398, 316);
+                    addChildKnob (layout, panelId, "Time", "delayTime", 468, 316);
+                    addChildKnob (layout, panelId, "Reverb", "reverbMix", 538, 316);
+                    addChildSurface (layout, panelId, ElementType::Keyboard, "Keys", juce::String(), 618, 316, 210, 74);
+                    addChildKnob (layout, panelId, "Out", "volume", 844, 316, 58);
+                });
+            finishModernModule();
+            return;
+        }
 
-                    addChildSurface (layout, panelId, ElementType::MacroControl, "Tone", "filterCutoff", 22, 326, 126, 74);
-                    addChildSurface (layout, panelId, ElementType::MacroControl, "Motion", "lfoAmount", 162, 326, 126, 74);
-                    addChildSurface (layout, panelId, ElementType::MacroControl, "Space", "delayMix", 302, 326, 126, 74);
-                    addChildSurface (layout, panelId, ElementType::Keyboard, "Keys", juce::String(), 452, 326, 236, 74);
-                    addChildKnob (layout, panelId, "Out", "volume", 704, 326, 58);
+        if (moduleKey == "starterhybridinstrument")
+        {
+            ensureParams ({ "sampleStart", "sampleLength", "samplePitch", "sampleReverse",
+                            "oscType", "osc2Type", "oscBlend", "osc2Detune", "subBlend", "detune", "octave",
+                            "wtEnabled", "wtTable", "wtPosition", "wtMorph", "wtWarp", "wtUnison",
+                            "wtDetune", "wtSpread", "wtLevel",
+                            "filterCutoff", "filterResonance", "attack", "decay", "sustain", "release",
+                            "lfoRate", "lfoAmount", "delayTime", "delayFeedback", "delayMix", "reverbMix",
+                            "stereoWidth", "volume", "pan", "outputLimiter", "outputCeilingDb",
+                            "macro_motion", "macro_tone", "macro_character", "macro_space" }, "sample");
+            liveValues.setValue ("sampleLength", 1.0f);
+            liveValues.setValue ("oscBlend", 0.36f);
+            liveValues.setValue ("subBlend", 0.10f);
+            liveValues.setValue ("wtEnabled", 1.0f);
+            liveValues.setValue ("wtLevel", 0.34f);
+            liveValues.setValue ("filterCutoff", 5200.0f);
+            liveValues.setValue ("filterResonance", 0.16f);
+            liveValues.setValue ("delayMix", 0.14f);
+            liveValues.setValue ("reverbMix", 0.24f);
+            liveValues.setValue ("outputLimiter", 1.0f);
+
+            ensureBlock ("starter_hybrid_sample", "source", "samplePlayer", "Hybrid Sample Layer", "sampleStart", "hybrid", "source", "stereo",
+                         { { "sampleStart", 0.0f }, { "sampleLength", 1.0f }, { "samplePitch", 0.0f }, { "volume", 0.78f } });
+            ensureBlock ("starter_hybrid_osc", "source", "oscStack", "Hybrid Synth Layer", "oscBlend", "hybrid", "source", "stereo",
+                         { { "oscType", 1.0f }, { "osc2Type", 2.0f }, { "oscBlend", 0.36f }, { "osc2Detune", 7.0f },
+                           { "subBlend", 0.10f }, { "volume", 0.64f } });
+            ensureBlock ("starter_hybrid_wt", "source", "serumWavetable", "Hybrid Wavetable Layer", "wtPosition", "hybrid", "source", "stereo",
+                         { { "wtEnabled", 1.0f }, { "wtTable", 7.0f }, { "wtPosition", 0.32f }, { "wtMorph", 0.20f },
+                           { "wtWarp", 0.16f }, { "wtUnison", 3.0f }, { "wtDetune", 10.0f }, { "wtSpread", 0.42f },
+                           { "wtLevel", 0.34f } });
+            ensureBlock ("starter_hybrid_filter", "filter", "stateVariable", "Hybrid Shared Filter", "filterCutoff", "hybrid", "tone", "stereo",
+                         { { "filterCutoff", 5200.0f }, { "filterResonance", 0.16f }, { "attack", 0.08f }, { "release", 0.72f } });
+            ensureBlock ("starter_hybrid_lfo", "mod", "lfo", "Hybrid Motion LFO", "filterCutoff", "hybrid", "modulation", "modulation",
+                         { { "lfoRate", 1.4f }, { "lfoAmount", 0.12f } });
+            ensureBlock ("starter_hybrid_delay", "fx", "delay", "Hybrid Delay", "delayMix", "hybrid", "space", "stereo",
+                         { { "delayTime", 0.25f }, { "delayFeedback", 0.22f }, { "delayMix", 0.14f } });
+            ensureBlock ("starter_hybrid_reverb", "fx", "reverb", "Hybrid Reverb", "reverbMix", "hybrid", "space", "stereo",
+                         { { "reverbMix", 0.24f } });
+            ensureBlock ("starter_hybrid_output", "out", "limiter", "Hybrid Output", "outputCeilingDb", "hybrid", "output", "stereo",
+                         { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "volume", 0.82f } });
+
+            addModulePanel ("Add Hybrid Synth + Sample Starter", "Hybrid Synth + Sample", 980, 560,
+                [&] (LayoutModel& layout, const juce::String& panelId)
+                {
+                    addChildSurface (layout, panelId, ElementType::Label, "SAMPLE LAYER", juce::String(), 24, 28, 160, 24);
+                    addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Sample Library", juce::String(), 24, 60, 170, 150);
+                    addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Sample", "sampleStart", 212, 60, 170, 150);
+                    addChildSurface (layout, panelId, ElementType::Waveform, "Waveform", "sampleStart", 400, 60, 260, 76);
+                    addChildKnob (layout, panelId, "Start", "sampleStart", 402, 152);
+                    addChildKnob (layout, panelId, "Length", "sampleLength", 484, 152);
+                    addChildKnob (layout, panelId, "Tune", "samplePitch", 566, 152);
+                    addChildToggle (layout, panelId, "Reverse", "sampleReverse", 668, 168, 82, 30);
+
+                    addChildSurface (layout, panelId, ElementType::Label, "SYNTH LAYER", juce::String(), 24, 242, 160, 24);
+                    addChildSurface (layout, panelId, ElementType::SpectrumAnalyzer, "Synth View", "oscBlend", 24, 274, 252, 86);
+                    addChildKnob (layout, panelId, "Wave A", "oscType", 304, 274);
+                    addChildKnob (layout, panelId, "Wave B", "osc2Type", 386, 274);
+                    addChildKnob (layout, panelId, "Blend", "oscBlend", 468, 274);
+                    addChildKnob (layout, panelId, "Sub", "subBlend", 550, 274);
+                    addChildKnob (layout, panelId, "WT Pos", "wtPosition", 632, 274);
+                    addChildKnob (layout, panelId, "WT Warp", "wtWarp", 714, 274);
+
+                    addChildSurface (layout, panelId, ElementType::Label, "SHARED TONE + FX", juce::String(), 24, 398, 190, 24);
+                    addChildKnob (layout, panelId, "Cutoff", "filterCutoff", 24, 430);
+                    addChildKnob (layout, panelId, "Res", "filterResonance", 106, 430);
+                    addChildKnob (layout, panelId, "Attack", "attack", 188, 430);
+                    addChildKnob (layout, panelId, "Release", "release", 270, 430);
+                    addChildKnob (layout, panelId, "Motion", "lfoAmount", 352, 430);
+                    addChildKnob (layout, panelId, "Delay", "delayMix", 434, 430);
+                    addChildKnob (layout, panelId, "Reverb", "reverbMix", 516, 430);
+                    addChildSurface (layout, panelId, ElementType::MacroControl, "Tone", "filterCutoff", 620, 420, 102, 78);
+                    addChildSurface (layout, panelId, ElementType::MacroControl, "Space", "reverbMix", 734, 420, 102, 78);
+                    addChildKnob (layout, panelId, "Out", "volume", 862, 438, 58);
+                    addChildSurface (layout, panelId, ElementType::Keyboard, "Keys", juce::String(), 692, 60, 240, 78);
                 });
             finishModernModule();
             return;
@@ -1526,25 +1631,34 @@
             ensureBlock ("starter_sampler_output", "out", "limiter", "Starter Sampler Output", "outputCeilingDb", "starter", "output", "stereo",
                          { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "volume", 0.90f } });
 
-            addModulePanel ("Add Sampler Instrument Starter", "Sampler Instrument Starter", 760, 430,
+            addModulePanel ("Add Sampler Instrument Starter", "Sampler Instrument Starter", 920, 430,
                 [&] (LayoutModel& layout, const juce::String& panelId)
                 {
-                    addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Sample Library", juce::String(), 22, 42, 168, 156);
-                    addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Sample", "sampleStart", 208, 42, 164, 156);
-                    addChildSurface (layout, panelId, ElementType::Waveform, "Waveform", "sampleStart", 392, 42, 232, 78);
-                    addChildKnob (layout, panelId, "Start", "sampleStart", 392, 136);
-                    addChildKnob (layout, panelId, "Length", "sampleLength", 474, 136);
-                    addChildKnob (layout, panelId, "Pitch", "samplePitch", 556, 136);
-                    addChildToggle (layout, panelId, "Reverse", "sampleReverse", 640, 154, 82, 30);
+                    addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Sample Library", juce::String(), 22, 42, 180, 156);
+                    addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Sample", "sampleStart", 214, 42, 180, 156);
+                    addChildSurface (layout, panelId, ElementType::Waveform, "Waveform", "sampleStart", 406, 42, 310, 78);
+                    addChildSurface (layout, panelId, ElementType::SpectrumAnalyzer, "Spectrum", juce::String(), 728, 42, 170, 78);
+                    addChildKnob (layout, panelId, "Start", "sampleStart", 406, 130);
+                    addChildKnob (layout, panelId, "Length", "sampleLength", 476, 130);
+                    addChildKnob (layout, panelId, "Pitch", "samplePitch", 546, 130);
+                    addChildToggle (layout, panelId, "Reverse", "sampleReverse", 618, 146, 82, 30);
+                    addChildToggle (layout, panelId, "Limiter", "outputLimiter", 698, 146, 82, 30);
 
-                    addChildSurface (layout, panelId, ElementType::Label, "MAP + PLAY", juce::String(), 22, 220, 120, 24);
-                    addChildSurface (layout, panelId, ElementType::PadGrid, "Pads", "padGrid", 22, 252, 160, 140);
-                    addChildSurface (layout, panelId, ElementType::Keyboard, "Keys", juce::String(), 204, 330, 250, 64);
-                    addChildKnob (layout, panelId, "Cutoff", "filterCutoff", 220, 236);
-                    addChildKnob (layout, panelId, "Grain", "granularDensity", 302, 236);
-                    addChildKnob (layout, panelId, "Delay", "delayMix", 384, 236);
-                    addChildKnob (layout, panelId, "Verb", "reverbMix", 466, 236);
-                    addChildSurface (layout, panelId, ElementType::GranularField, "Granular", "granularScan", 552, 236, 166, 118);
+                    addChildSurface (layout, panelId, ElementType::Label, "MAP + PLAY", juce::String(), 22, 212, 120, 24);
+                    addChildSurface (layout, panelId, ElementType::PadGrid, "Pads", "padGrid", 22, 244, standardPadGridExtent (4, 4), standardPadGridExtent (4, 4));
+                    
+                    addChildSurface (layout, panelId, ElementType::EqCurve, "Filter EQ", "filterCutoff", 214, 230, 160, 90);
+                    addChildKnob (layout, panelId, "Cutoff", "filterCutoff", 386, 230);
+                    addChildKnob (layout, panelId, "Res", "filterResonance", 456, 230);
+                    addChildKnob (layout, panelId, "Delay", "delayMix", 386, 310);
+                    addChildKnob (layout, panelId, "Verb", "reverbMix", 456, 310);
+
+                    addChildSurface (layout, panelId, ElementType::AdsrCurve, "ADSR Env", "attack", 536, 230, 170, 90);
+                    addChildSurface (layout, panelId, ElementType::Keyboard, "Keys", juce::String(), 536, 330, 170, 64);
+
+                    addChildSurface (layout, panelId, ElementType::GranularField, "Granular", "granularScan", 728, 230, 170, 90);
+                    addChildKnob (layout, panelId, "Grain", "granularDensity", 728, 330);
+                    addChildKnob (layout, panelId, "Scan", "granularScan", 798, 330);
                 });
             finishModernModule();
             return;
@@ -1580,7 +1694,7 @@
                     addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Sample Library", juce::String(), 20, 36, 166, 158);
                     addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Audio", "sampleStart", 204, 36, 166, 158);
                     addChildSurface (layout, panelId, ElementType::Waveform, "Edit Sample", "sampleStart", 390, 36, 302, 82);
-                    addChildSurface (layout, panelId, ElementType::PadGrid, "Pads", "padGrid", 714, 36, 152, 152);
+                    addChildSurface (layout, panelId, ElementType::PadGrid, "Pads", "padGrid", 714, 36, standardPadGridExtent (4, 4), standardPadGridExtent (4, 4));
 
                     addChildKnob (layout, panelId, "Start", "sampleStart", 394, 136);
                     addChildKnob (layout, panelId, "Length", "sampleLength", 476, 136);
@@ -1633,7 +1747,7 @@
                     addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Vocal Takes", juce::String(), 20, 36, 150, 150);
                     addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Vocal", "sampleStart", 188, 36, 150, 150);
                     addChildSurface (layout, panelId, ElementType::Waveform, "Chop Markers", "sampleSlice", 356, 36, 318, 80);
-                    addChildSurface (layout, panelId, ElementType::PadGrid, "Chops", "padGrid", 700, 36, 146, 146);
+                    addChildSurface (layout, panelId, ElementType::PadGrid, "Chops", "padGrid", 700, 36, standardPadGridExtent (4, 4), standardPadGridExtent (4, 4));
 
                     addChildKnob (layout, panelId, "Slice", "sampleSlice", 362, 134);
                     addChildKnob (layout, panelId, "Count", "sampleSliceCount", 444, 134);
@@ -1683,7 +1797,7 @@
                     addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Beat Crate", juce::String(), 20, 36, 154, 150);
                     addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Beat", "sampleStart", 192, 36, 154, 150);
                     addChildSurface (layout, panelId, ElementType::Waveform, "Beat Slices", "sampleSlice", 366, 36, 332, 80);
-                    addChildSurface (layout, panelId, ElementType::PadGrid, "Slice Pads", "padGrid", 724, 36, 152, 152);
+                    addChildSurface (layout, panelId, ElementType::PadGrid, "Slice Pads", "padGrid", 724, 36, standardPadGridExtent (4, 4), standardPadGridExtent (4, 4));
 
                     addChildKnob (layout, panelId, "Slice", "sampleSlice", 372, 134);
                     addChildKnob (layout, panelId, "Count", "sampleSliceCount", 454, 134);
@@ -1727,20 +1841,25 @@
             ensureBlock ("starter_drum_mixer", "out", "drumMixer", "Starter Drum Mixer", "pad1Volume", "starter", "mix", "stereo",
                          { { "outputLimiter", 1.0f }, { "outputCeilingDb", -0.8f }, { "volume", 0.90f } });
 
-            addModulePanel ("Add Drum Machine Starter", "Drum Machine Starter", 800, 460,
+            addModulePanel ("Add Drum Machine Starter", "Drum Machine Starter", 960, 430,
                 [&] (LayoutModel& layout, const juce::String& panelId)
                 {
-                    addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Sample Library", juce::String(), 22, 38, 160, 130);
-                    addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Drum Samples", "sampleStart", 202, 38, 164, 130);
-                    addChildSurface (layout, panelId, ElementType::PadGrid, "Pads", "padGrid", 386, 38, 220, 220);
-                    addChildSurface (layout, panelId, ElementType::DrumGrid, "Pattern Grid", "arpLaneRate", 22, 204, 484, 190);
-                    addChildKnob (layout, panelId, "Rate", "arpLaneRate", 536, 286);
-                    addChildKnob (layout, panelId, "Swing", "arpLaneSwing", 618, 286);
-                    addChildKnob (layout, panelId, "Chance", "arpLaneProbability", 700, 286);
-                    addChildSlider (layout, panelId, "Kick", "pad1Volume", 630, 48);
-                    addChildSlider (layout, panelId, "Snare", "pad2Volume", 676, 48);
-                    addChildSlider (layout, panelId, "Hat", "pad3Volume", 722, 48);
-                    addChildKnob (layout, panelId, "Out", "volume", 700, 372, 58);
+                    addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Sample Library", juce::String(), 22, 38, 160, 140);
+                    addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Drum Samples", "sampleStart", 198, 38, 160, 140);
+                    addChildSurface (layout, panelId, ElementType::PadGrid, "Pads", "padGrid", 374, 38, standardPadGridExtent (4, 4), standardPadGridExtent (4, 4));
+                    addChildSlider (layout, panelId, "Kick", "pad1Volume", 570, 38);
+                    addChildSlider (layout, panelId, "Snare", "pad2Volume", 610, 38);
+                    addChildSlider (layout, panelId, "Hat", "pad3Volume", 650, 38);
+                    addChildSlider (layout, panelId, "Clap", "pad4Volume", 690, 38);
+                    addChildSlider (layout, panelId, "Perc 1", "pad5Volume", 730, 38);
+                    addChildSlider (layout, panelId, "Perc 2", "pad6Volume", 770, 38);
+                    addChildSurface (layout, panelId, ElementType::SpectrumAnalyzer, "Spectrum", juce::String(), 816, 38, 120, 140);
+
+                    addChildSurface (layout, panelId, ElementType::DrumGrid, "Pattern Grid", "arpLaneRate", 22, 204, 520, 190);
+                    addChildKnob (layout, panelId, "Rate", "arpLaneRate", 568, 204);
+                    addChildKnob (layout, panelId, "Swing", "arpLaneSwing", 638, 204);
+                    addChildKnob (layout, panelId, "Chance", "arpLaneProbability", 708, 204);
+                    addChildKnob (layout, panelId, "Out", "volume", 794, 204, 58);
                 });
             finishModernModule();
             return;
@@ -1777,7 +1896,7 @@
                     addChildKnob (layout, panelId, "Pitch", "samplePitch", 286, 204);
                     addChildKnob (layout, panelId, "Glitch", "sampleGlitch", 368, 204);
                     addChildKnob (layout, panelId, "Delay", "multiTapMix", 450, 204);
-                    addChildSurface (layout, panelId, ElementType::PadGrid, "Trigger Pads", "padGrid", 548, 174, 168, 150);
+                    addChildSurface (layout, panelId, ElementType::PadGrid, "Trigger Pads", "padGrid", 548, 174, standardPadGridExtent (4, 4), standardPadGridExtent (4, 4));
                 });
             finishModernModule();
             return;
@@ -1813,7 +1932,7 @@
                     addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Sample Library", juce::String(), 20, 36, 160, 164);
                     addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Sample / Loop", "sampleStart", 196, 36, 166, 164);
                     addChildSurface (layout, panelId, ElementType::Waveform, "Chop View", "sampleSlice", 382, 36, 276, 82);
-                    addChildSurface (layout, panelId, ElementType::PadGrid, "16 Pads", "padGrid", 680, 36, 150, 150);
+                    addChildSurface (layout, panelId, ElementType::PadGrid, "16 Pads", "padGrid", 680, 36, standardPadGridExtent (4, 4), standardPadGridExtent (4, 4));
 
                     addChildKnob (layout, panelId, "Start", "sampleStart", 386, 136);
                     addChildKnob (layout, panelId, "Length", "sampleLength", 468, 136);
@@ -1863,7 +1982,7 @@
                     addChildSurface (layout, panelId, ElementType::Waveform, "Slice Markers", "sampleSlice", 356, 34, 312, 84);
                     addChildSurface (layout, panelId, ElementType::XYPad, "Scratch / Scrub", "sampleStart", 690, 34, 136, 134);
 
-                    addChildSurface (layout, panelId, ElementType::PadGrid, "Slice Pads", "padGrid", 20, 204, 176, 176);
+                    addChildSurface (layout, panelId, ElementType::PadGrid, "Slice Pads", "padGrid", 20, 204, standardPadGridExtent (4, 4), standardPadGridExtent (4, 4));
                     addChildSurface (layout, panelId, ElementType::DrumGrid, "Chop Pattern", "arpLaneRate", 224, 204, 430, 166);
                     addChildKnob (layout, panelId, "Slice", "sampleSlice", 678, 204);
                     addChildKnob (layout, panelId, "Count", "sampleSliceCount", 760, 204);
@@ -1898,7 +2017,7 @@
                 {
                     addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Sample Library", juce::String(), 20, 36, 158, 144);
                     addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Pads", "sampleStart", 196, 36, 158, 144);
-                    addChildSurface (layout, panelId, ElementType::PadGrid, "MPC Pads", "padGrid", 382, 36, 252, 252);
+                    addChildSurface (layout, panelId, ElementType::PadGrid, "MPC Pads", "padGrid", 382, 36, standardPadGridExtent (4, 4), standardPadGridExtent (4, 4));
                     addChildSurface (layout, panelId, ElementType::DrumGrid, "Pad Pattern", "arpLaneRate", 20, 218, 328, 180);
 
                     addChildSlider (layout, panelId, "Pad 1", "pad1Volume", 660, 52);
@@ -1984,7 +2103,7 @@
                     addChildSurface (layout, panelId, ElementType::Label, "PROGRESSIONS", juce::String(), 22, 28, 150, 24);
                     addChildSurface (layout, panelId, ElementType::ArpLane, "Chord Banks", "arpLaneRate", 22, 58, 248, 250);
                     addChildSurface (layout, panelId, ElementType::DrumGrid, "Chord Timeline", "arpLaneRate", 296, 58, 356, 164);
-                    addChildSurface (layout, panelId, ElementType::PadGrid, "Chord Pads", "mpActiveBank", 676, 58, 174, 174);
+                    addChildSurface (layout, panelId, ElementType::PadGrid, "Chord Pads", "mpActiveBank", 676, 58, standardPadGridExtent (4, 4), standardPadGridExtent (4, 4));
                     addChildValue (layout, panelId, "Progression", "mpProgressionPreset", 296, 242, 110, 30);
                     addChildValue (layout, panelId, "Root", "mpScaleRoot", 420, 242, 70, 30);
                     addChildValue (layout, panelId, "Scale", "mpScaleType", 504, 242, 70, 30);
@@ -2034,18 +2153,20 @@
                 addModulePanel ("Add Delay FX Starter", "Delay FX Starter", 800, 430,
                     [&] (LayoutModel& layout, const juce::String& panelId)
                     {
-                        addChildSurface (layout, panelId, ElementType::Meter, "Input", "drive", 22, 44, 68, 250);
-                        addChildSurface (layout, panelId, ElementType::EqCurve, "Tone EQ", "eqMix", 116, 44, 206, 112);
-                        addChildKnob (layout, panelId, "Time", "multiTapTime", 348, 58);
-                        addChildKnob (layout, panelId, "Feedback", "multiTapFeedback", 430, 58);
-                        addChildKnob (layout, panelId, "Spread", "multiTapSpread", 512, 58);
-                        addChildKnob (layout, panelId, "Mix", "multiTapMix", 594, 58);
-                        addChildSurface (layout, panelId, ElementType::Waveform, "Feedback Shape", "multiTapFeedback", 116, 188, 250, 90);
-                        addChildKnob (layout, panelId, "Duck", "dynMix", 392, 204);
-                        addChildKnob (layout, panelId, "Width", "stereoWidth", 474, 204);
-                        addChildKnob (layout, panelId, "Ceiling", "outputCeilingDb", 556, 204);
-                        addChildSurface (layout, panelId, ElementType::Meter, "Output", "outputGainDb", 704, 44, 68, 250);
-                        addChildToggle (layout, panelId, "Limiter", "outputLimiter", 616, 300, 88, 30);
+                        addChildSurface (layout, panelId, ElementType::Meter, "Input", "drive", 24, 44, 60, 260);
+                        addChildSurface (layout, panelId, ElementType::EqCurve, "Tone EQ", "eqMix", 108, 44, 220, 110);
+                        addChildKnob (layout, panelId, "Time", "multiTapTime", 358, 54);
+                        addChildKnob (layout, panelId, "Feedback", "multiTapFeedback", 440, 54);
+                        addChildKnob (layout, panelId, "Spread", "multiTapSpread", 522, 54);
+                        addChildKnob (layout, panelId, "Mix", "multiTapMix", 604, 54);
+                        
+                        addChildSurface (layout, panelId, ElementType::Waveform, "Feedback Visualizer", "multiTapFeedback", 108, 184, 220, 110);
+                        addChildKnob (layout, panelId, "Duck", "dynMix", 358, 184);
+                        addChildKnob (layout, panelId, "Width", "stereoWidth", 440, 184);
+                        addChildKnob (layout, panelId, "Ceiling", "outputCeilingDb", 522, 184);
+                        addChildToggle (layout, panelId, "Limiter", "outputLimiter", 604, 200, 76, 30);
+                        
+                        addChildSurface (layout, panelId, ElementType::Meter, "Output", "outputGainDb", 716, 44, 60, 260);
                     });
             }
             else
@@ -2065,18 +2186,21 @@
                 addModulePanel ("Add Vocal Master FX Starter", "Vocal / Master FX Starter", 800, 430,
                     [&] (LayoutModel& layout, const juce::String& panelId)
                     {
-                        addChildSurface (layout, panelId, ElementType::Meter, "Input", "drive", 22, 44, 68, 250);
-                        addChildSurface (layout, panelId, ElementType::SpectrumAnalyzer, "Analyzer", "eqMix", 116, 44, 220, 108);
-                        addChildSurface (layout, panelId, ElementType::EqCurve, "EQ", "eqMix", 116, 188, 220, 108);
-                        addChildKnob (layout, panelId, "Low Cut", "eqBand1Freq", 364, 58);
-                        addChildKnob (layout, panelId, "Presence", "eqBand2GainDb", 446, 58);
-                        addChildKnob (layout, panelId, "Comp", "dynMix", 528, 58);
-                        addChildKnob (layout, panelId, "Formant", "vocalFormant", 364, 188);
-                        addChildKnob (layout, panelId, "Body", "vocalBody", 446, 188);
-                        addChildKnob (layout, panelId, "Width", "stereoWidth", 528, 188);
-                        addChildKnob (layout, panelId, "Ceiling", "outputCeilingDb", 610, 188);
-                        addChildSurface (layout, panelId, ElementType::Meter, "Output", "outputGainDb", 704, 44, 68, 250);
-                        addChildToggle (layout, panelId, "Limiter", "outputLimiter", 610, 300, 88, 30);
+                        addChildSurface (layout, panelId, ElementType::Meter, "Input", "drive", 24, 44, 60, 260);
+                        addChildSurface (layout, panelId, ElementType::SpectrumAnalyzer, "Spectrum Analyzer", "eqMix", 108, 44, 220, 110);
+                        addChildSurface (layout, panelId, ElementType::EqCurve, "Visual EQ", "eqMix", 108, 184, 220, 110);
+                        
+                        addChildKnob (layout, panelId, "Low Cut", "eqBand1Freq", 358, 54);
+                        addChildKnob (layout, panelId, "Presence", "eqBand2GainDb", 440, 54);
+                        addChildKnob (layout, panelId, "Compressor", "dynMix", 522, 54);
+                        
+                        addChildKnob (layout, panelId, "Formant", "vocalFormant", 358, 184);
+                        addChildKnob (layout, panelId, "Body", "vocalBody", 440, 184);
+                        addChildKnob (layout, panelId, "Stereo", "stereoWidth", 522, 184);
+                        addChildKnob (layout, panelId, "Ceil DB", "outputCeilingDb", 604, 184);
+                        addChildToggle (layout, panelId, "Limiter", "outputLimiter", 604, 70, 76, 30);
+                        
+                        addChildSurface (layout, panelId, ElementType::Meter, "Output", "outputGainDb", 716, 44, 60, 260);
                     });
             }
             finishModernModule();
@@ -2093,14 +2217,27 @@
             ensureBlock ("osc_stack_module", "source", "oscStack", "OSC Stack", "oscBlend", "synth", "source", "stereo",
                          { { "oscType", 1.0f }, { "osc2Type", 1.0f }, { "oscBlend", 0.0f }, { "osc2Detune", 7.0f },
                            { "subBlend", 0.0f }, { "noiseBlend", 0.0f }, { "volume", 0.78f } });
-            addModulePanel ("Add OSC Stack Module", "OSC Stack", 420, 164,
+            addModulePanel ("Add OSC Stack Module", "OSC Stack", 590, 164,
                 [&] (LayoutModel& layout, const juce::String& panelId)
                 {
-                    addChildKnob (layout, panelId, "Wave", "oscType", 22, 38);
-                    addChildKnob (layout, panelId, "Wave 2", "osc2Type", 104, 38);
-                    addChildKnob (layout, panelId, "Blend", "oscBlend", 186, 38);
-                    addChildKnob (layout, panelId, "Sub", "subBlend", 268, 38);
-                    addChildValue (layout, panelId, "No Noise", "noiseBlend", 328, 108, 78, 28);
+                    LayoutElement visualizer;
+                    visualizer.type = ElementType::SpectrumAnalyzer;
+                    visualizer.label = "Synth Spectrum";
+                    visualizer.x = pos.x + 18;
+                    visualizer.y = pos.y + 38;
+                    visualizer.width = 160;
+                    visualizer.height = 98;
+                    visualizer.containerId = panelId;
+                    visualizer.groupId = tabGroup;
+                    visualizer.id = layout.generateUniqueId ("spect_");
+                    visualizer.accentColour = PatchCraftLookAndFeel::accent();
+                    layout.add (visualizer);
+
+                    addChildKnob (layout, panelId, "Wave", "oscType", 192, 38);
+                    addChildKnob (layout, panelId, "Wave 2", "osc2Type", 274, 38);
+                    addChildKnob (layout, panelId, "Blend", "oscBlend", 356, 38);
+                    addChildKnob (layout, panelId, "Sub", "subBlend", 438, 38);
+                    addChildValue (layout, panelId, "No Noise", "noiseBlend", 498, 108, 78, 28);
                 });
             finishModernModule();
             return;
@@ -2123,6 +2260,17 @@
                            { "wtMorph", 0.20f }, { "wtWarp", serumStyle ? 0.34f : 0.12f }, { "wtFold", serumStyle ? 0.18f : 0.0f },
                            { "wtUnison", serumStyle ? 4.0f : 1.0f }, { "wtDetune", serumStyle ? 16.0f : 8.0f },
                            { "wtSpread", serumStyle ? 0.62f : 0.0f }, { "wtLevel", serumStyle ? 0.82f : 0.70f } });
+            for (auto& block : graph.blocks)
+            {
+                if (block.id == (serumStyle ? "serum_table_module" : "wavetable_module"))
+                    continue;
+                if (block.section.equalsIgnoreCase ("source")
+                    && (block.type.containsIgnoreCase ("osc") || block.type.equalsIgnoreCase ("oscillator")))
+                {
+                    block.values["volume"] = 0.0f;
+                    block.values["oscBlend"] = 0.0f;
+                }
+            }
             addModulePanel (serumStyle ? "Add Serum-Style Wavetable Module" : "Add Wavetable Module",
                             serumStyle ? "Serum-Style Table" : "Wavetable Source", serumStyle ? 520 : 430, 196,
                 [&] (LayoutModel& layout, const juce::String& panelId)
@@ -2190,7 +2338,7 @@
                     {
                         addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Vocal", "sampleStart", 18, 36, 150, 124);
                         addChildSurface (layout, panelId, ElementType::Waveform, "Chops", "sampleSlice", 184, 36, 250, 66);
-                        addChildSurface (layout, panelId, ElementType::PadGrid, "Trigger Pads", "padGrid", 460, 36, 150, 150);
+                        addChildSurface (layout, panelId, ElementType::PadGrid, "Trigger Pads", "padGrid", 460, 36, standardPadGridExtent (4, 4), standardPadGridExtent (4, 4));
                         addChildKnob (layout, panelId, "Slice", "sampleSlice", 184, 126);
                         addChildKnob (layout, panelId, "Count", "sampleSliceCount", 266, 126);
                         addChildKnob (layout, panelId, "Pitch", "samplePitch", 348, 126);
@@ -2216,7 +2364,7 @@
                     {
                         addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Beat", "sampleStart", 18, 36, 150, 126);
                         addChildSurface (layout, panelId, ElementType::Waveform, "Slice Editor", "sampleSlice", 186, 36, 330, 76);
-                        addChildSurface (layout, panelId, ElementType::PadGrid, "Slices", "padGrid", 540, 36, 150, 150);
+                        addChildSurface (layout, panelId, ElementType::PadGrid, "Slices", "padGrid", 540, 36, standardPadGridExtent (4, 4), standardPadGridExtent (4, 4));
                         addChildKnob (layout, panelId, "Slice", "sampleSlice", 190, 132);
                         addChildKnob (layout, panelId, "Count", "sampleSliceCount", 272, 132);
                         addChildKnob (layout, panelId, "Length", "sampleLength", 354, 132);
@@ -2408,7 +2556,7 @@
                     {
                         addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Loop", "sampleStart", 18, 36, 150, 116);
                         addChildSurface (layout, panelId, ElementType::Waveform, "Slices", "sampleSlice", 184, 36, 260, 64);
-                        addChildSurface (layout, panelId, ElementType::PadGrid, "Slice Pads", "padGrid", 466, 36, 140, 140);
+                        addChildSurface (layout, panelId, ElementType::PadGrid, "Slice Pads", "padGrid", 466, 36, standardPadGridExtent (4, 4), standardPadGridExtent (4, 4));
                         addChildKnob (layout, panelId, "Slice", "sampleSlice", 184, 118);
                         addChildKnob (layout, panelId, "Count", "sampleSliceCount", 266, 118);
                         addChildKnob (layout, panelId, "Length", "sampleLength", 348, 118);
@@ -2522,7 +2670,7 @@
                     {
                         addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "808 Library", juce::String(), 18, 36, 140, 124);
                         addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop 808s", "sampleStart", 176, 36, 140, 124);
-                        addChildSurface (layout, panelId, ElementType::PadGrid, "808 Pads", "padGrid", 338, 36, 170, 170);
+                        addChildSurface (layout, panelId, ElementType::PadGrid, "808 Pads", "padGrid", 338, 36, standardPadGridExtent (4, 4), standardPadGridExtent (4, 4));
                         addChildKnob (layout, panelId, "Kick Tune", "pad1Pitch", 532, 44);
                         addChildKnob (layout, panelId, "Sub Tune", "pad2Pitch", 600, 44);
                         addChildKnob (layout, panelId, "Kick Vol", "pad1Volume", 532, 124);
@@ -2553,7 +2701,7 @@
                     {
                         addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Crate", juce::String(), 18, 36, 148, 128);
                         addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Drums", "sampleStart", 184, 36, 148, 128);
-                        addChildSurface (layout, panelId, ElementType::PadGrid, "Pads", "padGrid", 356, 36, 190, 190);
+                        addChildSurface (layout, panelId, ElementType::PadGrid, "Pads", "padGrid", 356, 36, standardPadGridExtent (4, 4), standardPadGridExtent (4, 4));
                         addChildKnob (layout, panelId, "Kick", "pad1Volume", 574, 44);
                         addChildKnob (layout, panelId, "Snare", "pad2Volume", 574, 124);
                         addChildSurface (layout, panelId, ElementType::DrumGrid, "Groove Pattern", "arpLaneRate", 18, 224, 420, 132);
@@ -2579,7 +2727,7 @@
                     {
                         addChildSurface (layout, panelId, ElementType::RuntimeSampleLibrary, "Drum Library", juce::String(), 18, 36, 148, 126);
                         addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Drums", "sampleStart", 184, 36, 148, 126);
-                        addChildSurface (layout, panelId, ElementType::PadGrid, "Playable Pads", "padGrid", 356, 36, 190, 190);
+                        addChildSurface (layout, panelId, ElementType::PadGrid, "Playable Pads", "padGrid", 356, 36, standardPadGridExtent (4, 4), standardPadGridExtent (4, 4));
                         addChildKnob (layout, panelId, "Pad 1 Vol", "pad1Volume", 578, 42);
                         addChildKnob (layout, panelId, "Pad 2 Vol", "pad2Volume", 578, 122);
                         addChildKnob (layout, panelId, "Pad 1 Tune", "pad1Pitch", 496, 230);
@@ -2614,7 +2762,7 @@
                 addModulePanel ("Add Drum Rack Module", "Drum Rack", 520, 430,
                     [&] (LayoutModel& layout, const juce::String& panelId)
                     {
-                        addChildSurface (layout, panelId, ElementType::PadGrid, "16 Pads", "padGrid", 20, 38, 256, 256);
+                        addChildSurface (layout, panelId, ElementType::PadGrid, "16 Pads", "padGrid", 20, 38, standardPadGridExtent (4, 4), standardPadGridExtent (4, 4));
                         addChildSurface (layout, panelId, ElementType::SampleDropZone, "Drop Samples", "sampleStart", 300, 38, 170, 116);
                         addChildKnob (layout, panelId, "Pad Level", "pad1Volume", 310, 182);
                         addChildKnob (layout, panelId, "Pad Tune", "pad1Pitch", 392, 182);
@@ -2755,7 +2903,7 @@
                 addModulePanel ("Add Chord Pad Bank Module", "Chord Pad Bank", 580, 360,
                     [&] (LayoutModel& layout, const juce::String& panelId)
                     {
-                        addChildSurface (layout, panelId, ElementType::PadGrid, "Chord Pads", "mpActiveBank", 20, 36, 250, 250);
+                        addChildSurface (layout, panelId, ElementType::PadGrid, "Chord Pads", "mpActiveBank", 20, 36, standardPadGridExtent (4, 4), standardPadGridExtent (4, 4));
                         addChildSurface (layout, panelId, ElementType::Keyboard, "Preview", juce::String(), 20, 304, 250, 42);
                         addChildValue (layout, panelId, "Bank", "mpActiveBank", 302, 42, 72, 30);
                         addChildValue (layout, panelId, "Preset", "mpProgressionPreset", 388, 42, 100, 30);
@@ -3199,8 +3347,8 @@
                     panel.label = "Filter Module";
                     panel.x = pos.x;
                     panel.y = pos.y;
-                    panel.width = 210;
-                    panel.height = 130;
+                    panel.width = 360;
+                    panel.height = 140;
                     panel.groupId = tabGroup;
                     panel.cornerRadius = 12.0f;
                     panel.strokeWidth = 1.5f;
@@ -3210,6 +3358,18 @@
                     auto& addedPanel = layout.add (panel);
                     const auto panelId = addedPanel.id;
 
+                    LayoutElement curve;
+                    curve.type = ElementType::EqCurve;
+                    curve.x = pos.x + 18;
+                    curve.y = pos.y + 40;
+                    curve.width = 170;
+                    curve.height = 80;
+                    curve.containerId = panelId;
+                    curve.groupId = tabGroup;
+                    curve.id = layout.generateUniqueId ("eqcurve_");
+                    curve.accentColour = PatchCraftLookAndFeel::accent();
+                    layout.add (curve);
+
                     auto addChildKnob = [&] (const juce::String& label, const juce::String& paramId, int xOffset)
                     {
                         LayoutElement knob;
@@ -3217,7 +3377,7 @@
                         knob.label = label;
                         knob.parameterId = paramId;
                         knob.x = pos.x + xOffset;
-                        knob.y = pos.y + 35;
+                        knob.y = pos.y + 40;
                         knob.width = 65;
                         knob.height = 65;
                         knob.containerId = panelId;
@@ -3227,8 +3387,8 @@
                         layout.add (knob);
                     };
 
-                    addChildKnob ("Cutoff", "filterCutoff", 25);
-                    addChildKnob ("Reso", "filterResonance", 115);
+                    addChildKnob ("Cutoff", "filterCutoff", 205);
+                    addChildKnob ("Reso", "filterResonance", 280);
                 });
         }
         else if (moduleType.equalsIgnoreCase ("ADSR"))
@@ -3282,7 +3442,7 @@
                     panel.label = "Amp Envelope";
                     panel.x = pos.x;
                     panel.y = pos.y;
-                    panel.width = 300;
+                    panel.width = 440;
                     panel.height = 180;
                     panel.groupId = tabGroup;
                     panel.cornerRadius = 12.0f;
@@ -3293,6 +3453,18 @@
                     auto& addedPanel = layout.add (panel);
                     const auto panelId = addedPanel.id;
 
+                    LayoutElement curve;
+                    curve.type = ElementType::AdsrCurve;
+                    curve.x = pos.x + 18;
+                    curve.y = pos.y + 40;
+                    curve.width = 210;
+                    curve.height = 115;
+                    curve.containerId = panelId;
+                    curve.groupId = tabGroup;
+                    curve.id = layout.generateUniqueId ("adsrcurve_");
+                    curve.accentColour = PatchCraftLookAndFeel::accent();
+                    layout.add (curve);
+
                     auto addChildSlider = [&] (const juce::String& label, const juce::String& paramId, int xOffset)
                     {
                         LayoutElement slider;
@@ -3301,7 +3473,7 @@
                         slider.parameterId = paramId;
                         slider.x = pos.x + xOffset;
                         slider.y = pos.y + 30;
-                        slider.width = 40;
+                        slider.width = 35;
                         slider.height = 120;
                         slider.containerId = panelId;
                         slider.groupId = tabGroup;
@@ -3310,10 +3482,10 @@
                         layout.add (slider);
                     };
 
-                    addChildSlider ("A", "attack", 25);
-                    addChildSlider ("D", "decay", 90);
-                    addChildSlider ("S", "sustain", 155);
-                    addChildSlider ("R", "release", 220);
+                    addChildSlider ("A", "attack", 250);
+                    addChildSlider ("D", "decay", 295);
+                    addChildSlider ("S", "sustain", 340);
+                    addChildSlider ("R", "release", 385);
                 });
         }
         else if (moduleType.equalsIgnoreCase ("Delay"))
@@ -4032,8 +4204,36 @@
         const auto* selectedForMenu = owner.getProject().getLayout().find (owner.getSelectedElementId());
         const bool selectedArpLane = selectedForMenu != nullptr && selectedForMenu->type == ElementType::ArpLane;
 
+        bool canCreatePscriptHandler = false;
+        bool canAttachPscriptFile = false;
+        bool canDetachPscript = false;
+        for (const auto& id : owner.getSelectedElementIds())
+            if (auto* selected = owner.getProject().getLayout().find (id))
+            {
+                if ((isRuntimeControlElement (selected->type)
+                     || selected->type == ElementType::ValueDisplay
+                     || selected->type == ElementType::SampleDropZone)
+                    && selected->parameterId.isNotEmpty()
+                    && owner.getProject().getParameters().find (selected->parameterId) != nullptr)
+                {
+                    canCreatePscriptHandler = true;
+                    canAttachPscriptFile = true;
+                }
+                if (selected->pscriptFile.isNotEmpty())
+                    canDetachPscript = true;
+            }
+
         juce::PopupMenu menu;
         menu.addItem (99, "Search Canvas Actions...");
+        if (canCreatePscriptHandler || canAttachPscriptFile || canDetachPscript || ! owner.getSelectedElementIds().isEmpty())
+        {
+            menu.addSectionHeader ("pScript");
+            menu.addItem (390, "Open pScript Editor", true);
+            menu.addItem (38, "Create Handler For Selection", canCreatePscriptHandler);
+            menu.addItem (391, "Attach pScript File...", canAttachPscriptFile);
+            menu.addItem (392, "Detach pScript From Selection", canDetachPscript);
+            menu.addSeparator();
+        }
         menu.addSeparator();
         menu.addSectionHeader ("Add Container");
         menu.addItem (1, "Panel / Container");
@@ -4144,29 +4344,15 @@
         }
         menu.addSeparator();
         bool canDetachLabels = false;
-        bool canCreatePscriptHandler = false;
         for (const auto& id : owner.getSelectedElementIds())
             if (auto* selected = owner.getProject().getLayout().find (id))
-            {
                 if (isRuntimeControlElement (selected->type)
                     && selected->labelPosition != "hidden"
                     && (selected->label.isNotEmpty() || selected->parameterId.isNotEmpty()))
-                {
                     canDetachLabels = true;
-                }
-                if ((isRuntimeControlElement (selected->type)
-                     || selected->type == ElementType::ValueDisplay
-                     || selected->type == ElementType::SampleDropZone)
-                    && selected->parameterId.isNotEmpty()
-                    && owner.getProject().getParameters().find (selected->parameterId) != nullptr)
-                {
-                    canCreatePscriptHandler = true;
-                }
-            }
         menu.addItem (15, "Detach Labels From Selection", canDetachLabels);
         menu.addItem (36, "Hide Labels For Selection", ! owner.getSelectedElementIds().isEmpty());
         menu.addItem (37, "Show Labels For Selection", ! owner.getSelectedElementIds().isEmpty());
-        menu.addItem (38, "Create pScript Handler For Selected Control", canCreatePscriptHandler);
         menu.addItem (34, "Convert Shape/Text To Button", ! owner.getSelectedElementIds().isEmpty());
         menu.addItem (35, "Convert Selection To Label", ! owner.getSelectedElementIds().isEmpty());
         menu.addItem (16, "Copy Selection", ! owner.getSelectedElementIds().isEmpty());
@@ -4389,6 +4575,18 @@
                 else if (result == 38)
                 {
                     owner.createPscriptHandlerForSelectedControl();
+                }
+                else if (result == 391)
+                {
+                    owner.attachPscriptFileToSelectedControl();
+                }
+                else if (result == 392)
+                {
+                    owner.detachPscriptFromSelectedControl();
+                }
+                else if (result == 390)
+                {
+                    owner.focusPscriptPanel();
                 }
                 else if (result == 26)
                 {

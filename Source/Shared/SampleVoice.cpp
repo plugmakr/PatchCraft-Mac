@@ -1,4 +1,5 @@
 #include "SampleVoice.h"
+#include "SampleSliceUtils.h"
 #include "DebugLog.h"
 
 #include <cmath>
@@ -79,17 +80,9 @@ namespace patchcraft
         if (s != nullptr && s->buffer.getNumSamples() > 0 && s->buffer.getNumChannels() > 0)
         {
             const int length = s->buffer.getNumSamples();
-            const int zoneStart = juce::jlimit (0, length - 1, s->zone.sampleStart);
-            const int zoneEnd = s->zone.sampleEnd > zoneStart
-                ? juce::jlimit (zoneStart + 1, length, s->zone.sampleEnd)
-                : length;
-            const int sliceCount = juce::jlimit (1, 64, sampleSliceCount);
-            const int sliceIndex = juce::jlimit (0, sliceCount - 1, sampleSlice);
-            const int zoneLength = juce::jmax (1, zoneEnd - zoneStart);
-            const int rawSliceStart = zoneStart + (zoneLength * sliceIndex) / sliceCount;
-            const int rawSliceEnd = zoneStart + (zoneLength * (sliceIndex + 1)) / sliceCount;
-            const int sliceStart = juce::jlimit (zoneStart, zoneEnd - 1, rawSliceStart);
-            const int sliceEnd = juce::jlimit (sliceStart + 1, zoneEnd, juce::jmax (sliceStart + 1, rawSliceEnd));
+            const auto sliceBounds = resolveSampleSliceBounds (s->zone, length, sampleSlice, sampleSliceCount);
+            const int sliceStart = sliceBounds.sliceStart;
+            const int sliceEnd = sliceBounds.sliceEnd;
             const int sliceLength = juce::jmax (1, sliceEnd - sliceStart);
             const int startOffset = juce::roundToInt (juce::jlimit (0.0f, 1.0f, sampleStart01)
                                                     * (float) juce::jmax (0, sliceLength - 1));
@@ -118,8 +111,13 @@ namespace patchcraft
 
             active.store (true, std::memory_order_release);
 
-            const auto trackedSemitones = (double) (midiNote - s->zone.rootNote)
-                                        * (double) juce::jlimit (0.0f, 2.0f, s->zone.keyTracking);
+            const bool slicePadMode = s->zone.cuePoints.size() >= 2
+                                   && midiNote >= s->zone.lowNote
+                                   && midiNote <= s->zone.highNote;
+            const double trackedSemitones = slicePadMode
+                ? 0.0
+                : (double) (midiNote - s->zone.rootNote)
+                  * (double) juce::jlimit (0.0f, 2.0f, s->zone.keyTracking);
             const auto rootRatio = std::pow (2.0, (trackedSemitones + s->zone.pitchOffset + pitchOffset) / 12.0);
             pitchRatio = rootRatio
                        * (double) juce::jlimit (0.25f, 4.0f, tempoRatio)
@@ -398,15 +396,10 @@ namespace patchcraft
         if (target == nullptr)
             return;
 
-        const int zoneStart = juce::jlimit (0, sourceLength - 1, sample->zone.sampleStart);
-        const int zoneEnd = sample->zone.sampleEnd > zoneStart
-            ? juce::jlimit (zoneStart + 1, sourceLength, sample->zone.sampleEnd)
-            : sourceLength;
-        const int zoneLength = juce::jmax (1, zoneEnd - zoneStart);
-        const int sliceCount = juce::jlimit (1, 128, params.sampleSliceCount);
-        const int sliceIndex = juce::jlimit (0, sliceCount - 1, params.sampleSlice);
-        const int sliceStart = zoneStart + (zoneLength * sliceIndex) / sliceCount;
-        const int sliceEnd = zoneStart + (zoneLength * (sliceIndex + 1)) / sliceCount;
+        const auto sliceBounds = resolveSampleSliceBounds (sample->zone, sourceLength,
+                                                           params.sampleSlice, params.sampleSliceCount);
+        const int sliceStart = sliceBounds.sliceStart;
+        const int sliceEnd = sliceBounds.sliceEnd;
         const int availableLength = juce::jmax (8, sliceEnd - sliceStart);
         const float regionLength01 = juce::jlimit (0.01f, 1.0f, params.sampleLength);
         const int regionLength = juce::jlimit (8, availableLength, juce::roundToInt ((float) availableLength * regionLength01));
@@ -436,8 +429,13 @@ namespace patchcraft
             direction = random01() < juce::jlimit (0.0f, 1.0f, params.reverseProbability) ? -1 : 1;
 
         const float pitchRandom = randomSigned() * juce::jlimit (0.0f, 36.0f, params.pitchSpread);
-        const double trackedSemitones = (double) (note - sample->zone.rootNote)
-                                      * (double) juce::jlimit (0.0f, 2.0f, sample->zone.keyTracking);
+        const bool slicePadMode = sample->zone.cuePoints.size() >= 2
+                               && note >= sample->zone.lowNote
+                               && note <= sample->zone.highNote;
+        const double trackedSemitones = slicePadMode
+            ? 0.0
+            : (double) (note - sample->zone.rootNote)
+              * (double) juce::jlimit (0.0f, 2.0f, sample->zone.keyTracking);
         const double pitchRatio = std::pow (2.0, (trackedSemitones
                                                 + sample->zone.pitchOffset
                                                 + params.pitchOffset

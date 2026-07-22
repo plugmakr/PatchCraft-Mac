@@ -145,6 +145,14 @@ namespace patchcraft
                 for (int step = 0; step < 128; ++step)
                     setAlias ("mpStepProb" + juce::String (step), value);
             }
+            else if (parameterId == "arpLaneRatchet"
+                     && (block.block.type.containsIgnoreCase ("arp") || block.block.type.containsIgnoreCase ("midi")))
+            {
+                const float ratchet = (float) juce::jlimit (1, 8, juce::roundToInt (value));
+                setAlias ("mpRatchet", ratchet);
+                for (int step = 0; step < 128; ++step)
+                    setAlias ("mpStepDiv" + juce::String (step), ratchet);
+            }
         }
         return changed;
     }
@@ -590,7 +598,10 @@ namespace patchcraft
             {
                 applyUtilityValues (block.block);
             }
-            else if (nodeKind == DspNodeKind::processor && block.block.section == "filter")
+            else if (nodeKind == DspNodeKind::processor
+                     && (block.block.section == "filter"
+                         || block.block.section == "shape"
+                         || block.block.section == "tone"))
             {
                 if (block.block.type.containsIgnoreCase ("eq"))
                 {
@@ -613,10 +624,26 @@ namespace patchcraft
                 }
                 else
                 {
-                    if (block.block.values.count ("cutoff") != 0) setNorm ("filterCutoff", valueForKey (block.block, "cutoff", 0.5f));
-                    if (block.block.values.count ("resonance") != 0) setNorm ("filterResonance", valueForKey (block.block, "resonance", 0.2f));
-                    if (block.block.values.count ("lfoAmount") != 0) setNorm ("lfoAmount", valueForKey (block.block, "lfoAmount", 0.0f));
-                    if (block.block.values.count ("rate") != 0) setValue ("lfoRate", juce::jlimit (0.1f, 20.0f, valueForKey (block.block, "rate", 1.0f)));
+                    if (block.block.values.count ("filterCutoff") != 0 && findParam ("filterCutoff") == nullptr)
+                        setValue ("filterCutoff", valueForKey (block.block, "filterCutoff", 2400.0f));
+                    if (block.block.values.count ("filterResonance") != 0 && findParam ("filterResonance") == nullptr)
+                        setValue ("filterResonance", valueForKey (block.block, "filterResonance", 0.08f));
+                    if (block.block.values.count ("cutoff") != 0 && findParam ("filterCutoff") == nullptr)
+                        setNorm ("filterCutoff", valueForKey (block.block, "cutoff", 0.5f));
+                    if (block.block.values.count ("resonance") != 0 && findParam ("filterResonance") == nullptr)
+                        setNorm ("filterResonance", valueForKey (block.block, "resonance", 0.2f));
+                    if (block.block.values.count ("attack") != 0 && findParam ("attack") == nullptr)
+                        setNorm ("attack", valueForKey (block.block, "attack", 0.01f));
+                    if (block.block.values.count ("decay") != 0 && findParam ("decay") == nullptr)
+                        setNorm ("decay", valueForKey (block.block, "decay", 0.2f));
+                    if (block.block.values.count ("sustain") != 0 && findParam ("sustain") == nullptr)
+                        setNorm ("sustain", valueForKey (block.block, "sustain", 0.8f));
+                    if (block.block.values.count ("release") != 0 && findParam ("release") == nullptr)
+                        setNorm ("release", valueForKey (block.block, "release", 0.4f));
+                    if (block.block.values.count ("lfoAmount") != 0 && findParam ("lfoAmount") == nullptr)
+                        setNorm ("lfoAmount", valueForKey (block.block, "lfoAmount", 0.0f));
+                    if (block.block.values.count ("rate") != 0 && findParam ("lfoRate") == nullptr)
+                        setValue ("lfoRate", juce::jlimit (0.1f, 20.0f, valueForKey (block.block, "rate", 1.0f)));
                 }
             }
             else if (nodeKind == DspNodeKind::processor && block.block.section == "amp")
@@ -781,7 +808,8 @@ namespace patchcraft
                     || (nodeKind == DspNodeKind::output && isHandledOutputTarget (block.block.targetId)));
             if (! utilityTargetAlreadyApplied
                 && block.block.targetId.isNotEmpty()
-                && block.block.values.count (block.block.targetId) != 0)
+                && block.block.values.count (block.block.targetId) != 0
+                && findParam (block.block.targetId) == nullptr)
                 setExactOrNorm (block.block.targetId, block.block, block.block.targetId);
 
             const bool hasExplicitRoute = std::any_of (modulation.begin(), modulation.end(), [&block] (const ModRoute& route)
@@ -849,6 +877,11 @@ namespace patchcraft
                                                : block.block.section == "out" ? DspNodeKind::output
                                                : DspNodeKind::processor);
         }
+
+        // Live UI / MIDI parameter state is authoritative; graph blocks supply
+        // motion and modulation on top rather than resetting knob values each block.
+        for (auto& param : params)
+            param.routed = param.current;
 
         for (const auto& macro : macros)
         {

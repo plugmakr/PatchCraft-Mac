@@ -37,9 +37,11 @@ namespace patchcraft
         juce::Label sourceLabel;
         juce::Label actionLabel;
         juce::Label previewLabel;
+        juce::Label demoLabel;
         juce::ComboBox targetBox;
         juce::ComboBox sourceBox;
         juce::ComboBox actionBox;
+        juce::ComboBox demoBox;
 
         juce::TextButton addVisualKitButton { "Add Complete Visual Kit" };
         juce::TextButton addReactiveButton { "Reactive Image" };
@@ -47,6 +49,7 @@ namespace patchcraft
         juce::TextButton addFxButton { "Visual FX Layer" };
         juce::TextButton addBoundVisualButton { "Add Bound Visual" };
         juce::TextButton previewMotionButton { "Preview Motion" };
+        juce::TextButton addDemoButton { "Add Demo Visual" };
         juce::TextButton addAiPromptButton { "Pro AI Visual Brief" };
         juce::TextButton generateAiAssetButton { "Generate AI Asset" };
         juce::TextButton openDesignButton { "Open Design" };
@@ -56,6 +59,7 @@ namespace patchcraft
         void styleButton (juce::TextButton&, bool primary = false);
         void addCanvasElement (int elementTypeIndex);
         void addBoundVisualToCanvas();
+        void applyAnimationDemo (int demoId);
         void refreshParameterChoices();
         void timerCallback() override;
         static juce::String reactiveModeForSource (const juce::String& source);

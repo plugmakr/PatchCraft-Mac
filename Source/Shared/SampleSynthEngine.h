@@ -10,6 +10,7 @@
 #include "PatchCraftPackFormat.h"
 #include "IInstrumentEngine.h"
 #include "SampleVoice.h"
+#include "SampleSliceUtils.h"
 
 #include <array>
 #include <memory>
@@ -39,6 +40,14 @@ namespace patchcraft
         // Studio convenience: same as loadFromPack but resolves relative paths
         // against the project folder.
         void loadFromMap  (const juce::File& projectFolder, const SampleMap& map);
+
+        /** Chop-lab audition: load one zone from an in-memory buffer (no disk I/O). */
+        void loadSingleZoneFromBuffer (const SampleZoneDef& zone,
+                                       const juce::AudioBuffer<float>& buffer,
+                                       double sourceSampleRate);
+
+        /** Sample position of the loudest active voice for a MIDI note, or -1. */
+        double getActivePlayheadSample (int midiNote) const noexcept;
 
         void noteOn  (int midiNote, float velocity) override;
         void noteOff (int midiNote) override;
@@ -84,9 +93,13 @@ namespace patchcraft
             std::atomic<float> cutoff    { 4200.0f };
             std::atomic<float> resonance { 0.20f };
             std::atomic<float> reverbMix { 0.30f };
+            std::atomic<float> reverbEnabled { 1.0f };
+            std::atomic<float> reverbType { 2.0f };
             std::atomic<float> delayMix  { 0.20f };
             std::atomic<float> delayTime { 0.30f };
             std::atomic<float> delayFb   { 0.40f };
+            std::atomic<float> delayEnabled { 1.0f };
+            std::atomic<float> delayType { 3.0f };
             std::atomic<float> volume    { 1.0f };
             std::atomic<float> expression { 1.0f };
             std::atomic<float> pan       { 0.0f };
@@ -95,9 +108,9 @@ namespace patchcraft
             // 0.5 == linear (legacy). <0.5 compresses dynamics (louder soft
             // notes), >0.5 expands. Shapes velocity -> gain via a power curve.
             std::atomic<float> velocitySensitivity { 0.5f };
-            std::array<std::atomic<float>, 16> padVolume {};
-            std::array<std::atomic<float>, 16> padPitch {};
-            std::array<std::atomic<float>, 16> padPan {};
+            std::array<std::atomic<float>, kMaxChopPads> padVolume {};
+            std::array<std::atomic<float>, kMaxChopPads> padPitch {};
+            std::array<std::atomic<float>, kMaxChopPads> padPan {};
 
             AtomicParams()
             {
@@ -154,6 +167,10 @@ namespace patchcraft
         juce::dsp::DelayLine<float> delayL { 96000 };
         juce::dsp::DelayLine<float> delayR { 96000 };
         juce::dsp::Reverb           reverb;
+
+        double tapeLfoPhase = 0.0;
+        float lastFbL = 0.0f;
+        float lastFbR = 0.0f;
 
         juce::AudioBuffer<float> tempBuffer;
 

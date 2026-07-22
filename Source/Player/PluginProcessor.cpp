@@ -147,20 +147,57 @@ namespace patchcraft
         return rootNote;
     }
 
-    static bool updateFxBlockValue (DspGraph& graph, const juce::String& parameterId, float value)
+    static bool updateGraphBlockParameterValue (DspGraph& graph,
+                                                const ParameterModel& parameters,
+                                                const juce::String& parameterId,
+                                                float value)
     {
         bool changed = false;
+        auto graphValue = value;
+        if (parameterId == "oscType" || parameterId == "osc2Type"
+            || parameterId == "oscBlend" || parameterId == "octave" || parameterId == "detune"
+            || parameterId == "osc2Detune" || parameterId == "subBlend" || parameterId == "noiseBlend"
+            || parameterId == "volume" || parameterId == "pan" || parameterId == "filterCutoff"
+            || parameterId == "filterResonance" || parameterId == "attack" || parameterId == "decay"
+            || parameterId == "sustain" || parameterId == "release" || parameterId == "delayTime"
+            || parameterId == "delayFeedback" || parameterId == "delayMix" || parameterId == "reverbMix"
+            || parameterId == "drive" || parameterId == "mix")
+        {
+            if (const auto* def = parameters.find (parameterId))
+                if (std::abs (def->max - def->min) > 0.000001f)
+                    graphValue = juce::jlimit (0.0f, 1.0f, (value - def->min) / (def->max - def->min));
+        }
+
         for (auto& block : graph.blocks)
         {
-            if (! block.section.equalsIgnoreCase ("fx"))
-                continue;
+            if (auto found = block.values.find (parameterId); found != block.values.end())
+            {
+                found->second = graphValue;
+                changed = true;
+            }
 
-            auto found = block.values.find (parameterId);
-            if (found == block.values.end())
-                continue;
-
-            found->second = value;
-            changed = true;
+            if (parameterId == "filterCutoff"
+                && (block.section.equalsIgnoreCase ("filter")
+                    || block.section.equalsIgnoreCase ("shape")
+                    || block.section.equalsIgnoreCase ("tone")))
+            {
+                if (auto alias = block.values.find ("cutoff"); alias != block.values.end())
+                {
+                    alias->second = graphValue;
+                    changed = true;
+                }
+            }
+            else if (parameterId == "filterResonance"
+                     && (block.section.equalsIgnoreCase ("filter")
+                         || block.section.equalsIgnoreCase ("shape")
+                         || block.section.equalsIgnoreCase ("tone")))
+            {
+                if (auto alias = block.values.find ("resonance"); alias != block.values.end())
+                {
+                    alias->second = graphValue;
+                    changed = true;
+                }
+            }
         }
         return changed;
     }
@@ -217,7 +254,7 @@ namespace patchcraft
         return {};
     }
 
-    PlayerProcessor::PlayerProcessor()
+    PlayerProcessor::PlayerProcessor (bool skipEmbeddedPackAutoload)
         : juce::AudioProcessor (
            #if PATCHCRAFT_PLAYER_FX
             BusesProperties()
@@ -240,6 +277,7 @@ namespace patchcraft
     {
         try
         {
+            bypassLicenseEnforcement = skipEmbeddedPackAutoload;
             scriptEngine.bindStore (&liveValues);
 
             for (auto& level : noteHighlightLevels)
@@ -270,14 +308,18 @@ namespace patchcraft
             authoredSampleMap = pack.sampleMap;
             bindRoutingFromPack();
             rebuildApvtsFromPack();
+            refreshLicenseStatusFromCache();
 
             // If the Studio's VST Export module bundled a pack with this
             // plugin, load it now so the host opens straight into the
             // packaged instrument instead of the demo.
-            if (const auto embedded = findEmbeddedPackFolder(); embedded != juce::File())
+            if (! skipEmbeddedPackAutoload)
             {
-                juce::String embeddedError;
-                loadPack (embedded, embeddedError);
+                if (const auto embedded = findEmbeddedPackFolder(); embedded != juce::File())
+                {
+                    juce::String embeddedError;
+                    loadPack (embedded, embeddedError);
+                }
             }
         }
         catch (...) { jassertfalse; engine.reset(); }
@@ -360,6 +402,16 @@ namespace patchcraft
         {
             const juce::SpinLock::ScopedTryLockType lk (engineLock);
             if (! lk.isLocked() || engine == nullptr)
+            {
+               #if PATCHCRAFT_PLAYER_FX
+                return;
+               #else
+                buffer.clear();
+                return;
+               #endif
+            }
+
+            if (! licenseAuthorized.load())
             {
                #if PATCHCRAFT_PLAYER_FX
                 return;
@@ -1857,6 +1909,15 @@ namespace patchcraft
             if (const auto* patch = np.findDefaultPatch())
                 applyPatchStateToPack (np, *patch);
 
+            juce::File authoredWaveformFile;
+            if (! np.sampleMap.getZones().empty())
+            {
+                const auto samplePath = np.sampleMap.getZones().front().samplePath;
+                authoredWaveformFile = juce::File::isAbsolutePath (samplePath)
+                    ? juce::File (samplePath)
+                    : packFolder.getChildFile (samplePath);
+            }
+
             // Build the right engine for this pack (off the audio thread).
             auto newEngine = createEngineFromManifest (np.manifest.engine);
             if (newEngine == nullptr) { error = "Unknown engine type."; return false; }
@@ -1883,6 +1944,10 @@ namespace patchcraft
                 runtimePianoRollNotes.clear();
                 applyAuthoredZoneMidiToGraphLocked();
             }
+            if (authoredWaveformFile.existsAsFile())
+                computeUserWaveformPeaks (authoredWaveformFile);
+            else
+                userWaveformPeaks.clear();
             if (libraryScanner != nullptr)
             {
                 juce::Array<juce::File> rootsToScan;
@@ -1907,6 +1972,7 @@ namespace patchcraft
             }
             bindRoutingFromPack();
             rebuildApvtsFromPack();
+            refreshLicenseStatusFromCache();
 
             {
                 auto scriptFile = packFolder.getChildFile ("pscript.txt");
@@ -1962,7 +2028,86 @@ namespace patchcraft
         }
         bindRoutingFromPack();
         rebuildApvtsFromPack();
+        refreshLicenseStatusFromCache();
         editorListeners.call ([] (EditorListener& l) { l.packChanged(); });
+    }
+
+    LicenseValidator::LicenseInfo PlayerProcessor::getLicenseInfo() const
+    {
+        const juce::SpinLock::ScopedLockType lock (engineLock);
+        return LicenseValidator::fromManifest (pack.manifest);
+    }
+
+    LicenseValidator::ActivationStatus PlayerProcessor::getLicenseActivationStatus() const
+    {
+        const juce::ScopedLock lock (licenseLock);
+        return licenseStatus;
+    }
+
+    void PlayerProcessor::applyLicenseActivationStatus (const LicenseValidator::ActivationStatus& status)
+    {
+        const auto info = getLicenseInfo();
+        juce::String reason;
+        const bool usable = bypassLicenseEnforcement
+                         || ! (getPack() != nullptr && getPack()->manifest.licenseRequired)
+                         || LicenseValidator::isActivationUsable (info, status, reason);
+        {
+            const juce::ScopedLock lock (licenseLock);
+            licenseStatus = status;
+            if (! usable && licenseStatus.message.isEmpty())
+                licenseStatus.message = reason;
+        }
+        licenseAuthorized.store (usable);
+    }
+
+    void PlayerProcessor::refreshLicenseStatusFromCache()
+    {
+        const auto info = getLicenseInfo();
+        const auto* currentPack = getPack();
+        if (bypassLicenseEnforcement || currentPack == nullptr || ! currentPack->manifest.licenseRequired)
+        {
+            LicenseValidator::ActivationStatus status;
+            status.authorized = true;
+            status.status = currentPack != nullptr && currentPack->manifest.licenseRequired
+                ? "preview-bypass"
+                : "not-required";
+            status.message = currentPack != nullptr && currentPack->manifest.licenseRequired
+                ? "License enforcement is bypassed inside Studio preview."
+                : "This product does not require activation.";
+            status.productId = info.productId;
+            status.instrumentId = info.instrumentId;
+            status.machineId = LicenseValidator::machineFingerprint();
+            applyLicenseActivationStatus (status);
+            return;
+        }
+
+        juce::String reason;
+        auto cached = LicenseValidator::loadCachedActivation (info, reason);
+        if (! cached.authorized && cached.message.isEmpty())
+            cached.message = reason;
+        applyLicenseActivationStatus (cached);
+    }
+
+    juce::String PlayerProcessor::getLicenseStatusText() const
+    {
+        const auto* currentPack = getPack();
+        if (currentPack == nullptr || ! currentPack->manifest.licenseRequired)
+            return "License not required";
+
+        const auto status = getLicenseActivationStatus();
+        if (status.authorized)
+        {
+            if (status.trial)
+                return "Trial active";
+            if (status.offlineGrace)
+                return "Licensed (offline grace)";
+            return status.ownerName.isNotEmpty() ? "Licensed to " + status.ownerName : "Licensed";
+        }
+        if (status.status == "misconfigured")
+            return "License setup error";
+        if (status.status == "offline")
+            return "Activation server unavailable";
+        return "Activation required";
     }
 
     void PlayerProcessor::rebuildApvtsFromPack()
@@ -2010,6 +2155,21 @@ namespace patchcraft
             const float n = juce::jmap (v, def.min, def.max, 0.0f, 1.0f);
             if (paramSlots[(size_t) slotIndex].value)
                 *paramSlots[(size_t) slotIndex].value = juce::jlimit (0.0f, 1.0f, n);
+        }
+
+        // Engage all parameter values in the DSP engine and routing engine
+        for (const auto& kv : runtimeParameterValues)
+        {
+            const auto& parameterId = kv.first;
+            const float val = kv.second;
+
+            if (engine != nullptr)
+                engine->setParameter (parameterId, val);
+            if (userSampleOverlayEnabled)
+                userSampleOverlay.setParameter (parameterId, val);
+            routingEngine.setParameterValue (parameterId, val);
+            updateGraphBlockParameterValue (pack.dspGraph, pack.parameters, parameterId, val);
+            routingEngine.setFxBlockParameterValue (parameterId, val);
         }
     }
 
@@ -2238,7 +2398,7 @@ namespace patchcraft
         if (userSampleOverlayEnabled)
             userSampleOverlay.setParameter (parameterId, limited);
         routingEngine.setParameterValue (parameterId, limited);
-        updateFxBlockValue (pack.dspGraph, parameterId, limited);
+        updateGraphBlockParameterValue (pack.dspGraph, pack.parameters, parameterId, limited);
         routingEngine.setFxBlockParameterValue (parameterId, limited);
 
         if (parameterId == "retrigger" || parameterId == "arpLaneMultiLane")
@@ -2412,8 +2572,23 @@ namespace patchcraft
 
     bool PlayerProcessor::setPackParameterFromUi (const juce::String& parameterId, float value)
     {
+        const auto effectiveParameterId = parameterId == "pitchBend"
+            ? juce::String ("pitchWheel")
+            : parameterId;
         const juce::SpinLock::ScopedLockType lk (engineLock);
-        return setPackParameterValue (parameterId, value, true);
+        if (! setPackParameterValue (effectiveParameterId, value, true))
+            return false;
+
+        if (effectiveParameterId == "pitchWheel")
+            midiPitchBendCents.store (juce::jlimit (-1.0f, 1.0f, value) * 200.0f);
+        else if (effectiveParameterId == "modWheel")
+        {
+            const auto normalised = juce::jlimit (0.0f, 1.0f, value);
+            midiModWheel.store (normalised);
+            scriptEngine.triggerEvent ("modwheel moves", {{"modwheel", normalised * 127.0f}});
+        }
+
+        return true;
     }
 
     bool PlayerProcessor::setDrumPatternCellFromUi (int pattern, int track, int step, bool enabled,
@@ -2617,8 +2792,31 @@ namespace patchcraft
         lane = juce::jlimit (0, 15, lane);
         step = juce::jlimit (0, 127, step);
         const float limitedVelocity = juce::jlimit (0.0f, 1.0f, velocity);
-        setArpLaneValue (*midiBlock, lane, "mpVelocity" + juce::String (step), limitedVelocity);
-        setArpLaneValue (*midiBlock, lane, "mpStep" + juce::String (step) + "On", active ? 1.0f : 0.0f);
+        const auto suffix = juce::String (step);
+        midiBlock->values["mpActiveBank"] = (float) juce::jlimit (0, 4, lane);
+        midiBlock->values["mpMultiLane"] = 1.0f;
+        setArpLaneValue (*midiBlock, lane, "mpLaneTarget", (float) juce::jlimit (0, 4, lane));
+        setArpLaneValue (*midiBlock, lane, "mpVelocity" + suffix, limitedVelocity);
+        setArpLaneValue (*midiBlock, lane, "mpStep" + suffix + "On", active ? 1.0f : 0.0f);
+
+        // Orbit ring roles: Pitch=vel/notes, Filter/Pan/FX/Slice write their control params.
+        if (lane == 1)
+            setArpLaneValue (*midiBlock, lane, "mpAutoFilter" + suffix, limitedVelocity);
+        else if (lane == 2)
+            setArpLaneValue (*midiBlock, lane, "mpAutoPan" + suffix, limitedVelocity * 2.0f - 1.0f);
+        else if (lane == 3)
+        {
+            setArpLaneValue (*midiBlock, lane, "mpAutoFxSend" + suffix, limitedVelocity);
+            if (midiBlock->values.find (arpBankPrefix (lane) + "mpLaneFxTarget") == midiBlock->values.end())
+                setArpLaneValue (*midiBlock, lane, "mpLaneFxTarget", 0.0f); // delay
+        }
+        else if (lane == 4)
+        {
+            setArpLaneValue (*midiBlock, lane, "mpSampleControl", 1.0f);
+            setArpLaneValue (*midiBlock, lane, "mpSampleSliceCount", 16.0f);
+            setArpLaneValue (*midiBlock, lane, "mpSampleSlice" + suffix,
+                             (float) juce::jlimit (0, 15, juce::roundToInt (limitedVelocity * 15.0f)));
+        }
 
         arpeggiator.bind (pack.dspGraph);
         polySequencer.bind (pack.dspGraph);
@@ -3380,7 +3578,10 @@ namespace patchcraft
             noteHighlightLevels[(size_t) note].store (1.0f);
             heldNotes[(size_t) note] = false;
 
-            scriptEngine.triggerEvent ("note starts", {{"velocity", message.getFloatVelocity() * 127.0f}});
+            scriptEngine.triggerEvent ("note starts", {
+                { "velocity", message.getFloatVelocity() * 127.0f },
+                { "note", (float) note }
+            });
 
             if (! polySequencer.handleNoteOn (*engine, note, message.getFloatVelocity()) && ! arpeggiator.handleNoteOn (*engine, note, message.getFloatVelocity()))
             {
@@ -3398,7 +3599,10 @@ namespace patchcraft
         {
             const int note = juce::jlimit (0, 127, message.getNoteNumber());
 
-            scriptEngine.triggerEvent ("note ends", {});
+            scriptEngine.triggerEvent ("note ends", {
+                { "velocity", 0.0f },
+                { "note", (float) note }
+            });
 
             if (sustainPedalDown)
                 heldNotes[(size_t) note] = true;

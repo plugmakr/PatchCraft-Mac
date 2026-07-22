@@ -1,0 +1,130 @@
+{
+  "version": "1.0.0",
+  "product": "PatchCraft Studio V1",
+  "studioExecutable": "M:/AudiCode/PCraft/build-codex/dist/PatchCraftStudio-RC/PatchCraftStudio.exe",
+  "outputDirectory": "docs/tutorials/patchcraft/videos/exports",
+  "exportSpec": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "videoCodec": "h264",
+    "audioCodec": "aac",
+    "audioBitrateKbps": 192
+  },
+  "toolbarLabels": ["Sound", "Graph", "Perform", "Layout", "Brand", "Ship"],
+  "performToggles": ["Steps", "Circles"],
+  "forbiddenSurfaces": ["AI Studio", "PATCHCRAFT_ENABLE_AI_STUDIO"],
+  "episodes": [
+    {
+      "id": "00-trailer",
+      "title": "What is PatchCraft?",
+      "durationSeconds": 180,
+      "priority": "P0",
+      "demoProject": null,
+      "remotionOnly": false,
+      "chapters": ["Intro", "B-roll montage", "Outro"],
+      "voiceoverHook": "PatchCraft is an instrument builder — sound, UI, presets, one pack, one Player."
+    },
+    {
+      "id": "masterclass",
+      "title": "Zero to Shipped Pack",
+      "durationSeconds": 1320,
+      "priority": "P0",
+      "demoProject": "blank-synth-starter",
+      "chapters": ["Sound", "Graph", "Perform", "Layout", "Presets", "Brand", "Ship"],
+      "keyClicks": [
+        "Create → Synth",
+        "Graph tab",
+        "Perform → Steps → Make Pattern",
+        "Layout → CONTROL BINDINGS",
+        "Brand tab",
+        "Ship → Export pack",
+        "Open in Player"
+      ]
+    },
+    {
+      "id": "01-overview",
+      "title": "Studio, Player & the Pack",
+      "durationSeconds": 480,
+      "priority": "P0",
+      "demoProject": "FactoryDemos/AuroraArpSynth.patchcraft"
+    },
+    {
+      "id": "02-getting-started",
+      "title": "Install, Audio & Navigation",
+      "durationSeconds": 420,
+      "priority": "P0",
+      "demoProject": null
+    },
+    {
+      "id": "03-sound",
+      "title": "Sound Workspace & Sample Mapper",
+      "durationSeconds": 600,
+      "priority": "P0",
+      "demoProject": "FactoryDemos/RomplurDrumMachine.patchcraft"
+    },
+    {
+      "id": "04-graph",
+      "title": "Graph & Signal Path",
+      "durationSeconds": 600,
+      "priority": "P0",
+      "demoProject": "FactoryDemos/EchoCraft.patchcraft"
+    },
+    {
+      "id": "05-perform",
+      "title": "Perform Overview",
+      "durationSeconds": 480,
+      "priority": "P0",
+      "demoProject": "FactoryDemos/AuroraArpSynth.patchcraft",
+      "mustSay": [
+        "Make Pattern writes dspGraph data",
+        "Update Player Controls changes layout only"
+      ]
+    },
+    {
+      "id": "11-patterns",
+      "title": "Perform · Steps Deep Dive",
+      "durationSeconds": 720,
+      "priority": "P1",
+      "demoProject": "FactoryDemos/AuroraArpSynth.patchcraft",
+      "sourceDoc": "11-patterns.html"
+    },
+    {
+      "id": "12-circles",
+      "title": "Perform · Circles Deep Dive",
+      "durationSeconds": 600,
+      "priority": "P1",
+      "demoProject": "FactoryDemos/CircleSeqFlagship.patchcraft",
+      "sourceDoc": "12-circles.html",
+      "uiNote": "Use Perform tab + Circles toggle, not separate Circles tab"
+    },
+    {
+      "id": "06-layout",
+      "title": "Layout, Canvas & Bindings",
+      "durationSeconds": 600,
+      "priority": "P0",
+      "demoProject": "FactoryDemos/AuroraArpSynth.patchcraft"
+    },
+    {
+      "id": "07-brand",
+      "title": "Brand Lab & Player Preview",
+      "durationSeconds": 480,
+      "priority": "P1",
+      "demoProject": "FactoryDemos/BeatFoundry.patchcraft"
+    },
+    {
+      "id": "08-presets",
+      "title": "Presets & Expansions",
+      "durationSeconds": 480,
+      "priority": "P1",
+      "demoProject": "FactoryDemos/HalcyonKeys.patchcraft"
+    },
+    {
+      "id": "09-ship",
+      "title": "Ship, Export & Plugin.club",
+      "durationSeconds": 600,
+      "priority": "P0",
+      "demoProject": "FactoryDemos/BeatFoundry.patchcraft"
+    }
+  ]
+}

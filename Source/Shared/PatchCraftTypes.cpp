@@ -1,5 +1,7 @@
 #include "PatchCraftTypes.h"
 #include "DspModuleRegistry.h"
+#include "SoundStack.h"
+#include "SampleSliceUtils.h"
 
 #include <cmath>
 
@@ -140,6 +142,27 @@ namespace patchcraft
         obj->setProperty ("playerShowParameterGuidance", playerShowParameterGuidance);
         obj->setProperty ("playerShowPatchCraftBranding", playerShowPatchCraftBranding);
         obj->setProperty ("studioShowTutorials",     studioShowTutorials);
+        obj->setProperty ("playerShowTopBar",        playerShowTopBar);
+        obj->setProperty ("playerShowLeftSidebar",   playerShowLeftSidebar);
+        obj->setProperty ("playerShowFooter",        playerShowFooter);
+        obj->setProperty ("playerShowRightPanel",    playerShowRightPanel);
+        obj->setProperty ("playerShowKeyboard",      playerShowKeyboard);
+        obj->setProperty ("playerTopShowBrowse",     playerTopShowBrowse);
+        obj->setProperty ("playerTopShowSave",       playerTopShowSave);
+        obj->setProperty ("playerTopShowSettings",   playerTopShowSettings);
+        obj->setProperty ("playerTopShowCategory",   playerTopShowCategory);
+        obj->setProperty ("playerTopShowFavorite",   playerTopShowFavorite);
+        obj->setProperty ("playerTopShowPresetNav",  playerTopShowPresetNav);
+        obj->setProperty ("playerTopShowMasterVolume", playerTopShowMasterVolume);
+        obj->setProperty ("playerTopShowOutputMeter", playerTopShowOutputMeter);
+        obj->setProperty ("rightPanelShowMacros",    rightPanelShowMacros);
+        obj->setProperty ("rightPanelShowEffects",   rightPanelShowEffects);
+        obj->setProperty ("rightPanelShowSends",     rightPanelShowSends);
+        obj->setProperty ("rightPanelShowUtility",   rightPanelShowUtility);
+        obj->setProperty ("rightPanelMacroNames",    stringArrayToVar (rightPanelMacroNames));
+        obj->setProperty ("quickBuildMode",          quickBuildMode);
+        obj->setProperty ("productRecipeId",         productRecipeId);
+        obj->setProperty ("productKindLabel",      productKindLabel);
         obj->setProperty ("whiteLabelPackageName",   whiteLabelPackageName);
         obj->setProperty ("whiteLabelPublisher",     whiteLabelPublisher);
         obj->setProperty ("whiteLabelProductCode",   whiteLabelProductCode);
@@ -298,6 +321,59 @@ namespace patchcraft
                 m.playerShowPatchCraftBranding = (bool) o->getProperty ("playerShowPatchCraftBranding");
             if (o->hasProperty ("studioShowTutorials"))
                 m.studioShowTutorials = (bool) o->getProperty ("studioShowTutorials");
+            if (o->hasProperty ("playerShowTopBar"))
+                m.playerShowTopBar = (bool) o->getProperty ("playerShowTopBar");
+            if (o->hasProperty ("playerShowLeftSidebar"))
+                m.playerShowLeftSidebar = (bool) o->getProperty ("playerShowLeftSidebar");
+            if (o->hasProperty ("playerShowFooter"))
+                m.playerShowFooter = (bool) o->getProperty ("playerShowFooter");
+            if (o->hasProperty ("playerShowRightPanel"))
+                m.playerShowRightPanel = (bool) o->getProperty ("playerShowRightPanel");
+            if (o->hasProperty ("playerShowKeyboard"))
+                m.playerShowKeyboard = (bool) o->getProperty ("playerShowKeyboard");
+            if (o->hasProperty ("playerTopShowBrowse"))
+                m.playerTopShowBrowse = (bool) o->getProperty ("playerTopShowBrowse");
+            if (o->hasProperty ("playerTopShowSave"))
+                m.playerTopShowSave = (bool) o->getProperty ("playerTopShowSave");
+            if (o->hasProperty ("playerTopShowSettings"))
+                m.playerTopShowSettings = (bool) o->getProperty ("playerTopShowSettings");
+            if (o->hasProperty ("playerTopShowCategory"))
+                m.playerTopShowCategory = (bool) o->getProperty ("playerTopShowCategory");
+            if (o->hasProperty ("playerTopShowFavorite"))
+                m.playerTopShowFavorite = (bool) o->getProperty ("playerTopShowFavorite");
+            if (o->hasProperty ("playerTopShowPresetNav"))
+                m.playerTopShowPresetNav = (bool) o->getProperty ("playerTopShowPresetNav");
+            if (o->hasProperty ("playerTopShowMasterVolume"))
+                m.playerTopShowMasterVolume = (bool) o->getProperty ("playerTopShowMasterVolume");
+            if (o->hasProperty ("playerTopShowOutputMeter"))
+                m.playerTopShowOutputMeter = (bool) o->getProperty ("playerTopShowOutputMeter");
+            if (o->hasProperty ("rightPanelShowMacros"))
+                m.rightPanelShowMacros = (bool) o->getProperty ("rightPanelShowMacros");
+            if (o->hasProperty ("rightPanelShowEffects"))
+                m.rightPanelShowEffects = (bool) o->getProperty ("rightPanelShowEffects");
+            if (o->hasProperty ("rightPanelShowSends"))
+                m.rightPanelShowSends = (bool) o->getProperty ("rightPanelShowSends");
+            if (o->hasProperty ("rightPanelShowUtility"))
+                m.rightPanelShowUtility = (bool) o->getProperty ("rightPanelShowUtility");
+            if (o->hasProperty ("rightPanelMacroNames"))
+            {
+                m.rightPanelMacroNames.clear();
+                if (auto* arr = o->getProperty ("rightPanelMacroNames").getArray())
+                    for (const auto& item : *arr)
+                        m.rightPanelMacroNames.add (item.toString());
+            }
+            if (m.rightPanelMacroNames.size() < 8)
+            {
+                const juce::String defaults[] = { "TONE", "WASH", "DRIVE", "WIDTH", "MOVEMENT", "PHASER", "DELAY", "REVERB" };
+                while (m.rightPanelMacroNames.size() < 8)
+                    m.rightPanelMacroNames.add (defaults[(size_t) m.rightPanelMacroNames.size()]);
+            }
+            if (o->hasProperty ("quickBuildMode"))
+                m.quickBuildMode = (bool) o->getProperty ("quickBuildMode");
+            if (o->hasProperty ("productRecipeId"))
+                m.productRecipeId = o->getProperty ("productRecipeId").toString();
+            if (o->hasProperty ("productKindLabel"))
+                m.productKindLabel = o->getProperty ("productKindLabel").toString();
             if (o->hasProperty ("whiteLabelPackageName"))
                 m.whiteLabelPackageName = o->getProperty ("whiteLabelPackageName").toString();
             if (o->hasProperty ("whiteLabelPublisher"))
@@ -435,6 +511,7 @@ namespace patchcraft
             case ElementType::RuntimeSampleLibrary: return "runtimeSampleLibrary";
             case ElementType::PitchWheel: return "pitchWheel";
             case ElementType::ModWheel: return "modWheel";
+            case ElementType::AdsrCurve: return "adsrCurve";
         }
         return "knob";
     }
@@ -455,7 +532,7 @@ namespace patchcraft
         if (s == "panel")        return ElementType::Panel;
         if (s == "shape")        return ElementType::Shape;
         if (s == "xyPad")        return ElementType::XYPad;
-        if (s == "granular")     return ElementType::GranularField;
+        if (s == "granular" || s == "granularField") return ElementType::GranularField;
         if (s == "tabPanel")     return ElementType::TabPanel;
         if (s == "scrollPanel")  return ElementType::ScrollPanel;
         if (s == "group")        return ElementType::Group;
@@ -479,6 +556,7 @@ namespace patchcraft
         if (s == "runtimeSampleLibrary") return ElementType::RuntimeSampleLibrary;
         if (s == "pitchWheel") return ElementType::PitchWheel;
         if (s == "modWheel") return ElementType::ModWheel;
+        if (s == "adsrCurve") return ElementType::AdsrCurve;
         return ElementType::Knob;
     }
 
@@ -524,6 +602,7 @@ namespace patchcraft
             case ElementType::RuntimeSampleLibrary: return "Runtime Sample Library";
             case ElementType::PitchWheel: return "Pitch Wheel";
             case ElementType::ModWheel: return "Mod Wheel";
+            case ElementType::AdsrCurve: return "ADSR Curve";
         }
         return "Knob";
     }
@@ -579,7 +658,8 @@ namespace patchcraft
             || type == ElementType::SampleDropZone
             || type == ElementType::RuntimeSampleLibrary
             || type == ElementType::PitchWheel
-            || type == ElementType::ModWheel;
+            || type == ElementType::ModWheel
+            || type == ElementType::AdsrCurve;
     }
 
     // LayoutElement ------------------------------------------------------------
@@ -607,6 +687,8 @@ namespace patchcraft
         obj->setProperty ("labelPosition", labelPosition);
         obj->setProperty ("containerId", containerId);
         obj->setProperty ("linkedCopyGroupId", linkedCopyGroupId);
+        if (pscriptFile.isNotEmpty())
+            obj->setProperty ("pscriptFile", pscriptFile);
         obj->setProperty ("x",           x);
         obj->setProperty ("y",           y);
         obj->setProperty ("width",       width);
@@ -736,6 +818,7 @@ namespace patchcraft
             e.labelPosition = o->getProperty ("labelPosition").toString();
             e.containerId = o->getProperty ("containerId").toString();
             e.linkedCopyGroupId = o->getProperty ("linkedCopyGroupId").toString();
+            e.pscriptFile = o->getProperty ("pscriptFile").toString();
             e.x      = (int) o->getProperty ("x");
             e.y      = (int) o->getProperty ("y");
             e.width  = (int) o->getProperty ("width");
@@ -1136,7 +1219,7 @@ namespace patchcraft
             if (z.lowVelocity  <= 0)   z.lowVelocity  = 1;
             if (z.highVelocity <= 0)   z.highVelocity = 127;
             if (z.highNote     <= 0)   z.highNote     = 127;
-            z.padIndex = juce::jlimit (-1, 15, z.padIndex);
+            z.padIndex = juce::jlimit (-1, kMaxChopPads - 1, z.padIndex);
             z.chokeGroup = juce::jlimit (0, 127, z.chokeGroup);
             z.triggerProbability = juce::jlimit (0, 100, z.triggerProbability);
             z.playMode = juce::jlimit (-1, 3, z.playMode);
@@ -1632,8 +1715,15 @@ namespace patchcraft
     static bool sectionLooksSupported (const juce::String& section)
     {
         const auto lower = section.toLowerCase();
-        return lower == "source" || lower == "filter" || lower == "amp"
-            || lower == "mod" || lower == "fx" || lower == "out";
+        if (lower.isEmpty())
+            return true;
+
+        static const juce::StringArray supported {
+            "source", "filter", "amp", "shape",
+            "mod", "modulation", "motion", "perform", "circle", "midi", "macro",
+            "fx", "out", "output", "input"
+        };
+        return supported.contains (lower, false);
     }
 
     static bool blockTypeLooksSupported (const TypedDspNode& node)
@@ -1979,202 +2069,67 @@ namespace patchcraft
 
     void DspGraph::resetForEngine (const juce::String& engineId)
     {
-        blocks.clear();
-        edges.clear();
-        macros.clear();
-        modulation.clear();
-        automation.clear();
-        quickEditControls.clear();
-        userConfigured = false;
+        SoundStack::resetSimpleGraph (*this, engineId);
+    }
 
-        auto addBlock = [this] (juce::String id, juce::String section,
-                                juce::String type, juce::String name) -> DspBlock&
+    void DspGraph::resetForEngineExpanded (const juce::String& engineId)
+    {
+        SoundStack::resetExpandedGraph (*this, engineId);
+    }
+
+    bool DspGraph::ensureAuthoredOutput()
+    {
+        juce::String lastAudioId;
+        for (const auto& block : blocks)
         {
-            DspBlock b;
-            b.id = std::move (id);
-            b.section = std::move (section);
-            b.type = std::move (type);
-            b.name = std::move (name);
-            blocks.push_back (b);
-            return blocks.back();
-        };
-        auto addAudioEdge = [this] (juce::String from, juce::String to, float gain = 1.0f)
-        {
-            if (from.isEmpty() || to.isEmpty())
-                return;
-            DspGraphEdge edge;
-            edge.id = from + "_to_" + to;
-            edge.sourceNodeId = std::move (from);
-            edge.targetNodeId = std::move (to);
-            edge.gain = gain;
-            edges.push_back (std::move (edge));
-        };
+            if (! block.enabled)
+                continue;
 
-        if (engineId == "fx")
-        {
-            auto& drive = addBlock ("input_drive", "source", "drive", "Input Drive");
-            drive.targetId = "drive";
-            drive.values["drive"] = 0.12f;
-            drive.values["mix"] = 1.0f;
+            const auto kind = DspModuleRegistry::classifyBlockKind (block);
+            if (kind == DspNodeKind::output)
+                return false;
 
-            auto& filter = addBlock ("filter_1", "filter", "stateVariable", "Morph Filter");
-            filter.targetId = "filterCutoff";
-            filter.values["cutoff"] = 0.72f;
-            filter.values["resonance"] = 0.12f;
-
-            auto& delay = addBlock ("delay_1", "fx", "delay", "Tempo Delay");
-            delay.targetId = "delayMix";
-            delay.values["delayMix"] = 0.25f;
-            delay.values["delayFeedback"] = 0.35f;
-            delay.values["delayTime"] = 0.25f;
-            delay.values["rate"] = 1.0f;
-            delay.values["sync"] = 1.0f;
-            delay.values["drive"] = 0.0f;
-
-            auto& reverb = addBlock ("reverb_1", "fx", "reverb", "Space Reverb");
-            reverb.targetId = "reverbMix";
-            reverb.values["reverbMix"] = 0.22f;
-            reverb.values["mix"] = 1.0f;
-
-            auto& lfo = addBlock ("lfo_1", "mod", "lfo", "LFO 1");
-            lfo.targetId = "filterCutoff";
-            lfo.values["rate"] = 0.25f;
-            lfo.values["sync"] = 1.0f;
-            lfo.values["amount"] = 0.15f;
-
-            auto& macro = addBlock ("macro_motion", "mod", "macro", "Motion Macro");
-            macro.targetId = "filterCutoff";
-            macro.values["value"] = 0.45f;
-
-            addAudioEdge ("input_drive", "filter_1");
-            addAudioEdge ("filter_1", "delay_1");
-            addAudioEdge ("delay_1", "reverb_1");
-        }
-        else
-        {
-            if (engineId == "synth")
-            {
-                auto& osc1 = addBlock ("osc_1", "source", "oscillator", "OSC 1");
-                osc1.targetId = "volume";
-                osc1.values["oscType"] = 0.25f;
-                osc1.values["osc2Type"] = 0.75f;
-                osc1.values["oscBlend"] = 0.18f;
-                osc1.values["osc2Detune"] = 0.535f;
-                osc1.values["subBlend"] = 0.0f;
-                osc1.values["noiseBlend"] = 0.0f;
-                osc1.values["volume"] = 0.80f;
-                osc1.values["detune"] = 0.50f;
-
-                auto& osc2 = addBlock ("osc_2", "source", "oscillator", "OSC 2");
-                osc2.targetId = "oscBlend";
-                osc2.values["oscType"] = 0.50f;
-                osc2.values["osc2Type"] = 0.25f;
-                osc2.values["oscBlend"] = 0.42f;
-                osc2.values["osc2Detune"] = 0.56f;
-                osc2.values["subBlend"] = 0.10f;
-                osc2.values["noiseBlend"] = 0.02f;
-                osc2.values["volume"] = 0.65f;
-                osc2.values["detune"] = 0.54f;
-
-                auto& noise = addBlock ("noise_1", "source", "noise", "Noise Texture");
-                noise.targetId = "noiseBlend";
-                noise.values["noiseBlend"] = 0.14f;
-                noise.values["oscBlend"] = 0.0f;
-                noise.values["subBlend"] = 0.0f;
-            }
-            else
-            {
-                auto& sample = addBlock ("sample_1", "source", "sample", "Sample Layer");
-                sample.targetId = "volume";
-                sample.values["volume"] = 0.90f;
-                sample.values["pan"] = 0.50f;
-            }
-
-            auto& filter = addBlock ("filter_1", "filter", "stateVariable", "Morph Filter");
-            filter.targetId = "filterCutoff";
-            filter.values["cutoff"] = 0.56f;
-            filter.values["resonance"] = 0.18f;
-
-            auto& amp = addBlock ("amp_env", "amp", "adsr", "Amp Envelope");
-            amp.targetId = "attack";
-            amp.values["attack"] = 0.01f;
-            amp.values["decay"] = 0.20f;
-            amp.values["sustain"] = 0.80f;
-            amp.values["release"] = 0.40f;
-
-            auto& lfo = addBlock ("lfo_1", "mod", "lfo", "LFO 1");
-            lfo.targetId = "filterCutoff";
-            lfo.values["rate"] = 0.25f;
-            lfo.values["sync"] = 1.0f;
-            lfo.values["amount"] = 0.15f;
-            auto& macro = addBlock ("macro_motion", "mod", "macro", "Motion Macro");
-            macro.targetId = "filterCutoff";
-            macro.values["value"] = 0.45f;
-            auto& delay = addBlock ("delay_1", "fx", "delay", "Tempo Delay");
-            delay.targetId = "delayMix";
-            delay.values["delayMix"] = 0.18f;
-            delay.values["delayFeedback"] = 0.35f;
-            delay.values["delayTime"] = 0.25f;
-            delay.values["rate"] = 1.0f;
-            delay.values["sync"] = 1.0f;
-            auto& reverb = addBlock ("reverb_1", "fx", "reverb", "Space Reverb");
-            reverb.targetId = "reverbMix";
-            reverb.values["reverbMix"] = 0.20f;
-
-            if (engineId == "synth")
-            {
-                addAudioEdge ("osc_1", "filter_1", 0.577f);
-                addAudioEdge ("osc_2", "filter_1", 0.577f);
-                addAudioEdge ("noise_1", "filter_1", 0.577f);
-            }
-            else
-            {
-                addAudioEdge ("sample_1", "filter_1");
-            }
-            addAudioEdge ("filter_1", "amp_env");
-            addAudioEdge ("amp_env", "delay_1");
-            addAudioEdge ("delay_1", "reverb_1");
+            if (kind != DspNodeKind::modulation && kind != DspNodeKind::unknown)
+                lastAudioId = block.id;
         }
 
-        auto& utility = addBlock ("output_utility", "out", "utility", "Output Utility");
-        utility.targetId = "outputGainDb";
-        utility.values["inputTrimDb"] = 0.0f;
-        utility.values["phaseInvert"] = 0.0f;
-        utility.values["stereoWidth"] = 1.0f;
-        utility.values["monoMaker"] = 0.0f;
-        utility.values["outputGainDb"] = 0.0f;
-        utility.values["outputLimiter"] = 1.0f;
-        utility.values["outputCeilingDb"] = -0.5f;
-        if (engineId == "fx")
-            addAudioEdge ("reverb_1", "output_utility");
-        else
-            addAudioEdge ("reverb_1", "output_utility");
+        DspBlock out;
+        out.id = "main_output";
+        out.section = "out";
+        out.type = "limiter";
+        out.name = "Main Output";
+        out.targetId = "volume";
+        out.enabled = true;
+        out.values["outputLimiter"] = 1.0f;
+        out.values["outputCeilingDb"] = -1.0f;
+        out.values["outputGainDb"] = -3.0f;
+        out.metadata["uiX"] = "1240";
+        out.metadata["uiY"] = "80";
+        blocks.push_back (out);
 
-        macros.push_back ({ "macro_motion_cutoff", "macro_motion", "filterCutoff", 0.0f, 1.0f, 400.0f, 8000.0f, 1.6f, false });
-        if (engineId == "synth")
+        if (lastAudioId.isNotEmpty())
         {
-            macros.push_back ({ "macro_motion_lfo", "macro_motion", "lfoAmount", 0.0f, 1.0f, 0.0f, 0.75f, 1.0f, false });
-            macros.push_back ({ "macro_motion_blend", "macro_motion", "oscBlend", 0.0f, 1.0f, 0.0f, 0.65f, 1.2f, false });
-        }
-        modulation.push_back ({ "lfo_cutoff", "lfo_1", "filterCutoff", 0.25f, 0.02f, true });
-        if (engineId == "synth")
-            modulation.push_back ({ "lfo_source_blend", "lfo_1", "oscBlend", 0.18f, 0.02f, true });
-        AutomationLane lane;
-        lane.id = "auto_motion";
-        lane.targetId = "macro_motion";
-        lane.points = { 0.0f, 0.25f, 1.0f, 0.4f, 0.0f };
-        automation.push_back (lane);
+            bool hasEdge = false;
+            for (const auto& edge : edges)
+                if (edge.enabled && edge.sourceNodeId == lastAudioId && edge.targetNodeId == out.id)
+                {
+                    hasEdge = true;
+                    break;
+                }
 
-        quickEditControls["source"] = engineId == "synth"
-            ? juce::StringArray { "oscType", "osc2Type", "oscBlend", "osc2Detune", "wtPosition", "wtFramePosition", "wtFrameCount", "wtLevel", "detune", "volume" }
-            : juce::StringArray { "volume", "pan" };
-        quickEditControls["filter"] = { "filterCutoff", "filterResonance" };
-        quickEditControls["amp"] = { "attack", "decay", "sustain", "release", "volume" };
-        quickEditControls["mod"] = { "lfoRate", "lfoAmount", "vibratoRate", "vibratoDepth" };
-        quickEditControls["fx"] = { "drive", "mix", "delayTime", "delayFeedback", "delayMix", "reverbMix",
-                                    "dynMix", "chorusMix", "phaserMix", "combMix", "resonatorMix", "spectralMix",
-                                    "tapeMix", "vinylMix", "lofiMix", "vocalMix", "multiTapMix" };
-        quickEditControls["out"] = { "volume", "pan", "projectBpm", "inputTrimDb", "stereoWidth", "monoMaker", "outputGainDb", "outputLimiter", "outputCeilingDb", "bpmSync", "retrigger" };
+            if (! hasEdge)
+            {
+                DspGraphEdge edge;
+                edge.id = lastAudioId + "_to_main_output";
+                edge.sourceNodeId = lastAudioId;
+                edge.targetNodeId = out.id;
+                edge.signalType = DspSignalType::audio;
+                edge.enabled = true;
+                edges.push_back (std::move (edge));
+            }
+        }
+
+        return true;
     }
 
     juce::var DspGraph::toVar() const

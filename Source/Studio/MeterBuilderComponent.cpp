@@ -101,6 +101,104 @@ namespace patchcraft
         slider.setTextValueSuffix (suffix);
     }
 
+    juce::StringArray MeterBuilderComponent::galleryPresetNames()
+    {
+        return {
+            "Stereo LED Peak",
+            "Smooth Master Bar",
+            "Needle VU Classic",
+            "Mini Spectrum Column",
+            "Horizontal Bus Meter",
+            "Broadcast Warning",
+            "Dark Input Pair",
+            "Compact Plugin Meter",
+            "Neon Analyzer",
+            "Vintage Tape VU"
+        };
+    }
+
+    void MeterBuilderComponent::applyGalleryPreset (int index)
+    {
+        importedBg = importedFill = importedStrip = {};
+        importedSource = {};
+
+        auto setColours = [this] (juce::uint32 low, juce::uint32 mid, juce::uint32 high)
+        {
+            lowColour = juce::Colour (low);
+            midColour = juce::Colour (mid);
+            highColour = juce::Colour (high);
+            lowColourBtn.setColour (juce::TextButton::buttonColourId, lowColour);
+            midColourBtn.setColour (juce::TextButton::buttonColourId, midColour);
+            highColourBtn.setColour (juce::TextButton::buttonColourId, highColour);
+        };
+
+        auto setValues = [this] (int orientation, int style, int scale, double width, double height,
+                                 double segments, double value, double warning, double peak,
+                                 bool peakHold, bool dbScale, bool stereo)
+        {
+            orientationBox.setSelectedId (orientation, juce::dontSendNotification);
+            styleBox.setSelectedId (style, juce::dontSendNotification);
+            scaleBox.setSelectedId (scale, juce::dontSendNotification);
+            widthSlider.setValue (width, juce::dontSendNotification);
+            heightSlider.setValue (height, juce::dontSendNotification);
+            segmentSlider.setValue (segments, juce::dontSendNotification);
+            valueSlider.setValue (value, juce::dontSendNotification);
+            warningSlider.setValue (warning, juce::dontSendNotification);
+            peakSlider.setValue (peak, juce::dontSendNotification);
+            peakHoldToggle.setToggleState (peakHold, juce::dontSendNotification);
+            dbScaleToggle.setToggleState (dbScale, juce::dontSendNotification);
+            stereoToggle.setToggleState (stereo, juce::dontSendNotification);
+        };
+
+        switch (juce::jlimit (0, 9, index))
+        {
+            case 0:
+                setValues (1, 1, 1, 28, 260, 24, 0.74, 0.72, 0.91, true, true, true);
+                setColours (0xff6bdc7a, 0xffffc747, 0xffff4f42);
+                break;
+            case 1:
+                setValues (1, 2, 1, 42, 280, 18, 0.66, 0.76, 0.85, true, true, false);
+                setColours (0xff4fc3f7, 0xfff2c94c, 0xffff5f57);
+                break;
+            case 2:
+                setValues (1, 3, 2, 96, 190, 12, 0.58, 0.70, 0.78, false, true, false);
+                setColours (0xff7bbf87, 0xffd7a74d, 0xffc85247);
+                break;
+            case 3:
+                setValues (1, 4, 3, 22, 210, 36, 0.80, 0.80, 0.92, false, false, false);
+                setColours (0xff53e6ff, 0xff9bff7a, 0xffff5fd2);
+                break;
+            case 4:
+                setValues (2, 2, 1, 28, 340, 28, 0.69, 0.74, 0.88, true, true, true);
+                setColours (0xff5fb37b, 0xfff5a623, 0xffe24d42);
+                break;
+            case 5:
+                setValues (1, 1, 2, 36, 300, 18, 0.82, 0.62, 0.94, true, true, false);
+                setColours (0xff69b886, 0xffffb24d, 0xffff3333);
+                break;
+            case 6:
+                setValues (1, 1, 1, 32, 240, 20, 0.57, 0.76, 0.71, true, true, true);
+                setColours (0xff3fd0bd, 0xfff0b958, 0xfff25656);
+                break;
+            case 7:
+                setValues (2, 1, 3, 20, 220, 16, 0.48, 0.80, 0.64, false, false, false);
+                setColours (0xff9aa3aa, 0xffd6dce0, 0xffff6b6b);
+                break;
+            case 8:
+                setValues (2, 4, 3, 34, 360, 42, 0.76, 0.78, 0.92, false, false, true);
+                setColours (0xff5affcb, 0xff70a7ff, 0xffff6df2);
+                break;
+            case 9:
+                setValues (1, 3, 2, 112, 210, 10, 0.52, 0.68, 0.72, false, true, false);
+                setColours (0xff6b8f63, 0xffd8b35f, 0xffb84a3c);
+                break;
+            default:
+                break;
+        }
+
+        repaint();
+    }
+
     void MeterBuilderComponent::paint (juce::Graphics& g)
     {
         g.fillAll (PatchCraftLookAndFeel::panel());

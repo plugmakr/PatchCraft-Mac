@@ -80,8 +80,10 @@ namespace patchcraft
         void addCircleSeqBackgroundKit (juce::Point<int> canvasPos);
         void addModuleLayout (const juce::String& moduleType, juce::Point<int> pos);
 
+        const LayoutElement* scriptableControlAt (juce::Point<int> localPosition) const;
+
     private:
-        enum class DragMode { None, Move, Resize, ValueDrag, Marquee, DrumGridEdit, ArpLaneEdit, Pan };
+        enum class DragMode { None, Move, Resize, ValueDrag, AuditionNote, Marquee, DrumGridEdit, ArpLaneEdit, Pan };
         enum class ResizeHandle { None, TopLeft, Top, TopRight, Right, BottomRight, Bottom, BottomLeft, Left };
 
         juce::Rectangle<int> canvasScreenRect() const;
@@ -144,6 +146,8 @@ namespace patchcraft
         std::vector<LayoutElement> dragLayoutBefore;
         juce::String dragActionName;
         bool layoutChangedDuringDrag = false;
+        int auditionNote = -1;
+        juce::String auditionElementId;
 
         // Value-drag state
         juce::String dragParameterId;

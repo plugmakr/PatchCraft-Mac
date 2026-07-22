@@ -32,7 +32,7 @@ The script stages payload files, writes an Inno Setup script, writes an installe
   -LicenseRequired `
   -RequireLicenseOnFirstRun `
   -LicenseProductId "echocraft-001" `
-  -LicenseServerUrl "https://plugin.club/functions/deviceAuth" `
+  -LicenseServerUrl "https://plugin.club/functions/v1/activateLicense" `
   -TrialDays 7 `
   -SupportUrl "https://plugin.club/support" `
   -Compile

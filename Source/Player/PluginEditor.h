@@ -10,6 +10,12 @@
 
 namespace patchcraft
 {
+    class PlayerTopBar;
+    class PlayerLeftSidebar;
+    class PlayerCenterPanel;
+    class PlayerRightPanel;
+    class PlayerFooter;
+    class PlayerKeyboardStrip;
     class PlayerPerformancePanel;
     class PlayerControlCenter;
     class PlayerUserImportPanel;
@@ -31,6 +37,13 @@ namespace patchcraft
 
         void packChanged() override;
 
+        juce::Colour getBgColor() const;
+        juce::Colour getPanelColor() const;
+        juce::Colour getAccentColor() const;
+        juce::Colour getTextColor() const;
+        juce::Colour getTextDimColor() const;
+        juce::Colour getBorderColor() const;
+
         // FileDragAndDropTarget
         bool isInterestedInFileDrag (const juce::StringArray&) override;
         void fileDragEnter (const juce::StringArray&, int, int) override;
@@ -39,9 +52,23 @@ namespace patchcraft
         void filesDropped (const juce::StringArray&, int, int) override;
 
     private:
+        friend class PlayerTopBar;
+        friend class PlayerLeftSidebar;
+        friend class PlayerCenterPanel;
+        friend class PlayerRightPanel;
+        friend class PlayerFooter;
+        friend class PlayerKeyboardStrip;
+
         PlayerProcessor& proc;
         PlayerLookAndFeel laf;
         AssetManager      assets;
+
+        std::unique_ptr<PlayerTopBar> topBar;
+        std::unique_ptr<PlayerLeftSidebar> leftSidebar;
+        std::unique_ptr<PlayerCenterPanel> centerPanel;
+        std::unique_ptr<PlayerRightPanel> rightPanel;
+        std::unique_ptr<PlayerFooter> footer;
+        std::unique_ptr<PlayerKeyboardStrip> keyboardStrip;
 
         std::unique_ptr<PlayerGuiRenderer> renderer;
         std::unique_ptr<LibraryBrowser> libraryBrowser;
@@ -79,6 +106,7 @@ namespace patchcraft
         void showPresetMenu();
         void showPresetLoading (const juce::String& presetName);
         void showAboutDialog();
+        void showLicenseActivationDialog();
         void refreshPresetControls();
         void refreshTooltipWindowState();
         void resizeToCurrentPackCanvas();

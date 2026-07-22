@@ -270,6 +270,60 @@ namespace patchcraft
         list.setBounds (r);
     }
 
+    void BuiltAssetLibraryComponent::mouseDown (const juce::MouseEvent& e)
+    {
+        juce::Component::mouseDown (e);
+
+        if (! e.mods.isPopupMenu() || e.eventComponent != &list)
+            return;
+
+        const int row = list.getRowContainingPosition (e.getPosition().x, e.getPosition().y);
+        if (row < 0 || row >= (int) entries.size())
+            return;
+
+        selectedRow = row;
+        list.selectRow (row);
+        showEntryContextMenu (row, e.getScreenPosition());
+    }
+
+    void BuiltAssetLibraryComponent::showEntryContextMenu (int row, juce::Point<int> screenPos)
+    {
+        if (row < 0 || row >= (int) entries.size())
+            return;
+
+        const auto& entry = entries[(size_t) row];
+        juce::PopupMenu menu;
+        menu.addItem (1, "Open pScript Editor", true);
+        menu.addSeparator();
+        if (! entry.isFolder)
+        {
+            menu.addItem (2, "Preview", true);
+            menu.addItem (3, entry.category == "sounds" ? "Import To Mapper" : "Add To Canvas", true);
+        }
+        menu.addItem (4, "Delete", isUserLibraryFile (entry.file));
+
+        juce::Component::SafePointer<BuiltAssetLibraryComponent> safe (this);
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea ({ screenPos.x, screenPos.y, 1, 1 }),
+            [safe, row] (int result)
+            {
+                auto* component = safe.getComponent();
+                if (component == nullptr || result == 0)
+                    return;
+
+                component->selectedRow = row;
+                component->list.selectRow (row);
+
+                if (result == 1)
+                    component->owner.focusPscriptPanel();
+                else if (result == 2)
+                    component->showSelectedPreview();
+                else if (result == 3)
+                    component->addSelectedToCanvas();
+                else if (result == 4)
+                    component->deleteSelectedEntry();
+            });
+    }
+
     void BuiltAssetLibraryComponent::refresh()
     {
         stopSoundPreview();

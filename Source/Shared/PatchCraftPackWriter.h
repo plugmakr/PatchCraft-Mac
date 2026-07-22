@@ -6,6 +6,14 @@ namespace patchcraft
 {
     class PatchCraftProject;
 
+    struct PackWriteOptions
+    {
+        /** When false, presets/expansions with stale patch ids still export (runtime preview). */
+        bool strictReferenceValidation = true;
+        /** When true, asset/sample files are not copied to the target directory. Paths are resolved to their absolute original location. Used for fast in-editor previews. */
+        bool exportForPreview = false;
+    };
+
     class PatchCraftPackWriter
     {
     public:
@@ -21,7 +29,8 @@ namespace patchcraft
         */
         bool write (const PatchCraftProject& project,
                     const juce::File& packFolder,
-                    juce::String& error);
+                    juce::String& error,
+                    PackWriteOptions options = {});
     };
 
 } // namespace patchcraft

@@ -21,6 +21,7 @@ namespace patchcraft
 
         void paint (juce::Graphics&) override;
         void resized() override;
+        void mouseDown (const juce::MouseEvent&) override;
         void refresh();
         void showSoundsLibrary();
 
@@ -71,6 +72,7 @@ namespace patchcraft
         void addFolderEntriesForRoot (const juce::File& root, const juce::String& category, bool skipPatchcraftTemplates);
         void selectEntryForFile (const juce::File& file);
         void showSelectedPreview();
+        void showEntryContextMenu (int row, juce::Point<int> screenPos);
         void importAssets();
         void deleteSelectedEntry();
         void createFolderForMode();

@@ -33,6 +33,8 @@ namespace patchcraft
             std::atomic<float> chorusDepth         { 0.35f };
             std::atomic<float> chorusFeedback      { 0.0f };
             std::atomic<float> chorusMix           { 0.0f };
+            std::atomic<float> chorusEnabled       { 1.0f };
+            std::atomic<float> chorusType          { 2.0f };
 
             std::atomic<float> phaserRate          { 0.25f };
             std::atomic<float> phaserDepth         { 0.45f };

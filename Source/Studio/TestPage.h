@@ -66,6 +66,7 @@ namespace patchcraft
                                        float velocity, float gate, float probability, int divisions);
         bool setArpLaneStepFromUi (int lane, int step, float velocity, bool active);
         bool setArpLaneStepsFromUi (int lane, int steps);
+        bool setMidiPlaygroundActiveBankFromUi (int bank);
         bool setSeqLaneStepFromUi (int laneIndex, int step, float value, bool active, const juce::String& laneType);
         juce::String getPianoRollNotesEncoded() const;
         bool setPianoRollNotesFromUi (const juce::String& encodedNotes);

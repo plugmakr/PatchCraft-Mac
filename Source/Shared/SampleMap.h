@@ -86,6 +86,10 @@ namespace patchcraft
         // Convenience: load a file and run both tempo + key detection.
         static ClipAnalysis analyseClipFile (const juce::File& file);
 
+        // Analyse an in-memory region (Chop Lab / offline preview).
+        static ClipAnalysis analyseClipBuffer (const juce::AudioBuffer<float>& buffer, double sampleRate,
+                                               int startSample = 0, int endSample = -1);
+
         // Onset detection: returns sample positions of detected attacks within
         // [startSample, endSample), capped at maxOnsets. Used for transient chop.
         static std::vector<int> detectOnsets (const juce::AudioBuffer<float>& buffer, double sampleRate,

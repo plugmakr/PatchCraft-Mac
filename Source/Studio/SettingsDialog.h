@@ -31,6 +31,9 @@ namespace patchcraft
         void loadCloudSettings();
         void saveCloudSettings();
         void refreshCloudEnabledState();
+        void refreshPluginClubAuthStatus();
+        void signInToPluginClub();
+        void signOutOfPluginClub();
         void refreshExpansionList();
         void installExpansionPackage();
         void loadUiSettings();
@@ -98,11 +101,15 @@ namespace patchcraft
         juce::TextEditor pluginEndpointEditor;
         juce::Label pluginApiKeyLabel;
         juce::TextEditor pluginApiKeyEditor;
+        juce::Label pluginAuthStatusLabel;
+        juce::TextButton pluginSignInButton { "Sign in to Plugin.club" };
+        juce::TextButton pluginSignOutButton { "Sign out" };
         juce::Label licenseEndpointLabel;
         juce::TextEditor licenseEndpointEditor;
         juce::Label licensePublicKeyLabel;
         juce::TextEditor licensePublicKeyEditor;
         juce::TextButton cloudSaveButton { "Save Cloud" };
+        std::atomic<bool> pluginClubAuthBusy { false };
 
         juce::Label expansionsHeader;
         juce::Label expansionsHelp;

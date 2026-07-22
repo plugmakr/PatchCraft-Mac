@@ -17,6 +17,7 @@ namespace patchcraft
             juce::Rectangle<int> stepsLabel;
             juce::Rectangle<int> playBtn;
             juce::Rectangle<int> content;
+            juce::Rectangle<int> footer;
             juce::Point<float> centre {};
             float ringSize = 0.0f;
             float ringRadius = 0.0f;
@@ -85,6 +86,12 @@ namespace patchcraft
             m.content = area;
             m.content.removeFromTop (4);
 
+            if (m.orbitMultiRing)
+            {
+                auto footerArea = r.reduced (10);
+                m.footer = footerArea.removeFromBottom (30);
+            }
+
             const int lane = juce::jlimit (0, 15, element.arpLaneIndex);
             m.steps = block != nullptr
                 ? juce::jlimit (1, 128, juce::roundToInt (readLaneValue (block, lane, "arpSteps", (float) element.arpLaneSteps)))
@@ -108,6 +115,23 @@ namespace patchcraft
             }
 
             return m;
+        }
+
+        /** Pitch/Filter/Pan/FX/Slice footer tabs under multi-ring orbit. Returns 0..4 or -1. */
+        static int hitTestOrbitFooterTab (const Metrics& m, juce::Point<int> pos)
+        {
+            if (! m.orbitMultiRing || m.footer.isEmpty() || ! m.footer.contains (pos))
+                return -1;
+
+            auto footer = m.footer;
+            for (int i = 0; i < 5; ++i)
+            {
+                const int cellW = juce::jmax (1, footer.getWidth() / (5 - i));
+                auto cell = footer.removeFromLeft (cellW);
+                if (cell.contains (pos))
+                    return i;
+            }
+            return -1;
         }
 
         static int stepFromAngle (float angle01, int maxDrawSteps)
@@ -198,6 +222,21 @@ namespace patchcraft
             const int top = contentArea.getY() + 8;
             const int bottom = contentArea.getBottom() - 8;
             return juce::jlimit (0.05f, 1.0f, juce::jmap ((float) y, (float) bottom, (float) top, 0.05f, 1.0f));
+        }
+
+        /** Radial drag for multi-ring orbit dots (matches draw offset of ±band*0.34). */
+        static float velocityFromOrbitRadius (float distance, float ringSize, int lane)
+        {
+            constexpr int laneCount = 5;
+            lane = juce::jlimit (0, laneCount - 1, lane);
+            const float multiRadius = ringSize * 0.42f;
+            const float innerRadius = multiRadius * 0.25f;
+            const float outerRadius = multiRadius * 0.94f;
+            const float band = (outerRadius - innerRadius) / (float) laneCount;
+            const float ringRadius = innerRadius + band * ((float) lane + 0.5f);
+            const float half = juce::jmax (4.0f, band * 0.34f);
+            return juce::jlimit (0.05f, 1.0f,
+                                 juce::jmap (distance, ringRadius - half, ringRadius + half, 0.05f, 1.0f));
         }
 
         static float storedStepVelocity (const DspBlock* block, int lane, int step, float fallback = 0.72f)

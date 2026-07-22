@@ -1,7 +1,9 @@
 #include "ControlNodeEditor.h"
 
 #include "ControlNodeAuthoring.h"
+#include "LayoutBindingHelper.h"
 #include "PatchCraftLookAndFeel.h"
+#include "SoundStack.h"
 #include "StudioMainComponent.h"
 
 #include <map>
@@ -179,13 +181,14 @@ namespace patchcraft
                       std::function<void(juce::Point<float>)> cableEndCallback,
                       std::function<void(const juce::String&)> selectCallback,
                       std::function<void()> layoutChangedCallback,
-                      std::function<void(const juce::String&)> deleteCallback)
+                      std::function<void(const juce::String&)> deleteCallback,
+                      std::function<bool(const juce::String&)> pendingConnectCallback)
                 : owner (targetOwner), blockId (std::move (targetBlockId)), definition (targetDefinition),
                   boundParameter (std::move (boundParameterId)), onRoute (std::move (routeCallback)),
                   onMoved (std::move (movedCallback)), onCableStart (std::move (cableStartCallback)),
                   onCableDrag (std::move (cableDragCallback)), onCableEnd (std::move (cableEndCallback)),
                   onSelect (std::move (selectCallback)), onLayoutChanged (std::move (layoutChangedCallback)),
-                  onDelete (std::move (deleteCallback))
+                  onDelete (std::move (deleteCallback)), onPendingConnect (std::move (pendingConnectCallback))
             {
                 if (const auto* block = ControlNodeAuthoring::findBlock (owner.getProject(), blockId))
                 {
@@ -256,7 +259,18 @@ namespace patchcraft
                 return 48 + (int) rows.size() * 46 + (route.isVisible() ? 34 : 8);
             }
 
-            int headerHeight() const { return 48; }
+            int headerHeight() const { return juce::jmax (34, juce::roundToInt (48.0f * cardUiScale())); }
+
+            float cardUiScale() const
+            {
+                if (collapsed)
+                    return 1.0f;
+
+                const int baseline = juce::jmax (108, preferredExpandedHeight());
+                return juce::jlimit (0.85f, 2.5f, (float) getHeight() / (float) baseline);
+            }
+
+            int scaledRowHeight() const { return juce::jmax (32, juce::roundToInt (46.0f * cardUiScale())); }
 
             void setSelected (bool shouldSelect)
             {
@@ -278,6 +292,45 @@ namespace patchcraft
             juce::String getBlockId() const        { return blockId; }
             const ControlNodeDefinition* getDefinition() const { return definition; }
 
+            bool hitOutputPort (juce::Point<float> localPos) const
+            {
+                if (collapsed)
+                    return false;
+                const float scale = cardUiScale();
+                const float outY = (float) getHeight() * 0.5f
+                    - (definition && definition->modulationSource ? 15.0f * scale : 0.0f);
+                const float hit = 28.0f * scale;
+                return localPos.x >= (float) getWidth() - hit
+                    && std::abs (localPos.y - outY) <= hit;
+            }
+
+            bool hitInputPort (juce::Point<float> localPos) const
+            {
+                if (collapsed)
+                    return false;
+                const float scale = cardUiScale();
+                const float inY = (float) getHeight() * 0.5f
+                    - (definition && definition->section == "fx" ? 15.0f * scale : 0.0f);
+                const float hit = 28.0f * scale;
+                return localPos.x <= hit && std::abs (localPos.y - inY) <= hit;
+            }
+
+            void setCompatibleHighlight (bool shouldHighlight)
+            {
+                if (compatibleHighlight == shouldHighlight)
+                    return;
+                compatibleHighlight = shouldHighlight;
+                repaint();
+            }
+
+            void setDimmed (bool shouldDim)
+            {
+                if (dimmed == shouldDim)
+                    return;
+                dimmed = shouldDim;
+                repaint();
+            }
+
             void setValidationSeverity (const juce::String& severity)
             {
                 validationSeverity = severity;
@@ -294,26 +347,39 @@ namespace patchcraft
                 const auto* block = ControlNodeAuthoring::findBlock (owner.getProject(), blockId);
                 const auto section = block != nullptr ? block->section : juce::String();
                 const auto colour = sectionColour (section);
+                const float scale = cardUiScale();
+                const float headerH = (float) headerHeight();
                 auto bounds = getLocalBounds().toFloat().reduced (1.0f);
-                g.setColour (juce::Colour (0xff11151b));
-                g.fillRoundedRectangle (bounds, 6.0f);
-                g.setColour (colour.withAlpha (0.85f));
-                g.drawRoundedRectangle (bounds, 6.0f, 1.5f);
-                g.fillRoundedRectangle (bounds.removeFromTop (34.0f), 6.0f);
+                g.setColour (juce::Colour (0xff11151b).withMultipliedAlpha (dimmed ? 0.45f : 1.0f));
+                g.fillRoundedRectangle (bounds, 6.0f * scale);
+                g.setColour (compatibleHighlight ? PatchCraftLookAndFeel::accent()
+                                                 : colour.withAlpha (dimmed ? 0.35f : 0.85f));
+                g.drawRoundedRectangle (bounds, 6.0f * scale, compatibleHighlight ? 2.5f : 1.5f);
+                if (compatibleHighlight)
+                {
+                    g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.14f));
+                    g.fillRoundedRectangle (bounds, 6.0f * scale);
+                }
+                g.setColour (colour.withAlpha (dimmed ? 0.35f : 0.85f));
+                g.fillRoundedRectangle (bounds.removeFromTop (headerH), 6.0f * scale);
 
                 g.setColour (juce::Colours::black.withAlpha (0.72f));
-                g.setFont (juce::FontOptions (12.0f).withStyle ("bold"));
+                g.setFont (juce::FontOptions (12.0f * scale).withStyle ("bold"));
                 const auto titleText = block != nullptr && block->name.isNotEmpty() ? block->name
                     : definition != nullptr ? definition->name : blockId;
-                g.drawText (titleText, 12, 2, getWidth() - 92, 30, juce::Justification::centredLeft);
+                g.drawText (titleText, juce::roundToInt (12.0f * scale), juce::roundToInt (2.0f * scale),
+                            getWidth() - juce::roundToInt (92.0f * scale), juce::roundToInt (30.0f * scale),
+                            juce::Justification::centredLeft);
                 if (validationSeverity.isNotEmpty())
                 {
                     g.setColour (validationSeverity == "error" ? juce::Colour (0xffff5a5a)
                                                                : juce::Colour (0xffffb84d));
-                    g.fillEllipse ((float) getWidth() - 58.0f, 10.0f, 10.0f, 10.0f);
+                    g.fillEllipse ((float) getWidth() - 58.0f * scale, 10.0f * scale, 10.0f * scale, 10.0f * scale);
                 }
-                g.setFont (juce::FontOptions (9.0f));
-                g.drawText (collapsed ? "+" : "-", getWidth() - 24, 8, 16, 16, juce::Justification::centred);
+                g.setFont (juce::FontOptions (9.0f * scale));
+                g.drawText (collapsed ? "+" : "-", getWidth() - juce::roundToInt (24.0f * scale),
+                            juce::roundToInt (8.0f * scale), juce::roundToInt (16.0f * scale),
+                            juce::roundToInt (16.0f * scale), juce::Justification::centred);
 
                 if (selected)
                 {
@@ -326,24 +392,29 @@ namespace patchcraft
                 auto drawPort = [&] (bool isInput, float yOffset, const juce::String& text, juce::Colour c) {
                     g.setColour (c);
                     const float y = getHeight() * 0.5f + yOffset;
+                    const float portSize = 10.0f * scale;
                     if (isInput) {
-                        g.fillEllipse (-4.0f, y - 5.0f, 10.0f, 10.0f);
-                        g.drawText (text, 8, y - 9.0f, 60, 18, juce::Justification::centredLeft);
+                        g.fillEllipse (-4.0f * scale, y - portSize * 0.5f, portSize, portSize);
+                        g.drawText (text, juce::roundToInt (8.0f * scale), juce::roundToInt (y - 9.0f * scale),
+                                    juce::roundToInt (60.0f * scale), juce::roundToInt (18.0f * scale),
+                                    juce::Justification::centredLeft);
                     } else {
-                        g.fillEllipse ((float) getWidth() - 6.0f, y - 5.0f, 10.0f, 10.0f);
-                        g.drawText (text, getWidth() - 68, y - 9.0f, 60, 18, juce::Justification::centredRight);
+                        g.fillEllipse ((float) getWidth() - 6.0f * scale, y - portSize * 0.5f, portSize, portSize);
+                        g.drawText (text, getWidth() - juce::roundToInt (68.0f * scale), juce::roundToInt (y - 9.0f * scale),
+                                    juce::roundToInt (60.0f * scale), juce::roundToInt (18.0f * scale),
+                                    juce::Justification::centredRight);
                     }
                 };
 
-                g.setFont (juce::FontOptions (8.0f).withStyle ("bold"));
+                g.setFont (juce::FontOptions (8.0f * scale).withStyle ("bold"));
                 if (definition && definition->modulationSource) {
-                    drawPort (true, -15.0f, "EVENT IN", colour);
-                    drawPort (false, -15.0f, definition->id == "arp" ? "EVENT OUT" : "MOD OUT", colour);
-                    drawPort (false, 15.0f, "AUX OUT", colour.darker());
+                    drawPort (true, -15.0f * scale, "EVENT IN", colour);
+                    drawPort (false, -15.0f * scale, definition->id == "arp" ? "EVENT OUT" : "MOD OUT", colour);
+                    drawPort (false, 15.0f * scale, "AUX OUT", colour.darker());
                 } else if (definition && (definition->section == "fx" || definition->section == "filter")) {
-                    drawPort (true, -15.0f, "AUDIO IN", colour);
-                    drawPort (true, 15.0f, "SIDECHAIN", colour.darker());
-                    drawPort (false, -15.0f, "AUDIO OUT", colour);
+                    drawPort (true, -15.0f * scale, "AUDIO IN", colour);
+                    drawPort (true, 15.0f * scale, "SIDECHAIN", colour.darker());
+                    drawPort (false, -15.0f * scale, "AUDIO OUT", colour);
                 } else {
                     drawPort (true, 0.0f, "MAIN IN", colour);
                     drawPort (false, 0.0f, "MAIN OUT", colour);
@@ -363,17 +434,19 @@ namespace patchcraft
 
             void resized() override
             {
-                auto r = getLocalBounds().reduced (8);
-                auto header = r.removeFromTop (28);
-                enabled.setBounds (header.removeFromRight (50));
+                const float scale = cardUiScale();
+                auto r = getLocalBounds().reduced (juce::roundToInt (8.0f * scale));
+                auto header = r.removeFromTop (juce::roundToInt (28.0f * scale));
+                enabled.setBounds (header.removeFromRight (juce::roundToInt (50.0f * scale)));
                 if (collapsed)
                     return;
 
-                r.removeFromTop (8);
+                r.removeFromTop (juce::roundToInt (8.0f * scale));
+                const int rowH = scaledRowHeight();
                 for (auto& row : rows)
-                    row->setBounds (r.removeFromTop (46));
+                    row->setBounds (r.removeFromTop (rowH));
                 if (route.isVisible())
-                    route.setBounds (r.removeFromTop (30).reduced (0, 3));
+                    route.setBounds (r.removeFromTop (juce::roundToInt (30.0f * scale)).reduced (0, juce::roundToInt (3.0f * scale)));
             }
 
             void mouseDoubleClick (const juce::MouseEvent& event) override
@@ -385,6 +458,9 @@ namespace patchcraft
 
             void mouseDown (const juce::MouseEvent& event) override
             {
+                if (onPendingConnect && onPendingConnect (blockId))
+                    return;
+
                 if (onSelect)
                     onSelect (blockId);
 
@@ -447,10 +523,10 @@ namespace patchcraft
                     return;
                 }
 
-                if (event.position.x >= (float) getWidth() - 18.0f
-                    && std::abs (event.position.y - (float) getHeight() * 0.5f) <= 18.0f)
+                if (hitOutputPort (event.position))
                 {
                     cableDragging = true;
+                    cableDragOrigin = event.position;
                     if (onCableStart)
                         onCableStart (blockId, eventPointInParent (event));
                     return;
@@ -577,6 +653,7 @@ namespace patchcraft
             std::function<void(const juce::String&)> onSelect;
             std::function<void()> onLayoutChanged;
             std::function<void(const juce::String&)> onDelete;
+            std::function<bool(const juce::String&)> onPendingConnect;
             juce::Point<int> dragStart;
             juce::Point<int> originalPosition;
             juce::Point<int> resizeStart;
@@ -589,6 +666,9 @@ namespace patchcraft
             bool dragging = false;
             bool cableDragging = false;
             bool resizing = false;
+            bool compatibleHighlight = false;
+            bool dimmed = false;
+            juce::Point<float> cableDragOrigin;
             juce::String validationSeverity;
         };
 
@@ -696,16 +776,11 @@ namespace patchcraft
                     },
                     [this] (const juce::String& sourceId, juce::Point<float> point)
                     {
-                        cableSourceId = sourceId;
-                        cablePoint = point;
-                        cableDragging = true;
-                        editor.setStatus ("Drag the cable to another node's IN port.");
-                        repaint();
+                        beginCableDrag (sourceId, point);
                     },
                     [this] (juce::Point<float> point)
                     {
-                        cablePoint = point;
-                        repaint();
+                        updateCableDrag (point);
                     },
                     [this] (juce::Point<float> point)
                     {
@@ -727,6 +802,10 @@ namespace patchcraft
                             editor.setStatus (message);
                             editor.rebuild();
                         }
+                    },
+                    [this] (const juce::String& blockId)
+                    {
+                        return tryCompletePendingCable (blockId);
                     });
 
                 int cardW = 320;
@@ -889,20 +968,31 @@ namespace patchcraft
                                juce::Colour (0xffd889e8), 2.5f);
             }
 
-            if (cableDragging)
+            if (cableDragging || pendingCableSourceId.isNotEmpty())
             {
-                if (auto* source = cardForId (cableSourceId))
-                    drawCable (cableSourceId, "drag", source->outputPoint(), cablePoint, PatchCraftLookAndFeel::accent().brighter (0.25f), 3.0f);
-                    
+                const auto activeSource = cableDragging ? cableSourceId : pendingCableSourceId;
+                if (auto* source = cardForId (activeSource))
+                {
+                    const auto tip = cableDragging ? cablePoint : source->outputPoint() + juce::Point<float> (48.0f, 0.0f);
+                    drawCable (activeSource, "drag", source->outputPoint(), tip,
+                               PatchCraftLookAndFeel::accent().brighter (0.25f), 3.0f);
+                }
+
                 for (auto& destination : cards)
                 {
-                    if (destination->getBlockId() == cableSourceId)
+                    if (destination->getBlockId() == activeSource)
                         continue;
+                    if (! ControlNodeAuthoring::canConnectNodes (owner.getProject(), activeSource, destination->getBlockId()))
+                        continue;
+
                     const auto pt = destination->inputPoint();
-                    g.setColour (PatchCraftLookAndFeel::accent().withAlpha (0.4f + 0.2f * std::sin (juce::Time::getMillisecondCounter() * 0.005f)));
-                    g.fillEllipse (pt.x - 12.0f, pt.y - 12.0f, 24.0f, 24.0f);
-                    g.setColour (PatchCraftLookAndFeel::accent());
-                    g.fillEllipse (pt.x - 6.0f, pt.y - 6.0f, 12.0f, 12.0f);
+                    const bool near = cableDragging && pt.getDistanceFrom (cablePoint) < 100.0f;
+                    const float pulse = 0.45f + 0.25f * std::sin ((float) juce::Time::getMillisecondCounter() * 0.008f);
+                    g.setColour (PatchCraftLookAndFeel::accent().withAlpha (near ? 0.75f : pulse));
+                    g.fillEllipse (pt.x - (near ? 16.0f : 12.0f), pt.y - (near ? 16.0f : 12.0f),
+                                   near ? 32.0f : 24.0f, near ? 32.0f : 24.0f);
+                    g.setColour (juce::Colours::white.withAlpha (0.92f));
+                    g.fillEllipse (pt.x - 5.0f, pt.y - 5.0f, 10.0f, 10.0f);
                 }
             }
         }
@@ -910,7 +1000,7 @@ namespace patchcraft
     private:
         void timerCallback() override
         {
-            if (cableDragging)
+            if (cableDragging || pendingCableSourceId.isNotEmpty())
                 repaint();
         }
 
@@ -981,7 +1071,12 @@ namespace patchcraft
             selectedBlockId = blockId;
             selectedCable.reset();
             for (auto& card : cards)
-                card->setSelected (card->getBlockId() == blockId);
+            {
+                const bool isSelected = card->getBlockId() == blockId;
+                card->setSelected (isSelected);
+                if (isSelected)
+                    card->toFront (false);
+            }
             repaint();
         }
 
@@ -1009,6 +1104,19 @@ namespace patchcraft
 
         bool keyPressed (const juce::KeyPress& key) override
         {
+            if (key.isKeyCode (juce::KeyPress::escapeKey)
+                && (cableDragging || pendingCableSourceId.isNotEmpty()))
+            {
+                cableDragging = false;
+                cableSourceId.clear();
+                pendingCableSourceId.clear();
+                clearCableHighlights();
+                stopTimer();
+                editor.setStatus ("Cable cancelled.");
+                repaint();
+                return true;
+            }
+
             if (key.isKeyCode (juce::KeyPress::spaceKey))
             {
                 spacePanActive = true;
@@ -1064,14 +1172,104 @@ namespace patchcraft
             panning = false;
         }
 
-        void finishCable (juce::Point<float> point)
+        void clearCableHighlights()
         {
-            cableDragging = false;
-            NodeCard* destination = nullptr;
-            float closestDistance = 60.0f;
+            for (auto& card : cards)
+            {
+                card->setCompatibleHighlight (false);
+                card->setDimmed (false);
+            }
+        }
+
+        void refreshCableHighlights (const juce::String& sourceId)
+        {
+            for (auto& card : cards)
+            {
+                if (card->getBlockId() == sourceId)
+                {
+                    card->setCompatibleHighlight (false);
+                    card->setDimmed (false);
+                    continue;
+                }
+
+                const bool ok = ControlNodeAuthoring::canConnectNodes (owner.getProject(), sourceId, card->getBlockId());
+                card->setCompatibleHighlight (ok);
+                card->setDimmed (! ok);
+            }
+        }
+
+        void beginCableDrag (const juce::String& sourceId, juce::Point<float> point)
+        {
+            pendingCableSourceId.clear();
+            cableSourceId = sourceId;
+            cablePoint = point;
+            cableDragStartPoint = point;
+            cableDragging = true;
+            refreshCableHighlights (sourceId);
+
+            auto names = ControlNodeAuthoring::connectableTargetNames (owner.getProject(), sourceId);
+            if (names.isEmpty())
+                editor.setStatus ("No compatible inputs. Audio flows Source → Shape → FX → Output. Mod/Event sources feed Shape, FX, or Sources.");
+            else if (names.size() <= 4)
+                editor.setStatus ("Drag to a glowing IN port, or click one: " + names.joinIntoString (", "));
+            else
+                editor.setStatus ("Drag to a glowing IN port (" + juce::String (names.size())
+                                  + " compatible). Compatible nodes are highlighted.");
+            startTimerHz (30);
+            repaint();
+        }
+
+        void updateCableDrag (juce::Point<float> point)
+        {
+            cablePoint = point;
+
+            // Magnetic snap toward the nearest compatible IN within range
+            float closest = 110.0f;
+            juce::Point<float> snap = point;
             for (auto& card : cards)
             {
                 if (card->getBlockId() == cableSourceId)
+                    continue;
+                if (! ControlNodeAuthoring::canConnectNodes (owner.getProject(), cableSourceId, card->getBlockId()))
+                    continue;
+                const auto distance = card->inputPoint().getDistanceFrom (point);
+                if (distance < closest)
+                {
+                    closest = distance;
+                    snap = card->inputPoint();
+                }
+            }
+            if (closest < 110.0f)
+                cablePoint = snap;
+
+            repaint();
+        }
+
+        void finishCable (juce::Point<float> point)
+        {
+            const bool wasDragging = cableDragging;
+            cableDragging = false;
+            stopTimer();
+
+            const float dragDistance = cableDragStartPoint.getDistanceFrom (point);
+            // Click (barely moved): keep a pending click-to-connect mode
+            if (wasDragging && dragDistance < 10.0f)
+            {
+                pendingCableSourceId = cableSourceId;
+                cableSourceId.clear();
+                refreshCableHighlights (pendingCableSourceId);
+                editor.setStatus ("Click a glowing IN port to connect. Esc cancels.");
+                repaint();
+                return;
+            }
+
+            NodeCard* destination = nullptr;
+            float closestDistance = 120.0f;
+            for (auto& card : cards)
+            {
+                if (card->getBlockId() == cableSourceId)
+                    continue;
+                if (! ControlNodeAuthoring::canConnectNodes (owner.getProject(), cableSourceId, card->getBlockId()))
                     continue;
                 const auto distance = card->inputPoint().getDistanceFrom (point);
                 if (distance < closestDistance)
@@ -1083,11 +1281,49 @@ namespace patchcraft
 
             juce::String message;
             if (destination == nullptr)
-                message = "Cable cancelled. Drop directly on a node's IN port.";
-            else
-                ControlNodeAuthoring::connectNodes (owner.getProject(), cableSourceId,
-                                                     destination->getBlockId(), message);
+            {
+                message = "Cable cancelled. Drop on a glowing compatible IN port (or click OUT, then click IN).";
+                clearCableHighlights();
+                cableSourceId.clear();
+                pendingCableSourceId.clear();
+                editor.setStatus (message);
+                repaint();
+                return;
+            }
+
+            ControlNodeAuthoring::connectNodes (owner.getProject(), cableSourceId,
+                                                 destination->getBlockId(), message);
             editor.setStatus (message);
+            clearCableHighlights();
+            cableSourceId.clear();
+            pendingCableSourceId.clear();
+            repaint();
+
+            juce::Component::SafePointer<ControlNodeEditor> safeEditor (&editor);
+            juce::MessageManager::callAsync ([safeEditor]
+            {
+                if (auto* targetEditor = safeEditor.getComponent())
+                    targetEditor->rebuild();
+            });
+        }
+
+        bool tryCompletePendingCable (const juce::String& targetId)
+        {
+            if (pendingCableSourceId.isEmpty())
+                return false;
+
+            juce::String reason;
+            if (! ControlNodeAuthoring::canConnectNodes (owner.getProject(), pendingCableSourceId, targetId, &reason))
+            {
+                editor.setStatus (reason.isNotEmpty() ? reason : "That input is not compatible.");
+                return true;
+            }
+
+            juce::String message;
+            ControlNodeAuthoring::connectNodes (owner.getProject(), pendingCableSourceId, targetId, message);
+            editor.setStatus (message);
+            clearCableHighlights();
+            pendingCableSourceId.clear();
             cableSourceId.clear();
             repaint();
 
@@ -1097,6 +1333,7 @@ namespace patchcraft
                 if (auto* targetEditor = safeEditor.getComponent())
                     targetEditor->rebuild();
             });
+            return true;
         }
 
         ControlNodeEditor& editor;
@@ -1117,7 +1354,9 @@ namespace patchcraft
         juce::String selectedBlockId;
 
         juce::String cableSourceId;
+        juce::String pendingCableSourceId;
         juce::Point<float> cablePoint;
+        juce::Point<float> cableDragStartPoint;
         bool cableDragging = false;
         bool panning = false;
         bool spacePanActive = false;
@@ -1205,7 +1444,7 @@ namespace patchcraft
         addAndMakeVisible (status);
         addAndMakeVisible (viewport);
 
-        title.setText (elementId.isEmpty() ? "GLOBAL DSP GRAPH" : "CONTROL NODE EDITOR", juce::dontSendNotification);
+        title.setText (elementId.isEmpty() ? "SOUND STACK" : "CONTROL NODE EDITOR", juce::dontSendNotification);
         title.setFont (juce::FontOptions (18.0f).withStyle ("bold"));
         title.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::text());
         targetSummary.setFont (12.0f);
@@ -1214,7 +1453,7 @@ namespace patchcraft
         status.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::accent());
         status.setText ("Add a node, tweak it, then bind this control to one of its parameters.", juce::dontSendNotification);
 
-        for (auto* button : { &tidyButton, &fitButton })
+        for (auto* button : { &tidyButton, &fitButton, &listenButton, &advancedButton, &addMotionButton })
         {
             button->getProperties().set ("smallButton", true);
             addAndMakeVisible (*button);
@@ -1230,6 +1469,51 @@ namespace patchcraft
         fitButton.setTooltip ("Fit the full graph into the viewport.");
         fitButton.onClick = [this] { fitCanvasToView(); };
 
+        listenButton.setClickingTogglesState (true);
+        listenButton.setTooltip ("Hear the current graph through the Player engine (layout preview strip below).");
+        listenButton.onClick = [this]
+        {
+            owner.setGraphAudioListen (listenButton.getToggleState());
+            setStatus (listenButton.getToggleState()
+                ? "Listening — play notes from the preview strip below."
+                : "Audio preview stopped.");
+        };
+
+        advancedButton.setClickingTogglesState (true);
+        advancedButton.setTooltip ("Show the full node graph editor (edges, LFOs, extra sources).");
+        advancedButton.onClick = [this]
+        {
+            owner.setAdvancedGraphMode (advancedButton.getToggleState());
+            rebuild();
+        };
+
+        addMotionButton.setTooltip ("Add a Motion block: arp, drum sequencer, or circle sequencer.");
+        addMotionButton.onClick = [this]
+        {
+            juce::PopupMenu menu;
+            menu.addItem (1, "Arpeggiator");
+            menu.addItem (2, "Drum Sequencer");
+            menu.addItem (3, "Circle Sequencer");
+            menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&addMotionButton),
+                [this] (int result)
+                {
+                    SoundStack::MotionKind kind = SoundStack::MotionKind::Arp;
+                    if (result == 2) kind = SoundStack::MotionKind::DrumMachine;
+                    else if (result == 3) kind = SoundStack::MotionKind::CircleSequencer;
+                    else if (result != 1) return;
+
+                    juce::String error;
+                    if (SoundStack::addMotionBlock (owner.getProject().getDspGraph(), kind, error))
+                    {
+                        owner.getProject().notifyChanged();
+                        setStatus ("Motion block added to the Sound Stack.");
+                        rebuild();
+                    }
+                    else
+                        setStatus (error);
+                });
+        };
+
         searchField.setTextToShowWhenEmpty ("Search nodes...", PatchCraftLookAndFeel::textDim());
         searchField.setFont (juce::FontOptions (12.0f));
         searchField.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff151a21));
@@ -1239,24 +1523,20 @@ namespace patchcraft
         addAndMakeVisible (searchField);
 
         graphTemplateBox.addItemList (ControlNodeAuthoring::getGraphTemplateNames(), 1);
-        graphTemplateBox.setTextWhenNothingSelected ("Graph Templates...");
+        graphTemplateBox.setTextWhenNothingSelected ("Stack Templates...");
         graphTemplateBox.onChange = [this]
         {
             if (graphTemplateBox.getSelectedId() == 0)
                 return;
 
+            const auto templateName = graphTemplateBox.getText();
             juce::String message;
-            if (ControlNodeAuthoring::applyGraphTemplate (owner.getProject(), graphTemplateBox.getText(), message))
-            {
-                graphTemplateBox.setSelectedId (0, juce::dontSendNotification);
-                graphTemplateBox.setTextWhenNothingSelected ("Graph Templates...");
-                setStatus (message);
+            const bool ok = ControlNodeAuthoring::applyGraphTemplate (owner.getProject(), templateName, message);
+            graphTemplateBox.setSelectedId (0, juce::dontSendNotification);
+            graphTemplateBox.setTextWhenNothingSelected ("Stack Templates...");
+            setStatus (message);
+            if (ok)
                 rebuild();
-            }
-            else
-            {
-                setStatus (message);
-            }
         };
         addAndMakeVisible (graphTemplateBox);
 
@@ -1302,6 +1582,19 @@ namespace patchcraft
         tidyButton.setBounds (tools.removeFromLeft (58));
         tools.removeFromLeft (6);
         fitButton.setBounds (tools.removeFromLeft (48));
+        tools.removeFromLeft (6);
+        listenButton.setBounds (tools.removeFromLeft (64));
+        listenButton.setToggleState (owner.isGraphAudioListen(), juce::dontSendNotification);
+        tools.removeFromLeft (6);
+        addMotionButton.setBounds (tools.removeFromLeft (72));
+        tools.removeFromLeft (6);
+        advancedButton.setBounds (tools.removeFromLeft (82));
+        const bool globalStackView = elementId.isEmpty();
+        advancedButton.setVisible (globalStackView);
+        addMotionButton.setVisible (globalStackView && ! owner.isAdvancedGraphMode());
+        advancedButton.setEnabled (globalStackView
+                                   && ! SoundStack::usesAdvancedGraphFeatures (owner.getProject().getDspGraph()));
+        advancedButton.setToggleState (owner.isAdvancedGraphMode(), juce::dontSendNotification);
         tools.removeFromLeft (10);
         searchField.setBounds (tools.removeFromLeft (juce::jmin (220, tools.getWidth() / 2)));
         tools.removeFromLeft (8);
@@ -1314,7 +1607,7 @@ namespace patchcraft
         {
             if (i < paletteLabels.size() && paletteLabels[i] != nullptr)
             {
-                paletteLabels[i]->setBounds (palette.removeFromLeft (paletteLabels[i]->getFont().getStringWidth(paletteLabels[i]->getText()) + 10));
+                paletteLabels[i]->setBounds (palette.removeFromLeft (juce::GlyphArrangement::getStringWidthInt (paletteLabels[i]->getFont(), paletteLabels[i]->getText()) + 10));
             }
             if (addButtons[i] != nullptr)
             {
@@ -1363,7 +1656,7 @@ namespace patchcraft
         }
         else
         {
-            validationBadge.setText ("Graph OK", juce::dontSendNotification);
+            validationBadge.setText ("Stack OK", juce::dontSendNotification);
             validationBadge.setColour (juce::Label::textColourId, juce::Colour (0xff79c267));
         }
     }
@@ -1397,8 +1690,11 @@ namespace patchcraft
         }
         else
         {
-            targetSummary.setText ("GLOBAL GRAPH VIEW  |  All nodes and connections in the instrument", juce::dontSendNotification);
+            targetSummary.setText ("SOURCE → TONE → SPACE  |  Add Motion for arps, drums, and circle patterns",
+                                   juce::dontSendNotification);
         }
+
+        const bool advancedMode = elementId.isNotEmpty() || owner.isAdvancedGraphMode();
 
         viewport.setViewedComponent (nullptr, false);
         nodeCanvas = std::make_unique<NodeCanvas> (*this, owner, elementId);
@@ -1448,13 +1744,18 @@ namespace patchcraft
         }
 
         addLabel("NEW:");
-        const juce::StringArray categoryOrder { "Sources", "Shape", "Motion", "FX", "Output" };
+        const juce::StringArray categoryOrder = advancedMode
+            ? juce::StringArray { "Sources", "Shape", "Motion", "FX", "Output" }
+            : juce::StringArray { "Sources", "Shape", "FX", "Output" };
         for (const auto& category : categoryOrder)
         {
             bool addedCategory = false;
             for (const auto* definition : ControlNodeAuthoring::definitionsForEngine (owner.getProject().getEngineType()))
             {
                 if (ControlNodeAuthoring::sectionCategoryLabel (definition->section) != category)
+                    continue;
+
+                if (! advancedMode && category == "Motion")
                     continue;
 
                 if (! addedCategory)
@@ -1465,7 +1766,7 @@ namespace patchcraft
 
                 auto button = std::make_unique<juce::TextButton> ("+ " + definition->name);
                 button->getProperties().set ("smallButton", true);
-                button->setTooltip ("Create a new " + definition->name + " node in the graph.");
+                button->setTooltip ("Create a new " + definition->name + " node in the Sound Stack.");
                 const auto definitionId = definition->id;
                 button->onClick = [this, definitionId] { addNode (definitionId, true); };
                 addAndMakeVisible (*button);
@@ -1496,6 +1797,8 @@ namespace patchcraft
                 message += "  " + connectStatus;
             }
             setStatus (message);
+            syncDspGraphValuesToLiveStore (owner.getProject());
+            owner.syncExportPreview();
             rebuild();
             return;
         }
@@ -1554,6 +1857,8 @@ namespace patchcraft
             ControlNodeAuthoring::createNode (owner.getProject(), definitionId, message);
         else
             ControlNodeAuthoring::ensureNode (owner.getProject(), definitionId, message);
+        syncDspGraphValuesToLiveStore (owner.getProject());
+        owner.syncExportPreview();
         setStatus (message);
         rebuild();
     }

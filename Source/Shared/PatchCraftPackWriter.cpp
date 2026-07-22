@@ -161,6 +161,7 @@ namespace patchcraft
                                                  ParameterModel& parameters,
                                                  const juce::String& engineId)
         {
+            graph.ensureAuthoredOutput();
             ensureMacroBlockParameters (parameters, graph);
 
             for (auto& block : graph.blocks)
@@ -263,7 +264,8 @@ namespace patchcraft
 
     bool PatchCraftPackWriter::write (const PatchCraftProject& project,
                                       const juce::File& packFolder,
-                                      juce::String& error)
+                                      juce::String& error,
+                                      PackWriteOptions options)
     {
         if (! packFolder.exists())
         {
@@ -291,6 +293,7 @@ namespace patchcraft
         assets.getChildFile ("images").createDirectory();
 
         auto manifestForPack = project.getManifest();
+        
         if (manifestForPack.licenseProductId.isEmpty()
             && (manifestForPack.licenseRequired || manifestForPack.licenseServerUrl.isNotEmpty()))
             manifestForPack.licenseProductId = LicenseValidator::hashInstrumentId (manifestForPack.instrumentName,
@@ -392,6 +395,12 @@ namespace patchcraft
                 error = "Missing asset during pack export: " + path;
                 return false;
             }
+            
+            if (options.exportForPreview)
+            {
+                path = src.getFullPathName();
+                return true;
+            }
 
             auto dstDir = packFolder.getChildFile (subFolder);
             dstDir.createDirectory();
@@ -431,6 +440,10 @@ namespace patchcraft
                 return false;
             }
             backgroundForPack = "assets/background.png";
+        }
+        else if (options.exportForPreview)
+        {
+            backgroundForPack = bgSource.getFullPathName();
         }
         else if (! copyAssetToPack (backgroundForPack, "assets",
                                      "background" + juce::File (backgroundForPack).getFileExtension()))
@@ -620,7 +633,7 @@ namespace patchcraft
             if (patch.dspGraph.blocks.empty())
                 exportErrors.add ("ERROR: " + patch.name + " - Playable patch has no DSP graph blocks.");
             for (const auto& asset : patch.includedAssets)
-                if (! projectFileExists (asset))
+                if (! projectFileExists (asset) && options.strictReferenceValidation)
                     exportErrors.add ("ERROR: " + patch.name + " - Patch references missing asset: " + asset);
             for (const auto& zone : patch.sampleZones)
             {
@@ -636,9 +649,12 @@ namespace patchcraft
             if (preset.name.isEmpty())
                 exportErrors.add ("ERROR: preset - Preset name is required.");
             if (preset.patchId.isNotEmpty() && ! patchExists (preset.patchId))
-                exportErrors.add ("ERROR: " + preset.name + " - Preset references missing patch id: " + preset.patchId);
+            {
+                if (options.strictReferenceValidation)
+                    exportErrors.add ("ERROR: " + preset.name + " - Preset references missing patch id: " + preset.patchId);
+            }
             for (const auto& ref : preset.libraryReferences)
-                if (! projectFileExists (ref))
+                if (! projectFileExists (ref) && options.strictReferenceValidation)
                     exportErrors.add ("ERROR: " + preset.name + " - Preset references missing library asset: " + ref);
         }
 
@@ -647,7 +663,7 @@ namespace patchcraft
             if (preset.id.isEmpty() || preset.section.isEmpty())
                 exportErrors.add ("ERROR: sectionPreset - Section presets require id and section.");
             for (const auto& ref : preset.libraryReferences)
-                if (! projectFileExists (ref))
+                if (! projectFileExists (ref) && options.strictReferenceValidation)
                     exportErrors.add ("ERROR: " + preset.name + " - Section preset references missing library asset: " + ref);
         }
 
@@ -655,12 +671,14 @@ namespace patchcraft
         {
             if (expansion.id.isEmpty() || expansion.name.isEmpty())
                 exportErrors.add ("ERROR: expansion - Expansion metadata requires id and name.");
-            if (expansion.artworkPath.isNotEmpty() && ! projectFileExists (expansion.artworkPath))
+            if (expansion.artworkPath.isNotEmpty() && ! projectFileExists (expansion.artworkPath)
+                && options.strictReferenceValidation)
                 exportErrors.add ("ERROR: " + expansion.name + " - Expansion artwork is missing: " + expansion.artworkPath);
-            if (expansion.licensePath.isNotEmpty() && ! projectFileExists (expansion.licensePath))
+            if (expansion.licensePath.isNotEmpty() && ! projectFileExists (expansion.licensePath)
+                && options.strictReferenceValidation)
                 exportErrors.add ("ERROR: " + expansion.name + " - Expansion license file is missing: " + expansion.licensePath);
             for (const auto& id : expansion.includedPatchIds)
-                if (! patchExists (id))
+                if (! patchExists (id) && options.strictReferenceValidation)
                     exportErrors.add ("ERROR: " + expansion.name + " - Expansion references missing patch id: " + id);
             for (const auto& name : expansion.includedPresetNames)
                 if (! presetExists (name))
@@ -669,7 +687,7 @@ namespace patchcraft
                 if (! sectionPresetExists (id))
                     exportErrors.add ("ERROR: " + expansion.name + " - Expansion references missing section preset id: " + id);
             for (const auto& asset : expansion.includedAssets)
-                if (! projectFileExists (asset))
+                if (! projectFileExists (asset) && options.strictReferenceValidation)
                     exportErrors.add ("ERROR: " + expansion.name + " - Expansion references missing asset: " + asset);
         }
 
@@ -768,6 +786,23 @@ namespace patchcraft
             {
                 error = "Missing sample during pack export: " + z.samplePath;
                 return false;
+            }
+            
+            if (options.exportForPreview)
+            {
+                z.samplePath = src.getFullPathName();
+                samplePathRewrites[originalSamplePath] = z.samplePath;
+                if (z.midiPath.isNotEmpty())
+                {
+                    const auto originalMidiPath = z.midiPath;
+                    juce::File midiSrc = resolveSampleFile (z.midiPath, mappingBase);
+                    if (midiSrc.existsAsFile())
+                    {
+                        z.midiPath = midiSrc.getFullPathName();
+                        midiPathRewrites[originalMidiPath] = z.midiPath;
+                    }
+                }
+                return true;
             }
 
             const auto prefix = safeFileStem (filePrefix);
@@ -1078,6 +1113,41 @@ namespace patchcraft
                     asset = it->second;
             }
 
+        if (options.exportForPreview)
+        {
+            for (auto& patch : exportPatches)
+            {
+                for (auto& zone : patch.sampleZones)
+                {
+                    auto src = resolveSampleFile (zone.samplePath, project.getProjectFolder());
+                    if (src.existsAsFile())
+                        zone.samplePath = src.getFullPathName();
+                    
+                    if (zone.midiPath.isNotEmpty())
+                    {
+                        auto midiSrc = resolveSampleFile (zone.midiPath, project.getProjectFolder());
+                        if (midiSrc.existsAsFile())
+                            zone.midiPath = midiSrc.getFullPathName();
+                    }
+                }
+                for (auto& asset : patch.includedAssets)
+                {
+                    auto src = resolveProjectAsset (asset);
+                    if (src.existsAsFile())
+                        asset = src.getFullPathName();
+                }
+            }
+            for (auto& expansion : exportExpansions)
+            {
+                for (auto& asset : expansion.includedAssets)
+                {
+                    auto src = resolveProjectAsset (asset);
+                    if (src.existsAsFile())
+                        asset = src.getFullPathName();
+                }
+            }
+        }
+
         juce::Array<juce::var> patchArr;
         for (const auto& patch : exportPatches)
             patchArr.add (patch.toVar());
@@ -1161,12 +1231,21 @@ namespace patchcraft
         // The Player loads <pack>/pscript.txt at preset-load time, so the
         // authored instrument script must ship inside the exported pack.
         {
-            const auto script = project.getPscriptSource();
+            const auto script = project.getMergedPscriptSource();
             auto scriptFile = packFolder.getChildFile ("pscript.txt");
             if (script.isNotEmpty())
                 scriptFile.replaceWithText (script);
             else if (scriptFile.existsAsFile())
                 scriptFile.deleteFile();
+
+            const auto scriptsSrc = project.getScriptsFolder();
+            if (scriptsSrc.isDirectory())
+            {
+                auto scriptsDst = packFolder.getChildFile ("scripts");
+                scriptsDst.createDirectory();
+                for (const auto& file : scriptsSrc.findChildFiles (juce::File::findFiles, false, "*.pscript"))
+                    file.copyFileTo (scriptsDst.getChildFile (file.getFileName()));
+            }
         }
 
         // -- Generate default hero image if not present ------------------------

@@ -1,5 +1,7 @@
 # pScript Language Specification
 
+> **Using pScript today?** Start with [PSCRIPT_USER_GUIDE.md](PSCRIPT_USER_GUIDE.md) for the shipped v1 workflow (write, share `.pscript` files, drop on controls, export packs). This document describes the full language vision; some sections below are planned and not yet implemented in PatchCraft Studio / Player.
+
 pScript is PatchCraft's built-in scripting language. It is not a paid expansion. Paid/free add-ons can add additional language runtimes such as JavaScript or Lua, but pScript is the native, deeply integrated language for PatchCraft instruments.
 
 ## Design Goals

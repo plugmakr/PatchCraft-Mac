@@ -1,21 +1,129 @@
 #include "CanvasEditor.h"
 #include "StudioMainComponent.h"
+#include "PackRuntimeHost.h"
 #include "PatchCraftLookAndFeel.h"
+#include "LayoutBindingHelper.h"
+#include "ProductRecipes.h"
 #include "MidiPlaygroundPattern.h"
 #include "SampleMap.h"
 #include "PianoRollRuntime.h"
 #include "ArpLaneUi.h"
 #include "DrumMachineUtil.h"
+#include "PScriptShare.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <map>
 #include <vector>
 
 namespace patchcraft
 {
     namespace
     {
+        constexpr int kCanvasPianoFirstMidiNote = 21;  // A0
+        constexpr int kCanvasPianoLastMidiNote  = 108; // C8
+
+        static bool isCanvasBlackPianoKey (int midiNote)
+        {
+            const int semitone = ((midiNote % 12) + 12) % 12;
+            return semitone == 1 || semitone == 3 || semitone == 6 || semitone == 8 || semitone == 10;
+        }
+
+        static std::vector<int> canvasPianoWhiteNotes()
+        {
+            std::vector<int> notes;
+            notes.reserve (52);
+            for (int note = kCanvasPianoFirstMidiNote; note <= kCanvasPianoLastMidiNote; ++note)
+                if (! isCanvasBlackPianoKey (note))
+                    notes.push_back (note);
+            return notes;
+        }
+
+        static const SampleZoneDef* canvasSampleZoneForPad (const SampleMap& sampleMap, int padIndex)
+        {
+            if (padIndex < 0 || padIndex >= 16)
+                return nullptr;
+
+            const auto& zones = sampleMap.getZones();
+            for (const auto& zone : zones)
+                if (zone.padIndex == padIndex)
+                    return &zone;
+
+            std::array<bool, 16> occupied {};
+            std::map<int, int> padByRoot;
+            for (const auto& zone : zones)
+            {
+                if (zone.padIndex < 0 || zone.padIndex >= (int) occupied.size())
+                    continue;
+                occupied[(size_t) zone.padIndex] = true;
+                padByRoot.emplace (zone.rootNote, zone.padIndex);
+            }
+
+            int nextPad = 0;
+            for (const auto& zone : zones)
+            {
+                if (zone.padIndex >= 0)
+                    continue;
+                if (const auto found = padByRoot.find (zone.rootNote); found != padByRoot.end())
+                {
+                    if (found->second == padIndex)
+                        return &zone;
+                    continue;
+                }
+                while (nextPad < (int) occupied.size() && occupied[(size_t) nextPad])
+                    ++nextPad;
+                if (nextPad >= (int) occupied.size())
+                    break;
+                occupied[(size_t) nextPad] = true;
+                padByRoot[zone.rootNote] = nextPad;
+                if (nextPad == padIndex)
+                    return &zone;
+                ++nextPad;
+            }
+            return nullptr;
+        }
+
+        static int canvasWhiteNotesBefore (int midiNote)
+        {
+            int count = 0;
+            for (int note = kCanvasPianoFirstMidiNote; note < midiNote; ++note)
+                if (! isCanvasBlackPianoKey (note))
+                    ++count;
+            return count;
+        }
+
+        static int canvasKeyboardNoteAt (juce::Rectangle<int> bounds, juce::Point<int> position)
+        {
+            const auto whiteNotes = canvasPianoWhiteNotes();
+            if (whiteNotes.empty() || bounds.getWidth() <= 12 || bounds.getHeight() <= 12)
+                return -1;
+
+            const float keyWidth = (float) (bounds.getWidth() - 12) / (float) whiteNotes.size();
+            const float keyTop = (float) bounds.getY() + 6.0f;
+            const float keyHeight = (float) bounds.getHeight() - 12.0f;
+            const float blackHeight = keyHeight * 0.62f;
+            const float blackWidth = keyWidth * 0.62f;
+
+            for (int note = kCanvasPianoFirstMidiNote; note <= kCanvasPianoLastMidiNote; ++note)
+            {
+                if (! isCanvasBlackPianoKey (note))
+                    continue;
+                const int before = canvasWhiteNotesBefore (note);
+                const float x = bounds.getX() + 6 + before * keyWidth - blackWidth * 0.5f;
+                if (x < bounds.getX() + 4 || x + blackWidth > bounds.getRight() - 4)
+                    continue;
+                if (juce::Rectangle<float> (x, keyTop, blackWidth, blackHeight).contains (position.toFloat()))
+                    return note;
+            }
+
+            for (int index = 0; index < (int) whiteNotes.size(); ++index)
+                if (juce::Rectangle<float> (bounds.getX() + 6 + index * keyWidth, keyTop,
+                                             keyWidth - 1.0f, keyHeight).contains (position.toFloat()))
+                    return whiteNotes[(size_t) index];
+            return -1;
+        }
+
         static float blockValue (const DspBlock& block, const juce::String& key, float fallback)
         {
             const auto it = block.values.find (key);
@@ -1878,7 +1986,13 @@ namespace patchcraft
             return true;
 
         if (auto* object = details.description.getDynamicObject())
-            return object->getProperty ("patchcraftDragType").toString() == "libraryAsset";
+        {
+            const auto dragType = object->getProperty ("patchcraftDragType").toString();
+            return dragType == "libraryAsset"
+                || dragType == "paletteElement"
+                || dragType == "paletteModule"
+                || dragType == "paletteAction";
+        }
 
         return false;
     }
@@ -1887,7 +2001,33 @@ namespace patchcraft
     {
         if (auto* object = details.description.getDynamicObject())
         {
-            if (object->getProperty ("patchcraftDragType").toString() == "libraryAsset")
+            const auto dragType = object->getProperty ("patchcraftDragType").toString();
+            const auto dropPos = screenToCanvas (details.localPosition);
+
+            if (dragType == "paletteElement")
+            {
+                const auto type = static_cast<ElementType> ((int) object->getProperty ("elementType"));
+                addElementAt (type, dropPos, object->getProperty ("parameterId").toString());
+                return;
+            }
+
+            if (dragType == "paletteModule")
+            {
+                addModuleLayout (object->getProperty ("moduleType").toString(), dropPos);
+                return;
+            }
+
+            if (dragType == "paletteAction")
+            {
+                const auto action = object->getProperty ("action").toString();
+                if (action == "mixerChannel")
+                    addMixerChannelAt (dropPos);
+                else if (action == "drumMachineLayout")
+                    addDrumMachineControlLayout (dropPos);
+                return;
+            }
+
+            if (dragType == "libraryAsset")
             {
                 const auto category = object->getProperty ("category").toString();
                 const juce::File file (object->getProperty ("path").toString());
@@ -1922,19 +2062,31 @@ namespace patchcraft
     bool CanvasEditor::isInterestedInFileDrag (const juce::StringArray& files)
     {
         for (const auto& path : files)
-            if (isSupportedSampleFile (juce::File (path)))
+        {
+            const juce::File file (path);
+            if (isSupportedSampleFile (file) || PScriptShare::isPscriptFile (file))
                 return true;
+        }
         return false;
     }
 
     void CanvasEditor::filesDropped (const juce::StringArray& files, int x, int y)
     {
+        juce::Array<juce::File> scripts;
         juce::Array<juce::File> samples;
         for (const auto& path : files)
         {
             juce::File file (path);
-            if (isSupportedSampleFile (file))
+            if (PScriptShare::isPscriptFile (file))
+                scripts.add (file);
+            else if (isSupportedSampleFile (file))
                 samples.add (file);
+        }
+
+        if (scripts.size() == 1)
+        {
+            owner.attachPscriptFileAt (scripts.getReference (0), { x, y });
+            return;
         }
 
         if (samples.isEmpty())
@@ -1945,6 +2097,26 @@ namespace patchcraft
             assignSamplesToDropZone (zone->id, samples);
             return;
         }
+    }
+
+    const LayoutElement* CanvasEditor::scriptableControlAt (juce::Point<int> localPosition) const
+    {
+        const auto& elements = owner.getProject().getLayout().getAll();
+        for (auto it = elements.rbegin(); it != elements.rend(); ++it)
+        {
+            if (! it->visible || ! isElementOnCurrentTab (*it) || it->parameterId.isEmpty())
+                continue;
+
+            const bool scriptable = isRuntimeControlElement (it->type)
+                || it->type == ElementType::ValueDisplay
+                || it->type == ElementType::SampleDropZone;
+            if (! scriptable)
+                continue;
+
+            if (elementScreenRect (*it).contains (localPosition))
+                return &*it;
+        }
+        return nullptr;
     }
 
     const LayoutElement* CanvasEditor::sampleDropZoneAt (juce::Point<int> localPosition) const

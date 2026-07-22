@@ -3,18 +3,16 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include <memory>
-#include <set>
 
 namespace patchcraft
 {
     class StudioMainComponent;
-    class TestPage;
 
     /**
         Branding Lab — focused workspace for white-labeling the Player.
         Lets the developer edit the manifest's player-* fields (display name,
         tagline, logo image, accent / panel / text colours) and see a
-        live preview of the Player chrome underneath. The Design tab shapes
+        live preview of the real Player plugin underneath. The Design tab shapes
         the layout; this tab shapes the Player's identity.
     */
     class BrandingLabPage : public juce::Component,
@@ -29,14 +27,18 @@ namespace patchcraft
         void paint (juce::Graphics&) override;
         void resized() override;
         void refresh();
+        /** Re-attach the embedded Player after layout changes (e.g. maximize). */
+        void ensurePreviewAttached();
 
-        // The Brand Lab now hosts the live test environment too: the user
-        // sees their instrument in a Player-style frame and can play it.
-        // BottomPanel forwards page activation here.
+        // BottomPanel forwards page activation here so the embedded Player
+        // receives audio/MIDI while Brand Lab is visible.
         void activateTest();
         void deactivateTest();
         bool isTestActive() const;
-        TestPage* getTestPage() const noexcept { return testPage.get(); }
+
+        /** Full-width Player/DAW preview — hides the branding form column. */
+        void setDawPreviewLayout (bool dawPreview);
+        bool isDawPreviewLayout() const noexcept { return dawPreviewLayout; }
         bool isInterestedInDragSource (const SourceDetails& details) override;
         void itemDropped (const SourceDetails& details) override;
         bool isInterestedInFileDrag (const juce::StringArray& files) override;
@@ -114,6 +116,26 @@ namespace patchcraft
         juce::ToggleButton showAboutToggle { "Show About Panel" };
         juce::ToggleButton showGuidanceToggle { "Show Parameter Guidance" };
         juce::ToggleButton showPatchCraftBrandingToggle { "Show PatchCraft Credit" };
+        juce::ToggleButton showTopBarToggle { "Show Title Bar" };
+        juce::ToggleButton showLeftSidebarToggle { "Show Left Browser" };
+        juce::ToggleButton showFooterToggle { "Show Footer" };
+        juce::ToggleButton showRightPanelToggle { "Show Right Panel" };
+        juce::ToggleButton showKeyboardToggle { "Show Keyboard Strip" };
+        juce::ToggleButton topBrowseToggle { "Browse Button" };
+        juce::ToggleButton topSaveToggle { "Save Button" };
+        juce::ToggleButton topSettingsToggle { "Settings Button" };
+        juce::ToggleButton topCategoryToggle { "Category Filter" };
+        juce::ToggleButton topFavoriteToggle { "Favorite Button" };
+        juce::ToggleButton topPresetNavToggle { "Preset Navigation" };
+        juce::ToggleButton topMasterToggle { "Master Volume" };
+        juce::ToggleButton topMeterToggle { "Output Meter" };
+        juce::ToggleButton rightPanelShowMacrosToggle { "Macros Section" };
+        juce::ToggleButton rightPanelShowEffectsToggle { "Effects Section" };
+        juce::ToggleButton rightPanelShowSendsToggle { "Send Levels Section" };
+        juce::ToggleButton rightPanelShowUtilityToggle { "Velocity / Glide / Voices" };
+
+        juce::Label macroNameLabels[8];
+        juce::TextEditor macroNameEdits[8];
 
         juce::Label clientSectionLabel;
         juce::Label clientNameLabel;
@@ -164,32 +186,20 @@ namespace patchcraft
         juce::TextButton applyWhiteLabelPresetBtn { "Apply White-Label Player Defaults" };
 
         juce::Rectangle<int> previewArea;
-        juce::Rectangle<int> playerHeaderArea;
         bool syncingFromManifest = false;
+        bool forceApplyTitleTheme = false;
         bool pendingProjectNotify = false;
         int  ticksSinceLastEdit = 0;
         int  runtimeDropStatusTicks = 0;
         std::unique_ptr<juce::FileChooser> logoChooser;
-        std::unique_ptr<TestPage> testPage;
         juce::Label runtimeDropStatusLabel;
         juce::ToggleButton showFormToggle { "Show Branding Form" };
-        juce::TextButton playerLibraryBtn { "Library" };
-        juce::TextButton playerSoundBtn { "Sound" };
-        juce::TextButton playerPlayBtn { "Play" };
-        juce::TextButton playerStopBtn { "Stop" };
-        juce::Label playerBpmLabel;
-        juce::Slider playerBpmSlider;
-        juce::TextButton playerPrevPresetBtn { "<" };
-        juce::TextButton playerPresetBtn { "Current Patch" };
-        juce::TextButton playerNextPresetBtn { ">" };
         bool identitySectionOpen = true;
         bool skinSectionOpen = true;
         bool runtimeSectionOpen = true;
         bool clientSectionOpen = false;
         bool licensingSectionOpen = true;
-        std::set<std::string> favoritePresetNames;
-        bool presetAuditionOnSelect = true;
-        bool presetCloseAfterLoad = false;
+        bool dawPreviewLayout = false;
 
         void timerCallback() override;
         void readFromManifest();
@@ -198,11 +208,6 @@ namespace patchcraft
         void chooseColour (const juce::String& field, juce::Colour current);
         void chooseLogo();
         void chooseImagePath (juce::TextEditor& targetEditor, const juce::String& title);
-        void showPlayerPreviewPanel (const juce::String& title, const juce::String& body);
-        void showPlayerSoundPanel();
-        void showPlayerLibraryPanel();
-        void showPlayerPresetMenu();
-        void paintPlayerPreview (juce::Graphics&, juce::Rectangle<int> r);
         void importRuntimeFilesAt (const juce::StringArray& paths, juce::Point<int> localPosition);
         void showRuntimeDropStatus (const juce::String& message, bool warning);
     };

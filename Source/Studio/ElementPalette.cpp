@@ -98,6 +98,17 @@ namespace patchcraft
                             h);
             }
         }
+        else if (key == "adsr")
+        {
+            g.drawRoundedRectangle (cx - s * 0.45f, cy - s * 0.30f, s * 0.9f, s * 0.6f, 3.0f, t);
+            juce::Path p;
+            p.startNewSubPath (cx - s * 0.38f, cy + s * 0.22f);
+            p.lineTo (cx - s * 0.22f, cy - s * 0.22f); // attack
+            p.lineTo (cx - s * 0.08f, cy + s * 0.02f); // decay
+            p.lineTo (cx + s * 0.12f, cy + s * 0.02f); // sustain
+            p.lineTo (cx + s * 0.36f, cy + s * 0.22f); // release
+            g.strokePath (p, juce::PathStrokeType (t));
+        }
         else if (key == "keyboard")
         {
             g.drawRect (cx - s * 0.45f, cy - s * 0.25f, s * 0.9f, s * 0.5f, t);
@@ -233,14 +244,49 @@ namespace patchcraft
                                         s * 0.09f, s * 0.18f, 2.0f);
             }
         }
+        else if (key == "library")
+        {
+            g.drawRoundedRectangle (cx - s * 0.40f, cy - s * 0.28f, s * 0.80f, s * 0.56f, 4.0f, t);
+            for (int i = 0; i < 3; ++i)
+                g.drawLine (cx - s * 0.28f + (float) i * s * 0.14f, cy - s * 0.16f,
+                            cx - s * 0.28f + (float) i * s * 0.14f, cy + s * 0.16f, t);
+        }
+    }
+
+    juce::var ElementPalette::makeElementDrag (ElementType type, const juce::String& label,
+                                               const juce::String& parameterId)
+    {
+        auto* object = new juce::DynamicObject();
+        object->setProperty ("patchcraftDragType", "paletteElement");
+        object->setProperty ("elementType", (int) type);
+        object->setProperty ("parameterId", parameterId);
+        object->setProperty ("label", label);
+        return juce::var (object);
+    }
+
+    juce::var ElementPalette::makeModuleDrag (const juce::String& moduleType, const juce::String& label)
+    {
+        auto* object = new juce::DynamicObject();
+        object->setProperty ("patchcraftDragType", "paletteModule");
+        object->setProperty ("moduleType", moduleType);
+        object->setProperty ("label", label);
+        return juce::var (object);
+    }
+
+    juce::var ElementPalette::makeActionDrag (const juce::String& action, const juce::String& label)
+    {
+        auto* object = new juce::DynamicObject();
+        object->setProperty ("patchcraftDragType", "paletteAction");
+        object->setProperty ("action", action);
+        object->setProperty ("label", label);
+        return juce::var (object);
     }
 
     // ---------------------------------------------------------------------
-    ElementPalette::Row::Row (juce::String t, juce::String k,
-                              std::function<void()> oc)
-        : text (std::move (t)), iconKey (std::move (k)), onClick (std::move (oc))
+    ElementPalette::Row::Row (juce::String t, juce::String k, juce::var drag, juce::String sub)
+        : text (std::move (t)), iconKey (std::move (k)), dragDescription (std::move (drag)), subtitle (std::move (sub))
     {
-        setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        setMouseCursor (juce::MouseCursor::DraggingHandCursor);
     }
 
     void ElementPalette::Row::paint (juce::Graphics& g)
@@ -256,17 +302,40 @@ namespace patchcraft
 
         const auto col = hover ? PatchCraftLookAndFeel::accent() : PatchCraftLookAndFeel::text();
         auto iconArea = r.removeFromLeft (28.0f);
-        drawPaletteIcon (g, iconArea, iconKey, col);
+        // center the icon vertically relative to row height
+        const float iconH = 24.0f;
+        const float iconY = r.getY() + (r.getHeight() - iconH) * 0.5f;
+        drawPaletteIcon (g, juce::Rectangle<float> (iconArea.getX(), iconY, iconArea.getWidth(), iconH), iconKey, col);
 
-        g.setColour (col);
-        g.setFont (juce::Font (13.0f));
-        g.drawText (text, r.toNearestInt(), juce::Justification::centredLeft);
+        if (subtitle.isNotEmpty())
+        {
+            g.setColour (col);
+            g.setFont (juce::Font (12.0f, juce::Font::bold));
+            g.drawText (text, r.toNearestInt().removeFromTop (18), juce::Justification::bottomLeft, true);
+
+            g.setColour (PatchCraftLookAndFeel::textDim().withAlpha (0.75f));
+            g.setFont (juce::Font (10.0f));
+            g.drawText (subtitle, r.toNearestInt(), juce::Justification::topLeft, true);
+        }
+        else
+        {
+            g.setColour (col);
+            g.setFont (juce::Font (13.0f));
+            g.drawText (text, r.toNearestInt(), juce::Justification::centredLeft, true);
+        }
+
+        g.setColour (PatchCraftLookAndFeel::textDim().withAlpha (0.75f));
+        g.setFont (juce::Font (10.0f));
+        g.drawText ("drag", r.toNearestInt().removeFromRight (34), juce::Justification::centredRight);
     }
 
-    void ElementPalette::Row::mouseUp (const juce::MouseEvent& e)
+    void ElementPalette::Row::mouseDrag (const juce::MouseEvent& e)
     {
-        if (! contains (e.getPosition())) return;
-        if (onClick) onClick();
+        if (e.getDistanceFromDragStart() < 6 || dragDescription.isVoid())
+            return;
+
+        if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor (this))
+            container->startDragging (dragDescription, this, juce::Image(), true, nullptr, &e.source);
     }
 
     // ---------------------------------------------------------------------
@@ -297,8 +366,9 @@ namespace patchcraft
             row->setVisible (show);
             if (show)
             {
-                row->setBounds (4, y, getWidth() - 8, 28);
-                y += 30;
+                const int rh = row->getRowHeight();
+                row->setBounds (4, y, getWidth() - 8, rh);
+                y += rh + 2;
             }
         }
     }
@@ -324,6 +394,13 @@ namespace patchcraft
         if (e.y > 26)
             return;
 
+        if (e.mods.isCtrlDown() || e.mods.isCommandDown())
+        {
+            if (auto* palette = findParentComponentOfClass<ElementPalette>())
+                palette->toggleAllSections();
+            return;
+        }
+
         open = ! open;
         resized();
         repaint();
@@ -341,13 +418,24 @@ namespace patchcraft
     {
         if (activeFilter.isNotEmpty())
         {
+            int total = 24;
             int visible = 0;
             for (auto* row : rows)
+            {
                 if (row->matchesFilter)
+                {
+                    total += row->getRowHeight() + 2;
                     ++visible;
-            return visible > 0 ? 24 + visible * 30 + 4 : 0;
+                }
+            }
+            return visible > 0 ? total + 2 : 0;
         }
-        return 24 + (open ? (int) rows.size() * 30 : 0) + 4;
+        if (! open)
+            return 24 + 4;
+        int total = 24;
+        for (auto* row : rows)
+            total += row->getRowHeight() + 2;
+        return total + 4;
     }
 
     // ---------------------------------------------------------------------
@@ -365,6 +453,37 @@ namespace patchcraft
         searchBox.onEscapeKey   = [this] { searchBox.clear(); applySearchFilter(); };
         addAndMakeVisible (searchBox);
 
+        // Tab Selector Setup — flatTab underline (not accent fill) so selected text stays readable
+        for (auto* tab : { &controlsTabBtn, &modulesTabBtn, &startersTabBtn })
+        {
+            tab->getProperties().set ("flatTab", true);
+            tab->getProperties().set ("fontSize", 11.5);
+            tab->getProperties().set ("bold", true);
+            tab->setClickingTogglesState (false);
+            tab->setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+            tab->setColour (juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
+        }
+
+        auto updateTabButtons = [this]
+        {
+            controlsTabBtn.setToggleState (currentTab == PaletteTab::Controls, juce::dontSendNotification);
+            modulesTabBtn.setToggleState (currentTab == PaletteTab::Modules, juce::dontSendNotification);
+            startersTabBtn.setToggleState (currentTab == PaletteTab::Starters, juce::dontSendNotification);
+
+            resized();
+            repaint();
+        };
+
+        controlsTabBtn.onClick = [this, updateTabButtons] { currentTab = PaletteTab::Controls; updateTabButtons(); };
+        modulesTabBtn.onClick  = [this, updateTabButtons] { currentTab = PaletteTab::Modules;  updateTabButtons(); };
+        startersTabBtn.onClick = [this, updateTabButtons] { currentTab = PaletteTab::Starters; updateTabButtons(); };
+
+        updateTabButtons();
+
+        addAndMakeVisible (controlsTabBtn);
+        addAndMakeVisible (modulesTabBtn);
+        addAndMakeVisible (startersTabBtn);
+
         addAndMakeVisible (viewport);
         viewport.setViewedComponent (&scrollContent, false);
         viewport.setScrollBarsShown (true, false);
@@ -375,7 +494,6 @@ namespace patchcraft
         scrollContent.addAndMakeVisible (analysisSection);
         scrollContent.addAndMakeVisible (uiSection);
         scrollContent.addAndMakeVisible (motionSection);
-        scrollContent.addAndMakeVisible (proVisualSection);
         scrollContent.addAndMakeVisible (performanceSection);
         scrollContent.addAndMakeVisible (containerSection);
         scrollContent.addAndMakeVisible (productStarterSection);
@@ -387,255 +505,219 @@ namespace patchcraft
         scrollContent.addAndMakeVisible (fxModuleSection);
         scrollContent.addAndMakeVisible (outputModuleSection);
 
-        for (auto* section : { &controlSection, &analysisSection, &uiSection, &motionSection, &proVisualSection, &performanceSection, &containerSection,
+        for (auto* section : { &controlSection, &analysisSection, &uiSection, &motionSection, &performanceSection, &containerSection,
                                &productStarterSection,
                                &synthModuleSection, &samplerModuleSection, &drumModuleSection, &midiModuleSection,
                                &eqDynamicsModuleSection, &fxModuleSection, &outputModuleSection })
             section->onToggle = [this] { resized(); repaint(); };
 
-        struct Entry { ElementType t; juce::String label; juce::String icon; };
+        struct Entry { ElementType t; juce::String label; juce::String icon; juce::String parameterId; };
         const Entry controls[] = {
-            { ElementType::Knob,         "Knob",         "knob" },
-            { ElementType::Slider,       "Slider",       "slider" },
-            { ElementType::Toggle,       "Toggle",       "toggle" },
-            { ElementType::XYPad,        "XY Pad",       "xy" },
-            { ElementType::MacroControl, "Macro Control","knob" },
-            { ElementType::ModMatrix,    "Mod Matrix",   "grid" },
-            { ElementType::Mixer,        "Mixer",        "mixer" },
-            { ElementType::ValueDisplay, "Value Display","value" },
-            { ElementType::Meter,        "Meter",        "meter" },
-            { ElementType::Waveform,     "Waveform",     "waveform" },
-            { ElementType::Keyboard,     "Keyboard",     "keyboard" },
-            { ElementType::GranularField,"Granular Field","granular" }
+            { ElementType::Knob,         "Knob",              "knob",     "filterCutoff" },
+            { ElementType::Slider,       "Slider",            "slider",   "volume" },
+            { ElementType::Toggle,       "Toggle",            "toggle",   "mix" },
+            { ElementType::XYPad,        "XY Pad",            "xy",       "xyPosition" },
+            { ElementType::MacroControl, "Macro Knob",        "knob",     "macro1" },
+            { ElementType::ModMatrix,    "Mod Matrix",        "grid",     {} },
+            { ElementType::Mixer,        "Mixer Strip Bank",  "mixer",    {} },
+            { ElementType::ValueDisplay, "Live Value Readout","value",    "filterCutoff" },
+            { ElementType::Meter,        "Level Meter",       "meter",    "volume" },
+            { ElementType::Waveform,     "Sample Waveform",   "waveform", {} },
+            { ElementType::Keyboard,     "Virtual Keyboard",  "keyboard", {} },
+            { ElementType::GranularField,"Granular Field",   "granular", "sampleStart" }
         };
         const Entry visuals[] = {
-            { ElementType::Label,        "Text Label",   "label" },
-            { ElementType::Button,       "Button",       "button" },
-            { ElementType::Dropdown,     "Dropdown",     "dropdown" },
-            { ElementType::Panel,        "Panel",        "panel" },
-            { ElementType::Shape,        "Shape",        "shape" },
-            { ElementType::Image,        "Image",        "image" }
+            { ElementType::Label,    "Text Label", "label", {} },
+            { ElementType::Button,   "Button",     "button", "trigger" },
+            { ElementType::Dropdown, "Dropdown",   "dropdown", "oscType" },
+            { ElementType::Panel,    "Panel",      "panel", {} },
+            { ElementType::Shape,    "Shape",      "shape", {} },
+            { ElementType::Image,    "Image",      "image", {} }
         };
         const Entry analysis[] = {
-            { ElementType::EqCurve,          "EQ Curve",          "eq" },
-            { ElementType::SpectrumAnalyzer, "Spectrum Analyzer", "spectrum" }
+            { ElementType::EqCurve,          "EQ Curve",          "eq", {} },
+            { ElementType::SpectrumAnalyzer, "Spectrum Analyzer", "spectrum", {} },
+            { ElementType::AdsrCurve,        "ADSR Envelope",     "adsr", {} }
         };
         const Entry motion[] = {
-            { ElementType::ReactiveImage, "Reactive Image", "reactive" },
-            { ElementType::SpriteAnimator, "Sprite Animator", "sprite" },
-            { ElementType::VisualFxLayer, "Visual FX Layer", "fx" }
-        };
-        const Entry proVisuals[] = {
-            { ElementType::AiVisualPrompt, "AI Visual Prompt", "aiVisual" }
+            { ElementType::VisualFxLayer,  "Visual FX Layer", "fx", {} }
         };
         const Entry performance[] = {
-            { ElementType::DrumPad,      "Drum Pad",     "drum" },
-            { ElementType::PadGrid,      "Pad Grid",     "grid" },
-            { ElementType::DrumGrid,     "Drum Grid",    "grid" },
-            { ElementType::PianoRoll,    "Piano Roll",   "grid" },
-            { ElementType::ArpLane,      "Arp Lane",     "grid" },
-            { ElementType::SequencerLane,"Seq Lane",     "grid" }
+            { ElementType::DrumPad,       "Single Drum Pad",     "drum", {} },
+            { ElementType::PadGrid,       "MPC Pad Grid",        "grid", {} },
+            { ElementType::DrumGrid,      "Drum Pattern Grid",   "grid", {} },
+            { ElementType::PianoRoll,     "Piano Roll",          "grid", {} },
+            { ElementType::ArpLane,       "Arp Lane View",       "grid", {} },
+            { ElementType::SequencerLane, "Step Sequencer Lane","grid", {} }
         };
         const Entry containers[] = {
-            { ElementType::TabPanel,    "Tab Panel",    "tabs" },
-            { ElementType::ScrollPanel, "Scroll Panel", "scroll" },
-            { ElementType::Group,       "Group",        "group" },
-            { ElementType::Separator,   "Separator",    "separator" }
+            { ElementType::TabPanel,    "Tab Panel",    "tabs", {} },
+            { ElementType::Separator,   "Separator",    "separator", {} }
         };
 
-        for (auto& e : controls)
-        {
-            auto type = e.t;
-            controlSection.addRow (std::make_unique<Row> (e.label, e.icon,
-                [this, type] { addElementOfType (type); }));
-        }
-        for (auto& e : visuals)
-        {
-            auto type = e.t;
-            uiSection.addRow (std::make_unique<Row> (e.label, e.icon,
-                [this, type] { addElementOfType (type); }));
-        }
-        for (auto& e : analysis)
-        {
-            auto type = e.t;
-            analysisSection.addRow (std::make_unique<Row> (e.label, e.icon,
-                [this, type] { addElementOfType (type); }));
-        }
-        for (auto& e : motion)
-        {
-            auto type = e.t;
-            motionSection.addRow (std::make_unique<Row> (e.label, e.icon,
-                [this, type] { addElementOfType (type); }));
-        }
-        for (auto& e : proVisuals)
-        {
-            auto type = e.t;
-            proVisualSection.addRow (std::make_unique<Row> (e.label, e.icon,
-                [this, type] { addElementOfType (type); }));
-        }
-        for (auto& e : performance)
-        {
-            auto type = e.t;
-            performanceSection.addRow (std::make_unique<Row> (e.label, e.icon,
-                [this, type] { addElementOfType (type); }));
-        }
-        for (auto& e : containers)
-        {
-            auto type = e.t;
-            containerSection.addRow (std::make_unique<Row> (e.label, e.icon,
-                [this, type] { addElementOfType (type); }));
-        }
+        for (const auto& e : controls)
+            controlSection.addRow (std::make_unique<Row> (e.label, e.icon, makeElementDrag (e.t, e.label, e.parameterId)));
+        for (const auto& e : visuals)
+            uiSection.addRow (std::make_unique<Row> (e.label, e.icon, makeElementDrag (e.t, e.label, e.parameterId)));
+        for (const auto& e : analysis)
+            analysisSection.addRow (std::make_unique<Row> (e.label, e.icon, makeElementDrag (e.t, e.label, e.parameterId)));
+        for (const auto& e : motion)
+            motionSection.addRow (std::make_unique<Row> (e.label, e.icon, makeElementDrag (e.t, e.label, e.parameterId)));
+        for (const auto& e : performance)
+            performanceSection.addRow (std::make_unique<Row> (e.label, e.icon, makeElementDrag (e.t, e.label, e.parameterId)));
+        for (const auto& e : containers)
+            containerSection.addRow (std::make_unique<Row> (e.label, e.icon, makeElementDrag (e.t, e.label, e.parameterId)));
 
         productStarterSection.addRow (std::make_unique<Row> ("Synth Plugin Starter", "knob",
-            [this] { owner.addModuleToCanvas ("StarterSynthPlugin"); }));
+            makeModuleDrag ("StarterSynthPlugin", "Synth Plugin Starter"), "Standard Subtractive Synth template"));
         productStarterSection.addRow (std::make_unique<Row> ("Sampler Instrument Starter", "waveform",
-            [this] { owner.addModuleToCanvas ("StarterSamplerInstrument"); }));
+            makeModuleDrag ("StarterSamplerInstrument", "Sampler Instrument Starter"), "Multi-mic and pitch-mapped sample engine"));
         productStarterSection.addRow (std::make_unique<Row> ("Easy Sampler Workstation", "waveform",
-            [this] { owner.addModuleToCanvas ("StarterEasySamplerWorkstation"); }));
+            makeModuleDrag ("StarterEasySamplerWorkstation", "Easy Sampler Workstation"), "Single drop zone with automatic mapping"));
         productStarterSection.addRow (std::make_unique<Row> ("Vocal Chop Instrument Starter", "grid",
-            [this] { owner.addModuleToCanvas ("StarterVocalChopInstrument"); }));
+            makeModuleDrag ("StarterVocalChopInstrument", "Vocal Chop Instrument Starter"), "Slice playback & chord triggering"));
         productStarterSection.addRow (std::make_unique<Row> ("Beat Editing Sampler Starter", "grid",
-            [this] { owner.addModuleToCanvas ("StarterBeatEditingSampler"); }));
+            makeModuleDrag ("StarterBeatEditingSampler", "Beat Editing Sampler Starter"), "Granular beat slicer and loop tempo sync"));
         productStarterSection.addRow (std::make_unique<Row> ("Drum Machine Starter", "drum",
-            [this] { owner.addModuleToCanvas ("StarterDrumMachine"); }));
+            makeModuleDrag ("StarterDrumMachine", "Drum Machine Starter"), "MPC-style 16 pad kit layout"));
         productStarterSection.addRow (std::make_unique<Row> ("Scratch / Slice Starter", "xy",
-            [this] { owner.addModuleToCanvas ("StarterScratchSlice"); }));
+            makeModuleDrag ("StarterScratchSlice", "Scratch / Slice Starter"), "Realtime vinyl scratch deck controls"));
         productStarterSection.addRow (std::make_unique<Row> ("Hip Hop Sampler Starter", "drum",
-            [this] { owner.addModuleToCanvas ("StarterHipHopSampler"); }));
+            makeModuleDrag ("StarterHipHopSampler", "Hip Hop Sampler Starter"), "Warm saturation, filter & transient shaper"));
         productStarterSection.addRow (std::make_unique<Row> ("Chop Lab Starter", "grid",
-            [this] { owner.addModuleToCanvas ("StarterChopLab"); }));
+            makeModuleDrag ("StarterChopLab", "Chop Lab Starter"), "Creative loop chopper layout"));
         productStarterSection.addRow (std::make_unique<Row> ("MPC Pad Instrument Starter", "drum",
-            [this] { owner.addModuleToCanvas ("StarterMpcPads"); }));
+            makeModuleDrag ("StarterMpcPads", "MPC Pad Instrument Starter"), "16 pad bank linked to sample triggers"));
         productStarterSection.addRow (std::make_unique<Row> ("Loop Remix FX Starter", "fx",
-            [this] { owner.addModuleToCanvas ("StarterLoopRemixFx"); }));
+            makeModuleDrag ("StarterLoopRemixFx", "Loop Remix FX Starter"), "Multi-band delay, chorus and tape delay"));
         productStarterSection.addRow (std::make_unique<Row> ("Chord Progression Plugin Starter", "grid",
-            [this] { owner.addModuleToCanvas ("StarterChordProgressionPlugin"); }));
+            makeModuleDrag ("StarterChordProgressionPlugin", "Chord Progression Plugin Starter"), "MIDI Chord progression pads & arpeggiator"));
         productStarterSection.addRow (std::make_unique<Row> ("Delay FX Starter", "fx",
-            [this] { owner.addModuleToCanvas ("StarterDelayFx"); }));
+            makeModuleDrag ("StarterDelayFx", "Delay FX Starter"), "Creative multi-tap echo layout"));
         productStarterSection.addRow (std::make_unique<Row> ("Vocal / Master FX Starter", "meter",
-            [this] { owner.addModuleToCanvas ("StarterVocalMasterFx"); }));
+            makeModuleDrag ("StarterVocalMasterFx", "Vocal / Master FX Starter"), "Surgical EQ, glue compressor and limiter"));
 
         synthModuleSection.addRow (std::make_unique<Row> ("OSC Stack", "knob",
-            [this] { owner.addModuleToCanvas ("OscStack"); }));
+            makeModuleDrag ("OscStack", "OSC Stack"), "Multi-oscillator generator with sub & noise"));
         synthModuleSection.addRow (std::make_unique<Row> ("Wavetable Source", "waveform",
-            [this] { owner.addModuleToCanvas ("Wavetable"); }));
+            makeModuleDrag ("Wavetable", "Wavetable Source"), "Wavetable oscillator engine"));
         synthModuleSection.addRow (std::make_unique<Row> ("Serum-Style Table", "waveform",
-            [this] { owner.addModuleToCanvas ("SerumTable"); }));
+            makeModuleDrag ("SerumTable", "Serum-Style Table"), "Morphing 2D/3D wavetable display"));
         synthModuleSection.addRow (std::make_unique<Row> ("Filter Module", "eq",
-            [this] { owner.addModuleToCanvas ("Filter"); }));
+            makeModuleDrag ("Filter", "Filter Module"), "Resonant morphing low/high pass filter"));
         synthModuleSection.addRow (std::make_unique<Row> ("ADSR Envelope", "slider",
-            [this] { owner.addModuleToCanvas ("ADSR"); }));
+            makeModuleDrag ("ADSR", "ADSR Envelope"), "Amp ADSR controls with curve visualizer"));
 
         samplerModuleSection.addRow (std::make_unique<Row> ("Sample Player", "waveform",
-            [this] { owner.addModuleToCanvas ("SamplePlayer"); }));
+            makeModuleDrag ("SamplePlayer", "Sample Player"), "WAV playback engine with start/loop settings"));
         samplerModuleSection.addRow (std::make_unique<Row> ("Record / Drop Zone", "waveform",
-            [this] { owner.addModuleToCanvas ("RecordDropZone"); }));
+            makeModuleDrag ("RecordDropZone", "Record / Drop Zone"), "Drag & drop sample panel with level meter"));
         samplerModuleSection.addRow (std::make_unique<Row> ("Slice / Chop", "grid",
-            [this] { owner.addModuleToCanvas ("SliceChop"); }));
+            makeModuleDrag ("SliceChop", "Slice / Chop"), "Grid-based sampler slicing view"));
         samplerModuleSection.addRow (std::make_unique<Row> ("Vocal Chop Pad", "grid",
-            [this] { owner.addModuleToCanvas ("VocalChopPad"); }));
+            makeModuleDrag ("VocalChopPad", "Vocal Chop Pad"), "Interactive pads mapping vocal chops"));
         samplerModuleSection.addRow (std::make_unique<Row> ("Beat Slice Editor", "grid",
-            [this] { owner.addModuleToCanvas ("BeatSliceEditor"); }));
+            makeModuleDrag ("BeatSliceEditor", "Beat Slice Editor"), "Waveform visualizer with beat grid transient cues"));
         samplerModuleSection.addRow (std::make_unique<Row> ("Scratch Deck", "xy",
-            [this] { owner.addModuleToCanvas ("ScratchDeck"); }));
+            makeModuleDrag ("ScratchDeck", "Scratch Deck"), "XY vinyl deck scratching pad"));
         samplerModuleSection.addRow (std::make_unique<Row> ("Granular Sampler", "granular",
-            [this] { owner.addModuleToCanvas ("GranularSampler"); }));
+            makeModuleDrag ("GranularSampler", "Granular Sampler"), "Real-time cloud particle synthesis"));
         samplerModuleSection.addRow (std::make_unique<Row> ("Multisample Keymap", "keyboard",
-            [this] { owner.addModuleToCanvas ("MultisampleKeymap"); }));
+            makeModuleDrag ("MultisampleKeymap", "Multisample Keymap"), "Multisample editor layout"));
         samplerModuleSection.addRow (std::make_unique<Row> ("Chop Grid", "grid",
-            [this] { owner.addModuleToCanvas ("ChopGrid"); }));
+            makeModuleDrag ("ChopGrid", "Chop Grid"), "MPC pads for sample chop triggering"));
         samplerModuleSection.addRow (std::make_unique<Row> ("Loop Slicer", "grid",
-            [this] { owner.addModuleToCanvas ("LoopSlicer"); }));
+            makeModuleDrag ("LoopSlicer", "Loop Slicer"), "Automated transient sample splitter"));
         samplerModuleSection.addRow (std::make_unique<Row> ("Loop Time Stretch", "waveform",
-            [this] { owner.addModuleToCanvas ("LoopTimeStretch"); }));
+            makeModuleDrag ("LoopTimeStretch", "Loop Time Stretch"), "BPM sync time stretching engine"));
         samplerModuleSection.addRow (std::make_unique<Row> ("MIDI Loop Player", "grid",
-            [this] { owner.addModuleToCanvas ("MidiLoopPlayer"); }));
+            makeModuleDrag ("MidiLoopPlayer", "MIDI Loop Player"), "MIDI clip playback & export trigger"));
         samplerModuleSection.addRow (std::make_unique<Row> ("Sample FX Strip", "fx",
-            [this] { owner.addModuleToCanvas ("SampleFxStrip"); }));
+            makeModuleDrag ("SampleFxStrip", "Sample FX Strip"), "Channel insert effect strip panel"));
         samplerModuleSection.addRow (std::make_unique<Row> ("Vinyl Texture Sampler", "waveform",
-            [this] { owner.addModuleToCanvas ("VinylTextureSampler"); }));
+            makeModuleDrag ("VinylTextureSampler", "Vinyl Texture Sampler"), "Analog crackle, hiss & wow-flutter simulation"));
 
         drumModuleSection.addRow (std::make_unique<Row> ("Drum Rack", "drum",
-            [this] { owner.addModuleToCanvas ("DrumRack"); }));
+            makeModuleDrag ("DrumRack", "Drum Rack"), "8 pad drum triggers with individual controls"));
         drumModuleSection.addRow (std::make_unique<Row> ("Drum Sequencer", "grid",
-            [this] { owner.addModuleToCanvas ("DrumSequencer"); }));
+            makeModuleDrag ("DrumSequencer", "Drum Sequencer"), "8-step grid pattern step sequencer"));
         drumModuleSection.addRow (std::make_unique<Row> ("Drum Mixer", "mixer",
-            [this] { owner.addModuleToCanvas ("DrumMixer"); }));
+            makeModuleDrag ("DrumMixer", "Drum Mixer"), "Custom sub-mixer for drum channels"));
         drumModuleSection.addRow (std::make_unique<Row> ("808 Kit Builder", "drum",
-            [this] { owner.addModuleToCanvas ("EightOhEightKit"); }));
+            makeModuleDrag ("EightOhEightKit", "808 Kit Builder"), "Pre-patched sub bass and drum kit"));
         drumModuleSection.addRow (std::make_unique<Row> ("Boom Bap Pad Bank", "drum",
-            [this] { owner.addModuleToCanvas ("BoomBapPadBank"); }));
+            makeModuleDrag ("BoomBapPadBank", "Boom Bap Pad Bank"), "12 pad bank with vinyl crunch filter"));
         drumModuleSection.addRow (std::make_unique<Row> ("Quick Drum Kit", "drum",
-            [this] { owner.addModuleToCanvas ("QuickDrumKit"); }));
+            makeModuleDrag ("QuickDrumKit", "Quick Drum Kit"), "Pre-routed drum kit template"));
 
-        midiModuleSection.addRow (std::make_unique<Row> ("Arp Lane", "grid",
-            [this] { owner.addModuleToCanvas ("ArpLaneModule"); }));
-        midiModuleSection.addRow (std::make_unique<Row> ("Step Sequencer", "grid",
-            [this] { owner.addModuleToCanvas ("SeqSequencerModule"); }));
+        midiModuleSection.addRow (std::make_unique<Row> ("Arp Lane Module Rack", "grid",
+            makeModuleDrag ("ArpLaneModule", "Arp Lane Module Rack"), "Polyphonic arpeggiator pattern editor"));
+        midiModuleSection.addRow (std::make_unique<Row> ("Step Sequencer Module", "grid",
+            makeModuleDrag ("SeqSequencerModule", "Step Sequencer Module"), "Step sequencer layout"));
         midiModuleSection.addRow (std::make_unique<Row> ("Harmony Composer", "keyboard",
-            [this] { owner.addModuleToCanvas ("HarmonyComposer"); }));
+            makeModuleDrag ("HarmonyComposer", "Harmony Composer"), "Real-time chord voicing & chord progression"));
         midiModuleSection.addRow (std::make_unique<Row> ("Chord Progression Builder", "grid",
-            [this] { owner.addModuleToCanvas ("ChordProgressionBuilder"); }));
+            makeModuleDrag ("ChordProgressionBuilder", "Chord Progression Builder"), "Chord bank selector for quick progressions"));
         midiModuleSection.addRow (std::make_unique<Row> ("Scale + Chord Assistant", "keyboard",
-            [this] { owner.addModuleToCanvas ("ScaleChordAssistant"); }));
+            makeModuleDrag ("ScaleChordAssistant", "Scale + Chord Assistant"), "Force MIDI input to active scale"));
         midiModuleSection.addRow (std::make_unique<Row> ("Chord Pad Bank", "drum",
-            [this] { owner.addModuleToCanvas ("ChordPadBank"); }));
+            makeModuleDrag ("ChordPadBank", "Chord Pad Bank"), "16 velocity pads playing rich chords"));
         midiModuleSection.addRow (std::make_unique<Row> ("Voicing + Humanize", "knob",
-            [this] { owner.addModuleToCanvas ("VoicingHumanize"); }));
+            makeModuleDrag ("VoicingHumanize", "Voicing + Humanize"), "MIDI velocity, timing drift & humanizing control"));
         midiModuleSection.addRow (std::make_unique<Row> ("LFO Module", "reactive",
-            [this] { owner.addModuleToCanvas ("LFO"); }));
+            makeModuleDrag ("LFO", "LFO Module"), "LFO modulator panel with rate & depth"));
         midiModuleSection.addRow (std::make_unique<Row> ("Step LFO", "grid",
-            [this] { owner.addModuleToCanvas ("StepLFO"); }));
+            makeModuleDrag ("StepLFO", "Step LFO"), "Custom multi-step modulation sequencer"));
         midiModuleSection.addRow (std::make_unique<Row> ("Macro Bank", "knob",
-            [this] { owner.addModuleToCanvas ("MacroBank"); }));
+            makeModuleDrag ("MacroBank", "Macro Bank"), "8 global assignable VST macros"));
 
         eqDynamicsModuleSection.addRow (std::make_unique<Row> ("Surgical EQ", "eq",
-            [this] { owner.addModuleToCanvas ("SurgicalEQ"); }));
+            makeModuleDrag ("SurgicalEQ", "Surgical EQ"), "4-band surgical EQ with graphic EQ curve"));
         eqDynamicsModuleSection.addRow (std::make_unique<Row> ("Dynamic EQ", "eq",
-            [this] { owner.addModuleToCanvas ("DynamicEQ"); }));
+            makeModuleDrag ("DynamicEQ", "Dynamic EQ"), "Dynamic threshold-activated EQ bands"));
         eqDynamicsModuleSection.addRow (std::make_unique<Row> ("Compressor", "meter",
-            [this] { owner.addModuleToCanvas ("Dynamics"); }));
+            makeModuleDrag ("Dynamics", "Compressor"), "Peak / RMS channel compressor"));
         eqDynamicsModuleSection.addRow (std::make_unique<Row> ("Limiter", "meter",
-            [this] { owner.addModuleToCanvas ("Limiter"); }));
+            makeModuleDrag ("Limiter", "Limiter"), "Brickwall output limiter with gain & ceiling"));
         eqDynamicsModuleSection.addRow (std::make_unique<Row> ("Transient Shaper", "waveform",
-            [this] { owner.addModuleToCanvas ("Transient"); }));
+            makeModuleDrag ("Transient", "Transient Shaper"), "Attack & release transient shaper"));
 
         fxModuleSection.addRow (std::make_unique<Row> ("Delay Module", "fx",
-            [this] { owner.addModuleToCanvas ("Delay"); }));
+            makeModuleDrag ("Delay", "Delay Module"), "Sleek stereo feedback delay"));
         fxModuleSection.addRow (std::make_unique<Row> ("MultiTap Delay", "fx",
-            [this] { owner.addModuleToCanvas ("MultiTapDelay"); }));
+            makeModuleDrag ("MultiTapDelay", "MultiTap Delay"), "4-tap delay with width and feedback spread"));
         fxModuleSection.addRow (std::make_unique<Row> ("Reverb Module", "fx",
-            [this] { owner.addModuleToCanvas ("Reverb"); }));
+            makeModuleDrag ("Reverb", "Reverb Module"), "Algorithmic space reverb simulator"));
         fxModuleSection.addRow (std::make_unique<Row> ("Chorus Module", "fx",
-            [this] { owner.addModuleToCanvas ("Chorus"); }));
+            makeModuleDrag ("Chorus", "Chorus Module"), "Stereo bucket brigade chorus modulator"));
         fxModuleSection.addRow (std::make_unique<Row> ("Phaser Module", "fx",
-            [this] { owner.addModuleToCanvas ("Phaser"); }));
+            makeModuleDrag ("Phaser", "Phaser Module"), "Classic multi-stage phase shifter"));
         fxModuleSection.addRow (std::make_unique<Row> ("Flanger Module", "fx",
-            [this] { owner.addModuleToCanvas ("Flanger"); }));
-        fxModuleSection.addRow (std::make_unique<Row> ("Tape Module", "fx",
-            [this] { owner.addModuleToCanvas ("Tape"); }));
+            makeModuleDrag ("Flanger", "Flanger Module"), "Comb filtering chorus flanger effect"));
+        synthModuleSection.addRow (std::make_unique<Row> ("Tape Module", "fx",
+            makeModuleDrag ("Tape", "Tape Module"), "Tape speed, bias & saturation emulator"));
         fxModuleSection.addRow (std::make_unique<Row> ("Lo-Fi Module", "fx",
-            [this] { owner.addModuleToCanvas ("LoFi"); }));
+            makeModuleDrag ("LoFi", "Lo-Fi Module"), "Bitcrusher, downsampler and analog noise"));
         fxModuleSection.addRow (std::make_unique<Row> ("Vocal FX", "fx",
-            [this] { owner.addModuleToCanvas ("VocalFX"); }));
+            makeModuleDrag ("VocalFX", "Vocal FX"), "Pitch correction, formant shifter and voice space"));
 
         outputModuleSection.addRow (std::make_unique<Row> ("Stereo Module", "mixer",
-            [this] { owner.addModuleToCanvas ("Stereo"); }));
+            makeModuleDrag ("Stereo", "Stereo Module"), "Stereo width, panning and mono-maker control"));
         outputModuleSection.addRow (std::make_unique<Row> ("Master Bus", "meter",
-            [this] { owner.addModuleToCanvas ("MasterBus"); }));
+            makeModuleDrag ("MasterBus", "Master Bus"), "Master EQ, compression and limiter stack"));
 
-        performanceSection.addRow (std::make_unique<Row> ("BPM Sync", "toggle",
-            [this] { owner.addElementToCanvas (ElementType::Toggle, "bpmSync"); }));
-        performanceSection.addRow (std::make_unique<Row> ("Project BPM", "knob",
-            [this] { owner.addElementToCanvas (ElementType::Knob, "projectBpm"); }));
-        performanceSection.addRow (std::make_unique<Row> ("Retrigger", "toggle",
-            [this] { owner.addElementToCanvas (ElementType::Toggle, "retrigger"); }));
-        performanceSection.addRow (std::make_unique<Row> ("Mixer Channel", "mixer",
-            [this] { owner.addMixerChannelToCanvas(); }));
-        performanceSection.addRow (std::make_unique<Row> ("Drum Machine Surface", "grid",
-            [this] { owner.addDrumMachineControlsToCanvas(); }));
+        performanceSection.addRow (std::make_unique<Row> ("BPM Sync Toggle", "toggle",
+            makeElementDrag (ElementType::Toggle, "BPM Sync Toggle", "bpmSync")));
+        performanceSection.addRow (std::make_unique<Row> ("Project BPM Knob", "knob",
+            makeElementDrag (ElementType::Knob, "Project BPM Knob", "projectBpm")));
+        performanceSection.addRow (std::make_unique<Row> ("Retrigger Toggle", "toggle",
+            makeElementDrag (ElementType::Toggle, "Retrigger Toggle", "retrigger")));
+        performanceSection.addRow (std::make_unique<Row> ("Add Mixer Channel", "mixer",
+            makeActionDrag ("mixerChannel", "Add Mixer Channel")));
+        performanceSection.addRow (std::make_unique<Row> ("Drum Machine Layout Kit", "grid",
+            makeActionDrag ("drumMachineLayout", "Drum Machine Layout Kit")));
         performanceSection.addRow (std::make_unique<Row> ("Runtime Sample Library", "library",
-            [this] { owner.addElementToCanvas (ElementType::RuntimeSampleLibrary); }));
+            makeElementDrag (ElementType::RuntimeSampleLibrary, "Runtime Sample Library", {})));
 
         for (auto* b : { &trashBtn, &copyBtn, &folderBtn })
         {
@@ -672,53 +754,24 @@ namespace patchcraft
             owner.setSelectedElementId (added.id);
             owner.getProject().notifyChanged();
         };
-    }
 
-    void ElementPalette::addElementOfType (ElementType type)
-    {
-        juce::String parameterId;
-        if (type == ElementType::Knob)         parameterId = "filterCutoff";
-        else if (type == ElementType::Slider)       parameterId = "volume";
-        else if (type == ElementType::Toggle)       parameterId = "mix";
-        else if (type == ElementType::Dropdown)     parameterId = "oscType";
-        else if (type == ElementType::ValueDisplay) parameterId = "filterCutoff";
-        else if (type == ElementType::Meter)        parameterId = "volume";
-        else if (type == ElementType::Button)      parameterId = "trigger";
-        else if (type == ElementType::Label)       parameterId = {};
-        else if (type == ElementType::Waveform)    parameterId = {};
-        else if (type == ElementType::Keyboard)    parameterId = {};
-        else if (type == ElementType::Image)       parameterId = {};
-        else if (type == ElementType::XYPad)       parameterId = "xyPosition";
-        else if (type == ElementType::GranularField) parameterId = "sampleStart";
-        else if (type == ElementType::DrumPad)    parameterId = "drumTrigger";
-        else if (type == ElementType::PadGrid)    parameterId = "padGrid";
-        else if (type == ElementType::DrumGrid)   parameterId = {};
-        else if (type == ElementType::ArpLane)    parameterId = {};
-        else if (type == ElementType::SequencerLane) parameterId = {};
-        else if (type == ElementType::TabPanel)   parameterId = {};
-        else if (type == ElementType::MacroControl) parameterId = "filterCutoff";
-        else if (type == ElementType::ModMatrix)    parameterId = {};
-        else if (type == ElementType::ScrollPanel) parameterId = {};
-        else if (type == ElementType::Group)       parameterId = {};
-        else if (type == ElementType::Separator)   parameterId = {};
-        else if (type == ElementType::Shape)       parameterId = {};
-        else if (type == ElementType::ReactiveImage) parameterId = {};
-        else if (type == ElementType::SpriteAnimator) parameterId = {};
-        else if (type == ElementType::VisualFxLayer) parameterId = {};
-        else if (type == ElementType::AiVisualPrompt) parameterId = {};
-
-        owner.addElementToCanvas (type, parameterId);
+        updateTabButtons();
     }
 
     void ElementPalette::paint (juce::Graphics& g)
     {
         g.fillAll (PatchCraftLookAndFeel::panel());
+        
+        // draw a nice bottom border line under the tab buttons
+        auto r = getLocalBounds().removeFromTop (34 + 28);
+        g.setColour (PatchCraftLookAndFeel::border());
+        g.drawHorizontalLine (r.getBottom() - 1, 0.0f, (float) getWidth());
     }
 
     void ElementPalette::applySearchFilter()
     {
         const auto query = searchBox.getText().trim();
-        for (auto* section : { &controlSection, &analysisSection, &uiSection, &motionSection, &proVisualSection,
+        for (auto* section : { &controlSection, &analysisSection, &uiSection, &motionSection,
                                &performanceSection, &containerSection, &productStarterSection,
                                &synthModuleSection, &samplerModuleSection, &drumModuleSection, &midiModuleSection,
                                &eqDynamicsModuleSection, &fxModuleSection, &outputModuleSection })
@@ -728,27 +781,75 @@ namespace patchcraft
         repaint();
     }
 
+    void ElementPalette::setAllSectionsOpen (bool shouldOpen)
+    {
+        for (auto* section : { &controlSection, &analysisSection, &uiSection, &motionSection,
+                               &performanceSection, &containerSection, &productStarterSection,
+                               &synthModuleSection, &samplerModuleSection, &drumModuleSection, &midiModuleSection,
+                               &eqDynamicsModuleSection, &fxModuleSection, &outputModuleSection })
+            section->open = shouldOpen;
+
+        resized();
+        repaint();
+    }
+
+    void ElementPalette::toggleAllSections()
+    {
+        bool anyOpen = false;
+        for (auto* section : { &controlSection, &analysisSection, &uiSection, &motionSection,
+                                 &performanceSection, &containerSection, &productStarterSection,
+                                 &synthModuleSection, &samplerModuleSection, &drumModuleSection, &midiModuleSection,
+                                 &eqDynamicsModuleSection, &fxModuleSection, &outputModuleSection })
+            anyOpen = anyOpen || section->open;
+
+        setAllSectionsOpen (! anyOpen);
+    }
+
     void ElementPalette::resized()
     {
         auto outer = getLocalBounds();
         auto bottom = outer.removeFromBottom (36).reduced (8, 4);
         searchBox.setBounds (outer.removeFromTop (34).reduced (8, 6));
+
+        // tab row
+        auto tabArea = outer.removeFromTop (28).reduced (8, 0);
+        const int buttonWidth = tabArea.getWidth() / 3;
+        controlsTabBtn.setBounds (tabArea.removeFromLeft (buttonWidth).reduced (1, 2));
+        modulesTabBtn.setBounds (tabArea.removeFromLeft (buttonWidth).reduced (1, 2));
+        startersTabBtn.setBounds (tabArea.reduced (1, 2));
+
         viewport.setBounds (outer);
 
         const int contentWidth = juce::jmax (1, viewport.getWidth() - 10);
 
-        // Display order. Filtered-out sections report 0 height and are skipped
-        // entirely (no header, no spacer gap) so a search shows a tight list.
         Section* ordered[] = {
-            &controlSection, &analysisSection, &uiSection, &motionSection, &proVisualSection,
+            &controlSection, &analysisSection, &uiSection, &motionSection,
             &performanceSection, &containerSection, &productStarterSection,
             &synthModuleSection, &samplerModuleSection, &drumModuleSection, &midiModuleSection,
             &eqDynamicsModuleSection, &fxModuleSection, &outputModuleSection
         };
 
+        const auto getTabForSection = [this] (Section* s) -> PaletteTab
+        {
+            if (s == &productStarterSection)
+                return PaletteTab::Starters;
+                
+            if (s == &synthModuleSection || s == &samplerModuleSection || s == &drumModuleSection
+                || s == &midiModuleSection || s == &eqDynamicsModuleSection || s == &fxModuleSection
+                || s == &outputModuleSection)
+                return PaletteTab::Modules;
+                
+            return PaletteTab::Controls;
+        };
+
         int contentHeight = 16;
         for (auto* section : ordered)
         {
+            if (getTabForSection (section) != currentTab)
+            {
+                section->setVisible (false);
+                continue;
+            }
             const int h = section->getNeededHeight();
             if (h > 0)
                 contentHeight += h + 8;
@@ -760,6 +861,11 @@ namespace patchcraft
         auto r = scrollContent.getLocalBounds().reduced (8);
         for (auto* section : ordered)
         {
+            if (getTabForSection (section) != currentTab)
+            {
+                section->setVisible (false);
+                continue;
+            }
             const int h = section->getNeededHeight();
             const bool show = h > 0;
             section->setVisible (show);

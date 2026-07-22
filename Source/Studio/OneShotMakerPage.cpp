@@ -728,7 +728,7 @@ namespace patchcraft
 
         if (pluginInstance->hasEditor())
         {
-            pluginEditor.reset (pluginInstance->createEditor());
+            pluginEditor.reset (pluginInstance->createEditorIfNeeded());
         }
 
         if (pluginEditor == nullptr)

@@ -2,6 +2,7 @@
 
 #include "PatchCraftLookAndFeel.h"
 #include "StudioMainComponent.h"
+#include "TutorialHelp.h"
 
 namespace patchcraft
 {
@@ -15,15 +16,6 @@ namespace patchcraft
                     || element->type == ElementType::Dropdown || element->type == ElementType::ValueDisplay
                     || element->type == ElementType::MacroControl || element->type == ElementType::SampleDropZone);
         }
-
-        static juce::Colour stageColour (int index)
-        {
-            static const juce::Colour colours[] {
-                juce::Colour (0xff35b8d4), juce::Colour (0xff79c267), juce::Colour (0xffd889e8),
-                juce::Colour (0xffffb84d), juce::Colour (0xfff06b78)
-            };
-            return colours[juce::jlimit (0, 4, index)];
-        }
     }
 
     ParametersComponent::ParametersComponent (StudioMainComponent& targetOwner) : owner (targetOwner)
@@ -31,11 +23,21 @@ namespace patchcraft
         addAndMakeVisible (openEditor);
         addAndMakeVisible (addControl);
         addAndMakeVisible (selectionStatus);
+        addAndMakeVisible (hintLabel);
 
         openEditor.setTooltip ("Open the node graph for the selected runtime control.");
         openEditor.onClick = [this] { owner.openControlNodeEditor(); };
-        addControl.setTooltip ("Add a new knob to the Design canvas without opening another window.");
+        addControl.setTooltip ("Add a new knob to the Layout canvas without opening another window.");
         addControl.onClick = [this] { owner.addElementToCanvas (ElementType::Knob); };
+
+        TutorialHelp::attach (openEditor, "layout.opennodeeditor");
+        TutorialHelp::attach (addControl, "layout.addknob");
+
+        hintLabel.setFont (juce::FontOptions (11.0f));
+        hintLabel.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
+        hintLabel.setJustificationType (juce::Justification::topLeft);
+        TutorialHelp::attach (hintLabel, "layout.controlbindings");
+
         selectionStatus.setFont (11.5f);
         selectionStatus.setColour (juce::Label::textColourId, PatchCraftLookAndFeel::textDim());
         refresh();
@@ -44,52 +46,19 @@ namespace patchcraft
     void ParametersComponent::paint (juce::Graphics& g)
     {
         g.fillAll (PatchCraftLookAndFeel::panel());
-        const juce::StringArray labels { "SOURCE", "SHAPE", "MOTION", "FX", "OUTPUT" };
-        int counts[5] {};
-        for (const auto& block : owner.getProject().getDspGraph().blocks)
-        {
-            const auto section = block.section.toLowerCase();
-            const int index = section == "source" ? 0
-                            : (section == "filter" || section == "amp" || section == "shape") ? 1
-                            : (section == "mod" || section == "motion") ? 2
-                            : section == "fx" ? 3 : section == "out" ? 4 : -1;
-            if (index >= 0 && block.enabled)
-                ++counts[index];
-        }
-
-        auto row = stageArea;
-        const int gap = 6;
-        const int width = juce::jmax (64, (row.getWidth() - gap * 4) / 5);
-        for (int index = 0; index < 5; ++index)
-        {
-            auto card = row.removeFromLeft (width);
-            row.removeFromLeft (gap);
-            const auto colour = stageColour (index);
-            g.setColour (juce::Colour (0xff151a21));
-            g.fillRoundedRectangle (card.toFloat(), 4.0f);
-            g.setColour (colour.withAlpha (0.75f));
-            g.drawRoundedRectangle (card.toFloat().reduced (0.5f), 4.0f, 1.0f);
-            g.fillRect (card.removeFromTop (3));
-            g.setColour (PatchCraftLookAndFeel::text());
-            g.setFont (juce::FontOptions (10.0f).withStyle ("bold"));
-            g.drawText (labels[index], card.removeFromTop (22), juce::Justification::centred);
-            g.setColour (colour);
-            g.setFont (juce::FontOptions (17.0f).withStyle ("bold"));
-            g.drawText (juce::String (counts[index]), card, juce::Justification::centred);
-        }
     }
 
     void ParametersComponent::resized()
     {
         auto r = getLocalBounds().reduced (8, 6);
         selectionStatus.setBounds (r.removeFromTop (24));
-        r.removeFromTop (3);
+        r.removeFromTop (4);
+        hintLabel.setBounds (r.removeFromTop (juce::jmax (36, r.getHeight() / 2)));
+        r.removeFromTop (6);
         auto buttons = r.removeFromBottom (30);
         openEditor.setBounds (buttons.removeFromLeft (148));
         buttons.removeFromLeft (6);
         addControl.setBounds (buttons.removeFromLeft (158));
-        r.removeFromBottom (6);
-        stageArea = r;
     }
 
     void ParametersComponent::refresh()
@@ -107,6 +76,8 @@ namespace patchcraft
                                       : element->parameterId.isNotEmpty() ? element->parameterId : "Not connected");
         }
         selectionStatus.setText (text, juce::dontSendNotification);
-        repaint();
+
+        hintLabel.setText ("Wire Layout controls to sound parameters here. Use the Sound Stack tab for Source, Tone, Space, and Motion.",
+                           juce::dontSendNotification);
     }
 }

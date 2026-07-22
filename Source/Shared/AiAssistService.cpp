@@ -102,6 +102,34 @@ namespace patchcraft
                    << "Do not claim you applied changes. Do not ask for API keys. Keep output preview-first.\n\n";
             if (includeContext)
                 prompt << "Project context:\n" << context.toSummaryText() << "\n\n";
+            if (context.userRequest.isNotEmpty())
+                prompt << "User request:\n" << context.userRequest << "\n\n";
+
+            if (task == AiAssistService::TaskType::GeneratePScript)
+            {
+                prompt << "PatchCraft pScript language rules:\n"
+                       << "- Output ONLY pScript source. No prose. No markdown fences.\n"
+                       << "- Valid events: when preset loads:, when note starts:, when note ends:, when modwheel moves:, when knob \"parameterId\" moves:, when timer 250 ms:\n"
+                       << "- Use exactly 4 spaces of indentation inside event blocks and if/else blocks.\n"
+                       << "- Valid statements include: let name = expr, set parameterId to expr, print expr, randomize parameterId between A and B, smooth parameterId to expr over N ms, if cond:/else:, repeat N times:\n"
+                       << "- Use value for moved knob values, velocity for note velocity, note for MIDI note number, and modwheel for 0..127 mod wheel input.\n"
+                       << "- Use mapped LO..HI -> OUTLO..OUTHI to scale values, with units like Hz, dB, %, st, ms when useful.\n"
+                       << "- Only reference parameter IDs present in Project context. Do not invent host parameters.\n"
+                       << "- Prefer small, readable scripts that compile and are safe for live performance.\n\n"
+                       << "Working pScript examples:\n"
+                       << "when note starts:\n"
+                       << "    let bright = velocity mapped 1..127 -> 1200 Hz..8500 Hz\n"
+                       << "    set filterCutoff to bright\n\n"
+                       << "when knob \"macro1\" moves:\n"
+                       << "    let wet = value mapped 0..1 -> 0 %..45 %\n"
+                       << "    set reverbMix to wet\n\n"
+                       << "when modwheel moves:\n"
+                       << "    let motion = modwheel mapped 0..127 -> 0 %..100 %\n"
+                       << "    set lfoAmount to motion\n\n"
+                       << "Baseline draft/instructions:\n" << builtInDraft << "\n";
+                return prompt;
+            }
+
             prompt << "Baseline local guidance to improve or specialize:\n" << builtInDraft << "\n\n";
             prompt << "Output format:\n"
                    << "- Start with a 1-line recommendation.\n"
@@ -237,10 +265,12 @@ namespace patchcraft
                 auto* system = new juce::DynamicObject();
                 system->setProperty ("role", "system");
                 system->setProperty ("content",
-                    "You are PatchCraft Copilot: a focused assistant for music software developers, sound designers, and instrument builders. "
-                    "You know synthesizers, sample instruments, effects, EQ, wavetables, modulation, MIDI, preset packs, and plugin UX. "
-                    "Be specific, avoid fluff, and never say you changed the project unless an explicit apply action is provided. "
-                    "If asked for Faust code, ONLY return the Faust code block without markdown tags unless explicitly asked.");
+                    task == AiAssistService::TaskType::GeneratePScript
+                        ? juce::String ("You are PatchCraft pScript Generator. Return only valid PatchCraft pScript source. No prose, no markdown, no explanations. Use only parameter IDs from the supplied project context.")
+                        : juce::String ("You are PatchCraft Copilot: a focused assistant for music software developers, sound designers, and instrument builders. "
+                                        "You know synthesizers, sample instruments, effects, EQ, wavetables, modulation, MIDI, preset packs, and plugin UX. "
+                                        "Be specific, avoid fluff, and never say you changed the project unless an explicit apply action is provided. "
+                                        "If asked for Faust code, ONLY return the Faust code block without markdown tags unless explicitly asked."));
                 messages.add (juce::var (system));
             }
             {
@@ -430,6 +460,7 @@ namespace patchcraft
         object->setProperty ("murekaApiKey", murekaApiKey);
         object->setProperty ("pluginClubEndpoint", pluginClubEndpoint);
         object->setProperty ("pluginClubApiKey", pluginClubApiKey);
+        object->setProperty ("pluginClubAccessToken", pluginClubAccessToken);
         object->setProperty ("licenseEndpoint", licenseEndpoint);
         object->setProperty ("licensePublicKey", licensePublicKey);
         
@@ -455,6 +486,7 @@ namespace patchcraft
             if (object->hasProperty ("murekaApiKey")) config.murekaApiKey = object->getProperty ("murekaApiKey").toString();
             if (object->hasProperty ("pluginClubEndpoint")) config.pluginClubEndpoint = object->getProperty ("pluginClubEndpoint").toString();
             if (object->hasProperty ("pluginClubApiKey")) config.pluginClubApiKey = object->getProperty ("pluginClubApiKey").toString();
+            if (object->hasProperty ("pluginClubAccessToken")) config.pluginClubAccessToken = object->getProperty ("pluginClubAccessToken").toString();
             if (object->hasProperty ("licenseEndpoint")) config.licenseEndpoint = object->getProperty ("licenseEndpoint").toString();
             if (object->hasProperty ("licensePublicKey")) config.licensePublicKey = object->getProperty ("licensePublicKey").toString();
             
@@ -546,6 +578,8 @@ namespace patchcraft
         lines.add ("Instrument: " + (instrumentName.isNotEmpty() ? instrumentName : juce::String ("Untitled Instrument")));
         lines.add ("Creator: " + (creator.isNotEmpty() ? creator : juce::String ("PatchCraft User")));
         lines.add ("Engine: " + engine + " | Category: " + category);
+        if (userRequest.isNotEmpty())
+            lines.add ("User request: " + userRequest);
         lines.add ("Canvas: " + canvasSummary);
         lines.add ("Layout: " + layoutSummary);
         lines.add ("Parameters: " + parameterSummary);
@@ -659,7 +693,7 @@ namespace patchcraft
     juce::String AiAssistService::runWithPrompt (TaskType t, const juce::String& userPrompt) const
     {
         ProjectContextPack context;
-        context.instrumentName = userPrompt;
+        context.instrumentName = "Untitled Instrument";
         context.creator = "PatchCraft User";
         context.engine = "sample";
         context.category = "Instrument";
@@ -669,12 +703,13 @@ namespace patchcraft
         context.dspSummary = "No DSP context supplied.";
         context.sampleSummary = "No sample context supplied.";
         context.contentSummary = "No preset/expansion context supplied.";
+        context.userRequest = userPrompt;
         return run (t, context).details;
     }
 
     AiAssistService::Suggestion AiAssistService::runWithPrompt (TaskType t, ProjectContextPack context, const juce::String& userPrompt) const
     {
-        context.instrumentName = userPrompt;
+        context.userRequest = userPrompt;
         return run (t, context);
     }
 
@@ -856,7 +891,12 @@ namespace patchcraft
             case TaskType::GenerateMidiJson:
             case TaskType::GeneratePresetBank:
             case TaskType::GeneratePScript:
-                // No local static fallback needed, it will hit the LLM.
+                if (t == TaskType::GeneratePScript)
+                {
+                    result.details =
+                        "Generate a compact pScript that satisfies the user request using only the project's parameter IDs.\n"
+                        "Return only source code. The generated script will be inserted into the pScript editor and compiled immediately.";
+                }
                 break;
         }
 

@@ -1,4 +1,5 @@
 #include "StudioMainComponent.h"
+#include "LayoutBindingHelper.h"
 #include "PatchCraftLookAndFeel.h"
 #include "TopToolbar.h"
 #include "ElementPalette.h"
@@ -8,7 +9,8 @@
 #include "LayersPanel.h"
 #include "CanvasEditor.h"
 #include "InspectorPanel.h"
-#include "BottomPanel.h"
+#include "ProjectWizardDialog.h"
+#include "ProductRecipes.h"
 #include "CanvasToolbar.h"
 #include "SettingsDialog.h"
 #include "AiImageService.h"
@@ -16,10 +18,16 @@
 #include "PatchCraftPackWriter.h"
 #include "PluginClubPublisher.h"
 #include "PresetsComponent.h"
+#include "LaunchReadiness.h"
 #include "SampleMap.h"
+#include "SampleMapEditor.h"
+#include "BottomPanel.h"
 #include "VstExportModule.h"
 #include "ScriptEditorComponent.h"
 #include "ControlNodeEditor.h"
+#include "TutorialModeOverlay.h"
+#include "PackRuntimeHost.h"
+#include "CustomerPreviewOverlay.h"
 
 #include <algorithm>
 #include <cmath>
@@ -224,8 +232,10 @@ namespace patchcraft
             return removed;
         }
 
-        static juce::String validationWarningSummary (const PatchCraftProject& project)
+        static juce::String validationWarningSummary (PatchCraftProject& project)
         {
+            project.getDspGraph().ensureAuthoredOutput();
+
             const auto issues = project.getParameters().validateReferences (
                 project.getLayout().getAll(), project.getDspGraph(), project.getPresets());
 
@@ -299,6 +309,39 @@ namespace patchcraft
                         if (auto* component = safeOwner.getComponent())
                             component->setBottomTab (BottomPanel::Page::Samples);
             });
+            return true;
+        }
+
+        static bool showLaunchReadinessIfBlocked (StudioMainComponent& owner,
+                                                  const PatchCraftProject& project,
+                                                  const juce::String& title,
+                                                  LaunchReadiness::Scope scope = LaunchReadiness::Scope::ExportPack)
+        {
+            const auto report = LaunchReadiness::evaluate (project, scope);
+            if (report.errorCount == 0)
+                return false;
+
+            juce::StringArray lines;
+            for (const auto& line : report.blockingErrors)
+                lines.add ("- " + line);
+            const auto message = "Launch Doctor found blocking issues:\n\n"
+                + lines.joinIntoString ("\n")
+                + "\n\nOpen Ship to review and fix them before exporting.";
+
+            juce::Component::SafePointer<StudioMainComponent> safeOwner (&owner);
+            juce::AlertWindow::showAsync (
+                juce::MessageBoxOptions()
+                    .withTitle (title)
+                    .withMessage (message)
+                    .withButton ("Open Ship")
+                    .withButton ("Cancel")
+                    .withIconType (juce::MessageBoxIconType::WarningIcon),
+                [safeOwner] (int result)
+                {
+                    if (result == 1)
+                        if (auto* component = safeOwner.getComponent())
+                            component->setBottomTab (BottomPanel::Page::Export);
+                });
             return true;
         }
 
@@ -606,6 +649,29 @@ namespace patchcraft
             writeStudioPreferencesObject (object);
         }
 
+        static bool readStudioTutorialModePreference (bool fallback)
+        {
+            const auto file = studioPreferencesFile();
+            if (! file.existsAsFile())
+                return fallback;
+
+            auto parsed = juce::JSON::parse (file);
+            if (auto* object = parsed.getDynamicObject())
+                if (object->hasProperty ("studioTutorialMode"))
+                    return (bool) object->getProperty ("studioTutorialMode");
+
+            return fallback;
+        }
+
+        static void writeStudioTutorialModePreference (bool enabled)
+        {
+            auto object = readStudioPreferencesObject();
+            if (object == nullptr)
+                object = new juce::DynamicObject();
+            object->setProperty ("studioTutorialMode", enabled);
+            writeStudioPreferencesObject (object);
+        }
+
         static juce::String defaultParameterForLibraryAsset (const PatchCraftProject& project,
                                                              ElementType type)
         {
@@ -644,7 +710,9 @@ namespace patchcraft
 
     bool StudioMainComponent::isPreviewActive() const
     {
-        return bottomPanel != nullptr && bottomPanel->isPreviewActive();
+        return customerPreviewActive
+            || graphAudioListen
+            || (bottomPanel != nullptr && bottomPanel->isPreviewActive());
     }
 
     const SampleZoneDef* StudioMainComponent::getSelectedSampleZone() const
@@ -652,11 +720,132 @@ namespace patchcraft
         return bottomPanel != nullptr ? bottomPanel->getSelectedSampleZone() : nullptr;
     }
 
+    void StudioMainComponent::rehomePackRuntimeToStudio()
+    {
+        if (packRuntime == nullptr)
+            return;
+
+        if (packRuntime->getParentComponent() != this)
+        {
+            if (auto* parent = packRuntime->getParentComponent())
+                parent->removeChildComponent (packRuntime.get());
+            addChildComponent (*packRuntime);
+        }
+    }
+
+    void StudioMainComponent::exitCustomerPreviewIfActive()
+    {
+        if (! customerPreviewActive)
+            return;
+
+        graphAudioListen = false;
+        customerPreviewActive = false;
+
+        if (customerPreviewOverlay != nullptr)
+            customerPreviewOverlay->exitPreview();
+
+        if (packRuntime != nullptr)
+        {
+            packRuntime->deactivate();
+            packRuntime->setVisible (false);
+            rehomePackRuntimeToStudio();
+        }
+
+        if (topToolbar != nullptr)
+            topToolbar->setPreviewActive (false, "Preview");
+        if (canvasToolbar != nullptr)
+            canvasToolbar->syncSectionTabFromOwner();
+
+        refreshPreviewUiState();
+    }
+
+    void StudioMainComponent::refreshPreviewUiState()
+    {
+        if (topToolbar == nullptr)
+            return;
+
+        const bool onStack = bottomTab == BottomPanel::Page::DSP
+                          || (bottomTab == BottomPanel::Page::Build
+                              && bottomPanel != nullptr
+                              && bottomPanel->getBuildSubPage() == BottomPanel::BuildSubPage::Stack);
+        const bool active = customerPreviewActive || graphAudioListen;
+        const juce::String idle = (onStack && ! customerPreviewActive) ? "Listen" : "Preview";
+        topToolbar->setPreviewActive (active, idle);
+    }
+
     void StudioMainComponent::setBottomTab (BottomPanel::Page p)
     {
-        if (bottomTab == p) return;
+        BottomPanel::BuildSubPage buildSub = bottomPanel != nullptr
+            ? bottomPanel->getBuildSubPage()
+            : BottomPanel::BuildSubPage::ImportSounds;
+
+        if (project.getManifest().quickBuildMode && ! advancedBuildUnlocked)
+        {
+            // Preview lives in Brand; keep Test off the primary spine.
+            if (p == BottomPanel::Page::Test)
+                p = BottomPanel::Page::Branding;
+
+            // Advanced-only destinations stay behind Advanced Build Mode.
+            if (p == BottomPanel::Page::Dashboard
+                || p == BottomPanel::Page::Widgets
+                || p == BottomPanel::Page::Animation
+                || p == BottomPanel::Page::OneShotMaker
+                || p == BottomPanel::Page::ProjectBrowser)
+            {
+                p = BottomPanel::Page::Build;
+                buildSub = BottomPanel::BuildSubPage::ImportSounds;
+            }
+
+            if (p == BottomPanel::Page::Samples)
+            {
+                buildSub = BottomPanel::BuildSubPage::ImportSounds;
+                p = BottomPanel::Page::Build;
+            }
+            else if (p == BottomPanel::Page::Chop)
+            {
+                buildSub = BottomPanel::BuildSubPage::Chop;
+                p = BottomPanel::Page::Build;
+            }
+            else if (p == BottomPanel::Page::DSP)
+            {
+                buildSub = BottomPanel::BuildSubPage::Stack;
+                p = BottomPanel::Page::Build;
+            }
+            else if (p == BottomPanel::Page::MidiPlayground || p == BottomPanel::Page::ArpStudio)
+            {
+                buildSub = BottomPanel::BuildSubPage::Perform;
+                p = BottomPanel::Page::Build;
+            }
+        }
+
+        const bool leavingPreview = customerPreviewActive;
+        exitCustomerPreviewIfActive();
+
+        if (p != BottomPanel::Page::Design && showScriptEditorInsteadOfElements)
+            closePscriptPanel();
+
+        if (bottomTab == p && ! leavingPreview
+            && (p != BottomPanel::Page::Build
+                || bottomPanel == nullptr
+                || bottomPanel->getBuildSubPage() == buildSub))
+            return;
+
+        if (p != BottomPanel::Page::DSP && graphAudioListen)
+        {
+            const bool stackBuild = p == BottomPanel::Page::Build
+                                 && buildSub == BottomPanel::BuildSubPage::Stack;
+            if (! stackBuild)
+                setGraphAudioListen (false);
+        }
+
         bottomTab = p;
-        if (bottomPanel) bottomPanel->setPage (p);
+        if (bottomPanel != nullptr)
+        {
+            if (p == BottomPanel::Page::Build)
+                bottomPanel->setBuildSubPage (buildSub);
+            else
+                bottomPanel->setPage (p);
+        }
         if (canvasToolbar) canvasToolbar->syncSectionTabFromOwner();
         if (p == BottomPanel::Page::Design
             && ! dspTutorialShownThisSession
@@ -672,6 +861,20 @@ namespace patchcraft
         }
         // Hide/show sidebar/canvas/inspector based on the new tab.
         resized();
+        refreshPreviewUiState();
+        repaint();
+    }
+
+    void StudioMainComponent::setAdvancedBuildUnlocked (bool enabled)
+    {
+        if (advancedBuildUnlocked == enabled)
+            return;
+
+        advancedBuildUnlocked = enabled;
+        if (canvasToolbar != nullptr)
+            canvasToolbar->refresh();
+        if (bottomPanel != nullptr)
+            bottomPanel->refresh();
         repaint();
     }
 
@@ -680,23 +883,69 @@ namespace patchcraft
         showSampleLibraryDrawer (! sampleLibraryDrawerOpen);
     }
 
+    void StudioMainComponent::layoutSampleLibraryInEditor (juce::Rectangle<int> areaInEditor)
+    {
+        if (assetLibraryPanel == nullptr || ! sampleLibraryDrawerOpen)
+            return;
+
+        assetLibraryPanel->setBounds (areaInEditor);
+        assetLibraryPanel->setVisible (true);
+        assetLibraryPanel->toFront (false);
+    }
+
     void StudioMainComponent::showSampleLibraryDrawer (bool shouldShow)
     {
         sampleLibraryDrawerOpen = shouldShow;
+        auto* mapper = bottomPanel != nullptr ? bottomPanel->getSampleMapper() : nullptr;
 
         if (sampleLibraryDrawerOpen)
         {
-            if (bottomTab != BottomPanel::Page::Samples)
+            // Host the Sound Library inside the Sample Editor (works for both
+            // the docked Samples tab and the floating Full mapper window).
+            if (assetLibraryPanel != nullptr && isPanelFloating (assetLibraryPanel.get()))
+                togglePanelFloat (assetLibraryPanel.get(), {});
+
+            if (! isPanelFloating (bottomPanel.get())
+                && bottomTab != BottomPanel::Page::Samples)
+            {
+                if (project.getManifest().quickBuildMode && ! advancedBuildUnlocked)
+                    setAdvancedBuildUnlocked (true);
                 setBottomTab (BottomPanel::Page::Samples);
+                mapper = bottomPanel != nullptr ? bottomPanel->getSampleMapper() : nullptr;
+            }
 
             if (assetLibraryPanel != nullptr)
             {
                 assetLibraryPanel->showSoundsLibrary();
                 assetLibraryPanel->refresh();
+
+                if (mapper != nullptr)
+                {
+                    mapper->addAndMakeVisible (*assetLibraryPanel);
+                    mapper->setLibraryDrawerOpen (true);
+                }
+                else
+                {
+                    addAndMakeVisible (*assetLibraryPanel);
+                    assetLibraryPanel->toFront (false);
+                }
+            }
+        }
+        else
+        {
+            if (mapper != nullptr)
+                mapper->setLibraryDrawerOpen (false);
+
+            if (assetLibraryPanel != nullptr)
+            {
+                addChildComponent (*assetLibraryPanel);
+                assetLibraryPanel->setVisible (false);
             }
         }
 
         resized();
+        if (mapper != nullptr)
+            mapper->resized();
         repaint();
     }
 
@@ -795,21 +1044,11 @@ namespace patchcraft
         assetLibraryPanel = std::make_unique<BuiltAssetLibraryComponent> (*this);
         expansionLibraryPanel = std::make_unique<ExpansionLibraryPanel> (*this);
         layersPanel     = std::make_unique<LayersPanel> (*this);
-        scriptEditor    = std::make_unique<ScriptEditorComponent> (project);
+        scriptEditor    = std::make_unique<ScriptEditorComponent> (*this);
         scriptEditor->onPopOut = [this] { togglePanelFloat (scriptEditor.get(), "pScript"); };
         scriptEditor->onClose = [this]
         {
-            showScriptEditorInsteadOfElements = false;
-            leftTabs.setCurrentTabIndex (0, juce::dontSendNotification);
-            if (elementPalette != nullptr)
-                elementPalette->setVisible (true);
-            if (layersPanel != nullptr)
-                layersPanel->setVisible (false);
-            if (assetLibraryPanel != nullptr)
-                assetLibraryPanel->setVisible (false);
-            if (scriptEditor != nullptr)
-                scriptEditor->setVisible (false);
-            resized();
+            closePscriptPanel();
         };
         canvasEditor    = std::make_unique<CanvasEditor> (*this);
         canvasToolbar   = std::make_unique<CanvasToolbar> (*this, *canvasEditor);
@@ -817,6 +1056,13 @@ namespace patchcraft
         inspectorViewport = std::make_unique<juce::Viewport> ("inspectorViewport");
         presetsPanel    = std::make_unique<PresetsComponent> (*this);
         bottomPanel     = std::make_unique<BottomPanel> (*this);
+        packRuntime     = std::make_unique<PackRuntimeHost> (*this);
+        addChildComponent (*packRuntime);
+        packRuntime->setVisible (false);
+
+        customerPreviewOverlay = std::make_unique<CustomerPreviewOverlay> (*this);
+        customerPreviewOverlay->onExit = [this] { toggleCustomerPreview(); };
+        addChildComponent (*customerPreviewOverlay);
 
         inspectorViewport->setViewedComponent (inspectorPanel.get(), false);
         inspectorViewport->setScrollBarsShown (true, false);
@@ -835,6 +1081,17 @@ namespace patchcraft
         addAndMakeVisible (*inspectorViewport);
         addChildComponent (*presetsPanel);
         addAndMakeVisible (*bottomPanel);
+        if (canvasToolbar != nullptr)
+            canvasToolbar->syncSectionTabFromOwner();
+
+        tutorialOverlay = std::make_unique<TutorialModeOverlay> (*this);
+        tutorialOverlay->getProperties().set ("tutorialIgnore", true);
+        const bool tutorialModeOn = readStudioTutorialModePreference (false);
+        if (tutorialModeOn)
+            addAndMakeVisible (*tutorialOverlay);
+        else
+            addChildComponent (*tutorialOverlay);
+        tutorialOverlay->setActive (tutorialModeOn);
 
         // Left tabs expose the complete authoring browser at startup.
         leftTabs.addTab ("Elements",   PatchCraftLookAndFeel::panel(), -1);
@@ -919,27 +1176,25 @@ namespace patchcraft
                 leftTabs.setCurrentTabIndex (i);
                 showLayersInsteadOfElements      = (i == 1);
                 showLibraryInsteadOfElements     = (i == 2);
+                if (i != 3 && showScriptEditorInsteadOfElements)
+                    closePscriptPanel();
                 showScriptEditorInsteadOfElements = (i == 3);
-                const bool showElements = ! showLibraryInsteadOfElements
-                                       && ! showLayersInsteadOfElements
-                                       && ! showScriptEditorInsteadOfElements;
-                elementPalette->setVisible (showElements);
+                elementPalette->setVisible ((i == 0 || i == 3) && ! leftPanelCollapsed);
                 layersPanel->setVisible (showLayersInsteadOfElements);
                 assetLibraryPanel->setVisible (showLibraryInsteadOfElements);
-                if (scriptEditor != nullptr)
-                {
-                    scriptEditor->setVisible (showScriptEditorInsteadOfElements);
-                    if (showScriptEditorInsteadOfElements)
-                        scriptEditor->refresh();
-                }
                 if (showLayersInsteadOfElements)
                     layersPanel->refresh();
+                if (showScriptEditorInsteadOfElements)
+                    focusPscriptPanel();
+                else if (canvasToolbar != nullptr)
+                    canvasToolbar->syncSectionTabFromOwner();
                 resized();
             };
         }
 
         project.addListener (this);
         project.getLiveValues().addListener (this);
+        refreshPreviewUiState();
     }
 
     StudioMainComponent::~StudioMainComponent()
@@ -1016,6 +1271,10 @@ namespace patchcraft
         topToolbar->setProjectName (project.getManifest().instrumentName,
                                     project.hasUnsavedChanges());
         bottomPanel->refresh();
+        // Debounced reload only — never force a synchronous pack rebuild from a
+        // general UI refresh (that made Brand / tab switches multi-second).
+        if (packRuntime != nullptr && ! customerPreviewActive)
+            packRuntime->requestReload();
         inspectorPanel->refresh();
         layersPanel->refresh();
         if (presetsPanel) presetsPanel->refresh();
@@ -1081,6 +1340,31 @@ namespace patchcraft
         setBottomTab (BottomPanel::Page::Design);
         const auto& canvas = project.getCanvasSize();
         canvasEditor->addModuleLayout (moduleType, { canvas.width / 2 - 140, canvas.height / 2 - 60 });
+    }
+
+    void StudioMainComponent::addModuleToCanvasAt (const juce::String& moduleType, juce::Point<int> canvasPosition)
+    {
+        if (canvasEditor == nullptr)
+            return;
+
+        setBottomTab (BottomPanel::Page::Design);
+        canvasEditor->addModuleLayout (moduleType, canvasPosition);
+    }
+
+    void StudioMainComponent::addElementToCanvasAt (ElementType type, juce::Point<int> canvasPosition, juce::String parameterId)
+    {
+        if (canvasEditor == nullptr)
+            return;
+
+        setBottomTab (BottomPanel::Page::Design);
+        canvasEditor->addElementAt (type, canvasPosition, std::move (parameterId));
+    }
+
+    void StudioMainComponent::enterDawPreviewMode()
+    {
+        setBottomTab (BottomPanel::Page::Branding);
+        if (! customerPreviewActive)
+            toggleCustomerPreview();
     }
 
     void StudioMainComponent::addLibraryAssetToCanvas (const juce::String& category, const juce::File& file,
@@ -1399,11 +1683,7 @@ namespace patchcraft
         if (titleTarget || ! logoTarget)
         {
             manifest.playerTitleBannerImage = path;
-            if (! sidecarProvidedTitleTheme
-                && (manifest.playerTitleBarTheme.isEmpty()
-                || manifest.playerTitleBarTheme == "classic"
-                || manifest.playerTitleBarTheme == "minimal"
-                || manifest.playerTitleBarTheme == "no-chrome"))
+            if (! sidecarProvidedTitleTheme)
                 manifest.playerTitleBarTheme = "custom";
             project.performLayoutEdit ("Use Player chrome title banner", [&] (LayoutModel& layout)
             {
@@ -1583,9 +1863,14 @@ namespace patchcraft
         const bool brandLabTab = (bottomTab == BottomPanel::Page::Branding);
         const bool sampleMapperTab = (bottomTab == BottomPanel::Page::Samples);
         const bool brandLibraryDocked = brandLabTab && ! libraryFloating;
-        const bool sampleLibraryDocked = sampleMapperTab && sampleLibraryDrawerOpen && ! libraryFloating;
+        // Sample library docks inside SampleMapEditor, not the main chrome.
+        const bool libraryHostedInMapper = sampleLibraryDrawerOpen
+            && assetLibraryPanel != nullptr
+            && assetLibraryPanel->getParentComponent() != this;
+        const bool sampleLibraryDocked = sampleMapperTab && sampleLibraryDrawerOpen
+            && ! libraryFloating && ! libraryHostedInMapper;
         const bool leftLayersDocked = designTab && ! leftPanelCollapsed && showLayersInsteadOfElements;
-        const bool leftScriptEditorDocked = designTab && ! leftPanelCollapsed && showScriptEditorInsteadOfElements;
+        const bool leftScriptEditorDocked = designTab && showScriptEditorInsteadOfElements;
 
         // Visibility: only Design shows sidebar / canvas / inspector.
         leftCollapseButton.setVisible (designTab);
@@ -1597,8 +1882,7 @@ namespace patchcraft
         leftCollapseButton.setVisible (designTab);
         leftPopButton.setVisible  (designTab && ! leftPanelCollapsed);
 
-        // pScript now docks across the bottom of the canvas (lower-half window),
-        // so the Elements palette stays available in the left column alongside it.
+        // pScript docks code below the canvas; Elements palette stays available on the left.
         elementPalette->setVisible (elementsFloating || (designTab && ! leftPanelCollapsed && ! showLibraryInsteadOfElements && ! showLayersInsteadOfElements));
         assetLibraryPanel->setVisible (libraryFloating || brandLibraryDocked || sampleLibraryDocked || (designTab && ! leftPanelCollapsed && showLibraryInsteadOfElements));
         expansionLibraryPanel->setVisible (packsFloating);
@@ -1618,9 +1902,24 @@ namespace patchcraft
 
         if (designTab)
         {
-            // Bottom panel takes ~25% as in the original layout.
-            const int bottomH = juce::jmax (210, r.getHeight() / 4);
-            bottomPanel->setBounds (r.removeFromBottom (bottomH));
+            const bool scriptDockOpen = showScriptEditorInsteadOfElements
+                                     && scriptEditor != nullptr
+                                     && ! isPanelFloating (scriptEditor.get());
+            juce::Rectangle<int> scriptDockArea;
+            if (scriptDockOpen)
+            {
+                const int normalBottomH = juce::jmax (210, r.getHeight() / 4);
+                const int dockH = juce::jmax (normalBottomH,
+                                              juce::roundToInt ((float) r.getHeight() * 0.42f));
+                scriptDockArea = r.removeFromBottom (dockH);
+                bottomPanel->setVisible (false);
+            }
+            else
+            {
+                const int bottomH = juce::jmax (210, r.getHeight() / 4);
+                bottomPanel->setVisible (true);
+                bottomPanel->setBounds (r.removeFromBottom (bottomH));
+            }
 
             leftPanelWidth = juce::jlimit (180, juce::jmax (180, getWidth() / 2), leftPanelWidth);
             inspectorPanelWidth = juce::jlimit (220, juce::jmax (220, getWidth() / 2), inspectorPanelWidth);
@@ -1671,7 +1970,7 @@ namespace patchcraft
                 {
                     inspectorViewport->setBounds (rightCol);
                     inspectorPanel->setSize (juce::jmax (1, rightCol.getWidth() - 10),
-                                             juce::jmax (rightCol.getHeight(), 2200));
+                                             juce::jmax (rightCol.getHeight(), 900));
                 }
                 if (! layersFloating && ! leftLayersDocked)
                     layersPanel->setBounds (rightCol);
@@ -1680,17 +1979,19 @@ namespace patchcraft
                 rightResizeHandle = r.removeFromRight (5);
             }
 
-            // pScript editor docks as a resizable lower-half panel below the canvas.
+            // pScript docks under the Design canvas — keep editing the layout,
+            // not a live Player takeover of the workspace.
             if (scriptEditor != nullptr && leftScriptEditorDocked && ! isPanelFloating (scriptEditor.get()))
             {
-                const int dockH = juce::jlimit (200, juce::jmax (200, r.getHeight() - 140),
-                                                juce::roundToInt (r.getHeight() * 0.5f));
-                auto dock = r.removeFromBottom (dockH);
-                scriptEditor->setBounds (dock);
+                scriptEditor->setBounds (scriptDockArea);
+                scriptEditor->toFront (false);
             }
 
+            canvasEditor->setVisible (designTab);
             canvasEditor->setBounds (r);
             canvasEditor->refreshZoomForBounds();
+            if (packRuntime != nullptr && ! customerPreviewActive && ! graphAudioListen)
+                packRuntime->setVisible (false);
         }
         else
         {
@@ -1703,10 +2004,70 @@ namespace patchcraft
                 assetLibraryPanel->setBounds (libraryCol);
             }
             // Non-Design tabs: bottom panel grows to fill the entire workspace.
+            bottomPanel->setVisible (true);
             bottomPanel->setBounds (r);
+
+            if (packRuntime != nullptr && ! customerPreviewActive && ! graphAudioListen
+                && bottomTab != BottomPanel::Page::Branding)
+            {
+                packRuntime->setVisible (false);
+                rehomePackRuntimeToStudio();
+            }
         }
 
-        canvasToolbar->refresh();
+        if (tutorialOverlay != nullptr)
+        {
+            tutorialOverlay->setBounds (getLocalBounds());
+            if (tutorialOverlay->isActive())
+                tutorialOverlay->toFront (false);
+        }
+
+        if (customerPreviewOverlay != nullptr)
+        {
+            customerPreviewOverlay->setBounds (getLocalBounds());
+            customerPreviewOverlay->setVisible (customerPreviewActive);
+            if (customerPreviewActive)
+            {
+                customerPreviewOverlay->toFront (true);
+                customerPreviewOverlay->grabKeyboardFocus();
+            }
+        }
+
+        canvasToolbar->syncSectionTabFromOwner();
+    }
+
+    void StudioMainComponent::setGraphAudioListen (bool active)
+    {
+        if (graphAudioListen == active)
+            return;
+
+        graphAudioListen = active;
+
+        if (active)
+        {
+            if (customerPreviewActive)
+                toggleCustomerPreview();
+            if (bottomPanel != nullptr)
+                bottomPanel->setPreviewActive (false);
+            if (packRuntime != nullptr)
+                packRuntime->activate();
+        }
+        else if (! customerPreviewActive && packRuntime != nullptr)
+        {
+            if (bottomTab != BottomPanel::Page::Branding)
+            {
+                packRuntime->deactivate();
+                packRuntime->setVisible (false);
+                rehomePackRuntimeToStudio();
+            }
+        }
+
+        if (bottomPanel != nullptr && bottomTab == BottomPanel::Page::DSP)
+            bottomPanel->refresh();
+
+        resized();
+        refreshPreviewUiState();
+        repaint();
     }
 
     juce::StringArray StudioMainComponent::getMenuBarNames()
@@ -1720,6 +2081,7 @@ namespace patchcraft
         if (menuName == "File")
         {
             menu.addItem (1001, "New Project");
+            menu.addItem (1013, "New Sample Chopper Project...");
             menu.addItem (1002, "Open Project...");
             menu.addItem (1024, "Project Browser...");
 
@@ -1771,6 +2133,8 @@ namespace patchcraft
             const bool canDistribute = selectedCount >= 3;
             bool canDetachLabels = false;
             bool canCreatePscriptHandler = false;
+            bool canAttachPscriptFile = false;
+            bool canDetachPscript = false;
             for (const auto& id : selectedElementIds)
                 if (auto* el = project.getLayout().find (id))
                 {
@@ -1785,12 +2149,24 @@ namespace patchcraft
                         && project.getParameters().find (el->parameterId) != nullptr)
                     {
                         canCreatePscriptHandler = true;
+                        canAttachPscriptFile = true;
                     }
+                    if (el->pscriptFile.isNotEmpty())
+                        canDetachPscript = true;
                 }
 
             menu.addItem (2998, "Undo", project.canUndo());
             menu.addItem (2999, "Redo", project.canRedo());
             menu.addSeparator();
+
+            juce::PopupMenu scriptMenu;
+            scriptMenu.addItem (3101, "Open pScript Editor", true);
+            scriptMenu.addItem (3100, "Create pScript Handler For Selected Control", canCreatePscriptHandler);
+            scriptMenu.addItem (3102, "Attach pScript File...", canAttachPscriptFile);
+            scriptMenu.addItem (3103, "Detach pScript From Selection", canDetachPscript);
+            menu.addSubMenu ("pScript", scriptMenu, canCreatePscriptHandler || canAttachPscriptFile || canDetachPscript || hasSelection);
+            menu.addSeparator();
+
             menu.addItem (3003, "Copy Selection", hasSelection);
             menu.addItem (3004, "Copy Selection Without Parameters", hasSelection);
             menu.addItem (3005, "Paste Elements", hasCopiedElements());
@@ -1855,10 +2231,6 @@ namespace patchcraft
             labelMenu.addItem (3092, "Show Labels For Selection", hasSelection);
             menu.addSubMenu ("Labels", labelMenu);
 
-            juce::PopupMenu scriptMenu;
-            scriptMenu.addItem (3100, "Create pScript Handler For Selected Control", canCreatePscriptHandler);
-            menu.addSubMenu ("pScript", scriptMenu);
-
             juce::PopupMenu styleMenu;
             styleMenu.addItem (3080, "Copy Style From Primary Selection", hasSelection);
             styleMenu.addItem (3081, "Paste Style To Selection", hasSelection && hasCopiedDesignStyle);
@@ -1911,6 +2283,24 @@ namespace patchcraft
             menu.addSeparator();
             menu.addItem (4012, "Reset Canvas To Blank", true);
             menu.addSeparator();
+            menu.addItem (4020,
+                          bottomTab == BottomPanel::Page::DSP ? "Listen" : "Preview",
+                          true,
+                          isPreviewActive());
+            menu.addSeparator();
+            menu.addItem (4015, "Advanced Build Mode", true, advancedBuildUnlocked);
+            menu.addSeparator();
+            juce::PopupMenu advancedMenu;
+            advancedMenu.addItem (4021, "One-Shot Maker");
+            advancedMenu.addItem (4022, "Widget Builder");
+            advancedMenu.addItem (4023, "Animation Lab");
+            advancedMenu.addItem (4029, "Graph / Sound Stack");
+            advancedMenu.addItem (4013, "Full Sample Mapper");
+            advancedMenu.addItem (4030, "Keyboard Test Page");
+            advancedMenu.addItem (4024, "Project Dashboard");
+            advancedMenu.addItem (4025, "Project Browser");
+            menu.addSubMenu ("Advanced Tools", advancedMenu);
+            menu.addSeparator();
             menu.addItem (4001, "Hide All Windows");
             menu.addItem (4002, "Show Main Windows");
             menu.addItem (4003, "Dock All Floating Windows", ! floatingPanels.empty());
@@ -1918,19 +2308,14 @@ namespace patchcraft
             menu.addItem (4004, "Toggle Left Panel", bottomTab == BottomPanel::Page::Design);
             menu.addItem (4005, "Toggle Right Panel", bottomTab == BottomPanel::Page::Design);
             menu.addSeparator();
-            menu.addItem (4006, "Go To Dashboard");
+            menu.addItem (4028, "Go To Sounds");
             menu.addItem (4007, "Go To Design");
-            menu.addItem (4008, "Go To ArpLane Lab");
-            menu.addItem (4009, "Go To DSP Builder");
-            menu.addItem (4010, "Go To Animation Lab");
-            menu.addItem (4011, "Go To Launch");
-            menu.addItem (4014, "Go To Expansions");
-            menu.addItem (4013, "Full Screen Sample Mapper Zones");
+            menu.addItem (4027, "Go To Brand");
+            menu.addItem (4011, "Go To Ship");
         }
         else if (menuName == "Store")
         {
             menu.addItem (5000, "PatchCraft Expansions...");
-            menu.addItem (5001, "Open Plugin.club...");
             menu.addSeparator();
             menu.addItem (5002, "Browse Marketplace Packs...", false);
             menu.addItem (5003, "Import Purchased Pack...", false);
@@ -1939,6 +2324,7 @@ namespace patchcraft
         {
             menu.addItem (2001, "DSP Builder Tutorial...");
             menu.addItem (2003, "Auto-Show Tutorials", true, getStudioTutorialsEnabled());
+            menu.addItem (2005, "Tutorial Mode", true, getTutorialModeEnabled());
             menu.addSeparator();
             menu.addItem (2002, "Show Help Tooltips", true, project.getManifest().playerShowParameterGuidance);
         }
@@ -1950,6 +2336,7 @@ namespace patchcraft
         switch (menuItemID)
         {
             case 1001: newProject(); break;
+            case 1013: newSampleChopperProject(); break;
             case 1002: openProject(); break;
             case 1003: saveProject(); break;
             case 1004: saveProjectAs(); break;
@@ -2023,6 +2410,9 @@ namespace patchcraft
             case 3091: setSelectedLabelVisibility (false); break;
             case 3092: setSelectedLabelVisibility (true); break;
             case 3100: createPscriptHandlerForSelectedControl(); break;
+            case 3101: focusPscriptPanel(); break;
+            case 3102: attachPscriptFileToSelectedControl(); break;
+            case 3103: detachPscriptFromSelectedControl(); break;
             case 3080: copySelectedDesignStyle(); break;
             case 3081: pasteDesignStyle(); break;
             case 3082: applyDesignStylePreset ("glass"); break;
@@ -2046,14 +2436,55 @@ namespace patchcraft
                 resized();
                 repaint();
                 break;
+            case 4020: togglePreview(); break;
+            case 4015:
+                setAdvancedBuildUnlocked (! advancedBuildUnlocked);
+                break;
+            case 4021:
+                setAdvancedBuildUnlocked (true);
+                setBottomTab (BottomPanel::Page::OneShotMaker);
+                break;
+            case 4022:
+                setAdvancedBuildUnlocked (true);
+                setBottomTab (BottomPanel::Page::Widgets);
+                break;
+            case 4023:
+                setAdvancedBuildUnlocked (true);
+                setBottomTab (BottomPanel::Page::Animation);
+                break;
+            case 4024:
+                setAdvancedBuildUnlocked (true);
+                setBottomTab (BottomPanel::Page::Dashboard);
+                break;
+            case 4025:
+                setAdvancedBuildUnlocked (true);
+                setBottomTab (BottomPanel::Page::ProjectBrowser);
+                break;
+            case 4026:
+                setAdvancedBuildUnlocked (true);
+                setBottomTab (BottomPanel::Page::Samples);
+                break;
+            case 4027: setBottomTab (BottomPanel::Page::Branding); break;
+            case 4028: setBottomTab (BottomPanel::Page::Build); break;
+            case 4029:
+                setAdvancedBuildUnlocked (true);
+                setBottomTab (BottomPanel::Page::DSP);
+                break;
+            case 4030:
+                setAdvancedBuildUnlocked (true);
+                setBottomTab (BottomPanel::Page::Test);
+                break;
             case 4006: setBottomTab (BottomPanel::Page::Dashboard); break;
             case 4007: setBottomTab (BottomPanel::Page::Design); break;
-            case 4008: setBottomTab (BottomPanel::Page::ArpStudio); break;
-            case 4009: setBottomTab (BottomPanel::Page::Design); break;
+            case 4008: setBottomTab (BottomPanel::Page::MidiPlayground); break;
+            case 4009: setBottomTab (BottomPanel::Page::DSP); break;
             case 4010: setBottomTab (BottomPanel::Page::Animation); break;
             case 4011: setBottomTab (BottomPanel::Page::Export); break;
             case 4014: setBottomTab (BottomPanel::Page::Expansions); break;
-            case 4013: openSampleMapperZoneManager(); break;
+            case 4013:
+                setAdvancedBuildUnlocked (true);
+                openSampleMapperZoneManager();
+                break;
             case 4012:
                 project.resetCanvasToBlank();
                 clearSelection();
@@ -2064,6 +2495,9 @@ namespace patchcraft
             case 2002: toggleHelpTooltips(); break;
             case 2003:
                 setStudioTutorialsEnabled (! getStudioTutorialsEnabled());
+                break;
+            case 2005:
+                setTutorialModeEnabled (! getTutorialModeEnabled());
                 break;
             case 1011: restoreAllPresets(); break;
             case 1012: setDefaultPreset(); break;
@@ -2109,6 +2543,34 @@ namespace patchcraft
         project.getManifest().studioShowTutorials = enabled;
         writeStudioTutorialPreference (enabled);
         project.notifyChanged();
+        menuBar.repaint();
+    }
+
+    bool StudioMainComponent::getTutorialModeEnabled() const
+    {
+        return tutorialOverlay != nullptr && tutorialOverlay->isActive();
+    }
+
+    void StudioMainComponent::setTutorialModeEnabled (bool enabled)
+    {
+        writeStudioTutorialModePreference (enabled);
+        if (tutorialOverlay == nullptr)
+            return;
+
+        if (enabled)
+            addAndMakeVisible (*tutorialOverlay);
+        else
+        {
+            tutorialOverlay->setActive (false);
+            removeChildComponent (tutorialOverlay.get());
+            addChildComponent (*tutorialOverlay);
+            menuBar.repaint();
+            return;
+        }
+
+        tutorialOverlay->setActive (enabled);
+        tutorialOverlay->setBounds (getLocalBounds());
+        tutorialOverlay->toFront (false);
         menuBar.repaint();
     }
 
@@ -2159,11 +2621,182 @@ namespace patchcraft
     // -------------------------------------------------------------------------
     void StudioMainComponent::newProject()
     {
-        project.resetToDefaultInstrument();
-        project.resetCanvasToBlank();
+        juce::Component::SafePointer<StudioMainComponent> self (this);
+        ProjectWizardDialog::show (this, [self] (ProductKind kind)
+        {
+            if (auto* component = self.getComponent())
+                component->createProductProject (kind);
+        });
+    }
+
+    void StudioMainComponent::createProductProject (ProductKind kind)
+    {
+        createProductFromTemplate (defaultTemplateForKind (kind));
+    }
+
+    void StudioMainComponent::createProductFromTemplate (const juce::String& templateId)
+    {
+        const auto spec = templateSpecFor (templateId);
+        applyProductTemplate (project, templateId);
+
         selectedElementId.clear();
         selectedElementIds.clear();
+
+        if (canvasEditor != nullptr && spec.layoutModuleId.isNotEmpty())
+        {
+            project.resetCanvasToBlank();
+            const auto& canvas = project.getCanvasSize();
+            canvasEditor->addModuleLayout (spec.layoutModuleId,
+                                           { canvas.width / 2 - 430, canvas.height / 2 - 235 });
+        }
+
+        applyTemplateLiveDefaults (project, templateId);
         project.notifyChanged();
+        refreshAllPanels();
+        syncExportPreview();
+
+        const auto sub = spec.showChopStep
+            ? BottomPanel::BuildSubPage::Chop
+            : BottomPanel::BuildSubPage::ImportSounds;
+        if (bottomPanel != nullptr)
+            bottomPanel->setBuildSubPage (sub);
+
+        bottomTab = BottomPanel::Page::Build;
+        if (canvasToolbar != nullptr)
+            canvasToolbar->syncSectionTabFromOwner();
+        resized();
+        refreshPreviewUiState();
+    }
+
+    void StudioMainComponent::showMultiLayerSetupWizard()
+    {
+        if (! project.getProjectFolder().isDirectory())
+        {
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                                    "Save Project First",
+                                                    "Save this project before creating a multi-layer rack so PatchCraft can write layer map files beside the project.");
+            return;
+        }
+
+        if (project.getSampleMap().getZones().empty())
+        {
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                                    "Import Samples First",
+                                                    "Multi-layer export needs at least one mapped sample zone. Import or map samples, then run Layer Rack again.");
+            return;
+        }
+
+        auto* alert = new juce::AlertWindow ("Multi-Layer Instrument",
+                                             "Create a two-layer Player rack from the current sample map. You can edit the generated layer JSON files later for separate maps.",
+                                             juce::MessageBoxIconType::QuestionIcon);
+        alert->addTextEditor ("layer1", "Layer 1", "Layer 1 name:");
+        alert->addTextEditor ("layer2", "Layer 2", "Layer 2 name:");
+        alert->addTextEditor ("vol1", "1.0", "Layer 1 volume:");
+        alert->addTextEditor ("vol2", "0.8", "Layer 2 volume:");
+        alert->addTextEditor ("pan1", "-0.10", "Layer 1 pan:");
+        alert->addTextEditor ("pan2", "0.10", "Layer 2 pan:");
+        alert->addButton ("Create Rack", 1, juce::KeyPress (juce::KeyPress::returnKey));
+        alert->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+        juce::Component::SafePointer<StudioMainComponent> safeThis (this);
+        alert->enterModalState (true,
+            juce::ModalCallbackFunction::create ([safeThis, alert] (int result)
+            {
+                const auto layer1Name = alert->getTextEditorContents ("layer1").trim();
+                const auto layer2Name = alert->getTextEditorContents ("layer2").trim();
+                const auto layer1Vol = alert->getTextEditorContents ("vol1").getFloatValue();
+                const auto layer2Vol = alert->getTextEditorContents ("vol2").getFloatValue();
+                const auto layer1Pan = alert->getTextEditorContents ("pan1").getFloatValue();
+                const auto layer2Pan = alert->getTextEditorContents ("pan2").getFloatValue();
+                std::unique_ptr<juce::AlertWindow> owned (alert);
+
+                if (result != 1)
+                    return;
+
+                if (auto* self = safeThis.getComponent())
+                {
+                    auto& project = self->project;
+                    const auto layerFolder = project.getProjectFolder().getChildFile ("layers");
+                    if (! layerFolder.createDirectory())
+                    {
+                        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                                                "Layer Rack Not Created",
+                                                                "Could not create:\n" + layerFolder.getFullPathName());
+                        return;
+                    }
+
+                    const auto layerMapJson = juce::JSON::toString (project.getSampleMap().toVar(), true);
+                    const auto layer1File = layerFolder.getChildFile ("layer_1.json");
+                    const auto layer2File = layerFolder.getChildFile ("layer_2.json");
+                    if (! layer1File.replaceWithText (layerMapJson) || ! layer2File.replaceWithText (layerMapJson))
+                    {
+                        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                                                "Layer Rack Not Created",
+                                                                "Could not write layer map files in:\n" + layerFolder.getFullPathName());
+                        return;
+                    }
+
+                    auto& manifest = project.getManifest();
+                    manifest.engine = "multi";
+                    manifest.multiInstrumentMode = true;
+                    manifest.category = "Multi-Layer Instrument";
+                    manifest.productRecipeId = "multi_layer_rack";
+                    manifest.productKindLabel = "Multi-Layer Instrument";
+                    manifest.instrumentIds.clear();
+                    manifest.instrumentNames.clear();
+                    manifest.instrumentFiles.clear();
+                    manifest.instrumentVolumes.clear();
+                    manifest.instrumentPans.clear();
+                    manifest.instrumentMidiChannels.clear();
+                    manifest.instrumentOutputRoutes.clear();
+                    manifest.instrumentTransposeSemitones.clear();
+                    manifest.instrumentEnabled.clear();
+                    manifest.instrumentAutoPlay.clear();
+                    manifest.instrumentAutoPlayNotes.clear();
+                    manifest.instrumentAutoPlayVelocities.clear();
+
+                    manifest.instrumentIds.add ("layer_1");
+                    manifest.instrumentIds.add ("layer_2");
+                    manifest.instrumentNames.add (layer1Name.isNotEmpty() ? layer1Name : "Layer 1");
+                    manifest.instrumentNames.add (layer2Name.isNotEmpty() ? layer2Name : "Layer 2");
+                    manifest.instrumentFiles.add ("layers/layer_1.json");
+                    manifest.instrumentFiles.add ("layers/layer_2.json");
+                    manifest.instrumentVolumes.add (juce::jlimit (0.0f, 2.0f, layer1Vol));
+                    manifest.instrumentVolumes.add (juce::jlimit (0.0f, 2.0f, layer2Vol));
+                    manifest.instrumentPans.add (juce::jlimit (-1.0f, 1.0f, layer1Pan));
+                    manifest.instrumentPans.add (juce::jlimit (-1.0f, 1.0f, layer2Pan));
+                    manifest.instrumentMidiChannels.add (0);
+                    manifest.instrumentMidiChannels.add (0);
+                    manifest.instrumentOutputRoutes.add (0);
+                    manifest.instrumentOutputRoutes.add (0);
+                    manifest.instrumentTransposeSemitones.add (0);
+                    manifest.instrumentTransposeSemitones.add (0);
+                    manifest.instrumentEnabled.add (1);
+                    manifest.instrumentEnabled.add (1);
+                    manifest.instrumentAutoPlay.add (0);
+                    manifest.instrumentAutoPlay.add (0);
+                    manifest.instrumentAutoPlayNotes.add (60);
+                    manifest.instrumentAutoPlayNotes.add (60);
+                    manifest.instrumentAutoPlayVelocities.add (1.0f);
+                    manifest.instrumentAutoPlayVelocities.add (1.0f);
+                    manifest.tags.addIfNotAlreadyThere ("multi-layer");
+
+                    project.notifyChanged();
+                    self->refreshAllPanels();
+                    self->syncExportPreview();
+
+                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon,
+                                                            "Layer Rack Created",
+                                                            "This project is now set up as a two-layer multi-instrument pack.");
+                }
+            }), true);
+    }
+
+    void StudioMainComponent::syncExportPreview()
+    {
+        if (packRuntime != nullptr)
+            packRuntime->requestReloadImmediate();
+        refreshAllPanels();
     }
 
     void StudioMainComponent::loadArpStepSequencerTemplate()
@@ -2173,6 +2806,11 @@ namespace patchcraft
         selectedElementIds.clear();
         refreshAllPanels();
         setBottomTab (BottomPanel::Page::Design);
+    }
+
+    void StudioMainComponent::newSampleChopperProject()
+    {
+        createProductProject (ProductKind::LoopChopInstrument);
     }
 
     void StudioMainComponent::openProject()
@@ -2243,6 +2881,8 @@ namespace patchcraft
         selectedElementId.clear();
         selectedElementIds.clear();
         assets.clear();
+        sanitiseLayoutParameterReferences (project);
+        syncDspGraphValuesToLiveStore (project);
         addRecentProject (folder);
         project.notifyChanged();
         refreshAllPanels();
@@ -2716,17 +3356,38 @@ namespace patchcraft
             });
     }
 
-    void StudioMainComponent::importSamples()
+    void StudioMainComponent::importSamples (std::function<void (bool imported)> onComplete)
     {
         auto chooser = std::make_shared<juce::FileChooser> (
             "Import samples", juce::File(), "*.wav;*.aif;*.aiff;*.flac");
+        auto completion = std::make_shared<std::function<void (bool imported)>> (std::move (onComplete));
         chooser->launchAsync (juce::FileBrowserComponent::openMode
                               | juce::FileBrowserComponent::canSelectMultipleItems
                               | juce::FileBrowserComponent::canSelectFiles,
-            [this, chooser] (const juce::FileChooser& fc)
+            [this, chooser, completion] (const juce::FileChooser& fc)
             {
-                importSampleFiles (fc.getResults());
+                const auto results = fc.getResults();
+                if (results.isEmpty())
+                {
+                    if (completion != nullptr && *completion)
+                        (*completion) (false);
+                    return;
+                }
+
+                importSampleFiles (results, false, true, "keyboard", 36, 0);
+                if (packRuntime != nullptr && graphAudioListen)
+                    packRuntime->requestReloadImmediate();
+
+                if (completion != nullptr && *completion)
+                    (*completion) (true);
             });
+    }
+
+    void StudioMainComponent::openSoundMapperForChopZone (int zoneIndex)
+    {
+        setBottomTab (BottomPanel::Page::Samples);
+        if (bottomPanel != nullptr && zoneIndex >= 0)
+            bottomPanel->selectSampleZone (zoneIndex);
     }
 
     void StudioMainComponent::importSampleFiles (const juce::Array<juce::File>& files,
@@ -2842,8 +3503,8 @@ namespace patchcraft
                     : juce::jlimit (0, 127, targetNote + (keyboardMode ? i : 0));
 
                 zone.rootNote = note;
-                zone.lowNote = keyboardMode && ! zoneMode ? note : note;
-                zone.highNote = keyboardMode && ! zoneMode ? note : note;
+                zone.lowNote = keyboardMode && ! zoneMode ? 0 : note;
+                zone.highNote = keyboardMode && ! zoneMode ? 127 : note;
                 zone.lowVelocity = 1;
                 zone.highVelocity = 127;
                 zone.oneShot = padMode || zoneMode;
@@ -4011,6 +4672,15 @@ namespace patchcraft
                     el->height = juce::jmax (1, juce::roundToInt (scaledHeight));
                     el->x = juce::roundToInt (scaledCentreX - (float) el->width * 0.5f);
                     el->y = juce::roundToInt (scaledCentreY - (float) el->height * 0.5f);
+
+                    if (el->labelSize > 0.0f)
+                        el->labelSize = juce::jmax (6.0f, el->labelSize * scaleY);
+                    el->labelSpacing *= scaleY;
+                    el->labelOffsetX *= scaleX;
+                    el->labelOffsetY *= scaleY;
+                    el->contentPadding *= juce::jmax (scaleX, scaleY);
+                    el->cornerRadius = juce::jmax (0.0f, el->cornerRadius * juce::jmax (scaleX, scaleY));
+                    el->strokeWidth = juce::jmax (0.0f, el->strokeWidth * juce::jmax (scaleX, scaleY));
                 }
             }
         });
@@ -4127,17 +4797,18 @@ namespace patchcraft
 
     void StudioMainComponent::focusPscriptPanel()
     {
+        exitCustomerPreviewIfActive();
+
         if (bottomTab != BottomPanel::Page::Design)
             setBottomTab (BottomPanel::Page::Design);
 
-        leftPanelCollapsed = false;
-        leftTabs.setCurrentTabIndex (3, juce::dontSendNotification);
         showLayersInsteadOfElements = false;
         showLibraryInsteadOfElements = false;
         showScriptEditorInsteadOfElements = true;
+        leftTabs.setCurrentTabIndex (3, juce::dontSendNotification);
 
         if (elementPalette != nullptr)
-            elementPalette->setVisible (false);
+            elementPalette->setVisible (! leftPanelCollapsed);
         if (layersPanel != nullptr)
             layersPanel->setVisible (false);
         if (assetLibraryPanel != nullptr)
@@ -4147,9 +4818,59 @@ namespace patchcraft
             scriptEditor->setVisible (true);
             scriptEditor->refresh();
         }
+        if (inspectorPanel != nullptr)
+        {
+            inspectorPanel->refreshPscriptHelpers();
+            inspectorPanel->refresh();
+        }
+
+        if (canvasToolbar != nullptr)
+            canvasToolbar->syncSectionTabFromOwner();
 
         resized();
         repaint();
+    }
+
+    void StudioMainComponent::closePscriptPanel()
+    {
+        if (! showScriptEditorInsteadOfElements)
+            return;
+
+        showScriptEditorInsteadOfElements = false;
+
+        if (leftTabs.getCurrentTabIndex() == 3)
+            leftTabs.setCurrentTabIndex (0, juce::dontSendNotification);
+
+        if (scriptEditor != nullptr)
+            scriptEditor->setVisible (false);
+
+        if (elementPalette != nullptr)
+            elementPalette->setVisible (! leftPanelCollapsed);
+
+        if (packRuntime != nullptr && ! customerPreviewActive && ! graphAudioListen)
+        {
+            packRuntime->setVisible (false);
+            rehomePackRuntimeToStudio();
+        }
+
+        if (inspectorPanel != nullptr)
+            inspectorPanel->refresh();
+
+        if (canvasToolbar != nullptr)
+            canvasToolbar->syncSectionTabFromOwner();
+
+        resized();
+        repaint();
+    }
+
+    bool StudioMainComponent::keyPressed (const juce::KeyPress& key)
+    {
+        if (customerPreviewActive && key == juce::KeyPress::escapeKey)
+        {
+            toggleCustomerPreview();
+            return true;
+        }
+        return juce::Component::keyPressed (key);
     }
 
     void StudioMainComponent::createPscriptHandlerForSelectedControl()
@@ -4192,6 +4913,112 @@ namespace patchcraft
         focusPscriptPanel();
         if (scriptEditor != nullptr)
             scriptEditor->insertSnippetAndCompile (combined);
+    }
+
+    bool StudioMainComponent::attachPscriptFileToElement (const juce::String& elementId, const juce::File& file)
+    {
+        juce::String error;
+        if (! project.attachPscriptFileToElement (elementId, file, error))
+        {
+            juce::AlertWindow::showMessageBoxAsync (
+                juce::AlertWindow::WarningIcon,
+                "Could not attach pScript",
+                error);
+            return false;
+        }
+
+        setSelectedElementId (elementId);
+        focusPscriptPanel();
+        if (scriptEditor != nullptr)
+            scriptEditor->refresh();
+        if (inspectorPanel != nullptr)
+            inspectorPanel->refresh();
+
+        if (auto* element = project.getLayout().find (elementId))
+        {
+            const auto label = element->label.isNotEmpty() ? element->label : element->parameterId;
+            juce::AlertWindow::showMessageBoxAsync (
+                juce::AlertWindow::InfoIcon,
+                "pScript attached",
+                "Attached \"" + file.getFileName() + "\" to " + label + ".\n"
+                "Export the pack to share this behaviour with other PatchCraft users.");
+        }
+        return true;
+    }
+
+    bool StudioMainComponent::attachPscriptFileAt (const juce::File& file, juce::Point<int> canvasLocalPos)
+    {
+        if (canvasEditor == nullptr)
+            return false;
+
+        const auto* control = canvasEditor->scriptableControlAt (canvasLocalPos);
+        if (control == nullptr)
+        {
+            juce::AlertWindow::showMessageBoxAsync (
+                juce::AlertWindow::WarningIcon,
+                "Drop pScript on a control",
+                "Drop the .pscript file onto a knob, slider, button, dropdown, or other control that is assigned to a real parameter.");
+            return false;
+        }
+
+        return attachPscriptFileToElement (control->id, file);
+    }
+
+    void StudioMainComponent::attachPscriptFileToSelectedControl()
+    {
+        if (selectedElementId.isEmpty())
+        {
+            juce::AlertWindow::showMessageBoxAsync (
+                juce::AlertWindow::WarningIcon,
+                "Select a control",
+                "Select a mapped knob, slider, button, or dropdown, then attach a pScript file.");
+            return;
+        }
+
+        auto* element = project.getLayout().find (selectedElementId);
+        if (element == nullptr || element->parameterId.isEmpty())
+        {
+            juce::AlertWindow::showMessageBoxAsync (
+                juce::AlertWindow::WarningIcon,
+                "Control needs a parameter",
+                "Assign this control to a parameter before attaching pScript.");
+            return;
+        }
+
+        auto chooser = std::make_shared<juce::FileChooser> (
+            "Attach pScript file",
+            juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+            "*.pscript;*.psc;*.txt");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode
+                              | juce::FileBrowserComponent::canSelectFiles,
+            [this, chooser, elementId = selectedElementId] (const juce::FileChooser& fc)
+            {
+                const auto file = fc.getResult();
+                if (file == juce::File())
+                    return;
+                attachPscriptFileToElement (elementId, file);
+            });
+    }
+
+    void StudioMainComponent::detachPscriptFromSelectedControl()
+    {
+        if (selectedElementId.isEmpty())
+            return;
+
+        juce::String error;
+        if (! project.detachPscriptFromElement (selectedElementId, error))
+        {
+            juce::AlertWindow::showMessageBoxAsync (
+                juce::AlertWindow::WarningIcon,
+                "Could not detach pScript",
+                error);
+            return;
+        }
+
+        if (scriptEditor != nullptr)
+            scriptEditor->refresh();
+        if (inspectorPanel != nullptr)
+            inspectorPanel->refresh();
     }
 
     namespace
@@ -4529,13 +5356,71 @@ namespace patchcraft
         repaint();
     }
 
+    void StudioMainComponent::toggleCustomerPreview()
+    {
+        if (packRuntime == nullptr || customerPreviewOverlay == nullptr)
+            return;
+
+        if (customerPreviewActive)
+        {
+            exitCustomerPreviewIfActive();
+            if (bottomPanel != nullptr)
+                bottomPanel->refresh();
+            resized();
+            refreshPreviewUiState();
+            repaint();
+            return;
+        }
+
+        closePscriptPanel();
+
+        if (bottomPanel != nullptr)
+            bottomPanel->setPreviewActive (false);
+
+        graphAudioListen = false;
+        customerPreviewActive = true;
+        customerPreviewOverlay->enterPreview();
+        refreshCanvasToolbar();
+        resized();
+        refreshPreviewUiState();
+        repaint();
+    }
+
+    void StudioMainComponent::attachPackRuntimePreview (juce::Component* parent, juce::Rectangle<int> area)
+    {
+        if (packRuntime == nullptr || customerPreviewActive || parent == nullptr)
+            return;
+
+        if (area.isEmpty())
+            return;
+
+        packRuntime->setPlayerChromeVisible (true);
+        packRuntime->attachToParent (parent, area);
+        packRuntime->setVisible (true);
+        packRuntime->toFront (false);
+
+        // Layout passes (including maximize) must not sync-rebuild the pack.
+        // Soft-activate on the next message tick if audio isn't running yet.
+        if (bottomTab == BottomPanel::Page::Branding && ! packRuntime->isAudioRunning())
+        {
+            juce::Component::SafePointer<PackRuntimeHost> runtime (packRuntime.get());
+            juce::MessageManager::callAsync ([runtime]
+            {
+                if (runtime != nullptr)
+                    runtime->activate();
+            });
+        }
+    }
+
     void StudioMainComponent::togglePreview()
     {
-        if (! bottomPanel) return;
+        if (bottomTab == BottomPanel::Page::DSP)
+        {
+            setGraphAudioListen (! graphAudioListen);
+            return;
+        }
 
-        const bool wasActive = bottomPanel->isPreviewActive();
-        bottomPanel->setPreviewActive (! wasActive);
-        topToolbar->setPreviewActive (! wasActive);
+        toggleCustomerPreview();
     }
 
     void StudioMainComponent::beginMidiLearn (juce::String parameterId)
@@ -4637,8 +5522,13 @@ namespace patchcraft
 
     void StudioMainComponent::exportPack()
     {
+        if (showLaunchReadinessIfBlocked (*this, project, "Export Pack"))
+            return;
+
         if (showSampleExportValidationIfBlocked (*this, project, "Export Pack"))
             return;
+
+        sanitiseLayoutParameterReferences (project);
 
         const int repairedPresetValues = removeStalePresetValuesForExport (project);
 
@@ -4688,15 +5578,36 @@ namespace patchcraft
 
     void StudioMainComponent::addArpBlock()
     {
+        addMotionBlock (SoundStack::MotionKind::Arp);
+    }
+
+    void StudioMainComponent::addMotionBlock (SoundStack::MotionKind kind)
+    {
         if (bottomPanel)
-            bottomPanel->addArpBlock();
+            bottomPanel->addMotionBlock (kind);
         setBottomTab (BottomPanel::Page::DSP);
         if (canvasToolbar)
             canvasToolbar->syncSectionTabFromOwner();
     }
 
+    bool StudioMainComponent::isAdvancedGraphMode() const
+    {
+        return advancedGraphModeExplicit
+            || SoundStack::usesAdvancedGraphFeatures (project.getDspGraph());
+    }
+
+    void StudioMainComponent::setAdvancedGraphMode (bool enabled)
+    {
+        advancedGraphModeExplicit = enabled;
+        if (bottomPanel != nullptr)
+            bottomPanel->refresh();
+    }
+
     void StudioMainComponent::exportVstPlugin()
     {
+        if (showLaunchReadinessIfBlocked (*this, project, "Export VST3 Plugin"))
+            return;
+
         // Sample-health gating only applies to sampler projects. Synth and
         // FX engines export fine without any zones - their sound comes
         // from the DSP graph, not from samples - so we run the validator
@@ -4710,6 +5621,10 @@ namespace patchcraft
 
     void StudioMainComponent::publishToPluginClub()
     {
+        if (showLaunchReadinessIfBlocked (*this, project, "Publish Draft to Plugin.club",
+                                          LaunchReadiness::Scope::Publish))
+            return;
+
         if (showSampleExportValidationIfBlocked (*this, project, "Publish Draft to Plugin.club"))
             return;
 
@@ -4717,8 +5632,8 @@ namespace patchcraft
         const auto endpoint = PluginClubPublisher::normaliseSellerImportEndpoint (
             config.pluginClubEndpoint.trim().isNotEmpty()
                 ? config.pluginClubEndpoint
-                : juce::String ("https://plugin.club/functions/sellerImport"));
-        const bool hasApiKey = config.pluginClubApiKey.trim().isNotEmpty();
+                : juce::String ("https://plugin.club/functions/v1/sellerImport"));
+        const bool hasApiKey = PluginClubPublisher::optionsFromCloudConfig (config).apiKey.isNotEmpty();
         const bool canPushOnline = endpoint.isNotEmpty() && hasApiKey;
         const bool vstExpansionInstalled = VstExportModule::isVstExpansionInstalled();
 

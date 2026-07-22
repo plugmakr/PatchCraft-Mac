@@ -40,6 +40,9 @@ namespace patchcraft
 
         bool isActive() const noexcept                  { return active.load (std::memory_order_acquire); }
         int  getNote()  const noexcept                  { return note; }
+        double getPlayPosition() const noexcept       { return position; }
+        int  getPlayStartSample() const noexcept      { return playStart; }
+        int  getPlayEndSample() const noexcept        { return playEnd; }
         bool isOneShot() const noexcept                 { return oneShot; }
         int  getChokeGroup() const noexcept             { return chokeGroup; }
 

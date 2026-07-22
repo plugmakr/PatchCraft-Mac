@@ -1,0 +1,95 @@
+{
+  "blocks": [
+    {
+      "id": "source",
+      "section": "source",
+      "type": "sample",
+      "name": "Granular Vocal Clouds Source",
+      "enabled": true,
+      "targetId": "volume",
+      "values": {
+        "oscType": 0.0,
+        "osc2Type": 0.0,
+        "oscBlend": 0.0,
+        "subBlend": 0.0,
+        "noiseBlend": 0.0,
+        "sampleStart": 0.0,
+        "sampleLength": 1.0
+      }
+    },
+    {
+      "id": "shape",
+      "section": "shape",
+      "type": "filter",
+      "name": "Tone Shape",
+      "enabled": true,
+      "targetId": "filterCutoff",
+      "values": {
+        "filterCutoff": 2400,
+        "filterResonance": 0.08,
+        "attack": 0.01,
+        "decay": 0.35,
+        "sustain": 0.55,
+        "release": 0.55
+      }
+    },
+    {
+      "id": "fx",
+      "section": "fx",
+      "type": "fxChain",
+      "name": "Factory FX",
+      "enabled": true,
+      "targetId": "delayMix",
+      "values": {
+        "drive": 0.0,
+        "mix": 1.0,
+        "delayTime": 0.125,
+        "delayFeedback": 0.0,
+        "delayMix": 0.0,
+        "reverbMix": 0.04,
+        "tapeMix": 0.0,
+        "chorusMix": 0.0,
+        "multiTapMix": 0.0
+      }
+    },
+    {
+      "id": "main_output",
+      "section": "out",
+      "type": "limiter",
+      "name": "Main Output",
+      "enabled": true,
+      "targetId": "volume",
+      "values": {
+        "outputLimiter": 1.0,
+        "outputCeilingDb": -1.0,
+        "outputGainDb": -3.0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "source_to_shape",
+      "sourceNodeId": "source",
+      "targetNodeId": "shape",
+      "signalType": "audio",
+      "enabled": true
+    },
+    {
+      "id": "shape_to_fx",
+      "sourceNodeId": "shape",
+      "targetNodeId": "fx",
+      "signalType": "audio",
+      "enabled": true
+    },
+    {
+      "id": "fx_to_main_output",
+      "sourceNodeId": "fx",
+      "targetNodeId": "main_output",
+      "signalType": "audio",
+      "enabled": true
+    }
+  ],
+  "macros": [],
+  "modulation": [],
+  "automation": []
+}

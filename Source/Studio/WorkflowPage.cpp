@@ -238,7 +238,7 @@ namespace patchcraft
             button->getProperties().set ("workflowStep", true);
             addAndMakeVisible (*button);
         }
-        advDspButton.setButtonText ("Graph\nSound routing, blocks, and modulation");
+        advDspButton.setButtonText ("Stack\nSound routing, blocks, and modulation");
         advMapperButton.setButtonText ("Sample Mapper\nZones, velocity, pads, sample playback");
         advOneShotButton.setButtonText ("One Shot Maker\nRender VST3 notes into sample packs");
         advBuildButton.setButtonText ("Asset Builder\nKnobs, sliders, meters, filmstrips");
@@ -496,20 +496,16 @@ namespace patchcraft
                       "2. Confirm Root, Low Key, High Key, Low Vel, and High Vel for each zone.\n"
                       "3. Use velocity handles to create playable dynamic layers.\n"
                       "4. Open Keyzones and Velocity views to verify there are no stacked full-keyboard mistakes.\n"
-                      "5. Switch to DSP Builder and add Filter, Amp, FX, and Out shaping blocks.\n"
+                      "5. New projects already include Source, Tone, and Space blocks — map knobs to filterCutoff, volume, and delayMix.\n"
                       "6. Turn Preview on and play notes while editing cutoff, amp envelope, gain, and FX mix.\n"
                       "7. Save the result as a full Patch before designing the UI."
                     : "Synth / FX Sound Tutorial\n\n"
-                      "1. Open DSP Builder and start on Source.\n"
-                      "2. Add or select one Source block. For synths, use Oscillator, Wavetable, Noise, or Hybrid source.\n"
-                      "3. Select the block card. The Graph Inspector shows what that block controls.\n"
-                      "4. Move Source Mixer values while holding a note. If a control does nothing, it must show why or be disabled.\n"
-                      "5. Open Filter. Add a filter block and target filter cutoff/resonance.\n"
-                      "6. Open Amp. Shape Attack, Decay, Sustain, and Release until the sound has the right feel.\n"
-                      "7. Open Mod. Add LFO/macro/automation only after the base sound works.\n"
-                      "8. Open FX. Add musical delay/reverb/distortion/EQ blocks and keep mix levels sane.\n"
-                      "9. Open Out. Confirm output gain, limiter, stereo width, and clipping safety.\n"
-                      "10. Save Patch when the sound is playable.";
+                      "1. New projects start with a 3-block Sound Stack: Source, Tone, and Space.\n"
+                      "2. Map canvas knobs to filterCutoff, delayMix, volume, and other key parameters.\n"
+                      "3. Use pScript or macro knobs when one control should drive several targets.\n"
+                      "4. Open the Sound Stack tab when you need LFOs, extra sources, or explicit routing.\n"
+                      "5. Add Motion (arp, drums, circles) from Perform or canvas modules when the base sound works.\n"
+                      "6. Save Patch when the sound is playable.";
 
             case TutorialModule::DesignPlayer:
                 return "Design Player Tutorial\n\n"

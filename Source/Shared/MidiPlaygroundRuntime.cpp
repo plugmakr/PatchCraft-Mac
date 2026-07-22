@@ -249,7 +249,10 @@ namespace patchcraft
             settings.bankStepChordSizes.fill (-1.0f);
             settings.bankStepTies.fill (0.0f);
             settings.bankAutoFxSends.fill (0.0f);
+            settings.bankAutoFilters.fill (0.5f);
+            settings.bankAutoPans.fill (0.0f);
             settings.bankAutoFxTargets.fill (0.0f);
+            settings.bankLaneTargets.fill (0.0f);
         settings.drumNotes.fill (36);
         settings.drumChain.fill (0);
         settings.drumActive.fill (0.0f);
@@ -360,7 +363,8 @@ namespace patchcraft
             settings.mutation = juce::jlimit (0.0f, 1.0f, valueForKey (block, "mpMutation", 0.0f));
             settings.velocityCurve = juce::jlimit (-1.0f, 1.0f, valueForKey (block, "mpVelocityCurve", 0.0f));
             settings.octaveFold = valueForKey (block, "mpOctaveFold", 0.0f) >= 0.5f;
-            settings.ratchet = juce::jlimit (1, 4, juce::roundToInt (valueForKey (block, "mpRatchet", 1.0f)));
+            settings.ratchet = juce::jlimit (1, 8, juce::roundToInt (valueForKey (block, "mpRatchet",
+                                                                                  valueForKey (block, "arpLaneRatchet", 1.0f))));
             settings.strum = juce::jlimit (0.0f, 1.0f, valueForKey (block, "mpStrum", 0.0f));
             settings.flam = juce::jlimit (0.0f, 1.0f, valueForKey (block, "mpFlam", 0.0f));
             settings.echoRepeats = juce::jlimit (0, 4, juce::roundToInt (valueForKey (block, "mpEchoRepeats", 0.0f)));
@@ -439,6 +443,8 @@ namespace patchcraft
                     valueForKey (block, prefix + "mpLaneFxTarget",
                         valueForKey (block, prefix + "mpAutoFxTarget",
                             valueForKey (block, "mpLaneFxTarget", valueForKey (block, "mpAutoFxTarget", 0.0f))))));
+                settings.bankLaneTargets[(size_t) bank] = (float) juce::jlimit (0, 4, juce::roundToInt (
+                    valueForKey (block, prefix + "mpLaneTarget", (float) bank)));
                 for (int step = 0; step < kMaxSteps; ++step)
                 {
                     const auto suffix = juce::String (step);
@@ -469,7 +475,31 @@ namespace patchcraft
                     settings.bankAutoFxSends[index] = juce::jlimit (0.0f, 1.0f,
                         valueForKey (block, prefix + "mpAutoFxSend" + suffix,
                                      valueForKey (block, "mpAutoFxSend" + suffix, 0.0f)));
+                    settings.bankAutoFilters[index] = juce::jlimit (0.0f, 1.0f,
+                        valueForKey (block, prefix + "mpAutoFilter" + suffix,
+                                     valueForKey (block, "mpAutoFilter" + suffix, settings.bankVelocities[index])));
+                    settings.bankAutoPans[index] = juce::jlimit (-1.0f, 1.0f,
+                        valueForKey (block, prefix + "mpAutoPan" + suffix,
+                                     valueForKey (block, "mpAutoPan" + suffix,
+                                                  settings.bankVelocities[index] * 2.0f - 1.0f)));
                 }
+            }
+
+            // Unprefixed step patterns (factory demos) must still drive multi-lane bank 0.
+            if (settings.multiLane && settings.bankHasData[0] < 0.5f)
+            {
+                bool hasUnprefixedPattern = false;
+                for (int step = 0; step < settings.steps; ++step)
+                {
+                    if (block.values.find ("mpStep" + juce::String (step) + "On") != block.values.end()
+                        || block.values.find ("arpNote" + juce::String (step)) != block.values.end())
+                    {
+                        hasUnprefixedPattern = true;
+                        break;
+                    }
+                }
+                if (hasUnprefixedPattern)
+                    settings.bankHasData[0] = 1.0f;
             }
 
             loadRuntimeBank (settings.activeBank);
@@ -1737,16 +1767,56 @@ namespace patchcraft
 
     void MidiPlaygroundRuntime::startBankStep (IInstrumentEngine& engine, int bank, int step, IInstrumentEngine* sampleEngine)
     {
+        bank = juce::jlimit (0, kMaxPhraseBanks - 1, bank);
+        step = juce::jlimit (0, kMaxSteps - 1, step);
+        if (! bankStepIsEnabled (bank, step) || ! bankStepPassesProbability (bank, step))
+            return;
+
+        const int role = juce::jlimit (0, 4, juce::roundToInt (settings.bankLaneTargets[(size_t) bank]));
+        const float velocity = velocityForBankStep (bank, step);
+        activeBankVelocities[(size_t) bank] = velocity;
+        auto& targetEngine = engineForBank (engine, sampleEngine, bank);
+        const auto index = (size_t) bankStepIndex (bank, step);
+
+        // Control rings (Filter/Pan/FX/Slice) modulate tone without stacking extra note voices.
+        if (role == 1)
+        {
+            const float amount = juce::jlimit (0.0f, 1.0f, settings.bankAutoFilters[index] > 0.001f
+                ? settings.bankAutoFilters[index] : velocity);
+            targetEngine.setParameter ("filterCutoff", 200.0f + amount * 11800.0f);
+            bankGateOpen[(size_t) bank] = true;
+            return;
+        }
+        if (role == 2)
+        {
+            const float pan = settings.bankAutoPans[index];
+            targetEngine.setParameter ("pan", juce::jlimit (-1.0f, 1.0f,
+                std::abs (pan) > 0.001f ? pan : (velocity * 2.0f - 1.0f)));
+            bankGateOpen[(size_t) bank] = true;
+            return;
+        }
+        if (role == 3)
+        {
+            settings.bankAutoFxSends[index] = juce::jmax (settings.bankAutoFxSends[index], velocity);
+            applyBankStepFx (targetEngine, bank, step, velocity);
+            bankGateOpen[(size_t) bank] = true;
+            return;
+        }
+        if (role == 4)
+        {
+            settings.bankSampleControl[(size_t) bank] = 1.0f;
+            applyBankSampleControl (targetEngine, bank, step);
+            bankGateOpen[(size_t) bank] = true;
+            return;
+        }
+
         std::array<int, kMaxChordNotes> notes {};
         int count = 0;
         buildBankStepNotes (bank, step, notes, count);
         if (count <= 0)
             return;
 
-        auto& targetEngine = engineForBank (engine, sampleEngine, bank);
         stopActiveBank (engine, bank, sampleEngine);
-        const float velocity = velocityForBankStep (bank, step);
-        activeBankVelocities[(size_t) bank] = velocity;
         applyBankSampleControl (targetEngine, bank, step);
         applyBankStepFx (targetEngine, bank, step, velocity);
 
